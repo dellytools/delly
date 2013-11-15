@@ -36,25 +36,20 @@ Contact: Tobias Rausch (rausch@embl.de)
 #include <boost/math/special_functions/pow.hpp>
 #include <boost/numeric/conversion/cast.hpp>
 #include <boost/functional/hash.hpp>
-#include <boost/archive/tmpdir.hpp>
 #include <boost/filesystem.hpp>
 #include <boost/progress.hpp>
 
 #include "api/BamIndex.h"
 
-#include "memory_mapped_file.h"
-#include "bam_file_adaptor.h"
 #include "version.h"
 #include "util.h"
-#include "sam.h"
-#include "fasta_reader.h"
 #include "dna_score.h"
 #include "align_config.h"
 #include "align_gotoh.h"
 #include "align_nw.h"
 #include "align_nw_mat.h"
-#include "extract.h"
 #include "index.h"
+#include "tags.h"
 
 
 #include <sys/types.h>
@@ -66,16 +61,6 @@ Contact: Tobias Rausch (rausch@embl.de)
 KSEQ_INIT(gzFile, gzread)
 
 using namespace torali;
-
-// Tags
-struct DeletionTag;
-struct DuplicationTag;
-template<typename SvTag>
-struct SVType {
-};
-
-
-
 
 // Config arguments
 struct Config {
