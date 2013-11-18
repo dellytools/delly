@@ -1102,7 +1102,7 @@ inline int run(Config const& c, TSVType svType) {
   TVariants svs;
 
   // Clique id counter
-  unsigned int clique_count = 0;
+  unsigned int clique_count = 1;
 
   // Create library objects
   typedef std::map<std::string, LibraryInfo> TLibraryMap;

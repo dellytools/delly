@@ -24,9 +24,11 @@ Contact: Tobias Rausch (rausch@embl.de)
 #ifndef TAGS_H
 #define TAGS_H
 
-#include <iostream>
-
 namespace torali {
+
+  // Constants
+  #define MAX_CHROM_SIZE 250000000
+
 
   // Tags
   struct DeletionTag;
