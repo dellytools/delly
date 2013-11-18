@@ -131,7 +131,7 @@ run(Config const& c, THitInterval, TCount)
 
     // Get library parameters and overall maximum insert size
     TLibraryMap libInfo;
-    getLibraryParams(c.files[file_c], libInfo, 0, 3);
+    getLibraryParams(c.files[file_c], libInfo, 0, 5);
     sampleLib.insert(std::make_pair(sampleName, libInfo));
   }
 
