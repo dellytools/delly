@@ -58,13 +58,39 @@ using namespace torali;
 
 struct Config {
   bool mapq;
-  unsigned short minMapQual;
+  uint16_t minMapQual;
   int bpWindowOffset;
   boost::filesystem::path int_file;
   boost::filesystem::path outfile;
   std::vector<boost::filesystem::path> files;
 };
 
+template<typename TDataOut>
+inline void
+_outputQualities(TDataOut& dataOut, int normal, int abnormal) {
+  dataOut << "\t" << normal << "\t" << abnormal;
+}
+
+template<typename TDataOut>
+inline void
+_outputQualities(TDataOut& dataOut, std::vector<uint16_t> const& normal, std::vector<uint16_t> const& abnormal) {
+  typedef std::vector<uint16_t> TQualVector;
+  
+  dataOut << "\t";
+  typename TQualVector::const_iterator itQ = normal.begin();
+  typename TQualVector::const_iterator itQEnd = normal.end();
+  for(;itQ!=itQEnd;++itQ) {
+    if (itQ != normal.begin()) dataOut << ',';
+    dataOut << *itQ;
+  }
+  dataOut << "\t";
+  itQ = abnormal.begin();
+  itQEnd = abnormal.end();
+  for(;itQ!=itQEnd;++itQ) {
+    if (itQ != abnormal.begin()) dataOut << ',';
+    dataOut << *itQ;
+  }
+}
 
 
 template<typename THitInterval, typename TCount>
@@ -182,8 +208,8 @@ run(Config const& c, THitInterval, TCount)
 	  std::string sampleName(c.files[file_c].stem().string());
 	  TSampleSVPair sampleSVPair = std::make_pair(sampleName, bpOrder*itSV->id);
 	  typename TCountMap::iterator countMapIt=normalCountMap.find(sampleSVPair);
-	  typename TCountMap::iterator abCountMapIt=abnormalCountMap.find(sampleSVPair);	  
-	  dataOut << "\t" << countMapIt->second[i] << "\t" << abCountMapIt->second[i];
+	  typename TCountMap::iterator abCountMapIt=abnormalCountMap.find(sampleSVPair);
+	  _outputQualities(dataOut, countMapIt->second[i], abCountMapIt->second[i]);
 	}
 	dataOut << std::endl;
       }
@@ -211,7 +237,7 @@ int main(int argc, char **argv) {
   generic.add_options()
     ("help,?", "show help message")
     ("show-mapq,s", "use list of PE MAPQ instead of PE counts")
-    ("quality-cut,q", boost::program_options::value<unsigned short>(&c.minMapQual)->default_value(0), "min. paired-end mapping quality")
+    ("quality-cut,q", boost::program_options::value<uint16_t>(&c.minMapQual)->default_value(0), "min. paired-end mapping quality")
     ("bp-offset,b", boost::program_options::value<int>(&c.bpWindowOffset)->default_value(1000), "breakpoint offset")
     ("outfile,o", boost::program_options::value<boost::filesystem::path>(&c.outfile)->default_value("span.gz"), "spanning coverage output file")
     ;
@@ -253,6 +279,6 @@ int main(int argc, char **argv) {
   else c.mapq=false;
 
   // Run spanning coverage
-  if (c.mapq) return run(c, HitInterval<int32_t, uint16_t>(), std::string());
+  if (c.mapq) return run(c, HitInterval<int32_t, uint16_t>(), std::vector<uint16_t>());
   else return run(c, HitInterval<int32_t, void>(), int());
 }

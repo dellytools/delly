@@ -88,11 +88,10 @@ namespace torali {
     // Nothing to do
   }
 
-  template<typename TQual, typename TPos, typename TString>
+  template<typename TQual, typename TPos, typename TMapqVector>
     inline void
-    _buildMAPQString(std::vector< HitInterval<TPos, TQual> >& hit_vector, TPos const posStart, TPos const posEnd, std::vector<TString>& str)
+    _buildMAPQString(std::vector< HitInterval<TPos, TQual> >& hit_vector, TPos const posStart, TPos const posEnd, std::vector<TMapqVector>& str)
   {
-    typedef std::vector<TString> TStringVector;
     typedef HitInterval<TPos, TQual> THit;
     typedef std::vector< THit > THits;
     typename THits::const_iterator vecBeg = hit_vector.begin();
@@ -100,7 +99,7 @@ namespace torali {
 
     // Initialize result vector
     str.resize(posEnd-posStart);
-    std::fill(str.begin(), str.end(), "");
+    std::fill(str.begin(), str.end(), TMapqVector());
   
     // Add mapq counts
     int searchRange = posStart - 10000;
@@ -113,18 +112,8 @@ namespace torali {
       if (vecIt->end < posStart) continue;
       if (vecIt->start > posEnd) break;
       for (int i = (vecIt->start - 1); i<vecIt->end; ++i) {
-	if (i >= posStart && i<posEnd) {
-	  std::stringstream s;
-	  s << (unsigned short) vecIt->qual << ',';
-	  str[i-posStart].append(s.str());
-	}
+	if (i >= posStart && i<posEnd) str[i-posStart].push_back(vecIt->qual);
       }
-    }
-    // Remove trailing ,
-    typename TStringVector::iterator itStr = str.begin();
-    typename TStringVector::iterator itStrEnd = str.end();
-    for(;itStr!=itStrEnd;++itStr) {
-      if (itStr->size()) itStr->erase(itStr->size() - 1);
     }
   }
 
@@ -164,9 +153,9 @@ namespace torali {
 
   template<typename TArrayType, typename THits, typename TCountMapIterator>
     inline void
-    _addCounts(TArrayType*, TArrayType*, THits& normalSpan, THits& missingSpan, TCountMapIterator& countMapIt, TCountMapIterator& abCountMapIt, int posStart, int posEnd, std::string) {
-    std::vector<std::string> normalStr;
-    std::vector<std::string> missingStr;
+    _addCounts(TArrayType*, TArrayType*, THits& normalSpan, THits& missingSpan, TCountMapIterator& countMapIt, TCountMapIterator& abCountMapIt, int posStart, int posEnd, std::vector<uint16_t>) {
+    std::vector<std::vector<uint16_t> > normalStr;
+    std::vector<std::vector<uint16_t> > missingStr;
     _buildMAPQString(normalSpan, posStart, posEnd, normalStr);
     _buildMAPQString(missingSpan, posStart, posEnd, missingStr);
     for(int i=posStart; i<posEnd; ++i) {
@@ -268,7 +257,7 @@ namespace torali {
 		if ((getStrandIndependentOrientation(al) == libIt->second.defaultOrient) && (outerISize >= libIt->second.minNormalISize) && (outerISize <= libIt->second.maxNormalISize)) {
 		  // Normal spanning coverage
 		  normalSpan.push_back(THitInterval(al.MatePosition, al.Position+al.Length, pairQuality));
-		} else if ((getStrandIndependentOrientation(al) != libIt->second.defaultOrient) || (outerISize >= libIt->second.median + 5 * libIt->second.mad)) {
+		} else if ((getStrandIndependentOrientation(al) != libIt->second.defaultOrient) || (outerISize > libIt->second.maxNormalISize)) {
 		  // Missing spanning coverage
 		  if (_mateIsUpstream(libIt->second.defaultOrient, (al.AlignmentFlag & 0x0040), (al.AlignmentFlag & 0x0010))) 
 		    missingSpan.push_back(THitInterval(al.Position, al.Position + libIt->second.median, pairQuality));

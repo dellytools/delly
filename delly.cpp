@@ -49,6 +49,7 @@ Contact: Tobias Rausch (rausch@embl.de)
 #include "align_nw_mat.h"
 #include "index.h"
 #include "tags.h"
+#include "spanning.h"
 
 
 #include <sys/types.h>
@@ -749,67 +750,91 @@ _addID(SVType<DuplicationTag>) {
   return "DUP";
 }
 
-template<typename TConfig, typename TStructuralVariantRecord, typename TTag>
+template<typename TConfig, typename TStructuralVariantRecord, typename TCountMap, typename TTag>
 inline void
-vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& dels, SVType<TTag> svType) 
+vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TCountMap& normalCountMap, TCountMap& abnormalCountMap, SVType<TTag> svType) 
 {
-  // Output all deletions
-  std::ofstream del_file(c.outfile.string().c_str());
+  // Typedefs
+  typedef typename TCountMap::key_type TSampleSVPair;
+
+  // Output all structural variants
+  std::ofstream ofile(c.outfile.string().c_str());
 
   // Print vcf header
   boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
   boost::gregorian::date today = now.date();
-  del_file << "##fileformat=VCFv4.1" << std::endl;
-  del_file << "##fileDate=" << boost::gregorian::to_iso_string(today) << std::endl;
-  del_file << "##ALT=<ID=DEL,Description=\"Deletion\">" << std::endl;
-  del_file << "##ALT=<ID=DUP,Description=\"Duplication\">" << std::endl;
-  del_file << "##FILTER=<ID=LowQual,Description=\"PE support below 3 or mapping quality below 20.\">" << std::endl;
-  del_file << "##INFO=<ID=CIEND,Number=2,Type=Integer,Description=\"PE confidence interval around END\">" << std::endl;
-  del_file << "##INFO=<ID=CIPOS,Number=2,Type=Integer,Description=\"PE confidence interval around POS\">" << std::endl;
-  del_file << "##INFO=<ID=END,Number=1,Type=Integer,Description=\"End position of the structural variant\">" << std::endl;
-  del_file << "##INFO=<ID=PE,Number=1,Type=Integer,Description=\"Paired-end support of the structural variant\">" << std::endl;
-  del_file << "##INFO=<ID=MAPQ,Number=1,Type=Integer,Description=\"Median mapping quality of paired-ends\">" << std::endl;
-  del_file << "##INFO=<ID=SR,Number=1,Type=Integer,Description=\"Split-read support\">" << std::endl;
-  del_file << "##INFO=<ID=SRQ,Number=1,Type=Float,Description=\"Split-read consensus alignment quality\">" << std::endl;
-  del_file << "##INFO=<ID=CONSENSUS,Number=1,Type=String,Description=\"Split-read consensus sequence\">" << std::endl;
-  del_file << "##INFO=<ID=IMPRECISE,Number=0,Type=Flag,Description=\"Imprecise structural variation\">" << std::endl;
-  del_file << "##INFO=<ID=PRECISE,Number=0,Type=Flag,Description=\"Precise structural variation\">" << std::endl;
-  del_file << "##INFO=<ID=SVLEN,Number=1,Type=Integer,Description=\"Length of the SV\">" << std::endl;
-  del_file << "##INFO=<ID=SVTYPE,Number=1,Type=String,Description=\"Type of structural variant\">" << std::endl;
-  del_file << "##INFO=<ID=SVMETHOD,Number=1,Type=String,Description=\"Type of approach used to detect SV\">" << std::endl;
-  del_file << "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO" << std::endl;
+  ofile << "##fileformat=VCFv4.1" << std::endl;
+  ofile << "##fileDate=" << boost::gregorian::to_iso_string(today) << std::endl;
+  ofile << "##ALT=<ID=DEL,Description=\"Deletion\">" << std::endl;
+  ofile << "##ALT=<ID=DUP,Description=\"Duplication\">" << std::endl;
+  ofile << "##FILTER=<ID=LowQual,Description=\"PE support below 3 or mapping quality below 20.\">" << std::endl;
+  ofile << "##INFO=<ID=CIEND,Number=2,Type=Integer,Description=\"PE confidence interval around END\">" << std::endl;
+  ofile << "##INFO=<ID=CIPOS,Number=2,Type=Integer,Description=\"PE confidence interval around POS\">" << std::endl;
+  ofile << "##INFO=<ID=END,Number=1,Type=Integer,Description=\"End position of the structural variant\">" << std::endl;
+  ofile << "##INFO=<ID=PE,Number=1,Type=Integer,Description=\"Paired-end support of the structural variant\">" << std::endl;
+  ofile << "##INFO=<ID=MAPQ,Number=1,Type=Integer,Description=\"Median mapping quality of paired-ends\">" << std::endl;
+  ofile << "##INFO=<ID=SR,Number=1,Type=Integer,Description=\"Split-read support\">" << std::endl;
+  ofile << "##INFO=<ID=SRQ,Number=1,Type=Float,Description=\"Split-read consensus alignment quality\">" << std::endl;
+  ofile << "##INFO=<ID=CONSENSUS,Number=1,Type=String,Description=\"Split-read consensus sequence\">" << std::endl;
+  ofile << "##INFO=<ID=IMPRECISE,Number=0,Type=Flag,Description=\"Imprecise structural variation\">" << std::endl;
+  ofile << "##INFO=<ID=PRECISE,Number=0,Type=Flag,Description=\"Precise structural variation\">" << std::endl;
+  ofile << "##INFO=<ID=SVLEN,Number=1,Type=Integer,Description=\"Length of the SV\">" << std::endl;
+  ofile << "##INFO=<ID=SVTYPE,Number=1,Type=String,Description=\"Type of structural variant\">" << std::endl;
+  ofile << "##INFO=<ID=SVMETHOD,Number=1,Type=String,Description=\"Type of approach used to detect SV\">" << std::endl;
+  ofile << "##FORMAT=<ID=DR,Number=1,Type=Integer,Description=\"# high-quality reference pairs\">" << std::endl;
+  ofile << "##FORMAT=<ID=DV,Number=1,Type=Integer,Description=\"# high-quality variant pairs\">" << std::endl;
+  ofile << "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT";
+  for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
+    std::string sampleName(c.files[file_c].stem().string());
+    ofile << "\t" << sampleName;
+  }
+  ofile << std::endl;
 
+  // Iterate all structural variants
   typedef std::vector<TStructuralVariantRecord> TSVs;
-  typename TSVs::const_iterator delIter = dels.begin();
-  typename TSVs::const_iterator delIterEnd = dels.end();
-  for(;delIter!=delIterEnd;++delIter) {
+  typename TSVs::const_iterator svIter = svs.begin();
+  typename TSVs::const_iterator svIterEnd = svs.end();
+  for(;svIter!=svIterEnd;++svIter) {
+
+    // Output main vcf fields
     std::string filterField="PASS";
-    if ((delIter->peSupport < 3) || (delIter->peMapQuality < 20)) {
+    if ((svIter->peSupport < 3) || (svIter->peMapQuality < 20)) {
       filterField="LowQual";
     }
-
     std::stringstream id;
-    id << _addID(svType) << std::setw(8) << std::setfill('0') << delIter->id;
-    del_file << delIter->chr << "\t" << delIter->svStart << "\t" << id.str() << "\tN\t<" << _addID(svType) << ">\t.\t" <<  filterField << "\t";
+    id << _addID(svType) << std::setw(8) << std::setfill('0') << svIter->id;
+    ofile << svIter->chr << "\t" << svIter->svStart << "\t" << id.str() << "\tN\t<" << _addID(svType) << ">\t.\t" <<  filterField << "\t";
+
     // Add info fields
-    if (delIter->precise) del_file << "PRECISE;";
-    else del_file << "IMPRECISE;";
-    del_file << "CIEND=" << -delIter->wiggle << "," << delIter->wiggle << ";CIPOS=" << -delIter->wiggle << "," << delIter->wiggle << ";";
-    del_file << "SVTYPE=" << _addID(svType) << ";";
-    del_file << "SVMETHOD=EMBL.DELLY;";
-    del_file << "END=" << delIter->svEnd << ";";
-    del_file << "SVLEN=" << (delIter->svEnd - delIter->svStart) << ";";
-    del_file << "PE=" << delIter->peSupport << ";";
-    del_file << "MAPQ=" << delIter->peMapQuality << ";";
-    if (delIter->precise)  {
-      del_file << "SR=" << delIter->srSupport << ";";
-      del_file << "SRQ=" << delIter->srAlignQuality << ";";
-      del_file << "CONSENSUS=" << delIter->consensus << ";";
+    if (svIter->precise) ofile << "PRECISE;";
+    else ofile << "IMPRECISE;";
+    ofile << "CIEND=" << -svIter->wiggle << "," << svIter->wiggle << ";CIPOS=" << -svIter->wiggle << "," << svIter->wiggle << ";";
+    ofile << "SVTYPE=" << _addID(svType) << ";";
+    ofile << "SVMETHOD=EMBL.DELLY;";
+    ofile << "END=" << svIter->svEnd << ";";
+    ofile << "SVLEN=" << (svIter->svEnd - svIter->svStart) << ";";
+    ofile << "PE=" << svIter->peSupport << ";";
+    ofile << "MAPQ=" << svIter->peMapQuality << ";";
+    if (svIter->precise)  {
+      ofile << "SR=" << svIter->srSupport << ";";
+      ofile << "SRQ=" << svIter->srAlignQuality << ";";
+      ofile << "CONSENSUS=" << svIter->consensus << ";";
     }
-    del_file << std::endl;
+
+    // Add genotype columns (right bp only across all samples)
+    ofile << "\tDR:DV";
+    for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
+      // Get the sample name
+      std::string sampleName(c.files[file_c].stem().string());
+      TSampleSVPair sampleSVPair = std::make_pair(sampleName, svIter->id);
+      typename TCountMap::iterator countMapIt=normalCountMap.find(sampleSVPair);
+      typename TCountMap::iterator abCountMapIt=abnormalCountMap.find(sampleSVPair);	  
+      ofile << "\t" << countMapIt->second[0].size() << ":" << abCountMapIt->second[0].size();
+    }
+    ofile << std::endl;
   }
 
-  del_file.close();
+  ofile.close();
 }
 
 
@@ -1466,9 +1491,27 @@ inline int run(Config const& c, TSVType svType) {
     }
   }
 
+  // Annotate spanning coverage
+  typedef std::pair<std::string, int> TSampleSVPair;
+  typedef std::vector<std::vector<uint16_t> > TCountRange;
+  typedef std::map<TSampleSVPair, TCountRange> TCountMap;
+  TCountMap normalCountMap;
+  TCountMap abnormalCountMap;
+  annotateSpanningCoverage(c.files, 0, 20, sampleLib, svs, normalCountMap, abnormalCountMap, HitInterval<int32_t, uint16_t>());
+  // Output library statistics
+  std::cout << "Library statistics" << std::endl;
+  sampleIt=sampleLib.begin();
+  for(;sampleIt!=sampleLib.end();++sampleIt) {
+    std::cout << "Sample: " << sampleIt->first << std::endl;
+    TLibraryMap::const_iterator libIt=sampleIt->second.begin();
+    for(;libIt!=sampleIt->second.end();++libIt) {
+      std::cout << "RG: ID=" << libIt->first << ",Median=" << libIt->second.median << ",MAD=" << libIt->second.mad << ",Orientation=" << (int) libIt->second.defaultOrient << ",MinInsertSize=" << libIt->second.minNormalISize << ",MaxInsertSize=" << libIt->second.maxNormalISize << ",DuplicatePairs=" << libIt->second.non_unique_pairs << ",UniquePairs=" << libIt->second.unique_pairs << std::endl;
+    }
+  }
+
   // VCF output
   if (svs.size()) {
-    vcfOutput(c, svs, svType);
+    vcfOutput(c, svs, normalCountMap, abnormalCountMap, svType);
   }
 
   // End
