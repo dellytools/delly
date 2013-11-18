@@ -189,9 +189,34 @@ _mateIsUpstream(TDefaultOrientation defOrient, bool firstRead, bool reverse) {
   }
 }   
 
-template<typename THit>
+template<typename TArrayType, typename THits, typename TCountMapIterator>
+inline void
+_addCounts(TArrayType* normalCount, TArrayType* missingCount, THits&, THits&, TCountMapIterator& countMapIt, TCountMapIterator& abCountMapIt, int posStart, int posEnd, int) {
+  TArrayType* normalCountPoint = &normalCount[posStart];
+  TArrayType* missingCountPoint = &missingCount[posStart];
+  for(int i=posStart; i<posEnd; ++i, ++normalCountPoint, ++missingCountPoint) {
+    countMapIt->second.push_back(*normalCountPoint);
+    abCountMapIt->second.push_back(*missingCountPoint);
+  }
+}
+
+template<typename TArrayType, typename THits, typename TCountMapIterator>
+inline void
+_addCounts(TArrayType*, TArrayType*, THits& normalSpan, THits& missingSpan, TCountMapIterator& countMapIt, TCountMapIterator& abCountMapIt, int posStart, int posEnd, std::string) {
+  std::vector<std::string> normalStr;
+  std::vector<std::string> missingStr;
+  _buildMAPQString(normalSpan, posStart, posEnd, normalStr);
+  _buildMAPQString(missingSpan, posStart, posEnd, missingStr);
+  for(int i=posStart; i<posEnd; ++i) {
+    countMapIt->second.push_back(normalStr[i - posStart]);
+    abCountMapIt->second.push_back(missingStr[i-posStart]);
+  }
+}
+
+
+template<typename THit, typename TCount>
 inline int
-run(Config const& c, THit)
+run(Config const& c, THit, TCount)
 {
   // Valid interval file?
   if (!(boost::filesystem::exists(c.int_file) && boost::filesystem::is_regular_file(c.int_file) && boost::filesystem::file_size(c.int_file))) {
@@ -240,7 +265,7 @@ run(Config const& c, THit)
   typedef std::vector<StructuralVariantRecord> TSVs;
   TSVs svs;
   std::map<unsigned int, std::string> idToName;
-  unsigned int intervalCount=0;
+  unsigned int intervalCount=1;
   if (isValidFile(c.int_file.string())) {
     Memory_mapped_file interval_file(c.int_file.string().c_str());
     char interval_buffer[Memory_mapped_file::MAX_LINE_LENGTH];
@@ -262,10 +287,12 @@ run(Config const& c, THit)
     interval_file.close();
   }
 
-  // Output file
-  boost::iostreams::filtering_ostream dataOut;
-  dataOut.push(boost::iostreams::gzip_compressor());
-  dataOut.push(boost::iostreams::file_sink(c.outfile.c_str(), std::ios_base::out | std::ios_base::binary));
+  // Output data types
+  typedef std::pair<std::string, int> TSampleSVPair;
+  typedef std::vector<TCount> TCountRange;
+  typedef std::map<TSampleSVPair, TCountRange> TCountMap;
+  TCountMap normalCountMap;
+  TCountMap abnormalCountMap;
 
   // Process chromosome by chromosome
   std::cout << "Breakpoint spanning coverage annotation" << std::endl;
@@ -377,38 +404,32 @@ run(Config const& c, THit)
       for(;itSV!=itSVEnd;++itSV) {
 	if (itSV->chr == references[refIndex].RefName) {
 	  // First breakpoint
+	  TSampleSVPair svSample = std::make_pair(sampleName, -itSV->id);
+	  typename TCountMap::iterator countMapIt=normalCountMap.find(svSample);
+	  typename TCountMap::iterator abCountMapIt=abnormalCountMap.find(svSample);
+	  if (countMapIt==normalCountMap.end()) {
+	    normalCountMap.insert(std::make_pair(svSample, TCountRange()));
+	    abnormalCountMap.insert(std::make_pair(svSample, TCountRange()));
+	    countMapIt=normalCountMap.find(svSample);
+	    abCountMapIt=abnormalCountMap.find(svSample);
+	  }
 	  int posStart = (itSV->svStart - c.bpWindowOffset < 0) ? 0 : (itSV->svStart - c.bpWindowOffset);
 	  int posEnd = (c.bpWindowOffset) ? (itSV->svStart + c.bpWindowOffset) : (itSV->svStart + 1);
-	  if (!c.mapq) {
-	    TArrayType* normalCountPoint = &normalCount[posStart];
-	    TArrayType* missingCountPoint = &missingCount[posStart];
-	    for(int i=posStart; i<posEnd; ++i, ++normalCountPoint, ++missingCountPoint) dataOut << idToName.find(itSV->id)->second << "\t" << 0 << "\t" << itSV->chr << "\t" << i << "\t" << *normalCountPoint << "\t" << *missingCountPoint << std::endl;
-	  } else {
-	    std::vector<std::string> normalStr;
-	    std::vector<std::string> missingStr;
-	    _buildMAPQString(normalSpan, posStart, posEnd, normalStr);
-	    _buildMAPQString(missingSpan, posStart, posEnd, missingStr);
-	    for(int i=posStart; i<posEnd; ++i) {
-	      dataOut << idToName.find(itSV->id)->second << "\t" << 0 << "\t" << itSV->chr << "\t" << i << "\t" << normalStr[i - posStart] << "\t" << missingStr[i-posStart] << std::endl;
-	    }
-	  }
+	  _addCounts(normalCount, missingCount, normalSpan, missingSpan, countMapIt, abCountMapIt, posStart, posEnd, TCount());
 	  
 	  // Second breakpoint
+	  svSample = std::make_pair(sampleName, itSV->id);
+	  countMapIt=normalCountMap.find(svSample);
+	  abCountMapIt=abnormalCountMap.find(svSample);
+	  if (countMapIt==normalCountMap.end()) {
+	    normalCountMap.insert(std::make_pair(svSample, TCountRange()));
+	    abnormalCountMap.insert(std::make_pair(svSample, TCountRange()));
+	    countMapIt=normalCountMap.find(svSample);
+	    abCountMapIt=abnormalCountMap.find(svSample);
+	  }
 	  posStart = (itSV->svEnd - c.bpWindowOffset < 0) ? 0 : (itSV->svEnd - c.bpWindowOffset);
 	  posEnd = (c.bpWindowOffset) ? (itSV->svEnd + c.bpWindowOffset) : (itSV->svEnd + 1);
-	  if (!c.mapq) {
-	    TArrayType* normalCountPoint = &normalCount[posStart];
-	    TArrayType* missingCountPoint = &missingCount[posStart];
-	    for(int i=posStart; i<posEnd; ++i, ++normalCountPoint, ++missingCountPoint) dataOut << idToName.find(itSV->id)->second << "\t" << 1 << "\t" << itSV->chr << "\t" << i << "\t" << *normalCountPoint << "\t" << *missingCountPoint << std::endl;
-	  } else {
-	    std::vector<std::string> normalStr;
-	    std::vector<std::string> missingStr;
-	    _buildMAPQString(normalSpan, posStart, posEnd, normalStr);
-	    _buildMAPQString(missingSpan, posStart, posEnd, missingStr);
-	    for(int i=posStart; i<posEnd; ++i) {
-	      dataOut << idToName.find(itSV->id)->second << "\t" << 1 << "\t" << itSV->chr << "\t" << i << "\t" << normalStr[i-posStart] << "\t" << missingStr[i-posStart] << std::endl;
-	    }
-	  }
+	  _addCounts(normalCount, missingCount, normalSpan, missingSpan, countMapIt, abCountMapIt, posStart, posEnd, TCount());
 	}
       }
 
@@ -426,6 +447,41 @@ run(Config const& c, THit)
     TLibraryMap::const_iterator libIt=sampleIt->second.begin();
     for(;libIt!=sampleIt->second.end();++libIt) {
       std::cout << "RG: ID=" << libIt->first << ",Median=" << libIt->second.median << ",MAD=" << libIt->second.mad << ",Orientation=" << (int) libIt->second.defaultOrient << ",MinInsertSize=" << libIt->second.minNormalISize << ",MaxInsertSize=" << libIt->second.maxNormalISize << ",DuplicatePairs=" << libIt->second.non_unique_pairs << ",UniquePairs=" << libIt->second.unique_pairs << std::endl;
+    }
+  }
+
+
+  // Output file
+  boost::iostreams::filtering_ostream dataOut;
+  dataOut.push(boost::iostreams::gzip_compressor());
+  dataOut.push(boost::iostreams::file_sink(c.outfile.c_str(), std::ios_base::out | std::ios_base::binary));
+
+  // Iterate all SVs
+  typename TSVs::const_iterator itSV = svs.begin();
+  typename TSVs::const_iterator itSVEnd = svs.end();
+  for(;itSV!=itSVEnd;++itSV) {
+    // Iterate left and right breakpoint
+    for(int bpOrder=-1;bpOrder<=1;bpOrder+=2) {
+      // Iterate the breakpoint range
+      int posStart = (itSV->svStart - c.bpWindowOffset < 0) ? 0 : (itSV->svStart - c.bpWindowOffset);
+      int posEnd = (c.bpWindowOffset) ? (itSV->svStart + c.bpWindowOffset) : (itSV->svStart + 1);
+      if (bpOrder==1) {
+	posStart = (itSV->svEnd - c.bpWindowOffset < 0) ? 0 : (itSV->svEnd - c.bpWindowOffset);
+	posEnd = (c.bpWindowOffset) ? (itSV->svEnd + c.bpWindowOffset) : (itSV->svEnd + 1);
+      }
+      for(int i=0;i<(posEnd-posStart);++i) {
+	dataOut << idToName.find(itSV->id)->second << "\t" << ((bpOrder+1)/2) << "\t" << itSV->chr << "\t" << (i+posStart);
+	// Iterate all samples
+	for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
+	  // Get the sample name
+	  std::string sampleName(c.files[file_c].stem().string());
+	  TSampleSVPair sampleSVPair = std::make_pair(sampleName, bpOrder*itSV->id);
+	  typename TCountMap::iterator countMapIt=normalCountMap.find(sampleSVPair);
+	  typename TCountMap::iterator abCountMapIt=abnormalCountMap.find(sampleSVPair);	  
+	  dataOut << "\t" << countMapIt->second[i] << "\t" << abCountMapIt->second[i];
+	}
+	dataOut << std::endl;
+      }
     }
   }
   
@@ -492,6 +548,6 @@ int main(int argc, char **argv) {
   else c.mapq=false;
 
   // Run spanning coverage
-  if (c.mapq) return run(c, HitInterval<int32_t, uint16_t>());
-  else return run(c, HitInterval<int32_t, void>());
+  if (c.mapq) return run(c, HitInterval<int32_t, uint16_t>(), std::string());
+  else return run(c, HitInterval<int32_t, void>(), int());
 }
