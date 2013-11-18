@@ -36,6 +36,39 @@ namespace torali {
     struct SVType {
     };
 
+
+  // Unique paired-end data structure for single chromosome only
+  struct Hit {
+    int32_t minPos;
+    int32_t maxPos;
+  
+  Hit(BamTools::BamAlignment const& al) : minPos(std::min(al.Position, al.MatePosition)), maxPos(std::max(al.Position, al.MatePosition)) {}
+
+    bool operator <(Hit const& other) const {
+      return ((minPos<other.minPos) || ((minPos==other.minPos) && (maxPos<other.maxPos)));
+    }
+  };
+
+
+  // Structural variant record
+  struct StructuralVariantRecord {
+    int svStartBeg;
+    int svStartEnd;
+    int svEndBeg;
+    int svEndEnd;
+    int svStart;
+    int svEnd;
+    int peSupport;
+    int srSupport;
+    int wiggle;
+    double srAlignQuality;
+    unsigned int id;
+    bool precise;
+    uint16_t peMapQuality;
+    std::string chr;
+    std::string consensus;
+  };
+
 }
 
 #endif

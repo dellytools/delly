@@ -34,7 +34,6 @@ Contact: Tobias Rausch (rausch@embl.de)
 #include <boost/date_time/posix_time/posix_time.hpp>
 #include <boost/date_time/gregorian/gregorian.hpp>
 #include <boost/math/special_functions/pow.hpp>
-#include <boost/numeric/conversion/cast.hpp>
 #include <boost/functional/hash.hpp>
 #include <boost/filesystem.hpp>
 #include <boost/progress.hpp>
@@ -81,37 +80,6 @@ struct Config {
   std::vector<boost::filesystem::path> files;
 };
 
-// Structural variant record
-struct StructuralVariantRecord {
-  int svStartBeg;
-  int svStartEnd;
-  int svEndBeg;
-  int svEndEnd;
-  int svStart;
-  int svEnd;
-  int peSupport;
-  int srSupport;
-  int wiggle;
-  double srAlignQuality;
-  unsigned int id;
-  bool precise;
-  uint16_t peMapQuality;
-  std::string chr;
-  std::string consensus;
-};
-
-
-// Unique paired-end data structure for single chromosome only
-struct Hit {
-  int32_t minPos;
-  int32_t maxPos;
-  
-  Hit(BamTools::BamAlignment const& al) : minPos(std::min(al.Position, al.MatePosition)), maxPos(std::max(al.Position, al.MatePosition)) {}
-
-  bool operator <(Hit const& other) const {
-    return ((minPos<other.minPos) || ((minPos==other.minPos) && (maxPos<other.maxPos)));
-  }
-};
 
 // Reduced bam alignment record data structure
 struct BamAlignRecord {
@@ -1255,7 +1223,6 @@ inline int run(Config const& c, TSVType svType) {
 	      unsigned int index=((hashStr(al.Name) % (int)boost::math::pow<4>(2))<<24) + ((al.MatePosition % (int)boost::math::pow<12>(2))<<12) + (al.Position % (int)boost::math::pow<12>(2));
 	      uint16_t pairQuality = std::min(qualities[index], al.MapQuality);
 	      //std::cout << al.Name << ',' << qualities[index] << ',' << mateQuality << ',' << pairQuality << ',' << std::endl;
-	      qualities[index]=0;
 
 	      // Store the paired-end
 	      Hit hitPos(al);

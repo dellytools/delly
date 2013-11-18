@@ -30,12 +30,17 @@ Contact: Tobias Rausch (rausch@embl.de)
 #include <boost/program_options/parsers.hpp>
 #include <boost/program_options/variables_map.hpp>
 #include <boost/date_time/posix_time/posix_time.hpp>
+#include <boost/date_time/gregorian/gregorian.hpp>
 #include <boost/iostreams/stream.hpp>
 #include <boost/iostreams/stream_buffer.hpp>
 #include <boost/iostreams/device/file.hpp>
 #include <boost/iostreams/filtering_stream.hpp>
 #include <boost/iostreams/filter/zlib.hpp>
 #include <boost/iostreams/filter/gzip.hpp>
+#include <boost/math/special_functions/pow.hpp>
+#include <boost/functional/hash.hpp>
+#include <boost/filesystem.hpp>
+#include <boost/progress.hpp>
 #include "api/BamMultiReader.h"
 #include "api/BamReader.h"
 
@@ -43,7 +48,7 @@ Contact: Tobias Rausch (rausch@embl.de)
 #include "bam_file_adaptor.h"
 #include "version.h"
 #include "util.h"
-#include "sam.h"
+#include "tags.h"
 #include "intervaltree.h"
 #include "fasta_reader.h"
 
@@ -62,49 +67,48 @@ struct Config {
   std::vector<boost::filesystem::path> files;
 };
 
-template<typename TChr, typename TPos, typename TQual>
-struct Hit {
-  TChr chr;
+template<typename TPos, typename TQual>
+struct HitInterval {
   TPos start;
   TPos end;
   TQual qual;
   
-  Hit() {}
+  HitInterval() {}
 
-  Hit(BamTools::BamAlignment const& al) : chr(al.RefID), start(al.Position+1), end(al.MatePosition+1), qual(al.MapQuality) {}
+  HitInterval(TPos const s, TPos const e, TQual const q) : start(s+1), end(e+1), qual(q) {}
 };
 
 
-template<typename TChr, typename TPos>
-struct Hit<TChr, TPos, void> {
-  TChr chr;
+template<typename TPos>
+struct HitInterval<TPos, void> {
   TPos start;
   TPos end;
   
-  Hit() {}
+  HitInterval() {}
 
-  Hit(BamTools::BamAlignment const& al) : chr(al.RefID), start(al.Position+1), end(al.MatePosition+1) {}
+  HitInterval(TPos const s, TPos const e) : start(s+1), end(e+1) {}
+
+  template<typename TQual>
+  HitInterval(TPos const s, TPos const e, TQual) : start(s+1), end(e+1) {}
 };
 
 
-template<typename THit>
-struct SortHits : public std::binary_function<THit, THit, bool>
+template<typename THitInterval>
+struct SortHits : public std::binary_function<THitInterval, THitInterval, bool>
 {
-  inline bool operator()(THit const& hit1, THit const& hit2) {
-    if (hit1.chr != hit2.chr) return (hit1.chr < hit2.chr);
-    if (hit1.start == hit2.start) return (hit1.end < hit2.end);
-    else return (hit1.start < hit2.start);
+  inline bool operator()(THitInterval const& hit1, THitInterval const& hit2) {
+    return (hit1.start < hit2.start) || ((hit1.start == hit2.start) && (hit1.end < hit2.end));
   }
 };
 
 
-template<typename TChr, typename TPos, typename TChar, typename TIterator, typename TArrayType>
+template<typename TPos, typename TQual, typename TArrayType>
 inline void
-_addReadAndBpCounts(std::vector<Hit<TChr, TPos, TChar> > const& hit_vector, TIterator const chrSEit, TArrayType* bp_count)
+_addReadAndBpCounts(std::vector<HitInterval<TPos, TQual> > const& hit_vector, TArrayType* bp_count)
 {
-  typedef std::vector<Hit<TChr, TPos, TChar> > THits;
-  typename THits::const_iterator vecBeg = hit_vector.begin() + chrSEit->second.first;
-  typename THits::const_iterator vecEnd = hit_vector.begin() + chrSEit->second.second;
+  typedef std::vector<HitInterval<TPos, TQual> > THits;
+  typename THits::const_iterator vecBeg = hit_vector.begin();
+  typename THits::const_iterator vecEnd = hit_vector.end();
   
   // Add bp counts
   for(;vecBeg!=vecEnd; ++vecBeg) {
@@ -115,27 +119,31 @@ _addReadAndBpCounts(std::vector<Hit<TChr, TPos, TChar> > const& hit_vector, TIte
 }
 
 
-template<typename TChr, typename TIterator, typename TPos, typename TString>
+template<typename TPos, typename TString>
 inline void
-  _buildMAPQString(std::vector< Hit<TChr, TPos, void> >&, TIterator const, TPos const, TPos const, std::vector<TString>&)
+  _buildMAPQString(std::vector< HitInterval<TPos, void> >&, TPos const, TPos const, std::vector<TString>&)
 {
   // Nothing to do
 }
 
-template<typename TChr, typename TQual, typename TIterator, typename TPos, typename TString>
+template<typename TQual, typename TPos, typename TString>
 inline void
-  _buildMAPQString(std::vector< Hit<TChr, TPos, TQual> >& hit_vector, TIterator const chrSEit, TPos const posStart, TPos const posEnd, std::vector<TString>& str)
+  _buildMAPQString(std::vector< HitInterval<TPos, TQual> >& hit_vector, TPos const posStart, TPos const posEnd, std::vector<TString>& str)
 {
-  typedef Hit<TChr, TPos, TQual> THit;
-  typedef std::vector<THit> THits;
-  typename THits::const_iterator vecBeg = hit_vector.begin() + chrSEit->second.first;
-  typename THits::const_iterator vecEnd = hit_vector.begin() + chrSEit->second.second;
+  typedef std::vector<TString> TStringVector;
+  typedef HitInterval<TPos, TQual> THit;
+  typedef std::vector< THit > THits;
+  typename THits::const_iterator vecBeg = hit_vector.begin();
+  typename THits::const_iterator vecEnd = hit_vector.end();
+
+  // Initialize result vector
+  str.resize(posEnd-posStart);
+  std::fill(str.begin(), str.end(), "");
 
   // Add mapq counts
   int searchRange = posStart - 10000;
   if (searchRange < 0) searchRange=0;
   THit hit;
-  hit.chr=vecBeg->chr;
   hit.start=searchRange;
   hit.end=searchRange;
   typename THits::const_iterator vecIt = std::lower_bound(vecBeg, vecEnd, hit, SortHits<THit>());
@@ -149,6 +157,12 @@ inline void
 	str[i-posStart].append(s.str());
       }
     }
+  }
+  // Remove trailing ,
+  typename TStringVector::iterator itStr = str.begin();
+  typename TStringVector::iterator itStrEnd = str.end();
+  for(;itStr!=itStrEnd;++itStr) {
+    if (itStr->size()) itStr->erase(itStr->size() - 1);
   }
 }
 
@@ -175,333 +189,255 @@ _mateIsUpstream(TDefaultOrientation defOrient, bool firstRead, bool reverse) {
   }
 }   
 
-template<typename TChr, typename TInterval, typename TAlignRecord, typename THit>
-inline void
-_insertInterval(std::map<TChr, IntervalTree<TInterval>* > const& chrIntervals, TAlignRecord const& al, std::vector<THit>& hit_vector) {
-  typedef IntervalTree<TInterval> TIntervalTree;
-  typedef std::map<TChr, TIntervalTree*> TChrIntervalTrees;
-  typename TChrIntervalTrees::const_iterator findTree = chrIntervals.find( al.RefID );
-  if (findTree != chrIntervals.end()) {
-    TIntervalTree* iTree = findTree->second;
-    typedef std::vector<TInterval> TResultVec;
-    TResultVec results;
-    TInterval searchInt(al.Position, al.MatePosition);
-    iTree->enumOverlapInterval(searchInt, results);
-    if (!results.empty()) {
-      hit_vector.push_back(THit(al));
-    }
-  }
-}
-
-template<typename TChr, typename TPos, typename TChar, typename TChrSE>
-inline void 
-_dissectHitVector(std::vector<Hit<TChr, TPos, TChar> > const& hit_vector, TChrSE& chrSE) {
-  typedef std::vector<Hit<TChr, TPos, TChar> > THits;
-  typename THits::const_iterator vecBeg = hit_vector.begin();
-  typename THits::const_iterator vecEnd = hit_vector.end();
-  if (vecBeg != vecEnd) {
-    TChr curChr = vecBeg->chr;
-    TPos posStart = 0;
-    TPos posEnd = 0;
-    for(;vecBeg!=vecEnd; ++vecBeg, ++posEnd) {
-      if (curChr != vecBeg->chr) {
-	chrSE.insert(std::make_pair(curChr, std::make_pair(posStart, posEnd)));
-	curChr = vecBeg->chr;
-	posStart=posEnd;
-      }
-    }
-    if (posStart != posEnd) chrSE.insert(std::make_pair(curChr, std::make_pair(posStart, posEnd)));
-  }
-}
-
-template<typename TChr, typename TPos, typename TQual>
-inline void
-run(Config const& c)
+template<typename THit>
+inline int
+run(Config const& c, THit)
 {
   // Valid interval file?
   if (!(boost::filesystem::exists(c.int_file) && boost::filesystem::is_regular_file(c.int_file) && boost::filesystem::file_size(c.int_file))) {
     std::cerr << "Error: " << c.int_file.string() << " does not exist or it is empty." << std::endl;
-    return;
+    return -1;
   }
-
-  // Read bam files
-  BamTools::BamReader readerFirst;
-  if ( ! readerFirst.Open(c.files[0].string()) ) {
-    std::cerr << "Could not open input bam file!" << std::endl;
-    return;
-  }
-
-  // Built chromosome map
-  typedef std::map<std::string, TChr> TChrToChar;
-  TChrToChar chrToChar;
-  const BamTools::RefVector references = readerFirst.GetReferenceData();
-  BamTools::RefVector::const_iterator refIt = references.begin();
-  BamTools::RefVector::const_iterator refItEnd = references.end();
-  for (TChr fa_count=0;refIt!=refItEnd; ++refIt, ++fa_count) {
-    chrToChar.insert(std::make_pair(refIt->RefName, fa_count));
-  }
-
-  // Put the SV intervals into an interval tree (one for each chromosome)
-  typedef Interval<unsigned int> TInterval;
-  typedef IntervalTree<TInterval> TIntervalTree;
-  typedef std::map<TChr, TIntervalTree*> TChrIntervalTrees;
-  TChrIntervalTrees chrIntervals;
-  typedef Record<std::string, unsigned int, unsigned int, void, void, void, void, void, void, void, void, void> TRecord;
-  unsigned int line_counter = 0;
-  Memory_mapped_file map_file(c.int_file.c_str());
-  char buffer[Memory_mapped_file::MAX_LINE_LENGTH];
-  while (map_file.left_bytes() > 0) {
-    map_file.read_line(buffer);
-    Tokenizer token(buffer, Memory_mapped_file::MAX_LINE_LENGTH);
-    TRecord line;
-    addF0(token, line);
-    addF1(token, line);
-    addF2(token, line);
-    typename TChrToChar::const_iterator chrEx = chrToChar.find( line.f0 );
-    if (chrEx == chrToChar.end()) {
-      std::cerr << "Warning: " << line.f0 << ":" << line.f1 << "-" << line.f2 << " does not exist in bam file. Interval will be ignored!" << std::endl;
-      continue;
-    }
-    typename TChrIntervalTrees::iterator findTree = chrIntervals.find( chrEx->second );
-    if (findTree == chrIntervals.end()) findTree = chrIntervals.insert(std::make_pair(chrEx->second, new TIntervalTree())).first;
-    TIntervalTree* iTree = findTree->second;
-    TInterval newInt;
-    newInt.low = line.f1 - c.bpWindowOffset;
-    newInt.high = (c.bpWindowOffset) ? (line.f1 + c.bpWindowOffset) : (line.f1 + 1);
-    newInt.cargo = line_counter++;
-    iTree->insertInterval(newInt);
-    newInt.low = line.f2 - c.bpWindowOffset;
-    newInt.high = (c.bpWindowOffset) ? (line.f2 + c.bpWindowOffset) : (line.f2 + 1);
-    newInt.cargo = line_counter++;
-    iTree->insertInterval(newInt);
-  }
-
-  // Create hit vector
-  typedef Hit<TChr, TPos, TQual> THit;
-  typedef std::vector<THit> THits;
-  THits hit_vector;  
 
   // Create library objects
   typedef std::map<std::string, LibraryInfo> TLibraryMap;
-  TLibraryMap libInfo;
+  typedef std::map<std::string, TLibraryMap> TSampleLibrary;
+  TSampleLibrary sampleLib;
 
-  // Store all spanning ranges
-  typedef std::vector<THit> THits;
-  THits normalSpan;  
-  THits missingSpan;  
 
-  // Read all input alignments
+  // Scan libraries first
+  BamTools::RefVector references;
   for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
-    getLibraryParams(c.files[file_c], libInfo, 0, 3);
-    unsigned int maxNormalISize = libInfo[file_c].median + 3 * libInfo[file_c].mad;
-    unsigned int minNormalISize = (libInfo[file_c].median - 3 * libInfo[file_c].mad > 0) ? (libInfo[file_c].median - 3 * libInfo[file_c].mad) : 1;
-    std::cout << "Library: " << c.files[file_c] << " (Median: " << libInfo[file_c].median << ", MAD: " << libInfo[file_c].mad << ", Orientation: " << (int) libInfo[file_c].defaultOrient << ", Insert size cutoffs: [" << minNormalISize << "," << maxNormalISize << "] )" << std::endl;
-    int defOrient = libInfo[file_c].defaultOrient;
-    if (libInfo[file_c].median == 0) continue; // Single-end library
+    // Get a sample name
+    std::string sampleName(c.files[file_c].stem().string());
+
+    // Check that all input bam files exist
     BamTools::BamReader reader;
     if ( ! reader.Open(c.files[file_c].string()) ) {
-      std::cerr << "Could not open " << c.files[file_c].string() << " !" << std::endl;
-      return;
+      std::cerr << "Could not open input bam file: " << c.files[file_c].string() << std::endl;
+      reader.Close();
+      return -1;
     }
-    BamTools::BamAlignment al;
-    while( reader.GetNextAlignmentCore(al) ) {
-      if ((al.AlignmentFlag & 0x0004) || (al.AlignmentFlag & 0x0200) || (al.AlignmentFlag & 0x0400) || (al.AlignmentFlag & 0x0100)) continue;
-      if (al.MapQuality < c.minMapQual) continue;
-      if (al.RefID < (TPos) references.size()) {
-	// ToDo: Single-anchored reads still missing!!!
-	if ((al.AlignmentFlag & 0x0001) && !(al.AlignmentFlag & 0x0004) && !(al.AlignmentFlag & 0x0008)) {
-	  if ((al.RefID == al.MateRefID) && (al.Position>al.MatePosition)) {
-	    // Get the proper length of the fragment based on the CIGAR string
-	    unsigned int num_start = 0;
-	    unsigned int num_end = 0;
-	    unsigned int readLen = 0;
-	    std::string cigar = cigarString(al.CigarData);
-	    std::string::const_iterator cig = cigar.begin();
-	    std::string::const_iterator cigEnd = cigar.end();
-	    for(;cig!=cigEnd; ++num_end, ++cig) {
-	      if (((int) *cig >=48) && ((int) *cig <= 57)) continue;
-	      unsigned int len = atoi(cigar.substr(num_start, (num_end-num_start)).c_str());
-	      if (*cig == 'M') readLen+=len;
-	      else if ((*cig == 'D') && (len <= 5)) readLen+=len;
-	      else if ((*cig == 'D') && (len > 5)) break;
-	      else if ((*cig == 'I') && (len > 5)) break;
-	      else if ((*cig == 'N') || (*cig == 'S') || (*cig == 'H')) break;
-	      num_start = num_end + 1;
-	    }	    
-	    if (readLen > 0) {
-	      BamTools::BamAlignment alBound;
-	      alBound.RefID=al.RefID;
-	      alBound.MapQuality=al.MapQuality;
-	      // Normal spanning coverage
-	      unsigned int outerISize = (al.Position + readLen) - al.MatePosition;
-	      if ((getStrandIndependentOrientation(al) == defOrient) && (outerISize >= minNormalISize) && (outerISize <= maxNormalISize)) {
-		// Abuse Position and MatePosition as (low,high) fragment boundaries
-		alBound.Position=al.MatePosition;
-		alBound.MatePosition=al.Position+readLen;
-		_insertInterval(chrIntervals, alBound, normalSpan);
-	      }
-	      // Missing spanning coverage
-	      if ((getStrandIndependentOrientation(al) != defOrient) || (outerISize >= (unsigned int) libInfo[file_c].median + 5 * libInfo[file_c].mad)) {
-		if (_mateIsUpstream(defOrient, (al.AlignmentFlag & 0x0040), (al.AlignmentFlag & 0x0010))) {
-		  alBound.Position=al.Position;
-		  alBound.MatePosition=al.Position+minNormalISize;
-		  _insertInterval(chrIntervals, alBound, missingSpan);
-		} else {
-		  alBound.Position=al.Position + readLen - minNormalISize;
-		  alBound.MatePosition=al.Position+readLen;
-		  _insertInterval(chrIntervals, alBound, missingSpan);
-		}
-		if (_mateIsUpstream(defOrient, !(al.AlignmentFlag & 0x0040), (al.AlignmentFlag & 0x0020))) {
-		  alBound.Position=al.MatePosition;
-		  alBound.MatePosition=al.MatePosition+minNormalISize;
-		  _insertInterval(chrIntervals, alBound, missingSpan);
-		} else { 
-		  alBound.Position=al.MatePosition + readLen - minNormalISize;
-		  alBound.MatePosition=al.MatePosition + readLen;
-		  _insertInterval(chrIntervals, alBound, missingSpan);
-		}
-	      }
-	    }
-	  }
-	}
-      }
+    
+    // Check that all input bam files are indexed
+    reader.LocateIndex();
+    if ( !reader.HasIndex() ) {
+      std::cerr << "Missing bam index file: " << c.files[file_c].string() << std::endl;
+      reader.Close();
+      return -1;
     }
+
+    // Get references
+    if (file_c==0) references = reader.GetReferenceData();
+
+    // Get library parameters and overall maximum insert size
+    TLibraryMap libInfo;
+    getLibraryParams(c.files[file_c], libInfo, 0, 3);
+    sampleLib.insert(std::make_pair(sampleName, libInfo));
   }
 
-  // Free all allocated interval trees
-  typename TChrIntervalTrees::iterator treeBeg = chrIntervals.begin();
-  typename TChrIntervalTrees::iterator treeEnd = chrIntervals.end();
-  for(;treeBeg != treeEnd; ++treeBeg) delete treeBeg->second;
-  
-  // Sort SAM records by chromosome and start position
-  sort(normalSpan.begin(), normalSpan.end(), SortHits<THit>());
-  sort(missingSpan.begin(), missingSpan.end(), SortHits<THit>());
-
-  // Get all chromosome ranges in the hit vectors
-  typedef std::pair<unsigned int, unsigned int> TStartEnd;
-  typedef std::map<TChr, TStartEnd> TChrSE;
-  TChrSE chrNormalSE;
-  _dissectHitVector(normalSpan, chrNormalSE);
-  TChrSE chrMissingSE;
-  _dissectHitVector(missingSpan, chrMissingSE);
-
-  // Declare the chromosome array
-  typedef unsigned short TArrayType;
-  TArrayType* normalCount = new TArrayType[MAX_CHROM_SIZE];
-  TArrayType* missingCount = new TArrayType[MAX_CHROM_SIZE];
-
+  // Read all SV intervals
+  typedef std::vector<StructuralVariantRecord> TSVs;
+  TSVs svs;
+  std::map<unsigned int, std::string> idToName;
+  unsigned int intervalCount=0;
+  if (isValidFile(c.int_file.string())) {
+    Memory_mapped_file interval_file(c.int_file.string().c_str());
+    char interval_buffer[Memory_mapped_file::MAX_LINE_LENGTH];
+    while (interval_file.left_bytes() > 0) {
+      interval_file.read_line(interval_buffer);
+      // Read single interval line
+      StructuralVariantRecord sv;
+      Tokenizer token(interval_buffer, Memory_mapped_file::MAX_LINE_LENGTH);
+      std::string interval_rname;
+      token.getString(sv.chr);
+      sv.svStart = token.getUInt();
+      sv.svEnd = token.getUInt();
+      std::string svName;
+      token.getString(svName);
+      idToName.insert(std::make_pair(intervalCount, svName));
+      sv.id = intervalCount++;
+      svs.push_back(sv);
+    }
+    interval_file.close();
+  }
 
   // Output file
   boost::iostreams::filtering_ostream dataOut;
   dataOut.push(boost::iostreams::gzip_compressor());
   dataOut.push(boost::iostreams::file_sink(c.outfile.c_str(), std::ios_base::out | std::ios_base::binary));
 
-  // Process each chromosome
-  std::cout << "Processing chromosomes..." << std::endl;
-  typename TChrToChar::const_iterator chrToCharIt = chrToChar.begin();
-  typename TChrToChar::const_iterator chrToCharItEnd = chrToChar.end();
-  for(;chrToCharIt != chrToCharItEnd; ++chrToCharIt) {
-    const TPos chrLen = references[(int) chrToCharIt->second].RefLength;
-    const std::string chrName = references[(int) chrToCharIt->second].RefName;
-    std::cout << chrName << " (Length: " << chrLen << ")" << std::endl;
+  // Process chromosome by chromosome
+  std::cout << "Breakpoint spanning coverage annotation" << std::endl;
+  boost::progress_display show_progress( (references.end() - references.begin()) );
+  BamTools::RefVector::const_iterator  itRef = references.begin();
+  for(int refIndex=0;itRef!=references.end();++itRef, ++refIndex) {
+    ++show_progress;
 
-    // Set all values to zero
-    std::fill(normalCount, normalCount + MAX_CHROM_SIZE, 0);
-    std::fill(missingCount, missingCount + MAX_CHROM_SIZE, 0);
+    // Iterate all samples
+    for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
+      // Create hit vector
+      typedef std::vector<THit> THits;
+      THits hit_vector;  
 
-    // Iterate all reads of that chromosome
-    typename TChrSE::const_iterator chrSEit = chrNormalSE.find(chrToCharIt->second);
-    if (chrSEit != chrNormalSE.end()) 
-      _addReadAndBpCounts(normalSpan, chrSEit, normalCount);
-    chrSEit = chrMissingSE.find(chrToCharIt->second);
-    if (chrSEit != chrMissingSE.end())
-      _addReadAndBpCounts(missingSpan, chrSEit, missingCount);
+      // Store all spanning ranges
+      typedef std::vector<THit> THits;
+      THits normalSpan;  
+      THits missingSpan;  
 
-    // Write spanning coverage for all input intervals
-    if (isValidFile(c.int_file.string())) {
-        Memory_mapped_file interval_file(c.int_file.string().c_str());
-	char interval_buffer[Memory_mapped_file::MAX_LINE_LENGTH];
-	while (interval_file.left_bytes() > 0) {
-	  interval_file.read_line(interval_buffer);
-	  // Read single interval line
-	  Tokenizer token(interval_buffer, Memory_mapped_file::MAX_LINE_LENGTH);
-	  std::string interval_rname;
-	  token.getString(interval_rname);
-	  if (interval_rname.compare(chrToCharIt->first)) continue;
-	  int intervalStart = token.getUInt();
-	  int intervalEnd = token.getUInt();
-	  std::string id;
-	  token.getString(id);
+      // Get a sample name
+      std::string sampleName(c.files[file_c].stem().string());
+      TSampleLibrary::iterator sampleIt=sampleLib.find(sampleName);
+
+      // Initialize bam file
+      BamTools::BamReader reader;
+      if ( ! reader.Open(c.files[file_c].string()) ) return -1;
+      reader.LocateIndex();
+      if ( !reader.HasIndex() ) return -1;
+
+      // Unique pairs for the given sample
+      typedef std::set<Hit> TUniquePairs;
+      TUniquePairs unique_pairs;
+
+      // Read alignments and hash qualities
+      uint16_t* qualities = new uint16_t[(int)boost::math::pow<28>(2)];
+      uint16_t* qualitiesEnd = qualities + (int) boost::math::pow<28>(2);
+      std::fill(qualities, qualitiesEnd, 0);
+      BamTools::BamAlignment al;
+      if (reader.Jump(refIndex, 0)) {
+	while( reader.GetNextAlignment(al) ) {
+	  if (al.RefID != refIndex) break;
+	  if (!(al.AlignmentFlag & 0x0001) || (al.AlignmentFlag & 0x0004) || (al.AlignmentFlag & 0x0008) || (al.AlignmentFlag & 0x0100) || (al.AlignmentFlag & 0x0200) || (al.AlignmentFlag & 0x0400) || (al.Position==al.MatePosition) || (al.RefID!=al.MateRefID) || (al.MapQuality < c.minMapQual)) continue;
+	  // Get the library information
+	  std::string rG = "DefaultLib";
+	  al.GetTag("RG", rG);
+	  TLibraryMap::iterator libIt=sampleIt->second.find(rG);
+	  if (libIt->second.median == 0) continue; // Single-end library
+
+	  // Get or store the mapping quality for the partner
+	  if (al.Position<al.MatePosition) {
+	    // Hash the quality
+	    boost::hash<std::string> hashStr;
+	    unsigned int index=((hashStr(al.Name) % (int)boost::math::pow<4>(2))<<24) + ((al.Position % (int)boost::math::pow<12>(2))<<12) + (al.MatePosition % (int)boost::math::pow<12>(2));
+
+	    qualities[index]=al.MapQuality;
+	  } else {
+	    // Get the two mapping qualities
+	    boost::hash<std::string> hashStr;
+	    unsigned int index=((hashStr(al.Name) % (int)boost::math::pow<4>(2))<<24) + ((al.MatePosition % (int)boost::math::pow<12>(2))<<12) + (al.Position % (int)boost::math::pow<12>(2));
+	    uint16_t pairQuality = std::min(qualities[index], al.MapQuality);
+
+	    // Is it a unique pair
+	    Hit hitPos(al);
+	    TUniquePairs::const_iterator pos = unique_pairs.begin();
+	    bool inserted;
+	    boost::tie(pos, inserted) = unique_pairs.insert(hitPos);
+	    if (inserted) {
+	      // Insert the interval
+	      unsigned int outerISize = (al.Position + al.Length) - al.MatePosition;
+	      if ((getStrandIndependentOrientation(al) == libIt->second.defaultOrient) && (outerISize >= libIt->second.minNormalISize) && (outerISize <= libIt->second.maxNormalISize)) {
+		// Normal spanning coverage
+		normalSpan.push_back(THit(al.MatePosition, al.Position+al.Length, pairQuality));
+	      } else if ((getStrandIndependentOrientation(al) != libIt->second.defaultOrient) || (outerISize >= libIt->second.median + 5 * libIt->second.mad)) {
+		// Missing spanning coverage
+		if (_mateIsUpstream(libIt->second.defaultOrient, (al.AlignmentFlag & 0x0040), (al.AlignmentFlag & 0x0010))) 
+		  missingSpan.push_back(THit(al.Position, al.Position + libIt->second.median, pairQuality));
+		else
+		  missingSpan.push_back(THit(std::max(0, al.Position + al.Length - libIt->second.median), al.Position + al.Length, pairQuality));
+		if (_mateIsUpstream(libIt->second.defaultOrient, !(al.AlignmentFlag & 0x0040), (al.AlignmentFlag & 0x0020)))
+		  missingSpan.push_back(THit(al.MatePosition, al.MatePosition + libIt->second.median, pairQuality));
+		else
+		  missingSpan.push_back(THit(std::max(0, al.MatePosition + al.Length - libIt->second.median), al.MatePosition + al.Length, pairQuality));
+	      }
+	      ++libIt->second.unique_pairs;
+	    } else {
+	      ++libIt->second.non_unique_pairs;
+	    }
+	  }
+	}
+      }
+      delete [] qualities;
+
+      // Sort SAM records by start position
+      sort(normalSpan.begin(), normalSpan.end(), SortHits<THit>());
+      sort(missingSpan.begin(), missingSpan.end(), SortHits<THit>());
+
+      // Declare the chromosome array
+      typedef unsigned short TArrayType;
+      TArrayType* normalCount = new TArrayType[MAX_CHROM_SIZE];
+      TArrayType* missingCount = new TArrayType[MAX_CHROM_SIZE];
+      std::fill(normalCount, normalCount + MAX_CHROM_SIZE, 0);
+      std::fill(missingCount, missingCount + MAX_CHROM_SIZE, 0);
+      _addReadAndBpCounts(normalSpan, normalCount);
+      _addReadAndBpCounts(missingSpan, missingCount);
+
+      // Write spanning coverage for all input intervals
+      typename TSVs::const_iterator itSV = svs.begin();
+      typename TSVs::const_iterator itSVEnd = svs.end();
+      for(;itSV!=itSVEnd;++itSV) {
+	if (itSV->chr == references[refIndex].RefName) {
 	  // First breakpoint
-	  int posStart = (intervalStart - c.bpWindowOffset < 0) ? 0 : (intervalStart - c.bpWindowOffset);
-	  int posEnd = (c.bpWindowOffset) ? (intervalStart + c.bpWindowOffset) : (intervalStart + 1);
+	  int posStart = (itSV->svStart - c.bpWindowOffset < 0) ? 0 : (itSV->svStart - c.bpWindowOffset);
+	  int posEnd = (c.bpWindowOffset) ? (itSV->svStart + c.bpWindowOffset) : (itSV->svStart + 1);
 	  if (!c.mapq) {
 	    TArrayType* normalCountPoint = &normalCount[posStart];
 	    TArrayType* missingCountPoint = &missingCount[posStart];
-	    for(int i=posStart; i<posEnd; ++i, ++normalCountPoint, ++missingCountPoint) dataOut << id << "\t" << 0 << "\t" << chrToCharIt->first << "\t" << i << "\t" << *normalCountPoint << "\t" << *missingCountPoint << std::endl;
+	    for(int i=posStart; i<posEnd; ++i, ++normalCountPoint, ++missingCountPoint) dataOut << idToName.find(itSV->id)->second << "\t" << 0 << "\t" << itSV->chr << "\t" << i << "\t" << *normalCountPoint << "\t" << *missingCountPoint << std::endl;
 	  } else {
 	    std::vector<std::string> normalStr;
-	    normalStr.resize(posEnd-posStart);
-	    std::fill(normalStr.begin(), normalStr.end(), "");
-	    chrSEit = chrNormalSE.find(chrToCharIt->second);
-	    if (chrSEit != chrNormalSE.end())
-	      _buildMAPQString(normalSpan, chrSEit, posStart, posEnd, normalStr);
 	    std::vector<std::string> missingStr;
-	    missingStr.resize(posEnd-posStart);
-	    std::fill(missingStr.begin(), missingStr.end(), "");
-	    chrSEit = chrMissingSE.find(chrToCharIt->second);
-	    if (chrSEit != chrMissingSE.end())
-	      _buildMAPQString(missingSpan, chrSEit, posStart, posEnd, missingStr);
+	    _buildMAPQString(normalSpan, posStart, posEnd, normalStr);
+	    _buildMAPQString(missingSpan, posStart, posEnd, missingStr);
 	    for(int i=posStart; i<posEnd; ++i) {
-	      if (normalStr[i - posStart].size()) normalStr[i - posStart].erase(normalStr[i - posStart].size()-1);
-	      if (missingStr[i - posStart].size()) missingStr[i - posStart].erase(missingStr[i - posStart].size()-1);
-	      dataOut << id << "\t" << 0 << "\t" << chrToCharIt->first << "\t" << i << "\t" << normalStr[i - posStart] << "\t" << missingStr[i-posStart] << std::endl;
+	      dataOut << idToName.find(itSV->id)->second << "\t" << 0 << "\t" << itSV->chr << "\t" << i << "\t" << normalStr[i - posStart] << "\t" << missingStr[i-posStart] << std::endl;
 	    }
 	  }
 	  
 	  // Second breakpoint
-	  posStart = (intervalEnd - c.bpWindowOffset < 0) ? 0 : (intervalEnd - c.bpWindowOffset);
-	  posEnd = (c.bpWindowOffset) ? (intervalEnd + c.bpWindowOffset) : (intervalEnd + 1);
+	  posStart = (itSV->svEnd - c.bpWindowOffset < 0) ? 0 : (itSV->svEnd - c.bpWindowOffset);
+	  posEnd = (c.bpWindowOffset) ? (itSV->svEnd + c.bpWindowOffset) : (itSV->svEnd + 1);
 	  if (!c.mapq) {
 	    TArrayType* normalCountPoint = &normalCount[posStart];
 	    TArrayType* missingCountPoint = &missingCount[posStart];
-	    for(int i=posStart; i<posEnd; ++i, ++normalCountPoint, ++missingCountPoint) dataOut << id << "\t" << 1 << "\t" << chrToCharIt->first << "\t" << i << "\t" << *normalCountPoint << "\t" << *missingCountPoint << std::endl;
+	    for(int i=posStart; i<posEnd; ++i, ++normalCountPoint, ++missingCountPoint) dataOut << idToName.find(itSV->id)->second << "\t" << 1 << "\t" << itSV->chr << "\t" << i << "\t" << *normalCountPoint << "\t" << *missingCountPoint << std::endl;
 	  } else {
 	    std::vector<std::string> normalStr;
-	    normalStr.resize(posEnd-posStart);
-	    std::fill(normalStr.begin(), normalStr.end(), "");
-	    chrSEit = chrNormalSE.find(chrToCharIt->second);
-	    if (chrSEit != chrNormalSE.end())
-	      _buildMAPQString(normalSpan, chrSEit, posStart, posEnd, normalStr);
 	    std::vector<std::string> missingStr;
-	    missingStr.resize(posEnd-posStart);
-	    std::fill(missingStr.begin(), missingStr.end(), "");
-	    chrSEit = chrMissingSE.find(chrToCharIt->second);
-	    if (chrSEit != chrMissingSE.end())
-	      _buildMAPQString(missingSpan, chrSEit, posStart, posEnd, missingStr);
+	    _buildMAPQString(normalSpan, posStart, posEnd, normalStr);
+	    _buildMAPQString(missingSpan, posStart, posEnd, missingStr);
 	    for(int i=posStart; i<posEnd; ++i) {
-	      if (normalStr[i - posStart].size()) normalStr[i - posStart].erase(normalStr[i - posStart].size()-1);
-	      if (missingStr[i - posStart].size()) missingStr[i - posStart].erase(missingStr[i - posStart].size()-1);
-	      dataOut << id << "\t" << 1 << "\t" << chrToCharIt->first << "\t" << i << "\t" << normalStr[i-posStart] << "\t" << missingStr[i-posStart] << std::endl;
+	      dataOut << idToName.find(itSV->id)->second << "\t" << 1 << "\t" << itSV->chr << "\t" << i << "\t" << normalStr[i-posStart] << "\t" << missingStr[i-posStart] << std::endl;
 	    }
 	  }
 	}
-	interval_file.close();
+      }
+
+      // Clean-up
+      delete[] normalCount;
+      delete[] missingCount;
+    }
+  }
+
+  // Output library statistics
+  std::cout << "Library statistics" << std::endl;
+  TSampleLibrary::const_iterator sampleIt=sampleLib.begin();
+  for(;sampleIt!=sampleLib.end();++sampleIt) {
+    std::cout << "Sample: " << sampleIt->first << std::endl;
+    TLibraryMap::const_iterator libIt=sampleIt->second.begin();
+    for(;libIt!=sampleIt->second.end();++libIt) {
+      std::cout << "RG: ID=" << libIt->first << ",Median=" << libIt->second.median << ",MAD=" << libIt->second.mad << ",Orientation=" << (int) libIt->second.defaultOrient << ",MinInsertSize=" << libIt->second.minNormalISize << ",MaxInsertSize=" << libIt->second.maxNormalISize << ",DuplicatePairs=" << libIt->second.non_unique_pairs << ",UniquePairs=" << libIt->second.unique_pairs << std::endl;
     }
   }
   
-  // Clean-up
-  delete[] normalCount;
-  delete[] missingCount;
-
   // End
-  std::cout << '[' << boost::posix_time::second_clock::local_time() << "] Done." << std::endl;
+  boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
+  std::cout << '[' << boost::posix_time::to_simple_string(now) << "] Done." << std::endl;;
+  return 0;
 }
 
 
 int main(int argc, char **argv) {
   Config c;
-  c.mapq=false;
 
   // Define required options
   boost::program_options::options_description required("Required options");
@@ -540,25 +476,22 @@ int main(int argc, char **argv) {
   // Check command line arguments
   if ((vm.count("help")) || (!vm.count("intervals")) || (!vm.count("input-file"))) { 
     printTitle("Spanning coverage calculation");
-    std::cout << "Usage: " << argv[0] << " [OPTIONS] <aligned1.sam/bam> <aligned2.sam/bam> ..." << std::endl;
+    std::cout << "Usage: " << argv[0] << " [OPTIONS] <sample1.bam> <sample2.bam> ..." << std::endl;
     std::cout << visible_options << "\n"; 
-    return 1; 
+    return -1; 
   }
 
   // Show cmd
-  std::cout << '[' << boost::posix_time::second_clock::local_time() << "] ";
+  boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
+  std::cout << '[' << boost::posix_time::to_simple_string(now) << "] ";
   for(int i=0; i<argc; ++i) { std::cout << argv[i] << ' '; }
   std::cout << std::endl;
 
   // Do we need to include the qualities
   if (vm.count("show-mapq")) c.mapq=true;
-
-  // Clear the outfile because we use append later
-  unlink(c.outfile.c_str());
+  else c.mapq=false;
 
   // Run spanning coverage
-  if (c.mapq) run<int32_t, int32_t, unsigned short>(c);
-  else run<int32_t, int32_t, void>(c);
-
-  return 0;
+  if (c.mapq) return run(c, HitInterval<int32_t, uint16_t>());
+  else return run(c, HitInterval<int32_t, void>());
 }

@@ -217,6 +217,7 @@ namespace torali
     int median;
     int mad;
     int percentileCutoff;
+    int minNormalISize;
     int maxNormalISize;
     int defaultOrient;
     unsigned int non_unique_pairs;
@@ -327,6 +328,8 @@ namespace torali
 	libInfoIt->second.percentileCutoff = (int) percentileCutoff;
 	if (percentile!=0) libInfoIt->second.maxNormalISize = libInfoIt->second.percentileCutoff;
 	else libInfoIt->second.maxNormalISize = libInfoIt->second.median + (madCutoff * libInfoIt->second.mad);
+	libInfoIt->second.minNormalISize = libInfoIt->second.median - (madCutoff * libInfoIt->second.mad);
+	if (libInfoIt->second.minNormalISize < 1) libInfoIt->second.minNormalISize=1;
       }
     }
   }
