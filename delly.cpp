@@ -34,6 +34,7 @@ Contact: Tobias Rausch (rausch@embl.de)
 #include <boost/date_time/posix_time/posix_time.hpp>
 #include <boost/date_time/gregorian/gregorian.hpp>
 #include <boost/math/special_functions/pow.hpp>
+#include <boost/multiprecision/cpp_dec_float.hpp>
 #include <boost/functional/hash.hpp>
 #include <boost/filesystem.hpp>
 #include <boost/progress.hpp>
@@ -756,6 +757,8 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TC
 {
   // Typedefs
   typedef typename TCountMap::key_type TSampleSVPair;
+  typedef typename TCountMap::mapped_type TCountRange;
+  typedef typename TCountRange::value_type TMapqVector;
 
   // Output all structural variants
   std::ofstream ofile(c.outfile.string().c_str());
@@ -781,6 +784,10 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TC
   ofile << "##INFO=<ID=SVLEN,Number=1,Type=Integer,Description=\"Length of the SV\">" << std::endl;
   ofile << "##INFO=<ID=SVTYPE,Number=1,Type=String,Description=\"Type of structural variant\">" << std::endl;
   ofile << "##INFO=<ID=SVMETHOD,Number=1,Type=String,Description=\"Type of approach used to detect SV\">" << std::endl;
+  ofile << "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">" << std::endl;
+  ofile << "##FORMAT=<ID=GL,Number=G,Type=Float,Description=\"Log10-scaled genotype likelihoods for RR,RA,AA genotypes\">" << std::endl;
+  ofile << "##FORMAT=<ID=GQ,Number=1,Type=Integer,Description=\"Genotype Quality\">" << std::endl;
+  ofile << "##FORMAT=<ID=FT,Number=1,Type=String,Description=\"Per-sample genotype filter\">" << std::endl;
   ofile << "##FORMAT=<ID=DR,Number=1,Type=Integer,Description=\"# high-quality reference pairs\">" << std::endl;
   ofile << "##FORMAT=<ID=DV,Number=1,Type=Integer,Description=\"# high-quality variant pairs\">" << std::endl;
   ofile << "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT";
@@ -794,7 +801,10 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TC
   typedef std::vector<TStructuralVariantRecord> TSVs;
   typename TSVs::const_iterator svIter = svs.begin();
   typename TSVs::const_iterator svIterEnd = svs.end();
+  std::cout << "Genotyping" << std::endl;
+  boost::progress_display show_progress( svs.size() );
   for(;svIter!=svIterEnd;++svIter) {
+    ++show_progress;
 
     // Output main vcf fields
     std::string filterField="PASS";
@@ -822,14 +832,60 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TC
     }
 
     // Add genotype columns (right bp only across all samples)
-    ofile << "\tDR:DV";
+    ofile << "\tGT:GL:GQ:FT:DR:DV";
     for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
       // Get the sample name
       std::string sampleName(c.files[file_c].stem().string());
       TSampleSVPair sampleSVPair = std::make_pair(sampleName, svIter->id);
       typename TCountMap::iterator countMapIt=normalCountMap.find(sampleSVPair);
-      typename TCountMap::iterator abCountMapIt=abnormalCountMap.find(sampleSVPair);	  
-      ofile << "\t" << countMapIt->second[0].size() << ":" << abCountMapIt->second[0].size();
+      typename TCountMap::iterator abCountMapIt=abnormalCountMap.find(sampleSVPair);
+      TMapqVector const& mapqRef = countMapIt->second[0];
+      TMapqVector const& mapqAlt = abCountMapIt->second[0];
+
+      // Compute genotype likelihoods
+      std::vector<boost::multiprecision::cpp_dec_float_100> gl;
+      unsigned int glBest=0;
+      unsigned int peDepth=mapqRef.size() + mapqAlt.size();
+      boost::multiprecision::cpp_dec_float_100 glBestVal=-std::numeric_limits<boost::multiprecision::cpp_dec_float_100>::infinity();
+      boost::multiprecision::cpp_dec_float_100 scaling = -boost::multiprecision::cpp_dec_float_100(1) * boost::multiprecision::log10( boost::multiprecision::pow( boost::multiprecision::cpp_dec_float_100(2),  boost::multiprecision::cpp_dec_float_100(peDepth) ) );
+      for(unsigned int geno=0; geno<=2; ++geno) {
+	boost::multiprecision::cpp_dec_float_100 refLike=0;
+	boost::multiprecision::cpp_dec_float_100 altLike=0;
+	typename TMapqVector::const_iterator mapqRefIt = mapqRef.begin();
+	typename TMapqVector::const_iterator mapqRefItEnd = mapqRef.end();
+	for(;mapqRefIt!=mapqRefItEnd;++mapqRefIt) {
+	  refLike += boost::multiprecision::log10( (boost::multiprecision::cpp_dec_float_100(2.0 - geno) * boost::multiprecision::pow(boost::multiprecision::cpp_dec_float_100(10), -boost::multiprecision::cpp_dec_float_100(*mapqRefIt)/boost::multiprecision::cpp_dec_float_100(10)) + boost::multiprecision::cpp_dec_float_100(geno) * (boost::multiprecision::cpp_dec_float_100(1) - boost::multiprecision::pow(boost::multiprecision::cpp_dec_float_100(10), -boost::multiprecision::cpp_dec_float_100(*mapqRefIt)/boost::multiprecision::cpp_dec_float_100(10) ) ) ) );
+	}
+	typename TMapqVector::const_iterator mapqAltIt = mapqAlt.begin();
+	typename TMapqVector::const_iterator mapqAltItEnd = mapqAlt.end();
+	for(;mapqAltIt!=mapqAltItEnd;++mapqAltIt) {
+	  altLike += boost::multiprecision::log10( (( boost::multiprecision::cpp_dec_float_100(2.0 - geno) * (boost::multiprecision::cpp_dec_float_100(1) - boost::multiprecision::pow(boost::multiprecision::cpp_dec_float_100(10), -boost::multiprecision::cpp_dec_float_100(*mapqAltIt)/boost::multiprecision::cpp_dec_float_100(10) ))) + boost::multiprecision::cpp_dec_float_100(geno) * boost::multiprecision::pow(boost::multiprecision::cpp_dec_float_100(10), -boost::multiprecision::cpp_dec_float_100(*mapqAltIt)/boost::multiprecision::cpp_dec_float_100(10) ) ) );
+	}
+	gl.push_back(scaling+refLike+altLike);
+	if (gl[geno] > glBestVal) {
+	  glBestVal=gl[geno];
+	  glBest = geno;
+	}
+      }
+      // Rescale by best genotype and get second best genotype for GQ
+      boost::multiprecision::cpp_dec_float_100 glSecondBestVal=-std::numeric_limits<boost::multiprecision::cpp_dec_float_100>::infinity();
+      for(unsigned int geno=0; geno<=2; ++geno) {
+	if ((gl[geno]>glSecondBestVal) && (gl[geno]<=glBestVal) && (geno!=glBest)) glSecondBestVal=gl[geno];
+	gl[geno] -= glBestVal;
+      }
+      int gqVal = boost::multiprecision::iround(boost::multiprecision::cpp_dec_float_100(10) * boost::multiprecision::log10( boost::multiprecision::pow(boost::multiprecision::cpp_dec_float_100(10), glBestVal) / boost::multiprecision::pow(boost::multiprecision::cpp_dec_float_100(10), glSecondBestVal) ) );
+      // Output genotypes
+      if (peDepth) {
+	if (glBest==0) ofile << "\t1/1:";
+	else if (glBest==1) ofile << "\t0/1:";
+	else ofile << "\t0/0:";
+	ofile << gl[2] << "," << gl[1] << "," << gl[0] << ":" << gqVal << ":";
+	if (gqVal<15) ofile << "LowQual:";
+	else ofile << "PASS:";
+      } else {
+	ofile << "\t./.:.,.,.:0:LowQual:";
+      }
+      ofile << mapqRef.size() << ":" << mapqAlt.size();
     }
     ofile << std::endl;
   }
@@ -1248,6 +1304,9 @@ inline int run(Config const& c, TSVType svType) {
 	      unsigned int index=((hashStr(al.Name) % (int)boost::math::pow<4>(2))<<24) + ((al.MatePosition % (int)boost::math::pow<12>(2))<<12) + (al.Position % (int)boost::math::pow<12>(2));
 	      uint16_t pairQuality = std::min(qualities[index], al.MapQuality);
 	      //std::cout << al.Name << ',' << qualities[index] << ',' << mateQuality << ',' << pairQuality << ',' << std::endl;
+
+	      // Pair quality
+	      if (pairQuality < c.minMapQual) continue;
 
 	      // Store the paired-end
 	      Hit hitPos(al);

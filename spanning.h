@@ -245,6 +245,7 @@ namespace torali {
 	      boost::hash<std::string> hashStr;
 	      unsigned int index=((hashStr(al.Name) % (int)boost::math::pow<4>(2))<<24) + ((al.MatePosition % (int)boost::math::pow<12>(2))<<12) + (al.Position % (int)boost::math::pow<12>(2));
 	      uint16_t pairQuality = std::min(qualities[index], al.MapQuality);
+	      if (pairQuality < minMapQual) continue;
 
 	      // Is it a unique pair
 	      Hit hitPos(al);
