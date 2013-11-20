@@ -167,7 +167,7 @@ namespace torali {
 
   template<typename TFiles, typename TSampleLibrary, typename TSVs, typename TCountMap, typename THitInterval>
     inline void
-    annotateSpanningCoverage(TFiles const& files, int bpWindowOffset, uint16_t minMapQual, TSampleLibrary& sampleLib, TSVs const& svs, TCountMap& normalCountMap, TCountMap& abnormalCountMap, THitInterval)
+    annotateSpanningCoverage(TFiles const& files, int bpWindowOffset, uint16_t minMapQual, TSampleLibrary& sampleLib, TSVs& svs, TCountMap& normalCountMap, TCountMap& abnormalCountMap, THitInterval)
   {
     typedef typename TCountMap::key_type TSampleSVPair;
     typedef typename TCountMap::mapped_type TCountRange;
