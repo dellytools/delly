@@ -56,7 +56,7 @@ namespace torali {
 
 
   template<typename THitInterval>
-    struct SortHits : public std::binary_function<THitInterval, THitInterval, bool>
+    struct SortHitInterval : public std::binary_function<THitInterval, THitInterval, bool>
     {
       inline bool operator()(THitInterval const& hit1, THitInterval const& hit2) {
 	return (hit1.start < hit2.start) || ((hit1.start == hit2.start) && (hit1.end < hit2.end));
@@ -107,7 +107,7 @@ namespace torali {
     THit hit;
     hit.start=searchRange;
     hit.end=searchRange;
-    typename THits::const_iterator vecIt = std::lower_bound(vecBeg, vecEnd, hit, SortHits<THit>());
+    typename THits::const_iterator vecIt = std::lower_bound(vecBeg, vecEnd, hit, SortHitInterval<THit>());
     for(;vecIt!=vecEnd; ++vecIt) {
       if (vecIt->end < posStart) continue;
       if (vecIt->start > posEnd) break;
@@ -190,7 +190,8 @@ namespace torali {
     }
 
     // Process chromosome by chromosome
-    std::cout << "Breakpoint spanning coverage annotation" << std::endl;
+    boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
+    std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Breakpoint spanning coverage annotation" << std::endl;
     boost::progress_display show_progress( (references.end() - references.begin()) );
     typename BamTools::RefVector::const_iterator  itRef = references.begin();
     for(int refIndex=0;itRef!=references.end();++itRef, ++refIndex) {
@@ -279,8 +280,8 @@ namespace torali {
 	delete [] qualities;
 
 	// Sort SAM records by start position
-	sort(normalSpan.begin(), normalSpan.end(), SortHits<THitInterval>());
-	sort(missingSpan.begin(), missingSpan.end(), SortHits<THitInterval>());
+	sort(normalSpan.begin(), normalSpan.end(), SortHitInterval<THitInterval>());
+	sort(missingSpan.begin(), missingSpan.end(), SortHitInterval<THitInterval>());
 
 	// Declare the chromosome array
 	typedef unsigned short TArrayType;

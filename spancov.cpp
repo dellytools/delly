@@ -140,7 +140,7 @@ run(Config const& c, THitInterval, TCount)
   TSVs svs;
   std::map<unsigned int, std::string> idToName;
   unsigned int intervalCount=1;
-  if (isValidFile(c.int_file.string())) {
+  if (boost::filesystem::exists(c.int_file) && boost::filesystem::is_regular_file(c.int_file) && boost::filesystem::file_size(c.int_file)) {
     Memory_mapped_file interval_file(c.int_file.string().c_str());
     char interval_buffer[Memory_mapped_file::MAX_LINE_LENGTH];
     while (interval_file.left_bytes() > 0) {

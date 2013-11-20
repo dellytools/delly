@@ -51,7 +51,7 @@ Contact: Tobias Rausch (rausch@embl.de)
 #include "index.h"
 #include "tags.h"
 #include "spanning.h"
-
+#include "coverage.h"
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -751,9 +751,9 @@ _addID(SVType<DuplicationTag>) {
   return "DUP";
 }
 
-template<typename TConfig, typename TStructuralVariantRecord, typename TCountMap, typename TTag>
+template<typename TConfig, typename TStructuralVariantRecord, typename TReadCountMap, typename TCountMap, typename TTag>
 inline void
-vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TCountMap& normalCountMap, TCountMap& abnormalCountMap, SVType<TTag> svType) 
+vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TReadCountMap& readCountMap, TCountMap& normalCountMap, TCountMap& abnormalCountMap, SVType<TTag> svType) 
 {
   // Typedefs
   typedef typename TCountMap::key_type TSampleSVPair;
@@ -788,6 +788,7 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TC
   ofile << "##FORMAT=<ID=GL,Number=G,Type=Float,Description=\"Log10-scaled genotype likelihoods for RR,RA,AA genotypes\">" << std::endl;
   ofile << "##FORMAT=<ID=GQ,Number=1,Type=Integer,Description=\"Genotype Quality\">" << std::endl;
   ofile << "##FORMAT=<ID=FT,Number=1,Type=String,Description=\"Per-sample genotype filter\">" << std::endl;
+  ofile << "##FORMAT=<ID=RC,Number=1,Type=Integer,Description=\"Normalized high-quality read count for the SV\">" << std::endl;
   ofile << "##FORMAT=<ID=DR,Number=1,Type=Integer,Description=\"# high-quality reference pairs\">" << std::endl;
   ofile << "##FORMAT=<ID=DV,Number=1,Type=Integer,Description=\"# high-quality variant pairs\">" << std::endl;
   ofile << "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT";
@@ -801,7 +802,8 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TC
   typedef std::vector<TStructuralVariantRecord> TSVs;
   typename TSVs::const_iterator svIter = svs.begin();
   typename TSVs::const_iterator svIterEnd = svs.end();
-  std::cout << "Genotyping" << std::endl;
+  now = boost::posix_time::second_clock::local_time();
+  std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Genotyping" << std::endl;
   boost::progress_display show_progress( svs.size() );
   for(;svIter!=svIterEnd;++svIter) {
     ++show_progress;
@@ -832,7 +834,7 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TC
     }
 
     // Add genotype columns (right bp only across all samples)
-    ofile << "\tGT:GL:GQ:FT:DR:DV";
+    ofile << "\tGT:GL:GQ:FT:RC:DR:DV";
     for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
       // Get the sample name
       std::string sampleName(c.files[file_c].stem().string());
@@ -843,23 +845,24 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TC
       TMapqVector const& mapqAlt = abCountMapIt->second[0];
 
       // Compute genotype likelihoods
-      std::vector<boost::multiprecision::cpp_dec_float_100> gl;
+      typedef boost::multiprecision::cpp_dec_float_100 FLP;
+      std::vector<FLP> gl;
       unsigned int glBest=0;
       unsigned int peDepth=mapqRef.size() + mapqAlt.size();
-      boost::multiprecision::cpp_dec_float_100 glBestVal=-std::numeric_limits<boost::multiprecision::cpp_dec_float_100>::infinity();
-      boost::multiprecision::cpp_dec_float_100 scaling = -boost::multiprecision::cpp_dec_float_100(1) * boost::multiprecision::log10( boost::multiprecision::pow( boost::multiprecision::cpp_dec_float_100(2),  boost::multiprecision::cpp_dec_float_100(peDepth) ) );
+      FLP glBestVal=-std::numeric_limits<FLP>::infinity();
+      FLP scaling = -FLP(1) * boost::multiprecision::log10( boost::multiprecision::pow(FLP(2),  FLP(peDepth) ) );
       for(unsigned int geno=0; geno<=2; ++geno) {
-	boost::multiprecision::cpp_dec_float_100 refLike=0;
-	boost::multiprecision::cpp_dec_float_100 altLike=0;
+	FLP refLike=0;
+	FLP altLike=0;
 	typename TMapqVector::const_iterator mapqRefIt = mapqRef.begin();
 	typename TMapqVector::const_iterator mapqRefItEnd = mapqRef.end();
 	for(;mapqRefIt!=mapqRefItEnd;++mapqRefIt) {
-	  refLike += boost::multiprecision::log10( (boost::multiprecision::cpp_dec_float_100(2.0 - geno) * boost::multiprecision::pow(boost::multiprecision::cpp_dec_float_100(10), -boost::multiprecision::cpp_dec_float_100(*mapqRefIt)/boost::multiprecision::cpp_dec_float_100(10)) + boost::multiprecision::cpp_dec_float_100(geno) * (boost::multiprecision::cpp_dec_float_100(1) - boost::multiprecision::pow(boost::multiprecision::cpp_dec_float_100(10), -boost::multiprecision::cpp_dec_float_100(*mapqRefIt)/boost::multiprecision::cpp_dec_float_100(10) ) ) ) );
+	  refLike += boost::multiprecision::log10( (FLP(2.0 - geno) * boost::multiprecision::pow(FLP(10), -FLP(*mapqRefIt)/FLP(10)) + FLP(geno) * (FLP(1) - boost::multiprecision::pow(FLP(10), -FLP(*mapqRefIt)/FLP(10) ) ) ) );
 	}
 	typename TMapqVector::const_iterator mapqAltIt = mapqAlt.begin();
 	typename TMapqVector::const_iterator mapqAltItEnd = mapqAlt.end();
 	for(;mapqAltIt!=mapqAltItEnd;++mapqAltIt) {
-	  altLike += boost::multiprecision::log10( (( boost::multiprecision::cpp_dec_float_100(2.0 - geno) * (boost::multiprecision::cpp_dec_float_100(1) - boost::multiprecision::pow(boost::multiprecision::cpp_dec_float_100(10), -boost::multiprecision::cpp_dec_float_100(*mapqAltIt)/boost::multiprecision::cpp_dec_float_100(10) ))) + boost::multiprecision::cpp_dec_float_100(geno) * boost::multiprecision::pow(boost::multiprecision::cpp_dec_float_100(10), -boost::multiprecision::cpp_dec_float_100(*mapqAltIt)/boost::multiprecision::cpp_dec_float_100(10) ) ) );
+	  altLike += boost::multiprecision::log10( ((FLP(2.0 - geno) * (FLP(1) - boost::multiprecision::pow(FLP(10), -FLP(*mapqAltIt)/FLP(10) ))) + FLP(geno) * boost::multiprecision::pow(FLP(10), -FLP(*mapqAltIt)/FLP(10) ) ) );
 	}
 	gl.push_back(scaling+refLike+altLike);
 	if (gl[geno] > glBestVal) {
@@ -868,12 +871,12 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TC
 	}
       }
       // Rescale by best genotype and get second best genotype for GQ
-      boost::multiprecision::cpp_dec_float_100 glSecondBestVal=-std::numeric_limits<boost::multiprecision::cpp_dec_float_100>::infinity();
+      FLP glSecondBestVal=-std::numeric_limits<FLP>::infinity();
       for(unsigned int geno=0; geno<=2; ++geno) {
 	if ((gl[geno]>glSecondBestVal) && (gl[geno]<=glBestVal) && (geno!=glBest)) glSecondBestVal=gl[geno];
 	gl[geno] -= glBestVal;
       }
-      int gqVal = boost::multiprecision::iround(boost::multiprecision::cpp_dec_float_100(10) * boost::multiprecision::log10( boost::multiprecision::pow(boost::multiprecision::cpp_dec_float_100(10), glBestVal) / boost::multiprecision::pow(boost::multiprecision::cpp_dec_float_100(10), glSecondBestVal) ) );
+      int gqVal = boost::multiprecision::iround(FLP(10) * boost::multiprecision::log10( boost::multiprecision::pow(FLP(10), glBestVal) / boost::multiprecision::pow(FLP(10), glSecondBestVal) ) );
       // Output genotypes
       if (peDepth) {
 	if (glBest==0) ofile << "\t1/1:";
@@ -885,7 +888,8 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TC
       } else {
 	ofile << "\t./.:.,.,.:0:LowQual:";
       }
-      ofile << mapqRef.size() << ":" << mapqAlt.size();
+      typename TReadCountMap::iterator readCountMapIt=readCountMap.find(sampleSVPair);
+      ofile << readCountMapIt->second.second << ":" << mapqRef.size() << ":" << mapqAlt.size();
     }
     ofile << std::endl;
   }
@@ -954,7 +958,8 @@ findPutativeSplitReads(TConfig const& c, std::vector<TStructuralVariantRecord>& 
   int l;
   gzFile fp = gzopen(c.genome.string().c_str(), "r");
   seq = kseq_init(fp);
-  std::cout << "Split-read alignment" << std::endl;
+  boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
+  std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Split-read alignment" << std::endl;
   boost::progress_display show_progress( references.size() );
   while ((l = kseq_read(seq)) >= 0) {
     // Find reference index
@@ -1248,7 +1253,8 @@ inline int run(Config const& c, TSVType svType) {
   }
 
   // Process chromosome by chromosome
-  std::cout << "Paired-end clustering" << std::endl;
+  boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
+  std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Paired-end clustering" << std::endl;
   boost::progress_display show_progress( (references.end() - references.begin()) );
   itRef = references.begin();
   for(int refIndex=0;((itRef!=references.end()) && (c.peMode));++itRef, ++refIndex) {
@@ -1451,7 +1457,7 @@ inline int run(Config const& c, TSVType svType) {
 	}
       }
 
-      if ((clique.size()>1) && ((svEnd - svStart) >= 100)) {
+      if ((clique.size()>1) && ((svEnd - svStart) >= 500)) {
 	StructuralVariantRecord svRec;
 	svRec.chr = references[refIndex].RefName;
 	svRec.svStartBeg = std::max((int) svStart - overallMaxISize, 0);
@@ -1482,7 +1488,8 @@ inline int run(Config const& c, TSVType svType) {
   }
    
   // Output library statistics
-  std::cout << "Library statistics" << std::endl;
+  now = boost::posix_time::second_clock::local_time();
+  std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Library statistics" << std::endl;
   TSampleLibrary::const_iterator sampleIt=sampleLib.begin();
   for(;sampleIt!=sampleLib.end();++sampleIt) {
     std::cout << "Sample: " << sampleIt->first << std::endl;
@@ -1494,7 +1501,8 @@ inline int run(Config const& c, TSVType svType) {
 
   // No PEM mode
   if (!c.peMode) {
-    std::cout << "No paired-end analysis!" << std::endl;
+  boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
+  std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "No paired-end analysis!" << std::endl;
 
     // Read deletion intervals
     typedef Record<std::string, unsigned int, unsigned int, std::string, void, void, void, void, void, void, void, void> TRecord;
@@ -1533,7 +1541,8 @@ inline int run(Config const& c, TSVType svType) {
       svs.push_back(svRec);
     }
     map_file.close();
-    std::cout << "Created " << clique_count << " PE deletions." << std::endl;
+    now = boost::posix_time::second_clock::local_time();
+    std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Created " << clique_count << " PE deletions." << std::endl;
   }
 
   // Split-read search
@@ -1557,8 +1566,8 @@ inline int run(Config const& c, TSVType svType) {
   TCountMap normalCountMap;
   TCountMap abnormalCountMap;
   annotateSpanningCoverage(c.files, 0, 20, sampleLib, svs, normalCountMap, abnormalCountMap, HitInterval<int32_t, uint16_t>());
-  // Output library statistics
-  std::cout << "Library statistics" << std::endl;
+  now = boost::posix_time::second_clock::local_time();
+  std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Library statistics" << std::endl;
   sampleIt=sampleLib.begin();
   for(;sampleIt!=sampleLib.end();++sampleIt) {
     std::cout << "Sample: " << sampleIt->first << std::endl;
@@ -1568,13 +1577,29 @@ inline int run(Config const& c, TSVType svType) {
     }
   }
 
+  // Annotate coverage
+  typedef std::pair<int, int> TBpRead;
+  typedef std::map<TSampleSVPair, TBpRead> TReadCountMap;
+  TReadCountMap readCountMap;
+  annotateCoverage(c.files, 20, false, sampleLib, svs, readCountMap, SingleHit<int32_t, void>());
+  now = boost::posix_time::second_clock::local_time();
+  std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Library statistics" << std::endl;
+  sampleIt=sampleLib.begin();
+  for(;sampleIt!=sampleLib.end();++sampleIt) {
+    std::cout << "Sample: " << sampleIt->first << std::endl;
+    TLibraryMap::const_iterator libIt=sampleIt->second.begin();
+    for(;libIt!=sampleIt->second.end();++libIt) {
+      std::cout << "RG: ID=" << libIt->first << ",Median=" << libIt->second.median << ",MAD=" << libIt->second.mad << ",Orientation=" << (int) libIt->second.defaultOrient << ",MappedReads=" << libIt->second.mappedReads << ",DuplicatePairs=" << libIt->second.non_unique_pairs << ",UniquePairs=" << libIt->second.unique_pairs << std::endl;
+    }
+  }
+
   // VCF output
   if (svs.size()) {
-    vcfOutput(c, svs, normalCountMap, abnormalCountMap, svType);
+    vcfOutput(c, svs, readCountMap, normalCountMap, abnormalCountMap, svType);
   }
 
   // End
-  boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
+  now = boost::posix_time::second_clock::local_time();
   std::cout << '[' << boost::posix_time::to_simple_string(now) << "] Done." << std::endl;;
   return 0;
 }

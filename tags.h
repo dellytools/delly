@@ -51,7 +51,6 @@ namespace torali {
     }
   };
 
-
   // Structural variant record
   struct StructuralVariantRecord {
     int svStartBeg;
@@ -70,6 +69,16 @@ namespace torali {
     std::string chr;
     std::string consensus;
   };
+
+  template<typename TSV>
+  struct SortSVs : public std::binary_function<TSV, TSV, bool>
+  {
+    inline bool operator()(TSV const& sv1, TSV const& sv2) {
+      return (sv1.chr<sv2.chr) || ((sv1.chr==sv2.chr) && (sv1.svStart<sv2.svStart));
+    }
+  };
+
+
 
 }
 

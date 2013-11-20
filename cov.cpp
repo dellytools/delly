@@ -30,14 +30,18 @@ Contact: Tobias Rausch (rausch@embl.de)
 #include <boost/program_options/parsers.hpp>
 #include <boost/program_options/variables_map.hpp>
 #include <boost/date_time/posix_time/posix_time.hpp>
+#include <boost/date_time/gregorian/gregorian.hpp>
 #include <boost/iostreams/stream.hpp>
 #include <boost/iostreams/stream_buffer.hpp>
 #include <boost/iostreams/device/file.hpp>
 #include <boost/iostreams/filtering_stream.hpp>
 #include <boost/iostreams/filter/zlib.hpp>
 #include <boost/iostreams/filter/gzip.hpp>
+#include <boost/progress.hpp>
 #include "api/BamMultiReader.h"
 
+#include "tags.h"
+#include "coverage.h"
 #include "memory_mapped_file.h"
 #include "bam_file_adaptor.h"
 #include "version.h"
@@ -47,236 +51,157 @@ Contact: Tobias Rausch (rausch@embl.de)
 
 using namespace torali;
 
-#define MAX_CHROM_SIZE 250000000
-
-
 struct Config {
   unsigned int window_size;
   unsigned int window_offset;
-  unsigned int qual_cut;
+  uint16_t minMapQual;
   bool bp_flag;
   bool avg_flag;
   bool inclCigar;
   boost::filesystem::path outfile;
-  boost::filesystem::path intervals_file;
-  std::vector<std::string> files;
+  boost::filesystem::path int_file;
+  std::vector<boost::filesystem::path> files;
 };
 
 
-template<typename TChr, typename TPos, typename TCigar>
-struct Hit {
-  TChr chr;
-  TPos pos;
-  TCigar cigar;
-  
-  Hit() {}
-
-  Hit(BamTools::BamAlignment const& al) : chr(al.RefID), pos(al.Position+1), cigar(cigarString(al.CigarData)) {}
-};
-
-template<typename TChr, typename TPos>
-struct Hit<TChr, TPos, void> {
-  TChr chr;
-  TPos pos;
-
-  Hit() {}
-
-  Hit(BamTools::BamAlignment const& al) : chr(al.RefID), pos(al.Position+1) {}
-};
-
-
-
-template<typename TChr, typename TPos, typename TCigar, typename TIterator, typename TArrayType>
-inline void
-_addReadAndBpCounts(std::vector<Hit<TChr, TPos, TCigar> > const& hit_vector, TIterator const chrSEit, TArrayType* read_count, TArrayType* bp_count)
+template<typename TSingleHit>
+inline int
+run(Config const& c, TSingleHit)
 {
-  typedef std::vector<Hit<TChr, TPos, TCigar> > THits;
-  typename THits::const_iterator vecBeg = hit_vector.begin() + chrSEit->second.first;
-  typename THits::const_iterator vecEnd = hit_vector.begin() + chrSEit->second.second;
-  
-  // Add read and bp counts
-  for(;vecBeg!=vecEnd; ++vecBeg) {
-    ++read_count[vecBeg->pos];
-    int num_start = 0;
-    int num_end = 0;
-    TArrayType* bpPoint = &bp_count[vecBeg->pos];
-    std::string::const_iterator cig = vecBeg->cigar.begin();
-    std::string::const_iterator cigEnd = vecBeg->cigar.end();
-    for(;cig!=cigEnd; ++cig, ++num_end) {
-      if (((int) *cig >=48) && ((int) *cig <= 57)) continue;
-      unsigned int len = atoi(vecBeg->cigar.substr(num_start, (num_end-num_start)).c_str());
-      if (*cig == 'M') 
-	for(unsigned int i = 0; i<len; ++i, ++bpPoint) ++(*bpPoint);
-      else if ((*cig == 'N') || (*cig=='D')) bpPoint += len;
-      num_start = num_end + 1;
+  // Create library objects
+  typedef std::map<std::string, LibraryInfo> TLibraryMap;
+  typedef std::map<std::string, TLibraryMap> TSampleLibrary;
+  TSampleLibrary sampleLib;
+
+  // Scan libraries
+  for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
+    // Get a sample name
+    std::string sampleName(c.files[file_c].stem().string());
+
+    // Check that all input bam files exist
+    BamTools::BamReader reader;
+    if ( ! reader.Open(c.files[file_c].string()) ) {
+      std::cerr << "Could not open input bam file: " << c.files[file_c].string() << std::endl;
+      reader.Close();
+      return -1;
     }
-  }
-}
+    
+    // Check that all input bam files are indexed
+    reader.LocateIndex();
+    if ( !reader.HasIndex() ) {
+      std::cerr << "Missing bam index file: " << c.files[file_c].string() << std::endl;
+      reader.Close();
+      return -1;
+    }
 
-template<typename TChr, typename TPos, typename TIterator, typename TArrayType>
-inline void
-_addReadAndBpCounts(std::vector<Hit<TChr, TPos, void> > const& hit_vector, TIterator const chrSEit, TArrayType* read_count, TArrayType*)
-{
-  typedef std::vector<Hit<TChr, TPos, void> > THits;
-  typename THits::const_iterator vecBeg = hit_vector.begin() + chrSEit->second.first;
-  typename THits::const_iterator vecEnd = hit_vector.begin() + chrSEit->second.second;
-  
-  // Add read and bp counts
-  for(;vecBeg!=vecEnd; ++vecBeg) ++read_count[vecBeg->pos];
-}
-
-template<typename THit>
-struct SortHits : public std::binary_function<THit, THit, bool>
-{
-  inline bool operator()(THit const& hit1, THit const& hit2) {
-    if (hit1.chr != hit2.chr) return (hit1.chr < hit2.chr);
-    else return (hit1.pos < hit2.pos);
-  }
-};
-
-
-
-
-template<typename TChr, typename TPos, typename TCigar>
-inline void
-run(Config const& conf)
-{
-
-  BamTools::BamMultiReader reader;
-  if ( ! reader.Open(conf.files) ) {
-    std::cerr << "Could not open input bam files!" << std::endl;
-    return;
+    // Get library parameters and overall maximum insert size
+    TLibraryMap libInfo;
+    getLibraryParams(c.files[file_c], libInfo, 0, 5);
+    sampleLib.insert(std::make_pair(sampleName, libInfo));
   }
 
-  // Built chromosome map
-  const BamTools::RefVector references = reader.GetReferenceData();
-
-  // Iterate all SAM files and collect all hits
-  typedef Hit<TChr, TPos, TCigar> THit;
-  typedef std::vector<THit> THits;
-  THits hit_vector;  
-  BamTools::BamAlignment al;
-  while( reader.GetNextAlignmentCore(al) ) {
-    if ((al.AlignmentFlag & 0x0004) || (al.AlignmentFlag & 0x0200) || (al.AlignmentFlag & 0x0400)) continue;
-    if (al.MapQuality < conf.qual_cut) continue;
-    if (al.RefID < (TPos) references.size()) {
-      if (conf.inclCigar) hit_vector.push_back(THit(al));
-      else {
-	// For simple read counting only the primary alignment is counted
-	if (!(al.AlignmentFlag & 0x0100)) hit_vector.push_back(THit(al));
+  // Read all SV intervals
+  typedef std::vector<StructuralVariantRecord> TSVs;
+  TSVs svs;
+  std::map<unsigned int, std::string> idToName;
+  unsigned int intervalCount=1;
+  if (boost::filesystem::exists(c.int_file) && boost::filesystem::is_regular_file(c.int_file) && boost::filesystem::file_size(c.int_file)) {
+    Memory_mapped_file interval_file(c.int_file.string().c_str());
+    char interval_buffer[Memory_mapped_file::MAX_LINE_LENGTH];
+    while (interval_file.left_bytes() > 0) {
+      interval_file.read_line(interval_buffer);
+      // Read single interval line
+      StructuralVariantRecord sv;
+      Tokenizer token(interval_buffer, Memory_mapped_file::MAX_LINE_LENGTH);
+      std::string interval_rname;
+      token.getString(sv.chr);
+      sv.svStart = token.getUInt();
+      sv.svEnd = token.getUInt() + 1;
+      std::string svName;
+      token.getString(svName);
+      idToName.insert(std::make_pair(intervalCount, svName));
+      sv.id = intervalCount++;
+      svs.push_back(sv);
+    }
+    interval_file.close();
+  } else {
+    // Create artificial intervals
+    BamTools::BamReader readerRef;
+    if ( ! readerRef.Open(c.files[0].string()) ) return -1;
+    BamTools::RefVector references = readerRef.GetReferenceData();
+    typename BamTools::RefVector::const_iterator itRef = references.begin();
+    for(int refIndex=0;itRef!=references.end();++itRef, ++refIndex) {
+      int32_t pos = 0;
+      while (pos < references[refIndex].RefLength) {
+	int32_t window_len = pos+c.window_size;
+	if (window_len > references[refIndex].RefLength) window_len = references[refIndex].RefLength;
+	StructuralVariantRecord sv;
+	sv.chr = references[refIndex].RefName;
+	sv.svStart = pos;
+	sv.svEnd = window_len;
+	std::stringstream s; 
+	s << sv.chr << ":" << sv.svStart << "-" << sv.svEnd;
+	idToName.insert(std::make_pair(intervalCount, s.str()));
+	sv.id = intervalCount++;
+	svs.push_back(sv);
+	pos += c.window_offset;
       }
     }
   }
 
-  // Sort SAM records by chromosome and position
-  sort(hit_vector.begin(), hit_vector.end(), SortHits<THit>());
+  // Output data types
+  typedef std::pair<std::string, int> TSampleSVPair;
+  typedef std::pair<int, int> TBpRead;
+  typedef std::map<TSampleSVPair, TBpRead> TCountMap;
+  TCountMap countMap;
 
-  // Get all chromosome ranges
-  typedef std::pair<TPos, TPos> TStartEnd;
-  typedef std::map<TChr, TStartEnd> TChrSE;
-  TChrSE chrSE;
-  typename THits::const_iterator vecBeg = hit_vector.begin();
-  typename THits::const_iterator vecEnd = hit_vector.end();
-  if (vecBeg != vecEnd) {
-    TChr curChr = vecBeg->chr;
-    TPos posStart = 0;
-    TPos posEnd = 0;
-    for(;vecBeg!=vecEnd; ++vecBeg, ++posEnd) {
-      if (curChr != vecBeg->chr) {
-	chrSE.insert(std::make_pair(curChr, std::make_pair(posStart, posEnd)));
-	curChr = vecBeg->chr;
-	posStart=posEnd;
-      }
+  // Annotate coverage
+  annotateCoverage(c.files, c.minMapQual, c.inclCigar, sampleLib, svs, countMap, TSingleHit());
+
+  // Output library statistics
+  std::cout << "Library statistics" << std::endl;
+  TSampleLibrary::const_iterator sampleIt=sampleLib.begin();
+  for(;sampleIt!=sampleLib.end();++sampleIt) {
+    std::cout << "Sample: " << sampleIt->first << std::endl;
+    TLibraryMap::const_iterator libIt=sampleIt->second.begin();
+    for(;libIt!=sampleIt->second.end();++libIt) {
+      std::cout << "RG: ID=" << libIt->first << ",Median=" << libIt->second.median << ",MAD=" << libIt->second.mad << ",Orientation=" << (int) libIt->second.defaultOrient << ",MappedReads=" << libIt->second.mappedReads << ",DuplicatePairs=" << libIt->second.non_unique_pairs << ",UniquePairs=" << libIt->second.unique_pairs << std::endl;
     }
-    if (posStart != posEnd) chrSE.insert(std::make_pair(curChr, std::make_pair(posStart, posEnd)));
   }
 
-  // Declare the chromosome array
-  typedef unsigned short TArrayType;
-  TArrayType* read_count = new TArrayType[MAX_CHROM_SIZE];
-  TArrayType* bp_count = new TArrayType[MAX_CHROM_SIZE];
-  TArrayType* bp_countEnd = bp_count + MAX_CHROM_SIZE;
-
-  // Process each chromosome
+  // Output file
   boost::iostreams::filtering_ostream dataOut;
   dataOut.push(boost::iostreams::gzip_compressor());
-  dataOut.push(boost::iostreams::file_sink(conf.outfile.string().c_str(), std::ios_base::out | std::ios_base::binary));
-  std::cout << "Processing chromosomes..." << std::endl;
-  typename TChrSE::const_iterator chrSEit = chrSE.begin();
-  typename TChrSE::const_iterator chrSEitEnd = chrSE.end();
-  for(;chrSEit != chrSEitEnd; ++chrSEit) {
-    const TPos chrLen = references[(int) chrSEit->first].RefLength;
-    const std::string chrName = references[(int) chrSEit->first].RefName;
-    std::cout << chrName << " (Length: " << chrLen << "); HitRange: " << chrSEit->second.first << " - " << chrSEit->second.second << std::endl;
+  dataOut.push(boost::iostreams::file_sink(c.outfile.string().c_str(), std::ios_base::out | std::ios_base::binary));
 
-    // Set all values to zero
-    std::fill(read_count, read_count + MAX_CHROM_SIZE, 0);
-    std::fill(bp_count, bp_countEnd, 0);
-
-    // Iterate all reads of that chromosome
-    _addReadAndBpCounts(hit_vector, chrSEit, read_count, bp_count);
-
-    // Write coverage windows
-    if (!(boost::filesystem::exists(conf.intervals_file) && boost::filesystem::is_regular_file(conf.intervals_file) && boost::filesystem::file_size(conf.intervals_file))) {
-	TPos pos = 0;
-	while (pos < chrLen) {
-	  TPos window_len = pos+conf.window_size;
-	  if (window_len > chrLen) { window_len = chrLen; }
-	  unsigned int bp_sum = 0;
-	  unsigned int read_sum = 0;
-	  TArrayType* bpPoint = &bp_count[pos+1];
-	  TArrayType* readPoint = &read_count[pos+1];
-	  for(TPos i=pos; i<window_len; ++i, ++bpPoint, ++readPoint) { 
-	    bp_sum += *bpPoint;
-	    read_sum += *readPoint;
-	  }
-	  dataOut << chrName << "\t" << pos << "\t" << window_len << "\t";
-	  if (conf.avg_flag) dataOut << ( (bp_sum) / (double) (window_len - pos)) << "\t";
-	  if (conf.bp_flag) dataOut << (bp_sum) << "\t";
-	  dataOut << read_sum << std::endl;
-	  pos += conf.window_offset;
-	}
-      } else {
-      Memory_mapped_file interval_file(conf.intervals_file.string().c_str());
-      char interval_buffer[Memory_mapped_file::MAX_LINE_LENGTH];
-      while (interval_file.left_bytes() > 0) {
-	interval_file.read_line(interval_buffer);
-
-	// Read single interval line
-	Tokenizer token(interval_buffer, Memory_mapped_file::MAX_LINE_LENGTH);
-	std::string interval_rname;
-	token.getString(interval_rname);
-	if (interval_rname.compare(chrName)) continue;
-	unsigned int posStart = token.getUInt();
-	unsigned int posEnd = token.getUInt();
-	unsigned int bp_sum = 0;
-	unsigned int read_sum = 0;
-	TArrayType* bpPoint = &bp_count[posStart];
-	TArrayType* readPoint = &read_count[posStart];
-	for(unsigned int i = posStart; i <= posEnd; ++i, ++bpPoint, ++readPoint) { 
-	  bp_sum += *bpPoint; 
-	  read_sum += *readPoint;
-	}
-	dataOut << interval_buffer << "\t";
-	if (conf.avg_flag) dataOut << ( (bp_sum) / (double) (posEnd - posStart + 1)) << "\t";
-	if (conf.bp_flag) dataOut << (bp_sum) << "\t";
-	dataOut << read_sum << std::endl;
-      }
-      interval_file.close();
+  // Iterate all SVs
+  typename TSVs::const_iterator itSV = svs.begin();
+  typename TSVs::const_iterator itSVEnd = svs.end();
+  for(;itSV!=itSVEnd;++itSV) {
+    dataOut << itSV->chr << "\t" << itSV->svStart << "\t" << itSV->svEnd << "\t" << idToName.find(itSV->id)->second;
+    // Iterate all samples
+    for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
+      // Get the sample name
+      std::string sampleName(c.files[file_c].stem().string());
+      TSampleSVPair sampleSVPair = std::make_pair(sampleName, itSV->id);
+      typename TCountMap::iterator countMapIt=countMap.find(sampleSVPair);
+      dataOut << "\t";
+      if (c.avg_flag) dataOut << ( (countMapIt->second.first) / (double) (itSV->svEnd - itSV->svStart)) << "\t";
+      if (c.bp_flag) dataOut << countMapIt->second.first << "\t";
+      dataOut << countMapIt->second.second;
     }
+    dataOut << std::endl;
   }
 
- 
   // End
-  std::cout << '[' << boost::posix_time::second_clock::local_time() << "] Done." << std::endl;
+  boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
+  std::cout << '[' << boost::posix_time::to_simple_string(now) << "] Done." << std::endl;;
+  return 0;
 }
 
 
 int main(int argc, char **argv) {
   Config c;
-  c.bp_flag = false;
-  c.avg_flag = false;
-  c.inclCigar = false;
 
   // Define generic options
   boost::program_options::options_description generic("Generic options");
@@ -284,7 +209,7 @@ int main(int argc, char **argv) {
     ("help,?", "show help message")
     ("bp-count,b", "show base pair count")
     ("avg-cov,a", "show average coverage")
-    ("quality-cut,q", boost::program_options::value<unsigned int>(&c.qual_cut)->default_value(0), "exclude all alignments with quality < q")
+    ("quality-cut,q", boost::program_options::value<uint16_t>(&c.minMapQual)->default_value(0), "exclude all alignments with quality < q")
     ("outfile,f", boost::program_options::value<boost::filesystem::path>(&c.outfile)->default_value("cov.gz"), "coverage output file")
     ;
 
@@ -298,13 +223,13 @@ int main(int argc, char **argv) {
   // Define interval options
   boost::program_options::options_description interval("Interval options");
   interval.add_options()
-    ("interval-file,i", boost::program_options::value<boost::filesystem::path>(&c.intervals_file), "interval file")
+    ("interval-file,i", boost::program_options::value<boost::filesystem::path>(&c.int_file), "interval file")
     ;
 
   // Define hidden options
   boost::program_options::options_description hidden("Hidden options");
   hidden.add_options()
-    ("input-file", boost::program_options::value< std::vector<std::string> >(&c.files), "input file")
+    ("input-file", boost::program_options::value< std::vector<boost::filesystem::path> >(&c.files), "input file")
     ("license,l", "show license")
     ("warranty,w", "show warranty")
     ;
@@ -329,27 +254,25 @@ int main(int argc, char **argv) {
     } else if (vm.count("license")) {
       gplV3();
     } else {
-      std::cout << "Usage: " << argv[0] << " [OPTIONS] <aligned1.bam> <aligned2.bam> ..." << std::endl;
+      std::cout << "Usage: " << argv[0] << " [OPTIONS] <sample1.bam> <sample2.bam> ..." << std::endl;
       std::cout << visible_options << "\n"; 
     }
     return 1; 
   }
   if (vm.count("bp-count")) c.bp_flag = true;
+  else c.bp_flag = false;
   if (vm.count("avg-cov")) c.avg_flag = true;
+  else c.avg_flag = false;
   if ((c.bp_flag) || (c.avg_flag)) c.inclCigar = true;
+  else c.inclCigar = false;
 
   // Show cmd
-  std::cout << '[' << boost::posix_time::second_clock::local_time() << "] ";
+  boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
+  std::cout << '[' << boost::posix_time::to_simple_string(now) << "] ";
   for(int i=0; i<argc; ++i) { std::cout << argv[i] << ' '; }
   std::cout << std::endl;
  
-
-  if (isBinary(c.files[0])) {
-    if (c.inclCigar) run<int32_t, int32_t, std::string>(c);
-    else run<int32_t, int32_t, void>(c);
-  } else {
-    if (c.inclCigar) run<int32_t, int32_t, std::string>(c);
-    else run<int32_t, int32_t, void>(c);
-  }
-  return 0;
+  // Run coverage annotation
+  if (c.inclCigar) return run(c, SingleHit<int32_t, std::string>());
+  else return run(c, SingleHit<int32_t, void>());
 }
