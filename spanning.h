@@ -189,6 +189,9 @@ namespace torali {
       }
     }
 
+    // Sort Structural Variants
+    sort(svs.begin(), svs.end(), SortSVs<StructuralVariantRecord>());
+
     // Process chromosome by chromosome
     boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
     std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Breakpoint spanning coverage annotation" << std::endl;
@@ -292,8 +295,11 @@ namespace torali {
 	_addReadAndBpCounts(normalSpan, normalCount);
 	_addReadAndBpCounts(missingSpan, missingCount);
 
-	// Write spanning coverage for all input intervals
-	typename TSVs::const_iterator itSV = svs.begin();
+	// Store spanning coverage for all input intervals
+	StructuralVariantRecord findSV;
+	findSV.svStart=0;
+	findSV.chr=references[refIndex].RefName;
+	typename TSVs::const_iterator itSV = std::lower_bound(svs.begin(), svs.end(), findSV, SortSVs<StructuralVariantRecord>());
 	typename TSVs::const_iterator itSVEnd = svs.end();
 	for(;itSV!=itSVEnd;++itSV) {
 	  if (itSV->chr == references[refIndex].RefName) {
@@ -324,7 +330,7 @@ namespace torali {
 	    posStart = (itSV->svEnd - bpWindowOffset < 0) ? 0 : (itSV->svEnd - bpWindowOffset);
 	    posEnd = (bpWindowOffset) ? (itSV->svEnd + bpWindowOffset) : (itSV->svEnd + 1);
 	    _addCounts(normalCount, missingCount, normalSpan, missingSpan, countMapIt, abCountMapIt, posStart, posEnd, TCount());
-	  }
+	  } else break;
 	}
 
 	// Clean-up

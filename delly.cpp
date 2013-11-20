@@ -845,7 +845,8 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TR
       TMapqVector const& mapqAlt = abCountMapIt->second[0];
 
       // Compute genotype likelihoods
-      typedef boost::multiprecision::cpp_dec_float_100 FLP;
+      //typedef boost::multiprecision::cpp_dec_float_50 FLP;
+      typedef boost::multiprecision::number<boost::multiprecision::cpp_dec_float<25> > FLP;
       std::vector<FLP> gl;
       unsigned int glBest=0;
       unsigned int peDepth=mapqRef.size() + mapqAlt.size();
@@ -1457,7 +1458,7 @@ inline int run(Config const& c, TSVType svType) {
 	}
       }
 
-      if ((clique.size()>1) && ((svEnd - svStart) >= 500)) {
+      if ((clique.size()>1) && ((svEnd - svStart) >= 100)) {
 	StructuralVariantRecord svRec;
 	svRec.chr = references[refIndex].RefName;
 	svRec.svStartBeg = std::max((int) svStart - overallMaxISize, 0);
