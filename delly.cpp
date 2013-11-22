@@ -1190,7 +1190,8 @@ inline int run(Config const& c, TSVType svType) {
   // Parse exclude interval list
   BamTools::RefVector::const_iterator itRef = references.begin();
   std::vector<bool> validChr;
-  std::vector<ExcludeInterval> exclIntervals;
+  typedef std::vector<ExcludeInterval> TExclInterval;
+  TExclInterval exclIntervals;
   validChr.resize(references.size());
   std::fill(validChr.begin(), validChr.end(), true);
   if (boost::filesystem::exists(c.exclude) && boost::filesystem::is_regular_file(c.exclude) && boost::filesystem::file_size(c.exclude)) {
@@ -1231,6 +1232,15 @@ inline int run(Config const& c, TSVType svType) {
     ++show_progress;
     if (!validChr[refIndex]) continue;
       
+    // Collect all black-masked intervals on this chromosome
+    typedef std::vector<std::pair<int32_t, int32_t> > TChrIntervals;
+    TChrIntervals blackMasked;
+    typename TExclInterval::const_iterator itExcl = exclIntervals.begin();
+    typename TExclInterval::const_iterator itExclEnd = exclIntervals.end();
+    for(;itExcl!=itExclEnd;++itExcl) 
+      if (itExcl->RefID == refIndex) blackMasked.push_back(std::make_pair(itExcl->start, itExcl->end));
+    std::sort(blackMasked.begin(), blackMasked.end());
+
     // Create bam alignment record vector
     typedef std::vector<BamAlignRecord> TBamRecord;
     TBamRecord bamRecord;
@@ -1260,6 +1270,16 @@ inline int run(Config const& c, TSVType svType) {
 	while( reader.GetNextAlignment(al) ) {
 	  if (al.RefID!=refIndex) break; // Stop when we hit the next chromosome
 	  if ((al.AlignmentFlag & 0x0001) && !(al.AlignmentFlag & 0x0004) && !(al.AlignmentFlag & 0x0008) && !(al.AlignmentFlag & 0x0100) && !(al.AlignmentFlag & 0x0200) && !(al.AlignmentFlag & 0x0400) && (al.RefID==al.MateRefID) && (al.MapQuality >= c.minMapQual) && (al.Position!=al.MatePosition)) {
+	    // Is the read or its mate in a black-masked region
+	    if (!blackMasked.empty()) {
+	      typename TChrIntervals::const_iterator itBlackMask = std::lower_bound(blackMasked.begin(), blackMasked.end(), std::make_pair(al.Position, 0));
+	      if (itBlackMask!=blackMasked.begin()) --itBlackMask;
+	      if ((itBlackMask->first <= al.Position) && (al.Position<=itBlackMask->second)) continue;
+	      itBlackMask = std::lower_bound(blackMasked.begin(), blackMasked.end(), std::make_pair(al.MatePosition, 0));
+	      if (itBlackMask!=blackMasked.begin()) --itBlackMask;
+	      if ((itBlackMask->first <= al.MatePosition) && (al.MatePosition<=itBlackMask->second)) continue;
+	    }
+
 	    // Is this a discordantly mapped paired-end?
 	    std::string rG = "DefaultLib";
 	    al.GetTag("RG", rG);
