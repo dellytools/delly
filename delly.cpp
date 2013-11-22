@@ -35,6 +35,7 @@ Contact: Tobias Rausch (rausch@embl.de)
 #include <boost/date_time/gregorian/gregorian.hpp>
 #include <boost/math/special_functions/pow.hpp>
 #include <boost/multiprecision/cpp_dec_float.hpp>
+#include <boost/tokenizer.hpp>
 #include <boost/functional/hash.hpp>
 #include <boost/filesystem.hpp>
 #include <boost/progress.hpp>
@@ -138,6 +139,16 @@ struct SortSplitReadRecords : public std::binary_function<TRecord, TRecord, bool
   }
 };
 
+
+// ExcludeInterval
+struct ExcludeInterval {
+  int32_t RefID;
+  int32_t start;
+  int32_t end;
+  
+  ExcludeInterval() {}
+  ExcludeInterval(int32_t r, int32_t s, int32_t e) : RefID(r), start(s), end(e) {}
+};
 
 // Deletions
 template<typename TUSize, typename TSize>
@@ -1126,6 +1137,7 @@ _updateClique(TBamRecordIterator const& el, TSize& svStart, TSize& svEnd, TSize&
 }
 
 
+
 template<typename TSVType>
 inline int run(Config const& c, TSVType svType) {
   // Collect all promising structural variants
@@ -1175,23 +1187,36 @@ inline int run(Config const& c, TSVType svType) {
     sampleLib.insert(std::make_pair(sampleName, libInfo));
   }
 
-
-  // Exclude chromosomes
-  typedef std::map<std::string, unsigned int> TMapChr;
-  TMapChr mapChr;
+  // Parse exclude interval list
   BamTools::RefVector::const_iterator itRef = references.begin();
-  for(unsigned int i = 0;itRef!=references.end();++itRef, ++i) mapChr.insert(std::make_pair(itRef->RefName, i));
   std::vector<bool> validChr;
+  std::vector<ExcludeInterval> exclIntervals;
   validChr.resize(references.size());
   std::fill(validChr.begin(), validChr.end(), true);
   if (boost::filesystem::exists(c.exclude) && boost::filesystem::is_regular_file(c.exclude) && boost::filesystem::file_size(c.exclude)) {
-    std::ifstream chrFile(c.exclude.string().c_str());
+    typedef std::map<std::string, unsigned int> TMapChr;
+    TMapChr mapChr;
+    for(unsigned int i = 0;itRef!=references.end();++itRef, ++i) mapChr.insert(std::make_pair(itRef->RefName, i));
+    std::ifstream chrFile(c.exclude.string().c_str(), std::ifstream::in);
     if (chrFile.is_open()) {
-      std::string chrFromFile;
       while (chrFile.good()) {
+	std::string chrFromFile;
 	getline(chrFile, chrFromFile);
-	TMapChr::const_iterator mapChrIt = mapChr.find(chrFromFile);
-	if (mapChrIt != mapChr.end()) validChr[mapChrIt->second]=false;
+	typedef boost::tokenizer< boost::char_separator<char> > Tokenizer;
+	boost::char_separator<char> sep(" \t,;");
+	Tokenizer tokens(chrFromFile, sep);
+	Tokenizer::iterator tokIter = tokens.begin();
+	if (tokIter!=tokens.end()) {
+	  std::string chr=*tokIter++;
+	  TMapChr::const_iterator mapChrIt = mapChr.find(chr);
+	  if (mapChrIt != mapChr.end()) {
+	    if (tokIter!=tokens.end()) {
+	      int32_t start = boost::lexical_cast<int32_t>(*tokIter++);
+	      int32_t end = boost::lexical_cast<int32_t>(*tokIter++);
+	      exclIntervals.push_back(ExcludeInterval(mapChrIt->second, start, end));
+	    } else validChr[mapChrIt->second]=false; // Exclude entire chromosome
+	  }
+	}
       }
       chrFile.close();
     }
