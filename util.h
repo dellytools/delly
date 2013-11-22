@@ -26,7 +26,7 @@ Contact: Tobias Rausch (rausch@embl.de)
 
 #include <fstream>
 #include <math.h>
-
+#include "tags.h"
 #include "sam.h"
 #include "fasta_reader.h"
 

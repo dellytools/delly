@@ -428,11 +428,8 @@ namespace torali
 
 
 
-  // F+ 0
-  // F- 1
-  // R+ 2
-  // R- 3
 
+  /*
   template<typename TRecord>
   inline int
   getStrandIndependentOrientation(TRecord const& rec) {
@@ -454,27 +451,7 @@ namespace torali
       }
     }
   }
-
-  inline int
-    getStrandIndependentOrientation(BamTools::BamAlignment const& al) {
-    if (al.AlignmentFlag & 0x0040) {
-      if (!(al.AlignmentFlag & 0x0010)) {
-	if (!(al.AlignmentFlag & 0x0020)) return (al.Position < al.MatePosition) ? 0 : 1;
-	else return (al.Position < al.MatePosition) ? 2 : 3;
-      } else {
-	if (!(al.AlignmentFlag & 0x0020)) return (al.Position > al.MatePosition) ? 2 : 3;
-	else return (al.Position > al.MatePosition) ? 0 : 1;
-      }
-    } else {
-      if (!(al.AlignmentFlag & 0x0010)) {
-	if (!(al.AlignmentFlag & 0x0020)) return (al.Position < al.MatePosition) ? 1 : 0;
-	else return (al.Position < al.MatePosition) ? 2 : 3;
-      } else {
-	if (!(al.AlignmentFlag & 0x0020)) return (al.Position > al.MatePosition) ? 2 : 3;
-	else return (al.Position > al.MatePosition) ? 1 : 0;
-      }
-    }
-  }
+  */
 
 
   //FF+ 0

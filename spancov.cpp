@@ -60,6 +60,7 @@ struct Config {
   bool mapq;
   uint16_t minMapQual;
   int bpWindowOffset;
+  std::string svType;
   boost::filesystem::path int_file;
   boost::filesystem::path outfile;
   std::vector<boost::filesystem::path> files;
@@ -93,9 +94,9 @@ _outputQualities(TDataOut& dataOut, std::vector<uint16_t> const& normal, std::ve
 }
 
 
-template<typename THitInterval, typename TCount>
+template<typename THitInterval, typename TCount, typename TSVType>
 inline int
-run(Config const& c, THitInterval, TCount)
+run(Config const& c, THitInterval, TCount, TSVType svType)
 {
   // Valid interval file?
   if (!(boost::filesystem::exists(c.int_file) && boost::filesystem::is_regular_file(c.int_file) && boost::filesystem::file_size(c.int_file))) {
@@ -169,7 +170,7 @@ run(Config const& c, THitInterval, TCount)
   TCountMap abnormalCountMap;
 
   // Annotate spanning coverage
-  annotateSpanningCoverage(c.files, c.bpWindowOffset, c.minMapQual, sampleLib, svs, normalCountMap, abnormalCountMap, THitInterval());
+  annotateSpanningCoverage(c.files, c.bpWindowOffset, c.minMapQual, sampleLib, svs, normalCountMap, abnormalCountMap, THitInterval(), svType);
 
   // Output library statistics
   std::cout << "Library statistics" << std::endl;
@@ -236,6 +237,7 @@ int main(int argc, char **argv) {
   boost::program_options::options_description generic("Generic options");
   generic.add_options()
     ("help,?", "show help message")
+    ("type,t", boost::program_options::value<std::string>(&c.svType)->default_value("DEL"), "SV analysis type (DEL, DUP, INV)")
     ("show-mapq,s", "use list of PE MAPQ instead of PE counts")
     ("quality-cut,q", boost::program_options::value<uint16_t>(&c.minMapQual)->default_value(0), "min. paired-end mapping quality")
     ("bp-offset,b", boost::program_options::value<int>(&c.bpWindowOffset)->default_value(1000), "breakpoint offset")
@@ -279,6 +281,21 @@ int main(int argc, char **argv) {
   else c.mapq=false;
 
   // Run spanning coverage
-  if (c.mapq) return run(c, HitInterval<int32_t, uint16_t>(), std::vector<uint16_t>());
-  else return run(c, HitInterval<int32_t, void>(), int());
+  if (c.mapq) {
+    if (c.svType == "DEL") return run(c, HitInterval<int32_t, uint16_t>(), std::vector<uint16_t>(), SVType<DeletionTag>());
+    else if (c.svType == "DUP") return run(c, HitInterval<int32_t, uint16_t>(), std::vector<uint16_t>(), SVType<DuplicationTag>());
+    else if (c.svType == "INV") return run(c, HitInterval<int32_t, uint16_t>(), std::vector<uint16_t>(), SVType<InversionTag>());
+    else {
+      std::cerr << "SV analysis type not supported by Delly: " << c.svType << std::endl;
+      return -1;
+    }
+  } else {
+    if (c.svType == "DEL") return run(c, HitInterval<int32_t, void>(), int(), SVType<DeletionTag>());
+    else if (c.svType == "DUP") return run(c, HitInterval<int32_t, void>(), int(), SVType<DuplicationTag>());
+    else if (c.svType == "INV") return run(c, HitInterval<int32_t, void>(), int(), SVType<InversionTag>());
+    else {
+      std::cerr << "SV analysis type not supported by Delly: " << c.svType << std::endl;
+      return -1;
+    }
+  }
 }

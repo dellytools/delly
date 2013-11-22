@@ -165,9 +165,9 @@ namespace torali {
   }
 
 
-  template<typename TFiles, typename TSampleLibrary, typename TSVs, typename TCountMap, typename THitInterval>
+  template<typename TFiles, typename TSampleLibrary, typename TSVs, typename TCountMap, typename THitInterval, typename TSVType>
     inline void
-    annotateSpanningCoverage(TFiles const& files, int bpWindowOffset, uint16_t minMapQual, TSampleLibrary& sampleLib, TSVs& svs, TCountMap& normalCountMap, TCountMap& abnormalCountMap, THitInterval)
+    annotateSpanningCoverage(TFiles const& files, int bpWindowOffset, uint16_t minMapQual, TSampleLibrary& sampleLib, TSVs& svs, TCountMap& normalCountMap, TCountMap& abnormalCountMap, THitInterval, TSVType svType)
   {
     typedef typename TCountMap::key_type TSampleSVPair;
     typedef typename TCountMap::mapped_type TCountRange;
@@ -190,7 +190,7 @@ namespace torali {
     }
 
     // Sort Structural Variants
-    sort(svs.begin(), svs.end(), SortSVs<StructuralVariantRecord>());
+    std::sort(svs.begin(), svs.end(), SortSVs<StructuralVariantRecord>());
 
     // Process chromosome by chromosome
     boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
@@ -199,6 +199,19 @@ namespace torali {
     typename BamTools::RefVector::const_iterator  itRef = references.begin();
     for(int refIndex=0;itRef!=references.end();++itRef, ++refIndex) {
       ++show_progress;
+
+      // Collect all SV sizes on this chromosome
+      typedef std::vector<std::pair<int, int> > TSVSizes;
+      TSVSizes svSizes;
+      StructuralVariantRecord findSV(references[refIndex].RefName, 0, 0);
+      typename TSVs::const_iterator itSV = std::lower_bound(svs.begin(), svs.end(), findSV, SortSVs<StructuralVariantRecord>());
+      typename TSVs::const_iterator itSVEnd = svs.end();
+      for(;itSV!=itSVEnd;++itSV) {
+	if (itSV->chr == references[refIndex].RefName) {
+	  svSizes.push_back(std::make_pair(itSV->svStart, itSV->svEnd));
+	} else break;
+      }
+      std::sort(svSizes.begin(), svSizes.end());
 
       // Iterate all samples
       for(unsigned int file_c = 0; file_c < files.size(); ++file_c) {
@@ -236,6 +249,20 @@ namespace torali {
 	    al.GetTag("RG", rG);
 	    typename TLibraryMap::iterator libIt=sampleIt->second.find(rG);
 	    if (libIt->second.median == 0) continue; // Single-end library
+	    unsigned int outerISize = std::abs(al.Position - al.MatePosition) + al.Length;
+	    if ((getStrandIndependentOrientation(al) != libIt->second.defaultOrient) || (outerISize > libIt->second.maxNormalISize)) {
+	      if (_acceptedInsertSize(libIt->second.maxNormalISize, libIt->second.median, abs(al.InsertSize), svType)) continue;  // Normal paired-end (for deletions only)
+	      if (_acceptedOrientation(libIt->second.defaultOrient, getStrandIndependentOrientation(al), svType)) continue;  // Orientation disagrees with SV type
+
+	      // Does the pair confirm a valid SV size
+	      int minPos = std::min(al.Position, al.MatePosition);
+	      int maxPos = std::max(al.Position, al.MatePosition);
+	      typename TSVSizes::const_iterator itSize = std::lower_bound(svSizes.begin(), svSizes.end(), std::make_pair(minPos, maxPos));
+	      bool validSize = false;
+	      if ((itSize != svSizes.begin()) && (!_pairsDisagree((itSize-1)->first, (itSize-1)->second, al.Length, libIt->second.median, minPos, maxPos, al.Length, libIt->second.median, _getSpanOrientation(al, libIt->second.defaultOrient, svType), svType))) validSize = true;
+	      else if ((itSize != svSizes.end()) && (!_pairsDisagree(minPos, maxPos, al.Length, libIt->second.median, itSize->first, itSize->second, al.Length, libIt->second.median, _getSpanOrientation(al, libIt->second.defaultOrient, svType), svType))) validSize = true;
+	      if (!validSize) continue;
+	    }
 
 	    // Get or store the mapping quality for the partner
 	    if (al.Position<al.MatePosition) {
@@ -258,7 +285,6 @@ namespace torali {
 	      boost::tie(pos, inserted) = unique_pairs.insert(hitPos);
 	      if (inserted) {
 		// Insert the interval
-		unsigned int outerISize = (al.Position + al.Length) - al.MatePosition;
 		if ((getStrandIndependentOrientation(al) == libIt->second.defaultOrient) && (outerISize >= libIt->second.minNormalISize) && (outerISize <= libIt->second.maxNormalISize)) {
 		  // Normal spanning coverage
 		  normalSpan.push_back(THitInterval(al.MatePosition, al.Position+al.Length, pairQuality));
@@ -296,9 +322,7 @@ namespace torali {
 	_addReadAndBpCounts(missingSpan, missingCount);
 
 	// Store spanning coverage for all input intervals
-	StructuralVariantRecord findSV;
-	findSV.svStart=0;
-	findSV.chr=references[refIndex].RefName;
+	StructuralVariantRecord findSV(references[refIndex].RefName, 0, 0);
 	typename TSVs::const_iterator itSV = std::lower_bound(svs.begin(), svs.end(), findSV, SortSVs<StructuralVariantRecord>());
 	typename TSVs::const_iterator itSVEnd = svs.end();
 	for(;itSV!=itSVEnd;++itSV) {

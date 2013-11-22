@@ -94,9 +94,10 @@ struct BamAlignRecord {
   int32_t     Median;
   int32_t     Mad;
   int32_t     maxNormalISize;
+  int         libOrient;
   uint32_t    AlignmentFlag; 
 
-  BamAlignRecord(BamTools::BamAlignment const& al, uint16_t pairQuality, int32_t median, int32_t mad, int32_t maxISize) : Length(al.Length), RefID(al.RefID), Position(al.Position), MateRefID(al.MateRefID), MatePosition(al.MatePosition), MapQuality(pairQuality), Median(median), Mad(mad), maxNormalISize(maxISize), AlignmentFlag(al.AlignmentFlag) {}
+  BamAlignRecord(BamTools::BamAlignment const& al, uint16_t pairQuality, int32_t median, int32_t mad, int32_t maxISize, int lO) : Length(al.Length), RefID(al.RefID), Position(al.Position), MateRefID(al.MateRefID), MatePosition(al.MatePosition), MapQuality(pairQuality), Median(median), Mad(mad), maxNormalISize(maxISize), libOrient(lO), AlignmentFlag(al.AlignmentFlag) {}
 
 };
 
@@ -838,9 +839,19 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TR
     for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
       // Get the sample name
       std::string sampleName(c.files[file_c].stem().string());
-      TSampleSVPair sampleSVPair = std::make_pair(sampleName, svIter->id);
-      typename TCountMap::iterator countMapIt=normalCountMap.find(sampleSVPair);
-      typename TCountMap::iterator abCountMapIt=abnormalCountMap.find(sampleSVPair);
+      TSampleSVPair sampleSVPairLeft = std::make_pair(sampleName, svIter->id);
+      TSampleSVPair sampleSVPairRight = std::make_pair(sampleName, -svIter->id);
+      typename TCountMap::iterator countMapItLeft=normalCountMap.find(sampleSVPairLeft);
+      typename TCountMap::iterator countMapItRight=normalCountMap.find(sampleSVPairRight);
+      typename TCountMap::iterator abCountMapItLeft=abnormalCountMap.find(sampleSVPairLeft);
+      typename TCountMap::iterator abCountMapItRight=abnormalCountMap.find(sampleSVPairRight);
+      typename TCountMap::iterator countMapIt; 
+      typename TCountMap::iterator abCountMapIt;
+      // Always take the minimum to be conservative (and to flag unclear samples as LowQual)
+      if (countMapItLeft->second[0].size() <= countMapItRight->second[0].size()) countMapIt=countMapItLeft;
+      else countMapIt=countMapItRight;
+      if (abCountMapItLeft->second[0].size() <= abCountMapItRight->second[0].size()) abCountMapIt=abCountMapItLeft;
+      else abCountMapIt=abCountMapItRight;
       TMapqVector const& mapqRef = countMapIt->second[0];
       TMapqVector const& mapqAlt = abCountMapIt->second[0];
 
@@ -889,7 +900,7 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TR
       } else {
 	ofile << "\t./.:.,.,.:0:LowQual:";
       }
-      typename TReadCountMap::iterator readCountMapIt=readCountMap.find(sampleSVPair);
+      typename TReadCountMap::iterator readCountMapIt=readCountMap.find(sampleSVPairLeft);
       ofile << readCountMapIt->second.second << ":" << mapqRef.size() << ":" << mapqAlt.size();
     }
     ofile << std::endl;
@@ -1053,73 +1064,6 @@ findPutativeSplitReads(TConfig const& c, std::vector<TStructuralVariantRecord>& 
   return (totalSplitReadsAligned>0);
 }
 
-
-// Deletions
-template<typename TISize>
-inline bool
-_acceptedInsertSize(TISize maxNormalISize, TISize, TISize iSize, SVType<DeletionTag>) {
-  return (maxNormalISize > iSize);
-}
-
-// Duplications
-template<typename TISize>
-inline bool
-_acceptedInsertSize(TISize, TISize median, TISize iSize, SVType<DuplicationTag>) {
-  // Exclude the chimeras in mate-pair libraries
-  return !((median<1000) || ((median>=1000) && (iSize >=1000)));
-}
-
-// Other SV Types
-template<typename TISize, typename TTag>
-inline bool
-_acceptedInsertSize(TISize, TISize, TISize, SVType<TTag>) {
-  return false;
-}
-
-// Deletions
-template<typename TOrientation>
-inline bool
-_acceptedOrientation(TOrientation def, TOrientation lib, SVType<DeletionTag>) {
-  return (def != lib);
-}
-
-// Duplications
-template<typename TOrientation>
-inline bool
-_acceptedOrientation(TOrientation def, TOrientation lib, SVType<DuplicationTag>) {
-  if (def==0) return (lib != 1);
-  else if (def==1) return (lib!=0);
-  else if (def==2) return (lib!=3);
-  else if (def==3) return (lib!=2);
-  else return true;
-}
-
-// Other SV Types
-template<typename TOrientation, typename TTag>
-inline bool
-_acceptedOrientation(TOrientation def, TOrientation lib, SVType<TTag>) {
-  return false;
-}
-
-// Deletions
-template<typename TSize, typename TISize>
-inline bool
-_pairsDisagree(TSize pair1Min, TSize pair1Max, TSize pair1ReadLength, TISize pair1maxNormalISize, TSize pair2Min, TSize pair2Max, TSize pair2ReadLength, TISize pair2maxNormalISize, SVType<DeletionTag>) {
-  if ((pair2Min + pair2ReadLength - pair1Min) > pair1maxNormalISize) return true;
-  if ((pair2Max < pair1Max) && ((pair1Max + pair1ReadLength - pair2Max) > pair1maxNormalISize)) return true;
-  if ((pair2Max >= pair1Max) && ((pair2Max + pair2ReadLength - pair1Max) > pair2maxNormalISize)) return true;
-  return false;
-}
-
-// Duplications
-template<typename TSize, typename TISize>
-inline bool
-_pairsDisagree(TSize pair1Min, TSize pair1Max, TSize pair1ReadLength, TISize pair1maxNormalISize, TSize pair2Min, TSize pair2Max, TSize pair2ReadLength, TISize pair2maxNormalISize, SVType<DuplicationTag>) {
-  if ((pair2Min + pair2ReadLength - pair1Min) > pair2maxNormalISize) return true;
-  if ((pair2Max < pair1Max) && ((pair1Max + pair1ReadLength - pair2Max) > pair2maxNormalISize)) return true;
-  if ((pair2Max >= pair1Max) && ((pair2Max + pair2ReadLength - pair1Max) > pair1maxNormalISize)) return true;
-  return false;
-}
 
 // Initialize clique, deletions
 template<typename TBamRecordIterator, typename TSize>
@@ -1321,7 +1265,7 @@ inline int run(Config const& c, TSVType svType) {
 	      bool inserted;
 	      boost::tie(pos, inserted) = unique_pairs.insert(hitPos);
 	      if (inserted) {
-		bamRecord.push_back(BamAlignRecord(al, pairQuality, libIt->second.median, libIt->second.mad, libIt->second.maxNormalISize));
+		bamRecord.push_back(BamAlignRecord(al, pairQuality, libIt->second.median, libIt->second.mad, libIt->second.maxNormalISize, libIt->second.defaultOrient));
 		++libIt->second.unique_pairs;
 	      } else {
 		++libIt->second.non_unique_pairs;
@@ -1358,7 +1302,7 @@ inline int run(Config const& c, TSVType svType) {
       TBamRecord::const_iterator vecNext = vecBeg + 1;
       for(; ((vecNext != vecEnd) && (abs(std::min(vecNext->Position, vecNext->MatePosition) + vecNext->Length - minCoord) <= overallMaxISize)) ; ++vecNext) {
 	// Check combinability of pairs
-	if (_pairsDisagree(minCoord, maxCoord, vecBeg->Length, vecBeg->maxNormalISize, std::min(vecNext->Position, vecNext->MatePosition), std::max(vecNext->Position, vecNext->MatePosition), vecNext->Length, vecNext->maxNormalISize, svType)) continue;
+	if (_pairsDisagree(minCoord, maxCoord, vecBeg->Length, vecBeg->maxNormalISize, std::min(vecNext->Position, vecNext->MatePosition), std::max(vecNext->Position, vecNext->MatePosition), vecNext->Length, vecNext->maxNormalISize, _getSpanOrientation(*vecBeg, vecBeg->libOrient, svType), svType)) continue;
 	
 	TNameVertexMap::iterator pos;
 	bool inserted;
@@ -1566,7 +1510,7 @@ inline int run(Config const& c, TSVType svType) {
   typedef std::map<TSampleSVPair, TCountRange> TCountMap;
   TCountMap normalCountMap;
   TCountMap abnormalCountMap;
-  annotateSpanningCoverage(c.files, 0, 20, sampleLib, svs, normalCountMap, abnormalCountMap, HitInterval<int32_t, uint16_t>());
+  annotateSpanningCoverage(c.files, 0, 20, sampleLib, svs, normalCountMap, abnormalCountMap, HitInterval<int32_t, uint16_t>(), svType);
   now = boost::posix_time::second_clock::local_time();
   std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Library statistics" << std::endl;
   sampleIt=sampleLib.begin();
@@ -1665,7 +1609,7 @@ int main(int argc, char **argv) {
     } else if (vm.count("license")) {
       gplV3();
     } else {
-      std::cout << "Usage: " << argv[0] << " [OPTIONS] <sample1.bam> <sample2.bam> ..." << std::endl;
+      std::cout << "Usage: " << argv[0] << " [OPTIONS] <sample1.sort.bam> <sample2.sort.bam> ..." << std::endl;
       std::cout << visible_options << "\n"; 
     }
     return 1; 
