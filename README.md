@@ -21,3 +21,11 @@ Please update the paths to Boost, BamTools and KSEQ in the Makefile.
 Running DELLY
 =============
 
+
+Citation
+========
+
+DELLY: structural variant discovery by integrated paired-end and split-read analysis.
+Tobias Rausch; Thomas Zichner; Andreas Schlattl; Adrian M. Stuetz; Vladimir Benes; Jan O. Korbel;
+Bioinformatics 2012 28: i333-i339
+
