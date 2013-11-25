@@ -1,5 +1,5 @@
-DELLY:  Structural variant discovery by integrated paired-end and split-read analysis
-=====================================================================================
+DELLY
+=====
 
 DELLY is an integrated structural variant prediction method that can detect deletions, tandem duplications, inversions and translocations
 at single-nucleotide resolution in short-read massively parallel sequencing data. It uses paired-ends and split-reads to sensitively and accurately
