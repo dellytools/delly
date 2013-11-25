@@ -4,7 +4,7 @@ DELLY
 DELLY: Structural variant discovery by integrated paired-end and split-read analysis
 
 DELLY dependencies
-==================
+------------------
 
 * BamTools, (https://github.com/pezmaster31/bamtools)
 * Boost C++ Libraries, (www.boost.org)
