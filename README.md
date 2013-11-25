@@ -52,25 +52,21 @@ FAQ
 This depends on the sharpness of the insert size distribution. For an insert size of 200-300bp with a 20-30bp standard deviation, DELLY starts to call reliable SVs >=300bp.
 
 * Can DELLY be used on a non-diploid genome?
-
 Yes and no. The site discovery works for any ploidy. However, the genotyping follow the hom. reference, het. and hom. alternative scheme.
 
 * Is there any visualization of the called SVs?
 No, DELLY does not produce any graphical output. However, there are many viewers such as the [IGV](http://www.broadinstitute.org/igv/) that do visualize discordantly mapped paired-ends.
 
 * How can DELLY be used to call somatic SVs?
-
 Run DELLY on as many cancer and control genomes you have access to and then filter the tumor SVs of a single sample against all SVs called in all control genomes. In practice, this appears to be one of the best options to derive a high quality set of somatic SVs. For copy-number variable events (CNVs) such as deletions and tandem duplications a further annotation with read-depth may be helpful, although most complex rearrangements do not necessarily show such a read-depth change.
 
 * How can DELLY be used to call germline SVs?
-
 ToDo
 
 * Can DELLY be used on bwa mem alignments?</b><br>
 DELLY can be used with bwa mem but you have to mark shorter split-read alignments as secondary alignments using the '-M' option, e.g. bwa mem -M ref.fa file.fq.gz.
 
 * Are non-unique alignments, multi-mappings and/or multiple split-read alignments allowed?
-
 DELLY expects two alignment records in the bam file for every paired-end, one for the first and one for the second read. Multiple split-read alignment records of a given read are allowed if and only if one of them (e.g. the longest split alignment) is a primary alignment whereas all others are marked as secondary (flag 0x0100).
 
 
