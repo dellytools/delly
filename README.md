@@ -27,7 +27,7 @@ Citation
 
 Tobias Rausch, Thomas Zichner, Andreas Schlattl, Adrian M. Stuetz, Vladimir Benes, Jan O. Korbel.
 
-DELLY: structural variant discovery by integrated paired-end and split-read analysis.
+[DELLY](http://bioinformatics.oxfordjournals.org/content/28/18/i333.abstract): structural variant discovery by integrated paired-end and split-read analysis.
 
 Bioinformatics 2012 28: i333-i339.
 
