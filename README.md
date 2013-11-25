@@ -12,18 +12,18 @@ DELLY dependencies
 * kseq library to parse FASTA/FASTQ, (http://lh3lh3.users.sourceforge.net/parsefastq.shtml)
 
 Installing DELLY
-================
+----------------
 
 Please update the paths to Boost, BamTools and KSEQ in the Makefile.
 
 `make -B src/delly`
 
 Running DELLY
-=============
+-------------
 
 
 Citation
-========
+--------
 
 Tobias Rausch, Thomas Zichner, Andreas Schlattl, Adrian M. Stuetz, Vladimir Benes, Jan O. Korbel.
 
