@@ -48,7 +48,7 @@ If you omit the reference sequence DELLY skips the split-read analysis. The vcf 
 
 FAQ
 ---
-* What is the smallest SV size DELLY can call?</b><br>
+* What is the smallest SV size DELLY can call?\n
 This depends on the sharpness of the insert size distribution. For an insert size of 200-300bp with a 20-30bp standard deviation, DELLY starts to call reliable SVs >=300bp.
 
 * Can DELLY be used on a non-diploid genome?
