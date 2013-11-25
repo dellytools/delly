@@ -838,11 +838,11 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TR
     ofile << "END=" << svIter->svEnd << ";";
     ofile << "SVLEN=" << (svIter->svEnd - svIter->svStart) << ";";
     ofile << "PE=" << svIter->peSupport << ";";
-    ofile << "MAPQ=" << svIter->peMapQuality << ";";
+    ofile << "MAPQ=" << svIter->peMapQuality;
     if (svIter->precise)  {
-      ofile << "SR=" << svIter->srSupport << ";";
-      ofile << "SRQ=" << svIter->srAlignQuality << ";";
-      ofile << "CONSENSUS=" << svIter->consensus << ";";
+      ofile << ";SR=" << svIter->srSupport;
+      ofile << ";SRQ=" << svIter->srAlignQuality;
+      ofile << ";CONSENSUS=" << svIter->consensus;
     }
 
     // Add genotype columns (right bp only across all samples)
