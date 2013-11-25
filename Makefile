@@ -18,7 +18,7 @@ LDFLAGS += -L${BOOST}/lib -lboost_iostreams -lboost_filesystem -lboost_system -l
 ### Code checker: Cppcheck
 ## cppcheck -I${BAMTOOLS}/include -I${KSEQ} -I${BOOST}/include/ --enable=style,performance,portability,information,unusedFunction delly/delly.cpp
 ### Static binaries
-## LDFLAGS += --static
+LDFLAGS += --static
 
 TARGETS = src/delly src/iover src/cov src/spancov src/iMerge src/extract 
 
