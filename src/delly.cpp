@@ -39,7 +39,7 @@ Contact: Tobias Rausch (rausch@embl.de)
 #include <boost/functional/hash.hpp>
 #include <boost/filesystem.hpp>
 #include <boost/progress.hpp>
-
+#include "api/BamReader.h"
 #include "api/BamIndex.h"
 
 #include "version.h"

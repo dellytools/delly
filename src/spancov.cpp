@@ -41,17 +41,14 @@ Contact: Tobias Rausch (rausch@embl.de)
 #include <boost/functional/hash.hpp>
 #include <boost/filesystem.hpp>
 #include <boost/progress.hpp>
-#include "api/BamMultiReader.h"
+#include "api/BamIndex.h"
 #include "api/BamReader.h"
 
-#include "memory_mapped_file.h"
-#include "bam_file_adaptor.h"
 #include "version.h"
 #include "util.h"
 #include "tags.h"
 #include "spanning.h"
 #include "intervaltree.h"
-#include "fasta_reader.h"
 
 
 using namespace torali;

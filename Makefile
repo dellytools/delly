@@ -16,28 +16,28 @@ CXXFLAGS += -O9 -pedantic -W -Wall
 ## cppcheck -I${BAMTOOLS}/include -I${KSEQ} -I${BOOST}/include/ --enable=style,performance,portability,information,unusedFunction delly/delly.cpp
 
 LDFLAGS += -L${BOOST}/lib -lboost_iostreams -lboost_filesystem -lboost_system -lboost_program_options -lboost_date_time -L${BAMTOOLS}/lib -lbamtools -lz
-LDFLAGS += --static
+#LDFLAGS += --static
 
-TARGETS = delly iover cov spancov iMerge extract 
+TARGETS = src/delly src/iover src/cov src/spancov src/iMerge src/extract 
 
 all:   	$(TARGETS)
 
-delly:
+src/delly:
 	$(CXX) $(CXXFLAGS) $@.cpp -o $@ $(LDFLAGS)
 
-iover:
+src/iover:
 	$(CXX) $(CXXFLAGS) $@.cpp -o $@ $(LDFLAGS)
 
-iMerge:
+src/iMerge:
 	$(CXX) $(CXXFLAGS) $@.cpp -o $@ $(LDFLAGS)
 
-extract:
+src/extract:
 	$(CXX) $(CXXFLAGS) $@.cpp -o $@ $(LDFLAGS)
 
-cov:
+src/cov:
 	$(CXX) $(CXXFLAGS) $@.cpp -o $@ $(LDFLAGS)
 
-spancov:
+src/spancov:
 	$(CXX) $(CXXFLAGS) $@.cpp -o $@ $(LDFLAGS)
 
 clean:
