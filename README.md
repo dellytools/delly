@@ -32,6 +32,8 @@ Alternatively, statically linked binaries for Linux 64-bit are available here [d
 Running DELLY
 -------------
 
+`./src/delly -t DEL -o del.vcf -g <ref.fa> <sample1.sort.bam> <sample2.sort.bam> <sample3.sort.bam> ...`
+
 
 Citation
 --------
