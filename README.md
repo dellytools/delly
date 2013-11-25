@@ -17,18 +17,16 @@ DELLY dependencies
 Installing DELLY
 ----------------
 
-The easiest way to get DELLY is to clone the git repository:
+The easiest way to get DELLY is to clone the git repository
 
 `git clone https://github.com/tobiasrausch/delly.git`
 
 Then you need to install Boost, BamTools and KSEQ and update the paths in the Makefile.
-Building DELLY requires just:
+Building DELLY just requires
 
 `make -B src/delly`
 
-Alternatively, statically linked binaries for Linux 64-bit are available here:
-
-Linux 64-bit Binaries, [delly_v0.0.11.tar.gz](http://www.embl.de/~rausch/delly_v0.0.11.tar.gz)
+Alternatively, statically linked binaries for Linux 64-bit are available here [delly_v0.0.11.tar.gz](http://www.embl.de/~rausch/delly_v0.0.11.tar.gz)
 
 
 Running DELLY
