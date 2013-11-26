@@ -318,19 +318,21 @@ namespace torali
       }
       
       // Check that this is a proper paired-end library and require that there are at least 1000 pairs to estimate the insert size
-      if (paramIt->second.vecISize.size()>=1000) {
+      if (paramIt->second.vecISize.size()>=10000) {
 	// Get library stats
 	double median;
 	double mad;
 	double percentileCutoff;
 	getLibraryStats(paramIt->second.vecISize.begin(), paramIt->second.vecISize.end(), percentile, median, mad, percentileCutoff);
-	libInfoIt->second.median = (int) median;
-	libInfoIt->second.mad = (int) mad;
-	libInfoIt->second.percentileCutoff = (int) percentileCutoff;
-	if (percentile!=0) libInfoIt->second.maxNormalISize = libInfoIt->second.percentileCutoff;
-	else libInfoIt->second.maxNormalISize = libInfoIt->second.median + (madCutoff * libInfoIt->second.mad);
-	libInfoIt->second.minNormalISize = libInfoIt->second.median - (madCutoff * libInfoIt->second.mad);
-	if (libInfoIt->second.minNormalISize < 1) libInfoIt->second.minNormalISize=1;
+	if ((median >= 50) && (median<=100000)) {
+	  libInfoIt->second.median = (int) median;
+	  libInfoIt->second.mad = (int) mad;
+	  libInfoIt->second.percentileCutoff = (int) percentileCutoff;
+	  if (percentile!=0) libInfoIt->second.maxNormalISize = libInfoIt->second.percentileCutoff;
+	  else libInfoIt->second.maxNormalISize = libInfoIt->second.median + (madCutoff * libInfoIt->second.mad);
+	  libInfoIt->second.minNormalISize = libInfoIt->second.median - (madCutoff * libInfoIt->second.mad);
+	  if (libInfoIt->second.minNormalISize < 1) libInfoIt->second.minNormalISize=1;
+	}
       }
     }
   }
