@@ -41,9 +41,17 @@ Each bam file is assumed to be one sample. If you do have multiple bam files for
 
 `./src/delly -t DEL -x human.hg19.excl.tsv -o del.vcf -g <ref.fa> <sample1.sort.bam> <sample2.sort.bam> <sample3.sort.bam> ...`
 
-If you omit the reference sequence DELLY skips the split-read analysis. The vcf output fields are explained in the vcf header and the vcf file itself follows the [vcf specification](http://vcftools.sourceforge.net/specs.html).
+If you omit the reference sequence DELLY skips the split-read analysis. The vcf file follows the [vcf specification](http://vcftools.sourceforge.net/specs.html) and all output fields are explained in the vcf header.
 
 `grep "^#" del.vcf`
+
+Delly ships with a small python script to annotate differential read-depth between SV carrier and non-carrier samples. This script is primarily meant as an example of how you can filter and annotate the final DELLY vcf file further. 
+
+`python diffRC.py -t DEL -v del.vcf -o del.rd.vcf`
+
+There are also external packages that consume VCF files with per-sample genotype likelihoods. The [arfer](https://github.com/ekg/arfer) package annotates, for instance, Hardy-Weinberg Equilibrium and the inbreeding coefficient, which is useful for selecting polymorphic sites in the genome across a population.
+
+`cat del.rd.vcf | ./arfer/arfer > del.rd.arfer.vcf`
 
 
 FAQ
