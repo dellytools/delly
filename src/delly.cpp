@@ -1347,7 +1347,7 @@ inline int run(Config const& c, TSVType svType) {
       TBamRecord::const_iterator vecNext = vecBeg + 1;
       for(; ((vecNext != vecEnd) && (abs(std::min(vecNext->Position, vecNext->MatePosition) + vecNext->Length - minCoord) <= overallMaxISize)) ; ++vecNext) {
 	// Check combinability of pairs
-	if (_pairsDisagree(minCoord, maxCoord, vecBeg->Length, vecBeg->maxNormalISize, std::min(vecNext->Position, vecNext->MatePosition), std::max(vecNext->Position, vecNext->MatePosition), vecNext->Length, vecNext->maxNormalISize, _getSpanOrientation(*vecBeg, vecBeg->libOrient, svType), svType)) continue;
+	if (_pairsDisagree(minCoord, maxCoord, vecBeg->Length, vecBeg->maxNormalISize, std::min(vecNext->Position, vecNext->MatePosition), std::max(vecNext->Position, vecNext->MatePosition), vecNext->Length, vecNext->maxNormalISize, _getSpanOrientation(*vecBeg, vecBeg->libOrient, svType), _getSpanOrientation(*vecNext, vecNext->libOrient, svType), svType)) continue;
 	
 	TNameVertexMap::iterator pos;
 	bool inserted;

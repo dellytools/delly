@@ -259,8 +259,8 @@ namespace torali {
 	      int maxPos = std::max(al.Position, al.MatePosition);
 	      typename TSVSizes::const_iterator itSize = std::lower_bound(svSizes.begin(), svSizes.end(), std::make_pair(minPos, maxPos));
 	      bool validSize = false;
-	      if ((itSize != svSizes.begin()) && (!_pairsDisagree((itSize-1)->first, (itSize-1)->second, al.Length, libIt->second.median, minPos, maxPos, al.Length, libIt->second.median, _getSpanOrientation(al, libIt->second.defaultOrient, svType), svType))) validSize = true;
-	      else if ((itSize != svSizes.end()) && (!_pairsDisagree(minPos, maxPos, al.Length, libIt->second.median, itSize->first, itSize->second, al.Length, libIt->second.median, _getSpanOrientation(al, libIt->second.defaultOrient, svType), svType))) validSize = true;
+	      if ((itSize != svSizes.begin()) && (!_pairsDisagree((itSize-1)->first, (itSize-1)->second, al.Length, libIt->second.median, minPos, maxPos, al.Length, libIt->second.median, _getSpanOrientation(al, libIt->second.defaultOrient, svType), _getSpanOrientation(al, libIt->second.defaultOrient, svType), svType))) validSize = true;
+	      else if ((itSize != svSizes.end()) && (!_pairsDisagree(minPos, maxPos, al.Length, libIt->second.median, itSize->first, itSize->second, al.Length, libIt->second.median, _getSpanOrientation(al, libIt->second.defaultOrient, svType), _getSpanOrientation(al, libIt->second.defaultOrient, svType), svType))) validSize = true;
 	      if (!validSize) continue;
 	    }
 

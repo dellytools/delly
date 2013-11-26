@@ -173,7 +173,7 @@ namespace torali {
   // Deletions
   template<typename TSize, typename TISize>
     inline bool
-    _pairsDisagree(TSize pair1Min, TSize pair1Max, TSize pair1ReadLength, TISize pair1maxNormalISize, TSize pair2Min, TSize pair2Max, TSize pair2ReadLength, TISize pair2maxNormalISize, bool, SVType<DeletionTag>) {
+    _pairsDisagree(TSize pair1Min, TSize pair1Max, TSize pair1ReadLength, TISize pair1maxNormalISize, TSize pair2Min, TSize pair2Max, TSize pair2ReadLength, TISize pair2maxNormalISize, bool, bool, SVType<DeletionTag>) {
     //std::cout << pair1Min << ',' << pair1Max << ',' << pair1ReadLength << ',' << pair1maxNormalISize << ',' << pair2Min << ',' << pair2Max << ',' << pair2ReadLength << ',' << pair2maxNormalISize << std::endl;
     if ((pair2Min + pair2ReadLength - pair1Min) > pair1maxNormalISize) return true;
     if ((pair2Max < pair1Max) && ((pair1Max + pair1ReadLength - pair2Max) > pair1maxNormalISize)) return true;
@@ -184,7 +184,7 @@ namespace torali {
   // Duplications
   template<typename TSize, typename TISize>
     inline bool
-    _pairsDisagree(TSize pair1Min, TSize pair1Max, TSize pair1ReadLength, TISize pair1maxNormalISize, TSize pair2Min, TSize pair2Max, TSize pair2ReadLength, TISize pair2maxNormalISize, bool, SVType<DuplicationTag>) {
+    _pairsDisagree(TSize pair1Min, TSize pair1Max, TSize pair1ReadLength, TISize pair1maxNormalISize, TSize pair2Min, TSize pair2Max, TSize pair2ReadLength, TISize pair2maxNormalISize, bool, bool, SVType<DuplicationTag>) {
     if ((pair2Min + pair2ReadLength - pair1Min) > pair2maxNormalISize) return true;
     if ((pair2Max < pair1Max) && ((pair1Max + pair1ReadLength - pair2Max) > pair2maxNormalISize)) return true;
     if ((pair2Max >= pair1Max) && ((pair2Max + pair2ReadLength - pair1Max) > pair1maxNormalISize)) return true;
@@ -221,8 +221,10 @@ namespace torali {
   // Inversions
   template<typename TSize, typename TISize>
     inline bool
-    _pairsDisagree(TSize pair1Min, TSize pair1Max, TSize pair1ReadLength, TISize pair1maxNormalISize, TSize pair2Min, TSize pair2Max, TSize pair2ReadLength, TISize pair2maxNormalISize, bool left, SVType<InversionTag>) {
-    if (left) {
+    _pairsDisagree(TSize pair1Min, TSize pair1Max, TSize pair1ReadLength, TISize pair1maxNormalISize, TSize pair2Min, TSize pair2Max, TSize pair2ReadLength, TISize pair2maxNormalISize, bool pair1Left, bool pair2Left, SVType<InversionTag>) {
+    // Do both pairs support the same inversion type (left- or right-spanning)
+    if (pair1Left != pair2Left) return true;
+    if (pair1Left) {
       // Left-spanning inversions
       if ((pair2Min + pair2ReadLength - pair1Min) > pair1maxNormalISize) return true;
       if ((pair2Max < pair1Max) && ((pair1Max + pair1ReadLength - pair2Max) > pair2maxNormalISize)) return true;

@@ -26,7 +26,7 @@ Building DELLY just requires
 
 `make -B src/delly`
 
-Alternatively, statically linked binaries for Linux 64-bit are available here [delly_v0.0.11.tar.gz](http://www.embl.de/~rausch/delly_v0.0.11.tar.gz)
+Alternatively, a statically linked binary for Linux 64-bit is available here [delly_v0.1.1.tar.gz](http://www.embl.de/~rausch/delly_v0.1.1.tar.gz)
 
 
 Running DELLY
