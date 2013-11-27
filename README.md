@@ -56,7 +56,7 @@ There are also external packages that consume VCF files with per-sample genotype
 
 FAQ
 ---
-* What about inversions and translocations?
+* What about inversions and translocations?  
 Not yet supported in DELLY v0.1.1. Please use the old single sample DELLY version available [here](http://www.embl.de/~rausch/delly.html).
 
 * What is the smallest SV size DELLY can call?  
