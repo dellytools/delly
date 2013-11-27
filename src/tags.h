@@ -95,6 +95,7 @@ namespace torali {
     double srAlignQuality;
     unsigned int id;
     bool precise;
+    bool left;
     uint16_t peMapQuality;
     std::string chr;
     std::string consensus;
