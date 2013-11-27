@@ -12,7 +12,7 @@ import numpy
 # Parse command line
 parser=argparse.ArgumentParser(description='Annotates sites for differential read counts between carrier and non-carrier samples.')
 parser.add_argument('-v', '--vcf', metavar='variants.vcf', required=True, dest='vcfFile', help='input vcf file (required)')
-parser.add_argument('-out', '--out', metavar='out.vcf', required=True, dest='outFile', help='output vcf file (required)')
+parser.add_argument('-o', '--out', metavar='out.vcf', required=True, dest='outFile', help='output vcf file (required)')
 parser.add_argument('-t', '--type', metavar='DEL', required=True, dest='svType', help='SV type [DEL, DUP, INV] (required)')
 parser.add_argument('-p', '--pvalue', metavar='1.0', required=False, dest='pValueCut', help='p-value threshold for read-depth')
 parser.add_argument('-w', '--hwe', metavar='1.0', required=False, dest='hweCut', help='p-value threshold for HWEpval')
