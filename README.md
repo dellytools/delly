@@ -17,10 +17,7 @@ DELLY dependencies
 Installing DELLY
 ----------------
 
-The easiest way to get DELLY is to clone the git repository
-
-`git clone https://github.com/tobiasrausch/delly.git`
-
+The easiest way to get DELLY is to download the source code from the [DELLY github release page](https://github.com/tobiasrausch/delly/releases/).
 Then you need to install Boost, BamTools and KSEQ and update the paths in the Makefile.
 Building DELLY just requires
 
