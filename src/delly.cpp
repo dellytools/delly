@@ -1800,7 +1800,7 @@ int main(int argc, char **argv) {
 
   // Check command line arguments
   if ((vm.count("help")) || (!vm.count("input-file"))) { 
-    printTitle("Deletion finder");
+    printTitle("DELLY");
     if (vm.count("warranty")) {
       displayWarranty();
     } else if (vm.count("license")) {
