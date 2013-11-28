@@ -35,7 +35,7 @@ Running DELLY
 DELLY just needs one bam file for every sample and the reference genome to identify split-reads. The output is in [vcf](http://vcftools.sourceforge.net/) format.
 The SV type can be DEL, DUP, INV or JMP for deletions, tandem duplications, inversions and translocations, respectively.
 
-`./src/delly -t DEL -o del.vcf -g <ref.fa> <sample1.sort.bam> <sample2.sort.bam> <sample3.sort.bam> ...`
+`./src/delly -t DEL -o del.vcf -g <ref.fa> <sample1.sort.bam> ... <sampleN.sort.bam>`
 
 Each bam file is assumed to be one sample. If you do have multiple bam files for a single sample please merge these bams using tools such as [Picard](http://picard.sourceforge.net/) and tag each library with a ReadGroup. To save runtime it is advisable to exclude telomere and centromere regions. For human, DELLY ships with such an exclude list.
 
