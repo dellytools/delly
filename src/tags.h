@@ -67,6 +67,42 @@ namespace torali {
     }
   }
 
+  // Left- or right-spanning
+  template<typename TBamRecord>
+    inline bool 
+    _getSpanOrientation(TBamRecord const& al, int defaultOrient, SVType<InversionTag>) {
+    int orient = getStrandIndependentOrientation(al);
+    if (al.AlignmentFlag & 0x0040) {
+      if (defaultOrient == 0) {
+	if (((orient==2) && (al.Position < al.MatePosition)) || ((orient == 3) && (al.Position > al.MatePosition))) return true;
+      } else if (defaultOrient == 1) {
+	if (((orient==2) && (al.Position > al.MatePosition)) || ((orient == 3) && (al.Position < al.MatePosition))) return true;
+      } else if (defaultOrient == 2) {
+	if (((orient==0) && (al.Position < al.MatePosition)) || ((orient == 1) && (al.Position > al.MatePosition))) return true;
+      } else if (defaultOrient == 3) {
+	if (((orient==0) && (al.Position > al.MatePosition)) || ((orient == 1) && (al.Position < al.MatePosition))) return true;
+      }
+      return false;
+    } else {
+      if (defaultOrient == 0) {
+	if (((orient==2) && (al.Position > al.MatePosition)) || ((orient == 3) && (al.Position < al.MatePosition))) return true;
+      } else if (defaultOrient == 1) {
+	if (((orient==2) && (al.Position < al.MatePosition)) || ((orient == 3) && (al.Position > al.MatePosition))) return true;
+      } else if (defaultOrient == 2) {
+	if (((orient==0) && (al.Position > al.MatePosition)) || ((orient == 1) && (al.Position < al.MatePosition))) return true;
+      } else if (defaultOrient == 3) {
+	if (((orient==0) && (al.Position < al.MatePosition)) || ((orient == 1) && (al.Position > al.MatePosition))) return true;
+      }
+      return false;
+    }
+  }
+
+  // Dummy function for all other SV types
+  template<typename TBamRecord, typename TTag>
+    inline bool 
+    _getSpanOrientation(TBamRecord const&, int, SVType<TTag>) {
+    return true;
+  }
 
   // Unique paired-end data structure for single chromosome only
   struct Hit {
@@ -95,6 +131,7 @@ namespace torali {
     double srAlignQuality;
     unsigned int id;
     bool precise;
+    bool left;
     uint16_t peMapQuality;
     std::string chr;
     std::string consensus;
@@ -191,32 +228,6 @@ namespace torali {
     return false;
   }
 
-
-  // Left- or right-spanning
-  template<typename TBamRecord>
-    inline bool 
-    _getSpanOrientation(TBamRecord const& al, int defaultOrient, SVType<InversionTag>) {
-    int orient = getStrandIndependentOrientation(al);
-    int32_t f3 = al.Position;
-    int32_t f7 = al.MatePosition;
-    if (defaultOrient == 0) {
-      if (((orient==2) && (f3 < f7)) || ((orient == 3) && (f3 > f7))) return true;
-    } else if (defaultOrient == 1) {
-      if (((orient==2) && (f3 > f7)) || ((orient == 3) && (f3 < f7))) return true;
-    } else if (defaultOrient == 2) {
-      if (((orient==0) && (f3 < f7)) || ((orient == 1) && (f3 > f7))) return true;
-    } else if (defaultOrient == 3) {
-      if (((orient==0) && (f3 > f7)) || ((orient == 1) && (f3 < f7))) return true;
-    }
-    return false;
-  }
-
-  // Dummy function for all other SV types
-  template<typename TBamRecord, typename TTag>
-    inline bool 
-    _getSpanOrientation(TBamRecord const&, int, SVType<TTag>) {
-    return true;
-  }
 
   // Inversions
   template<typename TSize, typename TISize>
