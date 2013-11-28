@@ -153,7 +153,7 @@ struct ExcludeInterval {
 // Deletions
 template<typename TUSize, typename TSize>
 inline bool
-_betterSplit(TUSize, TUSize, TUSize, TSize, TUSize oldOffset, TUSize skippedLength, TUSize initialLength, double epsilon, TUSize support, TUSize bestSupport, SVType<DeletionTag>) {
+_betterSplit(TUSize, TUSize, TUSize, TSize, TUSize oldOffset, TUSize skippedLength, TUSize initialLength, double epsilon, TUSize support, TUSize bestSupport, bool, SVType<DeletionTag>) {
   return ((std::abs((((double) oldOffset + skippedLength) / (double) initialLength) - 1.0) <= epsilon) && (support > bestSupport));
 }
 
@@ -161,8 +161,19 @@ _betterSplit(TUSize, TUSize, TUSize, TSize, TUSize oldOffset, TUSize skippedLeng
 // Duplications
 template<typename TUSize, typename TSize>
 inline bool
-_betterSplit(TUSize refSize, TUSize refSizeRight, TUSize, TSize oldDiag, TUSize oldOffset, TUSize skippedLength, TUSize initialLength, double epsilon, TUSize support, TUSize bestSupport, SVType<DuplicationTag>) {
+_betterSplit(TUSize refSize, TUSize refSizeRight, TUSize, TSize oldDiag, TUSize oldOffset, TUSize skippedLength, TUSize initialLength, double epsilon, TUSize support, TUSize bestSupport, bool, SVType<DuplicationTag>) {
   return ((oldDiag < (TSize) refSizeRight) && ((oldDiag + (TSize) oldOffset) > (TSize) refSizeRight) &&  (std::abs((( (double) refSize - (double) oldOffset + skippedLength) / (double) initialLength) - 1.0) <= epsilon) && (support > bestSupport));
+}
+
+
+// Inversions
+template<typename TUSize, typename TSize>
+inline bool
+_betterSplit(TUSize refSize, TUSize refSizeRight, TUSize refSizeLeft, TSize oldDiag, TUSize oldOffset, TUSize skippedLength, TUSize initialLength, double epsilon, TUSize support, TUSize bestSupport, bool left, SVType<InversionTag>) {
+  TSize oldSvSize = 0;
+  if (left) oldSvSize = (refSizeLeft - oldDiag) + refSize - (oldDiag + oldOffset);
+  else oldSvSize = oldDiag + refSizeRight - (refSize - (oldDiag + oldOffset)); 
+  return ((oldDiag < refSizeLeft) && ((oldDiag + (TSize) oldOffset) > (TSize) refSizeLeft) &&  (std::abs( ( ((double) oldSvSize + skippedLength) / (double) initialLength ) - 1.0) <= epsilon) && (support > bestSupport));
 }
 
 
@@ -193,6 +204,26 @@ _translateSVCoordinates(TUSize refSize, TUSize refSizeRight, TUSize refSizeLeft,
   unsigned int finalGapStartTmp = finalGapStart;
   finalGapStart = (refSizeLeft - (refSize - finalGapEnd)) + sv.svStartBeg - 1;
   finalGapEnd = refSizeLeft + finalGapStartTmp + sv.svStartBeg + (sv.svEndBeg - sv.svStartEnd);
+  predictedLength = finalGapEnd - finalGapStart;
+  return false;
+}
+
+// Inversions
+template<typename TUSize, typename TSize, typename TBamRecord>
+inline bool
+_translateSVCoordinates(TUSize refSize, TUSize refSizeRight, TUSize refSizeLeft, TSize diagBeg, TSize diagEnd, TUSize leftRefWalky, TUSize rightRefWalky, TUSize consLen, TBamRecord const& sv, TUSize& finalGapStart, TUSize& finalGapEnd, TUSize& predictedLength, SVType<InversionTag>) {
+  finalGapStart = diagBeg + leftRefWalky + 1;
+  finalGapEnd = diagEnd + consLen - (consLen - rightRefWalky) + 1;
+  if ((finalGapEnd <= refSizeRight) || (finalGapStart >= refSizeLeft)) return true;
+  if (sv.left) {
+    finalGapEnd = refSize - finalGapEnd;
+    finalGapStart += sv.svStartBeg;
+    finalGapEnd += sv.svStartBeg + (sv.svStartEnd - sv.svStartBeg) + (sv.svEndBeg - sv.svStartEnd) + 1;
+  } else {
+    finalGapEnd = refSizeRight - (refSize - finalGapEnd);
+    finalGapStart = refSizeLeft-finalGapStart + sv.svStartBeg;
+    finalGapEnd += sv.svStartBeg + (sv.svStartEnd - sv.svStartBeg) + (sv.svEndBeg - sv.svStartEnd) - 1;	  
+  }
   predictedLength = finalGapEnd - finalGapStart;
   return false;
 }
@@ -306,7 +337,7 @@ void searchSplit(TConfig const& c, TStructuralVariantRecord& sv, std::string con
       if ((readVecIt->offset == oldOffset) && ((readVecIt->lastKmer - oldKmer) <= TIndex::kmer_size)) {
 	if (readVecIt->diag != oldDiag) ++support; // Count only unique reads (unique starting pos);
       } else {
-	if (_betterSplit(refSize, refSizeRight, refSizeLeft, oldDiag, oldOffset, skippedLength, initialLength, c.epsilon, support, bestSupport, svType)) {
+	if (_betterSplit(refSize, refSizeRight, refSizeLeft, oldDiag, oldOffset, skippedLength, initialLength, c.epsilon, support, bestSupport, sv.left, svType)) {
 	  bestSupport = support;
 	  bestBoundS = boundS;
 	  bestBoundE = bound;
@@ -318,7 +349,7 @@ void searchSplit(TConfig const& c, TStructuralVariantRecord& sv, std::string con
 	support = 1;
       }
     }
-    if (_betterSplit(refSize, refSizeRight, refSizeLeft, oldDiag, oldOffset, skippedLength, initialLength, c.epsilon, support, bestSupport, svType)) {
+    if (_betterSplit(refSize, refSizeRight, refSizeLeft, oldDiag, oldOffset, skippedLength, initialLength, c.epsilon, support, bestSupport, sv.left, svType)) {
       bestSupport = support;
       bestBoundS = boundS;
       bestBoundE = bound;
@@ -951,17 +982,56 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TR
 
 
 // Deletions
-template<typename TSeq, typename TBamRecord>
+template<typename TSeq, typename TSVRecord>
 inline std::string
-_getSVRef(TSeq const* const ref, TBamRecord const& bamRec, SVType<DeletionTag>) {
-  return boost::to_upper_copy(std::string(ref + bamRec.svStartBeg, ref + bamRec.svStartEnd)) + boost::to_upper_copy(std::string(ref + bamRec.svEndBeg, ref + bamRec.svEndEnd));
+_getSVRef(TSeq const* const ref, TSVRecord const& svRec, SVType<DeletionTag>) {
+  return boost::to_upper_copy(std::string(ref + svRec.svStartBeg, ref + svRec.svStartEnd)) + boost::to_upper_copy(std::string(ref + svRec.svEndBeg, ref + svRec.svEndEnd));
 }
 
 // Duplications
-template<typename TSeq, typename TBamRecord>
+template<typename TSeq, typename TSVRecord>
 inline std::string
-_getSVRef(TSeq const* const ref, TBamRecord const& bamRec, SVType<DuplicationTag>) {
-  return boost::to_upper_copy(std::string(ref + bamRec.svEndBeg, ref + bamRec.svEndEnd)) + boost::to_upper_copy(std::string(ref + bamRec.svStartBeg, ref + bamRec.svStartEnd));
+_getSVRef(TSeq const* const ref, TSVRecord const& svRec, SVType<DuplicationTag>) {
+  return boost::to_upper_copy(std::string(ref + svRec.svEndBeg, ref + svRec.svEndEnd)) + boost::to_upper_copy(std::string(ref + svRec.svStartBeg, ref + svRec.svStartEnd));
+}
+
+// Inversions
+template<typename TSeq, typename TSVRecord>
+inline std::string
+_getSVRef(TSeq const* const ref, TSVRecord const& svRec, SVType<InversionTag>) {
+  if (svRec.left) {
+    std::string strEnd=boost::to_upper_copy(std::string(ref + svRec.svEndBeg, ref + svRec.svEndEnd));
+    std::string strRevComp=strEnd;
+    std::string::reverse_iterator itR = strEnd.rbegin();
+    std::string::reverse_iterator itREnd = strEnd.rend();
+    for(unsigned int i = 0; itR!=itREnd; ++itR, ++i) {
+      switch (*itR) {
+      case 'A': strRevComp[i]='T'; break;
+      case 'C': strRevComp[i]='G'; break;
+      case 'G': strRevComp[i]='C'; break;
+      case 'T': strRevComp[i]='A'; break;
+      case 'N': strRevComp[i]='N'; break;
+      default: break;
+      }
+    }
+    return boost::to_upper_copy(std::string(ref + svRec.svStartBeg, ref + svRec.svStartEnd)) + strRevComp;
+  } else {
+    std::string strStart=boost::to_upper_copy(std::string(ref + svRec.svStartBeg, ref + svRec.svStartEnd));
+    std::string strRevComp=strStart;
+    std::string::reverse_iterator itR = strStart.rbegin();
+    std::string::reverse_iterator itREnd = strStart.rend();
+    for(unsigned int i = 0; itR!=itREnd; ++itR, ++i) {
+      switch (*itR) {
+      case 'A': strRevComp[i]='T'; break;
+      case 'C': strRevComp[i]='G'; break;
+      case 'G': strRevComp[i]='C'; break;
+      case 'T': strRevComp[i]='A'; break;
+      case 'N': strRevComp[i]='N'; break;
+      default: break;
+      }
+    }
+    return strRevComp + boost::to_upper_copy(std::string(ref + svRec.svEndBeg, ref + svRec.svEndEnd));
+  }
 }
 
 template<typename TConfig, typename TStructuralVariantRecord, typename TTag>
@@ -1609,6 +1679,7 @@ inline int run(Config const& c, TSVType svType) {
       svRec.srSupport=0;
       svRec.srAlignQuality=0;
       svRec.precise=false;
+      svRec.left=true;
       svs.push_back(svRec);
     }
     map_file.close();
@@ -1617,7 +1688,6 @@ inline int run(Config const& c, TSVType svType) {
   }
 
   // Split-read search
-  /*
   if (boost::filesystem::exists(c.genome) && boost::filesystem::is_regular_file(c.genome) && boost::filesystem::file_size(c.genome)) {
     if (!svs.empty()) {
       if (!findPutativeSplitReads(c, svs, svType)) {
@@ -1630,7 +1700,6 @@ inline int run(Config const& c, TSVType svType) {
       return -1;
     }
   }
-  */
 
   // Annotate spanning coverage
   typedef std::pair<std::string, int> TSampleSVPair;
