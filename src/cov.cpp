@@ -38,14 +38,14 @@ Contact: Tobias Rausch (rausch@embl.de)
 #include <boost/iostreams/filter/zlib.hpp>
 #include <boost/iostreams/filter/gzip.hpp>
 #include <boost/progress.hpp>
-#include "api/BamMultiReader.h"
+#include "api/BamReader.h"
+#include "api/BamIndex.h"
 
 #include "tags.h"
 #include "coverage.h"
+#include "tokenizer.h"
 #include "memory_mapped_file.h"
-#include "bam_file_adaptor.h"
 #include "version.h"
-#include "sam.h"
 #include "fasta_reader.h"
 #include "util.h"
 

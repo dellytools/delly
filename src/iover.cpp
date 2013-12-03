@@ -28,10 +28,11 @@ Contact: Tobias Rausch (rausch@embl.de)
 #include <boost/program_options/options_description.hpp>
 #include <boost/program_options/parsers.hpp>
 #include <boost/program_options/variables_map.hpp>
+#include <boost/filesystem.hpp>
 
 #include "memory_mapped_file.h"
 #include "version.h"
-#include "sam.h"
+#include "record.h"
 #include "fasta_reader.h"
 #include "intervaltree.h"
 #include "util.h"
@@ -76,7 +77,7 @@ struct Config {
   std::vector<std::string> anno_int;
   std::vector<unsigned int> fd;
   std::vector<bool> noIntervals;
-  std::vector<std::string> files;
+  std::vector<boost::filesystem::path> files;
   std::vector<bool> queryNoIntervals;
 };
 
@@ -239,7 +240,7 @@ run(TConfig const& c, TMethod const&) {
     std::cout << c.anno_int[anno_c] << std::endl;
     TChrIntervalTrees chrIntervals;
 
-    if (isValidFile(c.anno_int[anno_c])) {
+    if (boost::filesystem::exists(c.anno_int[anno_c]) && boost::filesystem::is_regular_file(c.anno_int[anno_c]) && boost::filesystem::file_size(c.anno_int[anno_c])) {
       typedef Record<std::string, unsigned int, unsigned int, void, void, void, void, void, void, void, void, void> TRecord;
       unsigned int line_counter = 1;
       Memory_mapped_file map_file(c.anno_int[anno_c].c_str());
@@ -299,12 +300,14 @@ run(TConfig const& c, TMethod const&) {
   std::cout << "Scanning query intervals..." << std::endl;
   for(unsigned int files_c = 0; files_c<c.files.size(); ++files_c) {
     std::cout << c.files[files_c] << std::endl;
-    if (!isValidFile(c.files[files_c])) continue;
-    std::string outfile = c.files[files_c] + c.fileSuffix;
+
+
+    if (!boost::filesystem::exists(c.files[files_c]) || !boost::filesystem::is_regular_file(c.files[files_c]) || !boost::filesystem::file_size(c.files[files_c])) continue;
+    std::string outfile = c.files[files_c].string() + c.fileSuffix;
     std::ofstream anno(outfile.c_str());
 
     typedef Record<std::string, unsigned int, unsigned int, std::string, void, void, void, void, void, void, void, void> TRecord;
-    Memory_mapped_file map_file(c.files[files_c].c_str());
+    Memory_mapped_file map_file(c.files[files_c].string().c_str());
     char buffer[8192];
     while (map_file.left_bytes() > 0) {
       map_file.read_line(buffer);
@@ -392,7 +395,7 @@ int main(int argc, char **argv) {
   // Define hidden options
   boost::program_options::options_description hidden("Hidden options");
   hidden.add_options()
-    ("input-file", boost::program_options::value< std::vector<std::string> >(&c.files), "input file")
+    ("input-file", boost::program_options::value< std::vector<boost::filesystem::path> >(&c.files), "input file")
     ;
   boost::program_options::positional_options_description pos_args;
   pos_args.add("input-file", -1);

@@ -47,6 +47,7 @@ Contact: Tobias Rausch (rausch@embl.de)
 #include "version.h"
 #include "util.h"
 #include "tags.h"
+#include "tokenizer.h"
 #include "spanning.h"
 #include "intervaltree.h"
 

@@ -25,10 +25,22 @@ Contact: Tobias Rausch (rausch@embl.de)
 #define COVERAGE_H
 
 #include "tags.h"
-#include "bam_file_adaptor.h"
+#include "api/BamReader.h"
+#include "api/BamIndex.h"
+#include "api/BamAlignment.h"
 
 namespace torali {
 
+
+template<typename TCigarVec>
+inline std::string  cigarString(TCigarVec const& cigarOperations) {
+  std::stringstream cigar;
+  typename TCigarVec::const_iterator coIter = cigarOperations.begin();
+  if (coIter == cigarOperations.end()) cigar << "*";
+  else
+    for(; coIter != cigarOperations.end(); ++coIter) cigar << coIter->Length << coIter->Type;
+  return cigar.str();
+}
 
 
 

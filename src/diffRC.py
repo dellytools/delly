@@ -16,6 +16,7 @@ parser.add_argument('-o', '--out', metavar='out.vcf', required=True, dest='outFi
 parser.add_argument('-t', '--type', metavar='DEL', required=True, dest='svType', help='SV type [DEL, DUP, INV] (required)')
 parser.add_argument('-p', '--pvalue', metavar='1.0', required=False, dest='pValueCut', help='p-value threshold for read-depth')
 parser.add_argument('-w', '--hwe', metavar='1.0', required=False, dest='hweCut', help='p-value threshold for HWEpval')
+parser.add_argument('-b', '--baf', metavar='1.0', required=False, dest='bafCut', help='BAF threshold')
 parser.add_argument('-s', '--size', metavar='0', required=False, dest='sizeCut', help='min. required size of SVs')
 parser.add_argument('-f', '--filter', dest='siteFilter', action='store_true', help='Filter sites for PASS')
 args = parser.parse_args()
@@ -27,6 +28,9 @@ if (args.sizeCut):
 hweCut=1.0
 if (args.hweCut):
     hweCut=float(args.hweCut)
+bafCut=1.0
+if (args.bafCut):
+    bafCut=float(args.bafCut)
 pValueCut=1.0
 if (args.pValueCut):
     pValueCut=float(args.pValueCut)
@@ -54,6 +58,6 @@ if args.vcfFile:
             else:
                 wilcoxonPval=wilcoxonStat[1]
         record.INFO['RDpval']=float(round(wilcoxonPval,6))
-        if ((record.INFO['RDpval'] <= pValueCut) and (record.INFO['SVLEN']>=sizeCut) and (record.INFO['HWEpval'] <= hweCut)):
+        if ((record.INFO['RDpval'] <= pValueCut) and (record.INFO['SVLEN']>=sizeCut) and (record.INFO['HWEpval'] <= hweCut) and (record.INFO['AFmle'] <= bafCut)):
             if ((not args.siteFilter) or (len(record.FILTER)==0)):
                 vcf_writer.write_record(record)

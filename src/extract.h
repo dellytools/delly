@@ -31,7 +31,6 @@ Contact: Tobias Rausch (rausch@embl.de)
 #include <boost/program_options/variables_map.hpp>
 
 #include "version.h"
-#include "sam.h"
 #include "fasta_reader.h"
 
 #define MAX_CHROM_SIZE 250000000

@@ -1085,10 +1085,10 @@ findPutativeSplitReads(TConfig const& c, std::vector<TStructuralVariantRecord>& 
   boost::progress_display show_progress( references.size() );
   while ((l = kseq_read(seq)) >= 0) {
     // Find reference index
-    ++show_progress;
     BamTools::RefVector::const_iterator itRef = references.begin();
     for(unsigned int refIndex=0;itRef!=references.end();++itRef, ++refIndex) {
       if (seq->name.s == references[refIndex].RefName) {
+	++show_progress;
 	// Dummy placeholders for softclips
 	std::vector<int> clipSizes;
 	std::vector<int> readPositions;

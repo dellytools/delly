@@ -24,15 +24,37 @@ Contact: Tobias Rausch (rausch@embl.de)
 #ifndef UTIL_H
 #define UTIL_H
 
-#include <fstream>
 #include <math.h>
 #include "tags.h"
-#include "sam.h"
 #include "fasta_reader.h"
 
 
 namespace torali
 {
+
+
+  struct LibraryInfo {
+    int median;
+    int mad;
+    int percentileCutoff;
+    int minNormalISize;
+    int maxNormalISize;
+    int defaultOrient;
+    unsigned int mappedReads;
+    unsigned int non_unique_pairs;
+    unsigned int unique_pairs;
+
+    
+  LibraryInfo() : median(0), mad(0), percentileCutoff(0), maxNormalISize(0), defaultOrient(0), mappedReads(0), non_unique_pairs(0), unique_pairs(0) {}
+  };
+
+
+  struct _LibraryParams {
+    unsigned int processedNumPairs;
+    unsigned int orient[4];
+    std::vector<unsigned int> vecISize;
+  };
+
   
   template<typename TAlphabet>
     inline void
@@ -60,71 +82,6 @@ namespace torali
 	} while (++itF <= --itB);
       }
     }
-
-  // File size in MB
-  template<typename TFilePath>
-    inline unsigned int
-    fileSize(TFilePath const& fpath) 
-    {
-      std::ifstream f;
-      f.open(fpath.c_str(), std::ios_base::binary | std::ios_base::in);
-      if (!f.good() || f.eof() || !f.is_open()) { return 0; }
-      f.seekg(0, std::ios_base::beg);
-      std::ifstream::pos_type begin_pos = f.tellg();
-      f.seekg(0, std::ios_base::end);
-      return static_cast<unsigned int>(((f.tellg() - begin_pos) / 1000000));
-    }
-
-  template<typename TFilePath>
-    inline bool
-    isBinary(TFilePath const& fpath) 
-    {
-      int readChar;
-      bool binaryFile = false;
-      std::ifstream alignFile(fpath.c_str());
-      unsigned int count = 0;
-      while (((readChar = alignFile.get()) != EOF) && (count++ < 1000)) {
-	if (readChar>127) {
-	  binaryFile=true;
-	  break;
-	}
-      }
-      alignFile.close();
-      return binaryFile;
-    }
-
-
-  template<typename TFilePath, typename TSize>
-    inline bool
-    isValidFile(TFilePath const& fpath, TSize s) 
-  {
-    std::ifstream empty_check(fpath.c_str(), std::ios::binary);
-    if (!empty_check) { 
-      //Off#std::cerr << "File does not exist: " << fpath << std::endl; 
-      return false;
-    }
-    empty_check.seekg(0, std::ios::end);
-    if ((int) empty_check.tellg() == 0) {
-      empty_check.close();
-      //Off#std::cerr << "File is empty: " << fpath << std::endl;
-      return false;   
-    }
-    empty_check.close();
-    if ((s != (TSize) 0) && (fileSize(fpath) > (long unsigned int) s)) { 
-      //Off#std::cerr << "File too large: " << fpath << std::endl; 
-      return false;
-    }
-    return true;
-  }
-
-  template<typename TFilePath>
-    inline bool
-    isValidFile(TFilePath const& fpath) 
-  {
-    return isValidFile(fpath, 0);
-  }
-
-
 
   template<typename TIterator, typename TValue>
   inline
@@ -176,33 +133,6 @@ namespace torali
       stdDev = sqrt(stdDev / (TValue) count);
     }
 
-  template<typename TIterator, typename TValue1, typename TValue2, typename TValue3>
-  inline
-    void getStats(TIterator begin, TIterator end, TValue1& mean, TValue2& median, TValue3& stdDev) 
-    {
-      getMean(begin,end,mean);
-      getMedian(begin,end,median);
-      getStdDev(begin,end,mean,stdDev);
-    }
-
-
-  template<typename TIterator, typename TValue>
-  inline
-    void depecated_getLibraryStdDev(TIterator begin, TIterator end, TValue median, TValue& stdDev) 
-    {
-      stdDev = 0;
-      TValue cutoffMax = median + 7 * 0.1 * median;
-      TValue cutoffMin = median - 7 * 0.1 * median; //SD calculation cutoffs are 7 SDs to the left and right assuming 10% library deviation 
-      if ((cutoffMin < 0) || (cutoffMax < cutoffMin)) cutoffMin = 0; 
-      unsigned int count = 0;
-      for(;begin<end;++begin) 
-	if ((*begin >= cutoffMin) && (*begin <= cutoffMax)) {
-	  stdDev += ((TValue)*begin - median) * ((TValue)*begin - median);
-	  ++count;
-	}
-      stdDev = sqrt(stdDev / (TValue) count);
-    }
-
   template<typename TIterator, typename TPercentile, typename TValue1, typename TValue2, typename TValue3>
   inline
     void getLibraryStats(TIterator begin, TIterator end, TPercentile percentile, TValue1& median, TValue2& mad, TValue3& percentileCutoff) 
@@ -213,27 +143,6 @@ namespace torali
     }
 
 
-  struct LibraryInfo {
-    int median;
-    int mad;
-    int percentileCutoff;
-    int minNormalISize;
-    int maxNormalISize;
-    int defaultOrient;
-    unsigned int mappedReads;
-    unsigned int non_unique_pairs;
-    unsigned int unique_pairs;
-
-
-  LibraryInfo() : median(0), mad(0), percentileCutoff(0), maxNormalISize(0), defaultOrient(0), mappedReads(0), non_unique_pairs(0), unique_pairs(0) {}
-  };
-
-  struct LibraryParams {
-    unsigned int processedNumPairs;
-    unsigned int orient[4];
-    std::vector<unsigned int> vecISize;
-  };
-
   inline void getLibraryParams(boost::filesystem::path const& path, std::map<std::string, LibraryInfo>& libInfo, double const percentile, unsigned short madCutoff) {
     typedef  std::map<std::string, LibraryInfo> TLibraryMap;
 
@@ -241,7 +150,7 @@ namespace torali
     unsigned int maxNumPairs=5000000;
 
     // Store the counts in an object for each RG librar
-    typedef std::map<std::string, LibraryParams> TParams;
+    typedef std::map<std::string, _LibraryParams> TParams;
     TParams params;
 
     // Create SAM Object
@@ -258,11 +167,11 @@ namespace torali
       BamTools::SamReadGroupConstIterator rgIterEnd = samHeader.ReadGroups.ConstEnd();
       for(;rgIter!=rgIterEnd;++rgIter) {
 	libInfo.insert(std::make_pair(rgIter->ID, LibraryInfo()));
-	params.insert(std::make_pair(rgIter->ID, LibraryParams()));
+	params.insert(std::make_pair(rgIter->ID, _LibraryParams()));
       }
     } else {
       libInfo.insert(std::make_pair("DefaultLib", LibraryInfo()));
-      params.insert(std::make_pair("DefaultLib", LibraryParams()));
+      params.insert(std::make_pair("DefaultLib", _LibraryParams()));
     }
     bool missingPairs=true;
     BamTools::BamAlignment al;
@@ -337,116 +246,6 @@ namespace torali
     }
   }
 
-  class Centromere {
-  public:
-    int centr_ext;
-    typedef std::pair<int, int> TInterval;
-    typedef std::map<std::string, TInterval> TCentr;
-    TCentr centr;
-    
-    Centromere() : centr_ext(0) {
-      Centromere(centr_ext);
-    }
-      
-    Centromere(unsigned int ext) : centr_ext(ext) 
-      {
-      centr.insert(std::make_pair("chr1.fa", std::make_pair(std::max(121535434 - centr_ext, 0), 124535434 + centr_ext)));
-      centr.insert(std::make_pair("chr2.fa", std::make_pair(std::max(92326171 - centr_ext, 0), 95326171 + centr_ext)));
-      centr.insert(std::make_pair("chr3.fa", std::make_pair(std::max(90504854 - centr_ext, 0), 93504854 + centr_ext)));
-      centr.insert(std::make_pair("chr4.fa", std::make_pair(std::max(49660117 - centr_ext, 0), 52660117 + centr_ext)));
-      centr.insert(std::make_pair("chr5.fa", std::make_pair(std::max(46405641 - centr_ext, 0), 49405641 + centr_ext)));
-      centr.insert(std::make_pair("chr6.fa", std::make_pair(std::max(58830166 - centr_ext, 0), 61830166 + centr_ext)));
-      centr.insert(std::make_pair("chr7.fa", std::make_pair(std::max(58054331 - centr_ext, 0), 61054331 + centr_ext)));
-      centr.insert(std::make_pair("chr8.fa", std::make_pair(std::max(43838887 - centr_ext, 0), 46838887 + centr_ext)));
-      centr.insert(std::make_pair("chr9.fa", std::make_pair(std::max(47367679 - centr_ext, 0), 50367679 + centr_ext)));
-      centr.insert(std::make_pair("chr10.fa", std::make_pair(std::max(39254935 - centr_ext, 0), 42254935 + centr_ext)));
-      centr.insert(std::make_pair("chr11.fa", std::make_pair(std::max(51644205 - centr_ext, 0), 54644205 + centr_ext)));
-      centr.insert(std::make_pair("chr12.fa", std::make_pair(std::max(34856694 - centr_ext, 0), 37856694 + centr_ext)));
-      centr.insert(std::make_pair("chr13.fa", std::make_pair(std::max(16000000 - centr_ext, 0), 19000000 + centr_ext)));
-      centr.insert(std::make_pair("chr14.fa", std::make_pair(std::max(16000000 - centr_ext, 0), 19000000 + centr_ext)));
-      centr.insert(std::make_pair("chr15.fa", std::make_pair(std::max(17000000 - centr_ext, 0), 20000000 + centr_ext)));
-      centr.insert(std::make_pair("chr16.fa", std::make_pair(std::max(35335801 - centr_ext, 0), 38335801 + centr_ext)));
-      centr.insert(std::make_pair("chr17.fa", std::make_pair(std::max(22263006 - centr_ext, 0), 25263006 + centr_ext)));
-      centr.insert(std::make_pair("chr18.fa", std::make_pair(std::max(15460898 - centr_ext, 0), 18460898 + centr_ext)));
-      centr.insert(std::make_pair("chr19.fa", std::make_pair(std::max(24681782 - centr_ext, 0), 27681782 + centr_ext)));
-      centr.insert(std::make_pair("chr20.fa", std::make_pair(std::max(26369569 - centr_ext, 0), 29369569 + centr_ext)));
-      centr.insert(std::make_pair("chr21.fa", std::make_pair(std::max(11288129 - centr_ext, 0), 14288129 + centr_ext)));
-      centr.insert(std::make_pair("chr22.fa", std::make_pair(std::max(13000000 - centr_ext, 0), 16000000 + centr_ext)));
-      centr.insert(std::make_pair("chrX.fa", std::make_pair(std::max(58632012 - centr_ext, 0), 61632012 + centr_ext)));
-      centr.insert(std::make_pair("chrY.fa", std::make_pair(std::max(10104553 - centr_ext, 0), 13104553 + centr_ext)));
-    }
-
-      inline bool 
-      inCentromere(std::string const& chr, int const pos) 
-	{
-	  TCentr::const_iterator find = centr.find(chr);
-	  if (find != centr.end()) {
-	    if ((find->second.first < pos) && (find->second.second > pos)) return true;
-	  }
-	  return false;
-	}
-
-  };
-
-
-
-  class Telomere {
-  public:
-    int chrStart_telemore;
-    int tele_ext;
-    typedef std::pair<int, int> TInterval;
-    typedef std::map<std::string, TInterval> TTele;
-    TTele tele;
-    
-    Telomere() : chrStart_telemore(10000), tele_ext(0) {
-      Telomere(tele_ext);
-    }
-      
-    Telomere(unsigned int ext) : tele_ext(ext) 
-      {
-      chrStart_telemore += tele_ext;
-      tele.insert(std::make_pair("chr1.fa", std::make_pair(std::max(249240621 - tele_ext, 0), 249250621 + tele_ext)));
-      tele.insert(std::make_pair("chr2.fa", std::make_pair(std::max(243189373 - tele_ext, 0), 243199373 + tele_ext)));
-      tele.insert(std::make_pair("chr3.fa", std::make_pair(std::max(198012430 - tele_ext, 0), 198022430 + tele_ext)));
-      tele.insert(std::make_pair("chr4.fa", std::make_pair(std::max(191144276 - tele_ext, 0), 191154276 + tele_ext)));
-      tele.insert(std::make_pair("chr5.fa", std::make_pair(std::max(180905260 - tele_ext, 0), 180915260 + tele_ext)));
-      tele.insert(std::make_pair("chr6.fa", std::make_pair(std::max(171105067 - tele_ext, 0), 171115067 + tele_ext)));
-      tele.insert(std::make_pair("chr7.fa", std::make_pair(std::max(159128663 - tele_ext, 0), 159138663 + tele_ext)));
-      tele.insert(std::make_pair("chr8.fa", std::make_pair(std::max(146354022 - tele_ext, 0), 146364022 + tele_ext)));
-      tele.insert(std::make_pair("chr9.fa", std::make_pair(std::max(141203431 - tele_ext, 0), 141213431 + tele_ext)));
-      tele.insert(std::make_pair("chr10.fa", std::make_pair(std::max(135524747 - tele_ext, 0), 135534747 + tele_ext)));
-      tele.insert(std::make_pair("chr11.fa", std::make_pair(std::max(134996516 - tele_ext, 0), 135006516 + tele_ext)));
-      tele.insert(std::make_pair("chr12.fa", std::make_pair(std::max(133841895 - tele_ext, 0), 133851895 + tele_ext)));
-      tele.insert(std::make_pair("chr13.fa", std::make_pair(std::max(115159878 - tele_ext, 0), 115169878 + tele_ext)));
-      tele.insert(std::make_pair("chr14.fa", std::make_pair(std::max(107339540 - tele_ext, 0), 107349540 + tele_ext)));
-      tele.insert(std::make_pair("chr15.fa", std::make_pair(std::max(102521392 - tele_ext, 0), 102531392 + tele_ext)));
-      tele.insert(std::make_pair("chr16.fa", std::make_pair(std::max(90344753 - tele_ext, 0), 90354753 + tele_ext)));
-      tele.insert(std::make_pair("chr17.fa", std::make_pair(std::max(81185210 - tele_ext, 0), 81195210 + tele_ext)));
-      tele.insert(std::make_pair("chr18.fa", std::make_pair(std::max(78067248 - tele_ext, 0), 78077248 + tele_ext)));
-      tele.insert(std::make_pair("chr19.fa", std::make_pair(std::max(59118983 - tele_ext, 0), 59128983 + tele_ext)));
-      tele.insert(std::make_pair("chr20.fa", std::make_pair(std::max(63015520 - tele_ext, 0), 63025520 + tele_ext)));
-      tele.insert(std::make_pair("chr21.fa", std::make_pair(std::max(48119895 - tele_ext, 0), 48129895 + tele_ext)));
-      tele.insert(std::make_pair("chr22.fa", std::make_pair(std::max(51294566 - tele_ext, 0), 51304566 + tele_ext)));
-      tele.insert(std::make_pair("chrX.fa", std::make_pair(std::max(155260560 - tele_ext, 0), 155270560 + tele_ext)));
-      tele.insert(std::make_pair("chrY.fa", std::make_pair(std::max(59363566 - tele_ext, 0), 59373566 + tele_ext)));
-    }
-
-
-      inline bool 
-	inTelomere(std::string const& chr, int const pos) 
-	{
-	  if (pos < chrStart_telemore) return true;
-	  TTele::const_iterator find = tele.find(chr);
-	  if (find != tele.end()) {
-	    if ((find->second.first < pos) && (find->second.second > pos)) return true;
-	  }
-	  return false;
-	}
-
-  };
 }
 
 #endif
-
-
-

@@ -33,9 +33,12 @@ Contact: Tobias Rausch (rausch@embl.de)
 #include <boost/program_options/options_description.hpp>
 #include <boost/program_options/parsers.hpp>
 #include <boost/program_options/variables_map.hpp>
+#include "api/BamReader.h"
+#include "api/BamIndex.h"
 
 
 #include "memory_mapped_file.h"
+#include "record.h"
 #include "version.h"
 #include "util.h"
 #include "intervaltree.h"
