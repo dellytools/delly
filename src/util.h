@@ -175,8 +175,9 @@ namespace torali
     }
     bool missingPairs=true;
     BamTools::BamAlignment al;
-    while ((reader.GetNextAlignment(al)) && (missingPairs)) {
+    while ((reader.GetNextAlignmentCore(al)) && (missingPairs)) {
       if ((al.AlignmentFlag & 0x0001) && !(al.AlignmentFlag & 0x0004) && !(al.AlignmentFlag & 0x0008) && (al.AlignmentFlag & 0x0040) && (al.RefID==al.MateRefID)) {
+	al.BuildCharData();
 	std::string rG = "DefaultLib";
 	al.GetTag("RG", rG);
 	TParams::iterator paramIt= params.find(rG);

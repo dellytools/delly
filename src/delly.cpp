@@ -42,6 +42,10 @@ Contact: Tobias Rausch (rausch@embl.de)
 #include "api/BamReader.h"
 #include "api/BamIndex.h"
 
+#ifdef DEBUG
+#include "gperftools/profiler.h"
+#endif
+
 #include "version.h"
 #include "util.h"
 #include "dna_score.h"
@@ -1289,6 +1293,11 @@ _updateClique(TBamRecordIterator const& el, TSize& svStart, TSize& svEnd, TSize&
 
 template<typename TSVType>
 inline int run(Config const& c, TSVType svType) {
+
+#ifdef DEBUG
+  ProfilerStart("delly.prof");
+#endif
+  
   // Collect all promising structural variants
   typedef std::vector<StructuralVariantRecord> TVariants;
   TVariants svs;
@@ -1372,6 +1381,11 @@ inline int run(Config const& c, TSVType svType) {
     }
   }
 
+  // Hash qualities
+  uint16_t* qualities = new uint16_t[(int)boost::math::pow<28>(2)];
+  uint16_t* qualitiesEnd = qualities + (int) boost::math::pow<28>(2);
+  std::fill(qualities, qualitiesEnd, 0);
+
   // Process chromosome by chromosome
   boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
   std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Paired-end clustering" << std::endl;
@@ -1410,13 +1424,10 @@ inline int run(Config const& c, TSVType svType) {
       typedef std::set<Hit> TUniquePairs;
       TUniquePairs unique_pairs;
 
-      // Read alignments and hash qualities
-      uint16_t* qualities = new uint16_t[(int)boost::math::pow<28>(2)];
-      uint16_t* qualitiesEnd = qualities + (int) boost::math::pow<28>(2);
-      std::fill(qualities, qualitiesEnd, 0);
+      // Read alignments
       BamTools::BamAlignment al;
       if ( reader.Jump(refIndex, 0) ) {
-	while( reader.GetNextAlignment(al) ) {
+	while( reader.GetNextAlignmentCore(al) ) {
 	  if (al.RefID!=refIndex) break; // Stop when we hit the next chromosome
 	  if ((al.AlignmentFlag & 0x0001) && !(al.AlignmentFlag & 0x0004) && !(al.AlignmentFlag & 0x0008) && !(al.AlignmentFlag & 0x0100) && !(al.AlignmentFlag & 0x0200) && !(al.AlignmentFlag & 0x0400) && (al.RefID==al.MateRefID) && (al.MapQuality >= c.minMapQual) && (al.Position!=al.MatePosition)) {
 	    // Is the read or its mate in a black-masked region
@@ -1430,6 +1441,7 @@ inline int run(Config const& c, TSVType svType) {
 	    }
 
 	    // Is this a discordantly mapped paired-end?
+	    al.BuildCharData();
 	    std::string rG = "DefaultLib";
 	    al.GetTag("RG", rG);
 	    TLibraryMap::iterator libIt=sampleIt->second.find(rG);
@@ -1440,15 +1452,14 @@ inline int run(Config const& c, TSVType svType) {
 	    // Get or store the mapping quality for the partner
 	    if (al.Position<al.MatePosition) {
 	      // Hash the quality
-	      boost::hash<std::string> hashStr;
-	      unsigned int index=((hashStr(al.Name) % (int)boost::math::pow<4>(2))<<24) + ((al.Position % (int)boost::math::pow<12>(2))<<12) + (al.MatePosition % (int)boost::math::pow<12>(2));
+	      unsigned int index=((al.Position % (int)boost::math::pow<14>(2))<<14) + (al.MatePosition % (int)boost::math::pow<14>(2));
+	      std::cout << index << std::endl;
 	      qualities[index]=al.MapQuality;
 	    } else {
 	      // Get the two mapping qualities
-	      boost::hash<std::string> hashStr;
-	      unsigned int index=((hashStr(al.Name) % (int)boost::math::pow<4>(2))<<24) + ((al.MatePosition % (int)boost::math::pow<12>(2))<<12) + (al.Position % (int)boost::math::pow<12>(2));
+	      unsigned int index=((al.MatePosition % (int)boost::math::pow<14>(2))<<14) + (al.Position % (int)boost::math::pow<14>(2));
 	      uint16_t pairQuality = std::min(qualities[index], al.MapQuality);
-	      //std::cout << al.Name << ',' << qualities[index] << ',' << mateQuality << ',' << pairQuality << ',' << std::endl;
+	      qualities[index]=0;
 
 	      // Pair quality
 	      if (pairQuality < c.minMapQual) continue;
@@ -1468,7 +1479,6 @@ inline int run(Config const& c, TSVType svType) {
 	  }
 	}
       }
-      delete [] qualities;
     }
     
     // Sort BAM records according to position
@@ -1627,6 +1637,7 @@ inline int run(Config const& c, TSVType svType) {
       }
     }
   }
+  delete [] qualities;
    
   // Output library statistics
   now = boost::posix_time::second_clock::local_time();
@@ -1686,6 +1697,10 @@ inline int run(Config const& c, TSVType svType) {
     now = boost::posix_time::second_clock::local_time();
     std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Created " << clique_count << " PE deletions." << std::endl;
   }
+
+#ifdef DEBUG
+  ProfilerStop();
+#endif
 
   // Split-read search
   if (boost::filesystem::exists(c.genome) && boost::filesystem::is_regular_file(c.genome) && boost::filesystem::file_size(c.genome)) {
