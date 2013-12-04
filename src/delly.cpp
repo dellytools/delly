@@ -1453,7 +1453,6 @@ inline int run(Config const& c, TSVType svType) {
 	    if (al.Position<al.MatePosition) {
 	      // Hash the quality
 	      unsigned int index=((al.Position % (int)boost::math::pow<14>(2))<<14) + (al.MatePosition % (int)boost::math::pow<14>(2));
-	      std::cout << index << std::endl;
 	      qualities[index]=al.MapQuality;
 	    } else {
 	      // Get the two mapping qualities

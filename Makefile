@@ -2,7 +2,7 @@ DEBUG ?= 0
 
 # External libraries
 BOOST=/g/solexa/bin/software/boost_1_53_0
-BAMTOOLS=/g/solexa/bin/software/bamtools/
+BAMTOOLS=/g/solexa/bin/software/bamtools-2.3.0/
 KSEQ=/g/solexa/bin/software/kseq/
 
 # Flags
