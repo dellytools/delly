@@ -1701,11 +1701,7 @@ inline int run(Config const& c, TSVType svType) {
   // Split-read search
   if (boost::filesystem::exists(c.genome) && boost::filesystem::is_regular_file(c.genome) && boost::filesystem::file_size(c.genome)) {
     if (!svs.empty()) {
-      if (!findPutativeSplitReads(c, svs, svType)) {
-	std::cerr << "No split-read candidates found." << std::endl;
-	std::cerr << "Please verify that the chromosome names between your reference sequence and bam file match." << std::endl;
-	return -1;
-      }
+      findPutativeSplitReads(c, svs, svType);
     } else {
       std::cerr << "No deletions found!" << std::endl;
       return -1;
