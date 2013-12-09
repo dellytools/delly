@@ -42,7 +42,7 @@ Contact: Tobias Rausch (rausch@embl.de)
 #include "api/BamReader.h"
 #include "api/BamIndex.h"
 
-#ifdef DEBUG
+#ifdef PROFILE
 #include "gperftools/profiler.h"
 #endif
 
@@ -1057,21 +1057,19 @@ findPutativeSplitReads(TConfig const& c, std::vector<TStructuralVariantRecord>& 
     BamTools::BamReader reader;
     if ( ! reader.Open(c.files[file_c].string()) ) return -1;
     BamTools::BamAlignment al;
-    while( reader.GetNextAlignment(al) ) {
-      // Read unmapped
-      if (al.AlignmentFlag & 0x0004) {
-	// Paired-end partner is mapped
-	if ((al.AlignmentFlag & 0x0001) && !(al.AlignmentFlag & 0x0008) && !(al.AlignmentFlag & 0x0100) && !(al.AlignmentFlag & 0x0200) && !(al.AlignmentFlag & 0x0400) && (al.Position!=al.MatePosition)) {
-	  // Check qualities
-	  std::string::const_iterator qIter= al.Qualities.begin();
-	  int meanQual = 0;
-	  for(;qIter!=al.Qualities.end();++qIter) meanQual+=static_cast<int>(*qIter);
-	  meanQual /= al.Length;
-	  meanQual -=33;
-	  if (meanQual >= 20) {
-	    boost::hash<std::string> hashStr;
-	    singleAnchored.insert(std::make_pair(hashStr(al.Name), al.QueryBases));
-	  }
+    while( reader.GetNextAlignmentCore(al) ) {
+      // Read unmapped and paired-end partner is mapped
+      if ((al.AlignmentFlag & 0x0004) && (al.AlignmentFlag & 0x0001) && !(al.AlignmentFlag & 0x0008) && !(al.AlignmentFlag & 0x0100) && !(al.AlignmentFlag & 0x0200) && !(al.AlignmentFlag & 0x0400) && (al.Position!=al.MatePosition)) {
+	// Check qualities
+	al.BuildCharData();
+	std::string::const_iterator qIter= al.Qualities.begin();
+	int meanQual = 0;
+	for(;qIter!=al.Qualities.end();++qIter) meanQual+=static_cast<int>(*qIter);
+	meanQual /= al.Length;
+	meanQual -=33;
+	if (meanQual >= 20) {
+	  boost::hash<std::string> hashStr;
+	  singleAnchored.insert(std::make_pair(hashStr(al.Name), al.QueryBases));
 	}
       }
     }
@@ -1118,10 +1116,11 @@ findPutativeSplitReads(TConfig const& c, std::vector<TStructuralVariantRecord>& 
 
 	      BamTools::BamAlignment al;
 	      if ( reader.SetRegion(refIndex, (svIt->svStartBeg + svIt->svStart)/2, refIndex, (svIt->svStart + svIt->svStartEnd)/2 ) ) {
-		while ((reader.GetNextAlignment(al)) && (splitReadSet.size() < splitReadSetMaxSize)) {
-		  if (!(al.AlignmentFlag & 0x0100) && !(al.AlignmentFlag & 0x0200) && !(al.AlignmentFlag & 0x0400)) {
+		while ((reader.GetNextAlignmentCore(al)) && (splitReadSet.size() < splitReadSetMaxSize)) {
+		  if (!(al.AlignmentFlag & 0x0004) && !(al.AlignmentFlag & 0x0100) && !(al.AlignmentFlag & 0x0200) && !(al.AlignmentFlag & 0x0400)) {
+		    al.BuildCharData();
 		    // Single-anchored read?
-		    if ((al.AlignmentFlag & 0x0001) && !(al.AlignmentFlag & 0x0004) && (al.AlignmentFlag & 0x0008)) {
+		    if ((al.AlignmentFlag & 0x0001) && (al.AlignmentFlag & 0x0008)) {
 		      boost::hash<std::string> hashStr;
 		      TSingleMap::const_iterator singleIt = singleAnchored.find(hashStr(al.Name));
 		      if (singleIt!=singleAnchored.end()) {
@@ -1138,10 +1137,11 @@ findPutativeSplitReads(TConfig const& c, std::vector<TStructuralVariantRecord>& 
 		}
 	      }
 	      if ( reader.SetRegion(refIndex, (svIt->svEndBeg + svIt->svEnd)/2, refIndex, (svIt->svEnd + svIt->svEndEnd)/2 ) ) {
-		while ((reader.GetNextAlignment(al)) && (splitReadSet.size() < splitReadSetMaxSize)) {
-		  if (!(al.AlignmentFlag & 0x0100) && !(al.AlignmentFlag & 0x0200) && !(al.AlignmentFlag & 0x0400)) {
+		while ((reader.GetNextAlignmentCore(al)) && (splitReadSet.size() < splitReadSetMaxSize)) {
+		  if (!(al.AlignmentFlag & 0x0004) && !(al.AlignmentFlag & 0x0100) && !(al.AlignmentFlag & 0x0200) && !(al.AlignmentFlag & 0x0400)) {
+		    al.BuildCharData();
 		    // Single-anchored read?
-		    if ((al.AlignmentFlag & 0x0001) && !(al.AlignmentFlag & 0x0004) && (al.AlignmentFlag & 0x0008)) {
+		    if ((al.AlignmentFlag & 0x0001) && (al.AlignmentFlag & 0x0008)) {
 		      boost::hash<std::string> hashStr;
 		      TSingleMap::const_iterator singleIt = singleAnchored.find(hashStr(al.Name));
 		      if (singleIt!=singleAnchored.end()) {
@@ -1294,10 +1294,10 @@ _updateClique(TBamRecordIterator const& el, TSize& svStart, TSize& svEnd, TSize&
 template<typename TSVType>
 inline int run(Config const& c, TSVType svType) {
 
-#ifdef DEBUG
+#ifdef PROFILE
   ProfilerStart("delly.prof");
 #endif
-  
+
   // Collect all promising structural variants
   typedef std::vector<StructuralVariantRecord> TVariants;
   TVariants svs;
@@ -1697,9 +1697,6 @@ inline int run(Config const& c, TSVType svType) {
     std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Created " << clique_count << " PE deletions." << std::endl;
   }
 
-#ifdef DEBUG
-  ProfilerStop();
-#endif
 
   // Split-read search
   if (boost::filesystem::exists(c.genome) && boost::filesystem::is_regular_file(c.genome) && boost::filesystem::file_size(c.genome)) {
@@ -1753,6 +1750,10 @@ inline int run(Config const& c, TSVType svType) {
   if (svs.size()) {
     vcfOutput(c, svs, readCountMap, normalCountMap, abnormalCountMap, svType);
   }
+
+#ifdef PROFILE
+  ProfilerStop();
+#endif
 
   // End
   now = boost::posix_time::second_clock::local_time();
@@ -1844,4 +1845,5 @@ int main(int argc, char **argv) {
     std::cerr << "SV analysis type not supported by Delly: " << c.svType << std::endl;
     return -1;
   }
+  
 }

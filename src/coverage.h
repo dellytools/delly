@@ -66,7 +66,7 @@ struct SingleHit<TPos, void> {
 
 
 template<typename TPos, typename TCigar, typename TArrayType>
-inline void
+inline int
 _addReadAndBpCounts(std::vector<SingleHit<TPos, TCigar> > const& hit_vector, TArrayType* read_count, TArrayType* bp_count)
 {
   typedef std::vector<SingleHit<TPos, TCigar> > THits;
@@ -74,6 +74,7 @@ _addReadAndBpCounts(std::vector<SingleHit<TPos, TCigar> > const& hit_vector, TAr
   typename THits::const_iterator vecEnd = hit_vector.end();
   
   // Add read and bp counts
+  int lastCoveredPos=0;
   for(;vecBeg!=vecEnd; ++vecBeg) {
     ++read_count[vecBeg->pos];
     int num_start = 0;
@@ -89,11 +90,13 @@ _addReadAndBpCounts(std::vector<SingleHit<TPos, TCigar> > const& hit_vector, TAr
       else if ((*cig == 'N') || (*cig=='D')) bpPoint += len;
       num_start = num_end + 1;
     }
+    if ((bpPoint - bp_count) > lastCoveredPos) lastCoveredPos=(bpPoint - bp_count);
   }
+  return lastCoveredPos;
 }
 
 template<typename TPos, typename TArrayType>
-inline void
+inline int
 _addReadAndBpCounts(std::vector<SingleHit<TPos, void> > const& hit_vector, TArrayType* read_count, TArrayType*)
 {
   typedef std::vector<SingleHit<TPos, void> > THits;
@@ -101,7 +104,12 @@ _addReadAndBpCounts(std::vector<SingleHit<TPos, void> > const& hit_vector, TArra
   typename THits::const_iterator vecEnd = hit_vector.end();
   
   // Add read and bp counts
-  for(;vecBeg!=vecEnd; ++vecBeg) ++read_count[vecBeg->pos];
+  int lastCoveredPos=0;
+  for(;vecBeg!=vecEnd; ++vecBeg) {
+    ++read_count[vecBeg->pos];
+    if (vecBeg->pos > lastCoveredPos) lastCoveredPos=vecBeg->pos;
+  }
+  return lastCoveredPos;
 }
 
 template<typename THit>
@@ -140,6 +148,12 @@ annotateCoverage(TFiles const& files, uint16_t minMapQual, bool inclCigar, TSamp
   // Sort Structural Variants
   sort(svs.begin(), svs.end(), SortSVs<StructuralVariantRecord>());
 
+  // Declare the chromosome array
+  typedef unsigned short TArrayType;
+  TArrayType* read_count = new TArrayType[MAX_CHROM_SIZE]();
+  TArrayType* bp_count = new TArrayType[MAX_CHROM_SIZE]();
+  int lastCoveredPos=MAX_CHROM_SIZE;
+
   // Process chromosome by chromosome
   boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
   std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Read-depth annotation" << std::endl;
@@ -170,14 +184,14 @@ annotateCoverage(TFiles const& files, uint16_t minMapQual, bool inclCigar, TSamp
       TUniquePairs unique_pairs_read1;
       TUniquePairs unique_pairs_read2;
 
-
       // Read alignments
       BamTools::BamAlignment al;
       if (reader.Jump(refIndex, 0)) {
-	while( reader.GetNextAlignment(al) ) {
+	while( reader.GetNextAlignmentCore(al) ) {
 	  if (al.RefID != refIndex) break;
 	  if ((al.AlignmentFlag & 0x0004) || (al.AlignmentFlag & 0x0200) || (al.AlignmentFlag & 0x0400) || (al.MapQuality < minMapQual) || (!(inclCigar) && (al.AlignmentFlag & 0x0100)) ) continue;
 	  // Get the library information
+	  al.BuildCharData();
 	  std::string rG = "DefaultLib";
 	  al.GetTag("RG", rG);
 	  typename TLibraryMap::iterator libIt=sampleIt->second.find(rG);
@@ -185,10 +199,10 @@ annotateCoverage(TFiles const& files, uint16_t minMapQual, bool inclCigar, TSamp
 	  // Is it a unique pair
 	  Hit hitPos(al);
 	  typename TUniquePairs::const_iterator pos;
-	  bool inserted;
+	  bool inserted = true;
 	  if (al.AlignmentFlag & 0x0040) boost::tie(pos, inserted) = unique_pairs_read1.insert(hitPos);
 	  else boost::tie(pos, inserted) = unique_pairs_read2.insert(hitPos);
-	  if ((inserted) || (libIt->second.median==0)) {
+	  if ((inserted) || !(al.AlignmentFlag & 0x0001)) {
 	    hit_vector.push_back(TSingleHit(al));
 	    ++libIt->second.mappedReads;
 	    if (al.AlignmentFlag & 0x0040) ++libIt->second.unique_pairs;
@@ -201,15 +215,12 @@ annotateCoverage(TFiles const& files, uint16_t minMapQual, bool inclCigar, TSamp
       // Sort SAM records by chromosome and position
       sort(hit_vector.begin(), hit_vector.end(), SortSingleHits<TSingleHit>());
 
-      // Declare the chromosome array
-      typedef unsigned short TArrayType;
-      TArrayType* read_count = new TArrayType[MAX_CHROM_SIZE];
-      TArrayType* bp_count = new TArrayType[MAX_CHROM_SIZE];
-      std::fill(read_count, read_count + MAX_CHROM_SIZE, 0);
-      std::fill(bp_count, bp_count + MAX_CHROM_SIZE, 0);
+      // Reset arrays
+      memset(read_count, 0, std::min(lastCoveredPos + 1, MAX_CHROM_SIZE) * sizeof(TArrayType));
+      memset(bp_count, 0, std::min(lastCoveredPos + 1, MAX_CHROM_SIZE) * sizeof(TArrayType));
 
       // Iterate all reads of that chromosome
-      _addReadAndBpCounts(hit_vector, read_count, bp_count);
+      lastCoveredPos=_addReadAndBpCounts(hit_vector, read_count, bp_count);
 
       // Store coverage for all input intervals
       StructuralVariantRecord findSV;
@@ -239,10 +250,10 @@ annotateCoverage(TFiles const& files, uint16_t minMapQual, bool inclCigar, TSamp
 	  countMapIt->second.second=read_sum;
 	} else break;
       }
-      delete[] read_count;
-      delete[] bp_count;
     }
   }
+  delete[] read_count;
+  delete[] bp_count;
 
   // Get normalization factors
   typedef std::vector<unsigned int> TReadCounts;

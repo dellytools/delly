@@ -65,7 +65,7 @@ namespace torali {
 
 
   template<typename TPos, typename TQual, typename TArrayType>
-    inline void
+    inline int
     _addReadAndBpCounts(std::vector<HitInterval<TPos, TQual> > const& hit_vector, TArrayType* bp_count)
   {
     typedef std::vector<HitInterval<TPos, TQual> > THits;
@@ -73,11 +73,14 @@ namespace torali {
     typename THits::const_iterator vecEnd = hit_vector.end();
   
     // Add bp counts
+    int lastCoveredPos=0;
     for(;vecBeg!=vecEnd; ++vecBeg) {
       TArrayType* bpPoint = &bp_count[vecBeg->start - 1];
       TArrayType* bpPointEnd = &bp_count[vecBeg->end];
       for(;bpPoint!=bpPointEnd; ++bpPoint) ++(*bpPoint);
+      if (vecBeg->end > lastCoveredPos) lastCoveredPos=vecBeg->end;
     }
+    return lastCoveredPos;
   }
 
 
@@ -192,6 +195,18 @@ namespace torali {
     // Sort Structural Variants
     std::sort(svs.begin(), svs.end(), SortSVs<StructuralVariantRecord>());
 
+    // Hash qualities
+    uint16_t* qualities = new uint16_t[(int)boost::math::pow<28>(2)];
+    uint16_t* qualitiesEnd = qualities + (int) boost::math::pow<28>(2);
+    std::fill(qualities, qualitiesEnd, 0);
+
+    // Declare the chromosom arrays
+    typedef unsigned short TArrayType;
+    TArrayType* normalCount = new TArrayType[MAX_CHROM_SIZE];
+    TArrayType* missingCount = new TArrayType[MAX_CHROM_SIZE];
+    int lastCoveredPosNormal = MAX_CHROM_SIZE;
+    int lastCoveredPosMissing = MAX_CHROM_SIZE;
+
     // Process chromosome by chromosome
     boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
     std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Breakpoint spanning coverage annotation" << std::endl;
@@ -235,16 +250,14 @@ namespace torali {
 	typedef std::set<Hit> TUniquePairs;
 	TUniquePairs unique_pairs;
 
-	// Read alignments and hash qualities
-	uint16_t* qualities = new uint16_t[(int)boost::math::pow<28>(2)];
-	uint16_t* qualitiesEnd = qualities + (int) boost::math::pow<28>(2);
-	std::fill(qualities, qualitiesEnd, 0);
+	// Read alignments
 	BamTools::BamAlignment al;
 	if (reader.Jump(refIndex, 0)) {
-	  while( reader.GetNextAlignment(al) ) {
+	  while( reader.GetNextAlignmentCore(al) ) {
 	    if (al.RefID != refIndex) break;
 	    if (!(al.AlignmentFlag & 0x0001) || (al.AlignmentFlag & 0x0004) || (al.AlignmentFlag & 0x0008) || (al.AlignmentFlag & 0x0100) || (al.AlignmentFlag & 0x0200) || (al.AlignmentFlag & 0x0400) || (al.Position==al.MatePosition) || (al.RefID!=al.MateRefID) || (al.MapQuality < minMapQual)) continue;
 	    // Get the library information
+	    al.BuildCharData();
 	    std::string rG = "DefaultLib";
 	    al.GetTag("RG", rG);
 	    typename TLibraryMap::iterator libIt=sampleIt->second.find(rG);
@@ -267,15 +280,13 @@ namespace torali {
 	    // Get or store the mapping quality for the partner
 	    if (al.Position<al.MatePosition) {
 	      // Hash the quality
-	      boost::hash<std::string> hashStr;
-	      unsigned int index=((hashStr(al.Name) % (int)boost::math::pow<4>(2))<<24) + ((al.Position % (int)boost::math::pow<12>(2))<<12) + (al.MatePosition % (int)boost::math::pow<12>(2));
-
+	      unsigned int index=((al.Position % (int)boost::math::pow<14>(2))<<14) + (al.MatePosition % (int)boost::math::pow<14>(2));
 	      qualities[index]=al.MapQuality;
 	    } else {
 	      // Get the two mapping qualities
-	      boost::hash<std::string> hashStr;
-	      unsigned int index=((hashStr(al.Name) % (int)boost::math::pow<4>(2))<<24) + ((al.MatePosition % (int)boost::math::pow<12>(2))<<12) + (al.Position % (int)boost::math::pow<12>(2));
+	      unsigned int index=((al.MatePosition % (int)boost::math::pow<14>(2))<<14) + (al.Position % (int)boost::math::pow<14>(2));
 	      uint16_t pairQuality = std::min(qualities[index], al.MapQuality);
+	      qualities[index]=0;
 	      if (pairQuality < minMapQual) continue;
 
 	      // Is it a unique pair
@@ -306,20 +317,16 @@ namespace torali {
 	    }
 	  }
 	}
-	delete [] qualities;
 
 	// Sort SAM records by start position
 	sort(normalSpan.begin(), normalSpan.end(), SortHitInterval<THitInterval>());
 	sort(missingSpan.begin(), missingSpan.end(), SortHitInterval<THitInterval>());
 
-	// Declare the chromosome array
-	typedef unsigned short TArrayType;
-	TArrayType* normalCount = new TArrayType[MAX_CHROM_SIZE];
-	TArrayType* missingCount = new TArrayType[MAX_CHROM_SIZE];
-	std::fill(normalCount, normalCount + MAX_CHROM_SIZE, 0);
-	std::fill(missingCount, missingCount + MAX_CHROM_SIZE, 0);
-	_addReadAndBpCounts(normalSpan, normalCount);
-	_addReadAndBpCounts(missingSpan, missingCount);
+	// Reset the chromosome array
+	memset(normalCount, 0, std::min(lastCoveredPosNormal + 1, MAX_CHROM_SIZE) * sizeof(TArrayType));
+	memset(missingCount, 0, std::min(lastCoveredPosMissing + 1, MAX_CHROM_SIZE) * sizeof(TArrayType));
+	lastCoveredPosNormal = _addReadAndBpCounts(normalSpan, normalCount);
+	lastCoveredPosMissing = _addReadAndBpCounts(missingSpan, missingCount);
 
 	// Store spanning coverage for all input intervals
 	StructuralVariantRecord findSV(references[refIndex].RefName, 0, 0);
@@ -356,14 +363,13 @@ namespace torali {
 	    _addCounts(normalCount, missingCount, normalSpan, missingSpan, countMapIt, abCountMapIt, posStart, posEnd, TCount());
 	  } else break;
 	}
-
-	// Clean-up
-	delete[] normalCount;
-	delete[] missingCount;
       }
     }
+    // Clean-up
+    delete[] normalCount;
+    delete[] missingCount;
+    delete[] qualities;
   }
-
 
 }
 
