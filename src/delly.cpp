@@ -27,6 +27,7 @@ Contact: Tobias Rausch (rausch@embl.de)
 #include <boost/graph/adjacency_list.hpp>
 #include <boost/graph/graphviz.hpp>
 #include <boost/graph/connected_components.hpp>
+#include <boost/unordered_map.hpp>
 #include <boost/program_options/cmdline.hpp>
 #include <boost/program_options/options_description.hpp>
 #include <boost/program_options/parsers.hpp>
@@ -1353,9 +1354,9 @@ inline int run(Config const& c, TSVType svType) {
   validChr.resize(references.size());
   std::fill(validChr.begin(), validChr.end(), true);
   if (boost::filesystem::exists(c.exclude) && boost::filesystem::is_regular_file(c.exclude) && boost::filesystem::file_size(c.exclude)) {
-    typedef std::map<std::string, unsigned int> TMapChr;
+    typedef boost::unordered_map<std::string, unsigned int> TMapChr;
     TMapChr mapChr;
-    for(unsigned int i = 0;itRef!=references.end();++itRef, ++i) mapChr.insert(std::make_pair(itRef->RefName, i));
+    for(unsigned int i = 0;itRef!=references.end();++itRef, ++i) mapChr[ itRef->RefName ] = i;
     std::ifstream chrFile(c.exclude.string().c_str(), std::ifstream::in);
     if (chrFile.is_open()) {
       while (chrFile.good()) {
@@ -1380,11 +1381,6 @@ inline int run(Config const& c, TSVType svType) {
       chrFile.close();
     }
   }
-
-  // Hash qualities
-  uint16_t* qualities = new uint16_t[(int)boost::math::pow<28>(2)];
-  uint16_t* qualitiesEnd = qualities + (int) boost::math::pow<28>(2);
-  std::fill(qualities, qualitiesEnd, 0);
 
   // Process chromosome by chromosome
   boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
@@ -1423,6 +1419,10 @@ inline int run(Config const& c, TSVType svType) {
       // Unique pairs for the given sample
       typedef std::set<Hit> TUniquePairs;
       TUniquePairs unique_pairs;
+
+      // Qualities
+      typedef boost::unordered_map<unsigned int, uint16_t> TQualities;
+      TQualities qualities;
 
       // Read alignments
       BamTools::BamAlignment al;
@@ -1636,7 +1636,6 @@ inline int run(Config const& c, TSVType svType) {
       }
     }
   }
-  delete [] qualities;
    
   // Output library statistics
   now = boost::posix_time::second_clock::local_time();

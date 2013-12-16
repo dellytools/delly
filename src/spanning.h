@@ -24,6 +24,7 @@ Contact: Tobias Rausch (rausch@embl.de)
 #ifndef SPANNING_H
 #define SPANNING_H
 
+#include <boost/unordered_map.hpp>
 #include "tags.h"
 
 namespace torali {
@@ -195,11 +196,6 @@ namespace torali {
     // Sort Structural Variants
     std::sort(svs.begin(), svs.end(), SortSVs<StructuralVariantRecord>());
 
-    // Hash qualities
-    uint16_t* qualities = new uint16_t[(int)boost::math::pow<28>(2)];
-    uint16_t* qualitiesEnd = qualities + (int) boost::math::pow<28>(2);
-    std::fill(qualities, qualitiesEnd, 0);
-
     // Declare the chromosom arrays
     typedef unsigned short TArrayType;
     TArrayType* normalCount = new TArrayType[MAX_CHROM_SIZE];
@@ -245,10 +241,13 @@ namespace torali {
 	reader.LocateIndex();
 	if ( !reader.HasIndex() ) return;
 	
-
 	// Unique pairs for the given sample
 	typedef std::set<Hit> TUniquePairs;
 	TUniquePairs unique_pairs;
+
+	// Qualities
+	typedef boost::unordered_map<unsigned int, uint16_t> TQualities;
+	TQualities qualities;
 
 	// Read alignments
 	BamTools::BamAlignment al;
@@ -368,7 +367,6 @@ namespace torali {
     // Clean-up
     delete[] normalCount;
     delete[] missingCount;
-    delete[] qualities;
   }
 
 }
