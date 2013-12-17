@@ -43,6 +43,10 @@ Contact: Tobias Rausch (rausch@embl.de)
 #include "api/BamReader.h"
 #include "api/BamIndex.h"
 
+#ifdef OPENMP
+#include <omp.h>
+#endif
+
 #ifdef PROFILE
 #include "gperftools/profiler.h"
 #endif
@@ -234,9 +238,9 @@ _translateSVCoordinates(TUSize refSize, TUSize refSizeRight, TUSize refSizeLeft,
 }
 
 
-template<typename TConfig, typename TStructuralVariantRecord, typename TTag>
+template<typename TConfig, typename TStructuralVariantRecord, typename TReadSet, typename TTag>
 inline
-void searchSplit(TConfig const& c, TStructuralVariantRecord& sv, std::string const& svRefStr, std::set<std::string> const& splitReadSet, SVType<TTag> svType) {
+void searchSplit(TConfig const& c, TStructuralVariantRecord& sv, std::string const& svRefStr, TReadSet const& splitReadSet, SVType<TTag> svType) {
   // Index SV reference
   typedef Index<int, int,  char, 11, 4> TIndex;
   TIndex index;
@@ -265,8 +269,7 @@ void searchSplit(TConfig const& c, TStructuralVariantRecord& sv, std::string con
   TDiag forwardReverse;
 
   typedef std::vector<char> TSequence;
-  typedef std::set<std::string> TReadSet;
-  TReadSet::const_iterator splitIter = splitReadSet.begin();
+  typename TReadSet::const_iterator splitIter = splitReadSet.begin();
   for(;splitIter!=splitReadSet.end();++splitIter) {
     TSequence read;
     std::string::const_iterator readIt=splitIter->begin();
@@ -1053,10 +1056,10 @@ findPutativeSplitReads(TConfig const& c, std::vector<TStructuralVariantRecord>& 
   // Collect good quality single-anchored reads from all samples
   typedef std::map<std::size_t, std::string> TSingleMap;
   TSingleMap singleAnchored;
-  unsigned int maxSingleAnchoredReads=10000000;
-  for(unsigned int file_c = 0; ((file_c < c.files.size()) && (singleAnchored.size() <= maxSingleAnchoredReads)); ++file_c) {
+  #pragma omp parallel for default(shared)
+  for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
     BamTools::BamReader reader;
-    if ( ! reader.Open(c.files[file_c].string()) ) return -1;
+    reader.Open(c.files[file_c].string());
     BamTools::BamAlignment al;
     while( reader.GetNextAlignmentCore(al) ) {
       // Read unmapped and paired-end partner is mapped
@@ -1069,8 +1072,11 @@ findPutativeSplitReads(TConfig const& c, std::vector<TStructuralVariantRecord>& 
 	meanQual /= al.Length;
 	meanQual -=33;
 	if (meanQual >= 20) {
-	  boost::hash<std::string> hashStr;
-	  singleAnchored.insert(std::make_pair(hashStr(al.Name), al.QueryBases));
+	  #pragma omp critical
+	  {
+	    boost::hash<std::string> hashStr;
+	    singleAnchored.insert(std::make_pair(hashStr(al.Name), al.QueryBases));
+	  }
 	}
       }
     }
@@ -1092,10 +1098,6 @@ findPutativeSplitReads(TConfig const& c, std::vector<TStructuralVariantRecord>& 
     for(unsigned int refIndex=0;itRef!=references.end();++itRef, ++refIndex) {
       if (seq->name.s == references[refIndex].RefName) {
 	++show_progress;
-	// Dummy placeholders for softclips
-	std::vector<int> clipSizes;
-	std::vector<int> readPositions;
-	std::vector<int> genomePositions;
 
 	// Iterate all deletions on this chromosome
 	typename TSVs::iterator svIt = svs.begin();
@@ -1104,20 +1106,25 @@ findPutativeSplitReads(TConfig const& c, std::vector<TStructuralVariantRecord>& 
 	  if (svIt->chr == references[refIndex].RefName) {
 	    // Get the SV reference
 	    std::string svRefStr = _getSVRef(seq->seq.s, *svIt, svType);
-	    std::set<std::string> splitReadSet;
-	    unsigned int splitReadSetMaxSize = 1000;
+	    typedef std::set<std::string> TSplitReadSet;
+	    TSplitReadSet splitReadSet;
 
 	    // Find putative split reads in all samples
-	    for(unsigned int file_c = 0; ((file_c < c.files.size()) && (splitReadSet.size() < splitReadSetMaxSize)); ++file_c) {
+            #pragma omp parallel for default(shared)
+	    for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
+	      // Dummy placeholders for softclips
+	      std::vector<int> clipSizes;
+	      std::vector<int> readPositions;
+	      std::vector<int> genomePositions;
+
 	      // Initialize bam file
 	      BamTools::BamReader reader;
-	      if ( ! reader.Open(c.files[file_c].string()) ) return -1;
+	      reader.Open(c.files[file_c].string());
 	      reader.LocateIndex();
-	      if ( !reader.HasIndex() ) return -1;
 
 	      BamTools::BamAlignment al;
 	      if ( reader.SetRegion(refIndex, (svIt->svStartBeg + svIt->svStart)/2, refIndex, (svIt->svStart + svIt->svStartEnd)/2 ) ) {
-		while ((reader.GetNextAlignmentCore(al)) && (splitReadSet.size() < splitReadSetMaxSize)) {
+		while (reader.GetNextAlignmentCore(al)) {
 		  if (!(al.AlignmentFlag & 0x0004) && !(al.AlignmentFlag & 0x0100) && !(al.AlignmentFlag & 0x0200) && !(al.AlignmentFlag & 0x0400)) {
 		    al.BuildCharData();
 		    // Single-anchored read?
@@ -1125,20 +1132,26 @@ findPutativeSplitReads(TConfig const& c, std::vector<TStructuralVariantRecord>& 
 		      boost::hash<std::string> hashStr;
 		      TSingleMap::const_iterator singleIt = singleAnchored.find(hashStr(al.Name));
 		      if (singleIt!=singleAnchored.end()) {
-			splitReadSet.insert(singleIt->second);
+			#pragma omp critical
+			{
+			  splitReadSet.insert(singleIt->second);
+			}
 		      }
 		    }
 		    // Clipped read or large edit distance
 		    unsigned int editDistance = 0;
 		    al.GetTag("NM", editDistance);
 		    if ((editDistance>10) || (al.GetSoftClips(clipSizes, readPositions, genomePositions, false))) {
-		      splitReadSet.insert(al.QueryBases);
+		      #pragma omp critical
+		      {
+			splitReadSet.insert(al.QueryBases);
+		      }
 		    }
 		  }
 		}
 	      }
 	      if ( reader.SetRegion(refIndex, (svIt->svEndBeg + svIt->svEnd)/2, refIndex, (svIt->svEnd + svIt->svEndEnd)/2 ) ) {
-		while ((reader.GetNextAlignmentCore(al)) && (splitReadSet.size() < splitReadSetMaxSize)) {
+		while (reader.GetNextAlignmentCore(al)) {
 		  if (!(al.AlignmentFlag & 0x0004) && !(al.AlignmentFlag & 0x0100) && !(al.AlignmentFlag & 0x0200) && !(al.AlignmentFlag & 0x0400)) {
 		    al.BuildCharData();
 		    // Single-anchored read?
@@ -1146,14 +1159,20 @@ findPutativeSplitReads(TConfig const& c, std::vector<TStructuralVariantRecord>& 
 		      boost::hash<std::string> hashStr;
 		      TSingleMap::const_iterator singleIt = singleAnchored.find(hashStr(al.Name));
 		      if (singleIt!=singleAnchored.end()) {
-			splitReadSet.insert(singleIt->second);
+                        #pragma omp critical
+			{
+			  splitReadSet.insert(singleIt->second);
+			}
 		      }
 		    }
 		    // Clipped read or large edit distance
 		    unsigned int editDistance = 0;
 		    al.GetTag("NM", editDistance);
 		    if ((editDistance>10) || (al.GetSoftClips(clipSizes, readPositions, genomePositions, false))) {
-		      splitReadSet.insert(al.QueryBases);
+		      #pragma omp critical
+		      {
+			splitReadSet.insert(al.QueryBases);
+		      }
 		    }
 		  }
 		}
@@ -1163,10 +1182,18 @@ findPutativeSplitReads(TConfig const& c, std::vector<TStructuralVariantRecord>& 
 
 	    // Compare the split-reads against the SV reference
 	    if (!splitReadSet.empty()) {
-	      totalSplitReadsAligned += splitReadSet.size();
+	      // Limit to at most 1000 split reads
+	      std::vector<std::string> splitCandidates;
+	      typename TSplitReadSet::const_iterator itSplit=splitReadSet.begin();
+	      typename TSplitReadSet::const_iterator itSplitEnd=splitReadSet.end();
+	      for(unsigned int splitCount=0; ((itSplit!=itSplitEnd) && (splitCount<1000));++itSplit, ++splitCount) {
+		splitCandidates.push_back(*itSplit);
+	      }
+	      
+	      totalSplitReadsAligned += splitCandidates.size();
 
 	      // Search true split in candidates
-	      searchSplit(c, *svIt, svRefStr, splitReadSet, svType);
+	      searchSplit(c, *svIt, svRefStr, splitCandidates, svType);
 	    }
 	  }
 	}
@@ -1312,21 +1339,15 @@ inline int run(Config const& c, TSVType svType) {
   TSampleLibrary sampleLib;
   int overallMaxISize = 0;
 
-  // Scan libraries first
+  // Check that all input bam files exist and are indexed
   BamTools::RefVector references;
   for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
-    // Get a sample name
-    std::string sampleName(c.files[file_c].stem().string());
-
-    // Check that all input bam files exist
     BamTools::BamReader reader;
     if ( ! reader.Open(c.files[file_c].string()) ) {
       std::cerr << "Could not open input bam file: " << c.files[file_c].string() << std::endl;
       reader.Close();
       return -1;
     }
-    
-    // Check that all input bam files are indexed
     reader.LocateIndex();
     if ( !reader.HasIndex() ) {
       std::cerr << "Missing bam index file: " << c.files[file_c].string() << std::endl;
@@ -1336,14 +1357,24 @@ inline int run(Config const& c, TSVType svType) {
 
     // Get references
     if (file_c==0) references = reader.GetReferenceData();
+  }
+
+  // Get library parameters
+  #pragma omp parallel for default(shared)
+  for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
+    // Get a sample name
+    std::string sampleName(c.files[file_c].stem().string());
 
     // Get library parameters and overall maximum insert size
     TLibraryMap libInfo;
     getLibraryParams(c.files[file_c], libInfo, c.percentAbnormal, c.madCutoff);
-    TLibraryMap::const_iterator libIter=libInfo.begin();
-    for(;libIter!=libInfo.end();++libIter) 
-      if (libIter->second.maxNormalISize > overallMaxISize) overallMaxISize = libIter->second.maxNormalISize;
-    sampleLib.insert(std::make_pair(sampleName, libInfo));
+    #pragma omp critical
+    {
+      TLibraryMap::const_iterator libIter=libInfo.begin();
+      for(;libIter!=libInfo.end();++libIter) 
+	if (libIter->second.maxNormalISize > overallMaxISize) overallMaxISize = libIter->second.maxNormalISize;
+      sampleLib.insert(std::make_pair(sampleName, libInfo));
+    }
   }
 
   // Parse exclude interval list
@@ -1405,6 +1436,7 @@ inline int run(Config const& c, TSVType svType) {
     TBamRecord bamRecord;
 
     // Iterate all samples
+    #pragma omp parallel for default(shared)
     for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
       // Get a sample name
       std::string sampleName(c.files[file_c].stem().string());
@@ -1412,9 +1444,8 @@ inline int run(Config const& c, TSVType svType) {
 
       // Initialize bam file
       BamTools::BamReader reader;
-      if ( ! reader.Open(c.files[file_c].string()) ) return -1;
+      reader.Open(c.files[file_c].string());
       reader.LocateIndex();
-      if ( !reader.HasIndex() ) return -1;
 
       // Unique pairs for the given sample
       typedef std::set<Hit> TUniquePairs;
@@ -1469,7 +1500,10 @@ inline int run(Config const& c, TSVType svType) {
 	      bool inserted;
 	      boost::tie(pos, inserted) = unique_pairs.insert(hitPos);
 	      if (inserted) {
-		bamRecord.push_back(BamAlignRecord(al, pairQuality, libIt->second.median, libIt->second.mad, libIt->second.maxNormalISize, libIt->second.defaultOrient));
+		#pragma omp critical
+		{
+		  bamRecord.push_back(BamAlignRecord(al, pairQuality, libIt->second.median, libIt->second.mad, libIt->second.maxNormalISize, libIt->second.defaultOrient));
+		}
 		++libIt->second.unique_pairs;
 	      } else {
 		++libIt->second.non_unique_pairs;
@@ -1557,6 +1591,7 @@ inline int run(Config const& c, TSVType svType) {
     }
 
     // Iterate each component
+    #pragma omp parallel for default(shared)
     for(int compIt = 0; compIt < numComp; ++compIt) {
       if (compSize[compIt]<2) continue;
       typedef boost::graph_traits<Graph>::vertex_descriptor TVertexDescriptor;
@@ -1632,7 +1667,10 @@ inline int run(Config const& c, TSVType svType) {
 	svRec.srAlignQuality=0;
 	svRec.precise=false;
 	svRec.left=leftPECluster;
-	svs.push_back(svRec);
+        #pragma omp critical
+	{
+	  svs.push_back(svRec);
+	}
       }
     }
   }

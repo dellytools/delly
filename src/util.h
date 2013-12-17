@@ -143,7 +143,7 @@ namespace torali
     }
 
 
-  inline void getLibraryParams(boost::filesystem::path const& path, std::map<std::string, LibraryInfo>& libInfo, double const percentile, unsigned short madCutoff) {
+  inline void getLibraryParams(boost::filesystem::path const& path, std::map<std::string, LibraryInfo>& libInfo, double const percentile, unsigned short const madCutoff) {
     typedef  std::map<std::string, LibraryInfo> TLibraryMap;
 
     // Maximum number of pairs used to estimate library parameters for each RG library
