@@ -213,6 +213,7 @@ namespace torali {
 	} else break;
       }
       std::sort(svSizes.begin(), svSizes.end());
+      if (svSizes.empty()) continue;
 
       // Iterate all samples
       #pragma omp parallel for default(shared)
@@ -251,7 +252,8 @@ namespace torali {
 	    al.GetTag("RG", rG);
 	    typename TLibraryMap::iterator libIt=sampleIt->second.find(rG);
 	    if (libIt->second.median == 0) continue; // Single-end library
-	    unsigned int outerISize = std::abs(al.Position - al.MatePosition) + al.Length;
+	    int outerISize = std::abs(al.Position - al.MatePosition) + al.Length;
+
 	    if ((getStrandIndependentOrientation(al) != libIt->second.defaultOrient) || (outerISize > libIt->second.maxNormalISize)) {
 	      if (_acceptedInsertSize(libIt->second.maxNormalISize, libIt->second.median, abs(al.InsertSize), svType)) continue;  // Normal paired-end (for deletions only)
 	      if (_acceptedOrientation(libIt->second.defaultOrient, getStrandIndependentOrientation(al), svType)) continue;  // Orientation disagrees with SV type
@@ -261,8 +263,13 @@ namespace torali {
 	      int maxPos = std::max(al.Position, al.MatePosition);
 	      typename TSVSizes::const_iterator itSize = std::lower_bound(svSizes.begin(), svSizes.end(), std::make_pair(minPos, maxPos));
 	      bool validSize = false;
-	      if ((itSize != svSizes.begin()) && (!_pairsDisagree((itSize-1)->first, (itSize-1)->second, al.Length, libIt->second.median, minPos, maxPos, al.Length, libIt->second.median, _getSpanOrientation(al, libIt->second.defaultOrient, svType), _getSpanOrientation(al, libIt->second.defaultOrient, svType), svType))) validSize = true;
-	      else if ((itSize != svSizes.end()) && (!_pairsDisagree(minPos, maxPos, al.Length, libIt->second.median, itSize->first, itSize->second, al.Length, libIt->second.median, _getSpanOrientation(al, libIt->second.defaultOrient, svType), _getSpanOrientation(al, libIt->second.defaultOrient, svType), svType))) validSize = true;
+	      if (itSize != svSizes.end()) {
+		validSize = (!_pairsDisagree(minPos, maxPos, al.Length, libIt->second.median, itSize->first, itSize->second, al.Length, libIt->second.median, _getSpanOrientation(al, libIt->second.defaultOrient, svType), _getSpanOrientation(al, libIt->second.defaultOrient, svType), svType));
+	      }
+	      if ((!svSizes.empty()) && (itSize != svSizes.begin())) {
+		--itSize;
+		validSize = (!_pairsDisagree(itSize->first, itSize->second, al.Length, libIt->second.median, minPos, maxPos, al.Length, libIt->second.median, _getSpanOrientation(al, libIt->second.defaultOrient, svType), _getSpanOrientation(al, libIt->second.defaultOrient, svType), svType));
+	      }
 	      if (!validSize) continue;
 	    }
 
@@ -313,10 +320,11 @@ namespace torali {
 
 	// Reset the chromosome array
 	typedef unsigned short TArrayType;
-	TArrayType* normalCount = new TArrayType[MAX_CHROM_SIZE];
-	TArrayType* missingCount = new TArrayType[MAX_CHROM_SIZE];
-	memset(normalCount, 0, MAX_CHROM_SIZE * sizeof(TArrayType));
-	memset(missingCount, 0, MAX_CHROM_SIZE * sizeof(TArrayType));
+	unsigned int arrayLen=itRef->RefLength + 1000000;
+	TArrayType* normalCount = new TArrayType[arrayLen];
+	TArrayType* missingCount = new TArrayType[arrayLen];
+	memset(normalCount, 0, arrayLen * sizeof(TArrayType));
+	memset(missingCount, 0, arrayLen * sizeof(TArrayType));
 	_addReadAndBpCounts(normalSpan, normalCount);
 	_addReadAndBpCounts(missingSpan, missingCount);
 

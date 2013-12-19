@@ -116,7 +116,9 @@ template<typename TRecord>
 struct SortBamRecords : public std::binary_function<TRecord, TRecord, bool>
 {
   inline bool operator()(TRecord const& s1, TRecord const& s2) const {
-    return ((s1.RefID<s2.RefID) || ((s1.RefID==s2.RefID) && (std::min(s1.Position,s1.MatePosition) < std::min(s2.Position,s2.MatePosition))));
+    return ((std::min(s1.Position,s1.MatePosition) < std::min(s2.Position,s2.MatePosition)) || 
+	   ((std::min(s1.Position,s1.MatePosition) == std::min(s2.Position,s2.MatePosition)) && (std::max(s1.Position,s1.MatePosition) < std::max(s2.Position,s2.MatePosition))) ||
+	   ((std::min(s1.Position,s1.MatePosition) == std::min(s2.Position,s2.MatePosition)) && (std::max(s1.Position,s1.MatePosition) == std::max(s2.Position,s2.MatePosition)) && (s1.maxNormalISize < s2.maxNormalISize)));
   }
 };
 
@@ -148,6 +150,25 @@ struct SortSplitReadRecords : public std::binary_function<TRecord, TRecord, bool
   }
 };
 
+
+// Edge struct
+template<typename TWeight, typename TVertex>
+struct EdgeRecord {
+  TVertex source;
+  TVertex target;
+  TWeight weight;
+
+  EdgeRecord(TVertex s, TVertex t, TWeight w) : source(s), target(t), weight(w) {}
+};
+
+// Sort edge records
+template<typename TRecord>
+struct SortEdgeRecords : public std::binary_function<TRecord, TRecord, bool>
+{
+  inline bool operator()(TRecord const& e1, TRecord const& e2) const {
+    return ((e1.weight < e2.weight) || ((e1.weight == e2.weight) && (e1.source < e2.source)) || ((e1.weight == e2.weight) && (e1.source == e2.source) && (e1.target < e2.target)));
+  }
+};
 
 // ExcludeInterval
 struct ExcludeInterval {
@@ -182,7 +203,7 @@ _betterSplit(TUSize refSize, TUSize refSizeRight, TUSize refSizeLeft, TSize oldD
   TSize oldSvSize = 0;
   if (left) oldSvSize = (refSizeLeft - oldDiag) + refSize - (oldDiag + oldOffset);
   else oldSvSize = oldDiag + refSizeRight - (refSize - (oldDiag + oldOffset)); 
-  return ((oldDiag < refSizeLeft) && ((oldDiag + (TSize) oldOffset) > (TSize) refSizeLeft) &&  (std::abs( ( ((double) oldSvSize + skippedLength) / (double) initialLength ) - 1.0) <= epsilon) && (support > bestSupport));
+  return ((oldDiag < (TSize) refSizeLeft) && ((oldDiag + (TSize) oldOffset) > (TSize) refSizeLeft) &&  (std::abs( ( ((double) oldSvSize + skippedLength) / (double) initialLength ) - 1.0) <= epsilon) && (support > bestSupport));
 }
 
 
@@ -671,7 +692,7 @@ void searchSplit(TConfig const& c, TStructuralVariantRecord& sv, std::string con
 	// Count the final number of aligned reads
 	typename TReadOut::const_iterator readIt = readOut.begin();
 	typename TReadOut::const_iterator readItEnd = readOut.end();
-	int readAlignCount = 0;
+	unsigned int readAlignCount = 0;
 	for(;readIt!=readItEnd; ++readIt) {
 	  if ((readIt->readOffset + readIt->seq.size() < (unsigned int) rightWalky + belowCovThres + TIndex::kmer_size) || (readIt->readOffset + TIndex::kmer_size > (unsigned int) leftWalky + belowCovThres)) continue;
 	  else ++readAlignCount;
@@ -1054,7 +1075,7 @@ findPutativeSplitReads(TConfig const& c, std::vector<TStructuralVariantRecord>& 
   BamTools::RefVector references = reader.GetReferenceData();
 
   // Collect good quality single-anchored reads from all samples
-  typedef std::map<std::size_t, std::string> TSingleMap;
+  typedef boost::unordered_map<std::size_t, std::string> TSingleMap;
   TSingleMap singleAnchored;
   #pragma omp parallel for default(shared)
   for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
@@ -1334,8 +1355,8 @@ inline int run(Config const& c, TSVType svType) {
   unsigned int clique_count = 1;
 
   // Create library objects
-  typedef std::map<std::string, LibraryInfo> TLibraryMap;
-  typedef std::map<std::string, TLibraryMap> TSampleLibrary;
+  typedef boost::unordered_map<std::string, LibraryInfo> TLibraryMap;
+  typedef boost::unordered_map<std::string, TLibraryMap> TSampleLibrary;
   TSampleLibrary sampleLib;
   int overallMaxISize = 0;
 
@@ -1516,6 +1537,7 @@ inline int run(Config const& c, TSVType svType) {
     
     // Sort BAM records according to position
     std::sort(bamRecord.begin(), bamRecord.end(), SortBamRecords<BamAlignRecord>());
+    //for(TBamRecord::const_iterator bamIt = bamRecord.begin(); bamIt!=bamRecord.end(); ++bamIt) std::cerr << bamIt->Position << ',' << bamIt->MatePosition << ',' << bamIt->maxNormalISize << ',' << bamIt->Length << ',' << bamIt->Median << ',' << bamIt->Mad << ',' << bamIt->libOrient << ',' << bamIt->AlignmentFlag << std::endl;
 
     // Define an undirected graph g
     typedef boost::adjacency_list<boost::vecS, boost::vecS, boost::undirectedS, TBamRecord::const_iterator, boost::property<boost::edge_weight_t, unsigned short> > Graph;
@@ -1523,7 +1545,7 @@ inline int run(Config const& c, TSVType svType) {
       
     // Define the reverse map
     typedef boost::graph_traits<Graph>::vertex_descriptor Vertex;
-    typedef std::map<TBamRecord::const_iterator, Vertex> TNameVertexMap;
+    typedef boost::unordered_map<unsigned int, Vertex> TNameVertexMap;
     TNameVertexMap nameFrag;
       
     // Define the edge property map
@@ -1546,7 +1568,7 @@ inline int run(Config const& c, TSVType svType) {
 	
 	// Add vertex 1
 	Vertex u;
-	boost::tie(pos, inserted) = nameFrag.insert(std::make_pair(vecBeg, Vertex()));
+	boost::tie(pos, inserted) = nameFrag.insert(TNameVertexMap::value_type(vecBeg-bamRecord.begin(), Vertex()));
 	if (inserted) {
 	  u = add_vertex(g);
 	  pos->second = u;
@@ -1557,7 +1579,7 @@ inline int run(Config const& c, TSVType svType) {
 	
 	// Add vertex 2
 	Vertex v;
-	boost::tie(pos, inserted) = nameFrag.insert(std::make_pair(vecNext, Vertex()));
+	boost::tie(pos, inserted) = nameFrag.insert(TNameVertexMap::value_type(vecNext-bamRecord.begin(), Vertex()));
 	if (inserted) {
 	  v = add_vertex(g);
 	  pos->second = v;
@@ -1584,59 +1606,65 @@ inline int run(Config const& c, TSVType svType) {
     int numComp = boost::connected_components(g, &my_comp[0]);
     
     // Count the number of vertices for each component
-    std::vector<unsigned int> compSize(numComp);
+    typedef std::vector<unsigned int> TCompSize;
+    TCompSize compSize(numComp);
+    std::fill(compSize.begin(), compSize.end(), 0);
     boost::graph_traits<Graph>::vertex_iterator vIt, vItEnd;
-    for(boost::tie(vIt, vItEnd) = boost::vertices(g); vIt != vItEnd; ++vIt) {
-      ++compSize[my_comp[*vIt]];
-    }
+    for(boost::tie(vIt, vItEnd) = boost::vertices(g); vIt != vItEnd; ++vIt) ++compSize[my_comp[*vIt]];
+    //for(TCompSize::const_iterator compIt = compSize.begin(); compIt!=compSize.end(); ++compIt) std::cerr << *compIt << std::endl;
+
 
     // Iterate each component
     #pragma omp parallel for default(shared)
     for(int compIt = 0; compIt < numComp; ++compIt) {
       if (compSize[compIt]<2) continue;
       typedef boost::graph_traits<Graph>::vertex_descriptor TVertexDescriptor;
-      typedef boost::graph_traits<Graph>::edge_descriptor TEdgeDescriptor;
-      typedef std::vector< std::pair<unsigned short, TEdgeDescriptor> > TWeightEdge;
+      typedef EdgeRecord<unsigned short, TVertexDescriptor> TEdgeRecord;
+      typedef std::vector<TEdgeRecord> TWeightEdge;
       TWeightEdge wEdge;
       boost::graph_traits<Graph>::edge_iterator eIt, eItEnd;
       for(boost::tie(eIt, eItEnd) = boost::edges(g); eIt != eItEnd; ++eIt) {
 	if ((my_comp[boost::source(*eIt, g)] == compIt) && (my_comp[boost::source(*eIt, g)] == my_comp[boost::target(*eIt,g)])) {
-	  wEdge.push_back(std::make_pair(weightMap[*eIt], *eIt));
+	  wEdge.push_back(TEdgeRecord(boost::source(*eIt, g), boost::target(*eIt, g), weightMap[*eIt]));
 	}
       }
-      
+
       // Sort edges by weight
-      std::sort(wEdge.begin(), wEdge.end());
+      std::sort(wEdge.begin(), wEdge.end(), SortEdgeRecords<TEdgeRecord>());
+      //for(TWeightEdge::const_iterator itWEdge = wEdge.begin(); itWEdge!=wEdge.end(); ++itWEdge) std::cerr << refIndex << ',' << compIt << ',' << itWEdge->source << ',' << itWEdge->target << ',' << itWEdge->weight << std::endl;
       
       // Find a large clique
       TWeightEdge::const_iterator itWEdge = wEdge.begin();
       TWeightEdge::const_iterator itWEdgeEnd = wEdge.end();
       typedef std::set<TVertexDescriptor> TCliqueMembers;
       TCliqueMembers clique;
+      TCliqueMembers incompatible;
       int svStart, svEnd, wiggle;
-      _initClique(g[boost::source(itWEdge->second, g)], svStart, svEnd, wiggle, svType);
-      bool leftPECluster = _getSpanOrientation(*g[boost::source(itWEdge->second, g)], g[boost::source(itWEdge->second, g)]->libOrient, svType);
+      _initClique(g[itWEdge->source], svStart, svEnd, wiggle, svType);
+      bool leftPECluster = _getSpanOrientation(*g[itWEdge->source], g[itWEdge->source]->libOrient, svType);
       if (svStart >= svEnd)  continue;
-      clique.insert(boost::source(itWEdge->second, g));
+      clique.insert(itWEdge->source);
       
       // Grow the clique from the seeding edge
       bool cliqueGrow=true;
       while ((cliqueGrow) && (clique.size() < compSize[compIt])) {
-	TCliqueMembers::const_iterator cliqueEnd = clique.end();
 	itWEdge = wEdge.begin();
 	cliqueGrow = false;
 	for(;(!cliqueGrow) && (itWEdge != itWEdgeEnd);++itWEdge) {
 	  TVertexDescriptor v;
-	  if ( (clique.find(boost::source(itWEdge->second, g)) == cliqueEnd) && (clique.find(boost::target(itWEdge->second, g)) != cliqueEnd)) v = boost::source(itWEdge->second, g);
-	  else if ( (clique.find(boost::source(itWEdge->second, g)) != cliqueEnd) && (clique.find(boost::target(itWEdge->second, g)) == cliqueEnd)) v = boost::target(itWEdge->second, g);
+	  if ((clique.find(itWEdge->source) == clique.end()) && (clique.find(itWEdge->target) != clique.end())) v = itWEdge->source;
+	  else if ((clique.find(itWEdge->source) != clique.end()) && (clique.find(itWEdge->target) == clique.end())) v = itWEdge->target;
 	  else continue;
+	  if (incompatible.find(v) != incompatible.end()) continue;
 	  boost::graph_traits<Graph>::adjacency_iterator vi, vi_end;
 	  unsigned int cliqSize = 0;
 	  for(boost::tie(vi, vi_end) = boost::adjacent_vertices(v, g); vi != vi_end; ++vi)
-	    if (clique.find(*vi) != cliqueEnd) ++cliqSize;
+	    if (clique.find(*vi) != clique.end()) ++cliqSize;
 	  if (cliqSize == clique.size()) {
+	    //std::cerr << refIndex << ',' << compIt << ',' << v << ',' << svStart << ',' << svEnd << ',' << wiggle << std::endl;
 	    cliqueGrow = _updateClique(g[v], svStart, svEnd, wiggle, svType);
 	    if (cliqueGrow) clique.insert(v);
+	    else incompatible.insert(v);
 	  }
 	}
       }
@@ -1662,13 +1690,13 @@ inline int run(Config const& c, TSVType svType) {
 	  svRec.svStartEnd = midPointDel -1;
 	  svRec.svEndBeg = midPointDel;
 	}
-	svRec.id = clique_count++;
 	svRec.srSupport=0;
 	svRec.srAlignQuality=0;
 	svRec.precise=false;
 	svRec.left=leftPECluster;
         #pragma omp critical
 	{
+	  svRec.id = clique_count++;
 	  svs.push_back(svRec);
 	}
       }
@@ -1748,7 +1776,7 @@ inline int run(Config const& c, TSVType svType) {
   // Annotate spanning coverage
   typedef std::pair<std::string, int> TSampleSVPair;
   typedef std::vector<std::vector<uint16_t> > TCountRange;
-  typedef std::map<TSampleSVPair, TCountRange> TCountMap;
+  typedef boost::unordered_map<TSampleSVPair, TCountRange> TCountMap;
   TCountMap normalCountMap;
   TCountMap abnormalCountMap;
   annotateSpanningCoverage(c.files, 0, 20, sampleLib, svs, normalCountMap, abnormalCountMap, HitInterval<int32_t, uint16_t>(), svType);
@@ -1765,7 +1793,7 @@ inline int run(Config const& c, TSVType svType) {
 
   // Annotate coverage
   typedef std::pair<int, int> TBpRead;
-  typedef std::map<TSampleSVPair, TBpRead> TReadCountMap;
+  typedef boost::unordered_map<TSampleSVPair, TBpRead> TReadCountMap;
   TReadCountMap readCountMap;
   annotateCoverage(c.files, 20, false, sampleLib, svs, readCountMap, SingleHit<int32_t, void>());
   now = boost::posix_time::second_clock::local_time();

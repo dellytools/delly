@@ -140,6 +140,10 @@ annotateCoverage(TFiles const& files, uint16_t minMapQual, bool inclCigar, TSamp
   // Sort Structural Variants
   sort(svs.begin(), svs.end(), SortSVs<StructuralVariantRecord>());
 
+  // Initialize count map
+  for(typename TSampleLibrary::iterator sIt = sampleLib.begin(); sIt!=sampleLib.end();++sIt) 
+    for(typename TSVs::const_iterator itSV = svs.begin(); itSV!=svs.end(); ++itSV) countMap.insert(std::make_pair(std::make_pair(sIt->first, itSV->id), std::make_pair(0,0)));
+
   // Process chromosome by chromosome
   boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
   std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Read-depth annotation" << std::endl;
@@ -185,7 +189,7 @@ annotateCoverage(TFiles const& files, uint16_t minMapQual, bool inclCigar, TSamp
 	  // Is it a unique pair
 	  Hit hitPos(al);
 	  typename TUniquePairs::const_iterator pos;
-	  bool inserted = true;
+	  bool inserted;
 	  if (al.AlignmentFlag & 0x0040) boost::tie(pos, inserted) = unique_pairs_read1.insert(hitPos);
 	  else boost::tie(pos, inserted) = unique_pairs_read2.insert(hitPos);
 	  if ((inserted) || !(al.AlignmentFlag & 0x0001)) {
@@ -199,48 +203,37 @@ annotateCoverage(TFiles const& files, uint16_t minMapQual, bool inclCigar, TSamp
       }
     
       // Sort SAM records by chromosome and position
-      sort(hit_vector.begin(), hit_vector.end(), SortSingleHits<TSingleHit>());
+      std::stable_sort(hit_vector.begin(), hit_vector.end(), SortSingleHits<TSingleHit>());
 
       // Declare the chromosome array
       typedef unsigned short TArrayType;
-      TArrayType* read_count = new TArrayType[MAX_CHROM_SIZE]();
-      TArrayType* bp_count = new TArrayType[MAX_CHROM_SIZE]();
-      memset(read_count, 0, MAX_CHROM_SIZE * sizeof(TArrayType));
-      memset(bp_count, 0, MAX_CHROM_SIZE * sizeof(TArrayType));
+      unsigned int arrayLen=itRef->RefLength + 1000000;
+      TArrayType* read_count = new TArrayType[arrayLen];
+      TArrayType* bp_count = new TArrayType[arrayLen];
+      memset(read_count, 0, arrayLen * sizeof(TArrayType));
+      memset(bp_count, 0, arrayLen * sizeof(TArrayType));
 
       // Iterate all reads of that chromosome
       _addReadAndBpCounts(hit_vector, read_count, bp_count);
 
       // Store coverage for all input intervals
-      StructuralVariantRecord findSV;
-      findSV.svStart=0;
-      findSV.chr=references[refIndex].RefName;
-      typename TSVs::const_iterator itSV = std::lower_bound(svs.begin(), svs.end(), findSV, SortSVs<StructuralVariantRecord>());
-      typename TSVs::const_iterator itSVEnd = svs.end();
-      #pragma omp critical
-      {
-	for(;itSV!=itSVEnd;++itSV) {
-	  if (itSV->chr == references[refIndex].RefName) {
-	    TSampleSVPair svSample = std::make_pair(sampleName, itSV->id);
-	    typename TCountMap::iterator countMapIt=countMap.find(svSample);
-	    if (countMapIt==countMap.end()) {
-	      countMapIt=countMap.insert(std::make_pair(svSample, std::make_pair(0,0))).first;
-	    }
-
-	    int32_t pos = itSV->svStart;
-	    int32_t window_len = itSV->svEnd;
-	    unsigned int bp_sum = 0;
-	    unsigned int read_sum = 0;
-	    TArrayType* bpPoint = &bp_count[pos+1];
-	    TArrayType* readPoint = &read_count[pos+1];
-	    for(int32_t i=pos; i<window_len; ++i, ++bpPoint, ++readPoint) { 
-	      bp_sum += *bpPoint;
-	      read_sum += *readPoint;
-	    }
-	    countMapIt->second.first=bp_sum;
-	    countMapIt->second.second=read_sum;
-	  } else break;
+      typename TSVs::const_iterator itSV = std::lower_bound(svs.begin(), svs.end(), StructuralVariantRecord(references[refIndex].RefName, 0, 0), SortSVs<StructuralVariantRecord>());
+      for(;itSV!=svs.end();++itSV) {
+	if (itSV->chr != references[refIndex].RefName) break;
+	TSampleSVPair svSample = std::make_pair(sampleName, itSV->id);
+	int32_t pos = itSV->svStart;
+	int32_t window_len = itSV->svEnd;
+	unsigned int bp_sum = 0;
+	unsigned int read_sum = 0;
+	TArrayType* bpPoint = &bp_count[pos+1];
+	TArrayType* readPoint = &read_count[pos+1];
+	for(int32_t i=pos; i<window_len; ++i, ++bpPoint, ++readPoint) { 
+	  bp_sum += *bpPoint;
+	  read_sum += *readPoint;
 	}
+	typename TCountMap::iterator countMapIt=countMap.find(svSample);
+	countMapIt->second.first=bp_sum;
+	countMapIt->second.second=read_sum;
       }
       delete[] read_count;
       delete[] bp_count;
@@ -249,42 +242,42 @@ annotateCoverage(TFiles const& files, uint16_t minMapQual, bool inclCigar, TSamp
 
   // Get normalization factors
   typedef std::vector<unsigned int> TReadCounts;
-  typedef std::map<std::string, double> TSampleNorm;
+  typedef boost::unordered_map<std::string, double> TSampleNorm;
   TReadCounts readCounts;
   TSampleNorm sampleNorm;
   sampleIt=sampleLib.begin();
   for(;sampleIt!=sampleLib.end();++sampleIt) {
     unsigned int mappedReads = 0;
     typename TLibraryMap::const_iterator libIt=sampleIt->second.begin();
-    for(;libIt!=sampleIt->second.end();++libIt) {
-      mappedReads+=libIt->second.mappedReads;
-    }
+    for(;libIt!=sampleIt->second.end();++libIt) mappedReads+=libIt->second.mappedReads;
     sampleNorm.insert(std::make_pair(sampleIt->first, mappedReads));
     readCounts.push_back(mappedReads);
   }
   std::sort(readCounts.begin(), readCounts.end());
-  unsigned int median=readCounts[readCounts.size()/2];
+  double median=readCounts[readCounts.size()/2];
   sampleIt=sampleLib.begin();
   for(;sampleIt!=sampleLib.end();++sampleIt) {
     typename TSampleNorm::iterator sampleNormIt = sampleNorm.find(sampleIt->first);
     if (sampleNormIt->second!=0) sampleNormIt->second = median/sampleNormIt->second;
     else sampleNormIt->second = 1.0;
   }
+  //std::cerr << "Median: " << median << std::endl;
+  //for(typename TSampleNorm::const_iterator itN = sampleNorm.begin(); itN != sampleNorm.end(); ++itN) std::cerr << itN->first << ',' << itN->second << std::endl;
 
   // Normalize read counts
-  for(unsigned int file_c = 0; file_c < files.size(); ++file_c) {
-    std::string sampleName(files[file_c].stem().string());
+  sampleIt=sampleLib.begin();
+  for(;sampleIt!=sampleLib.end();++sampleIt) {
     typename TSVs::const_iterator itSV = svs.begin();
     typename TSVs::const_iterator itSVEnd = svs.end();
     for(;itSV!=itSVEnd;++itSV) {
-      TSampleSVPair svSample = std::make_pair(sampleName, itSV->id);
+      TSampleSVPair svSample = std::make_pair(sampleIt->first, itSV->id);
       typename TCountMap::iterator countMapIt=countMap.find(svSample);
-      typename TSampleNorm::iterator sampleNormIt=sampleNorm.find(sampleName);
-      countMapIt->second.first *= sampleNormIt->second;
-      countMapIt->second.second *= sampleNormIt->second;
+      typename TSampleNorm::iterator sampleNormIt=sampleNorm.find(sampleIt->first);
+      countMapIt->second.first = int( (double) countMapIt->second.first * sampleNormIt->second);
+      countMapIt->second.second = int( (double) countMapIt->second.second * sampleNormIt->second);
+      //std::cerr << sampleIt->first << ',' << itSV->svStart << ',' <<  itSV->svEnd << ',' << countMapIt->second.first << ',' << countMapIt->second.second << ',' << sampleNormIt->second << std::endl;
     }
   }
-
 }
 
 
