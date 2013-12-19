@@ -9,10 +9,11 @@ delineate genomic rearrangements throughout the genome.
 DELLY dependencies
 ------------------
 
-* BamTools, (https://github.com/pezmaster31/bamtools)
-* Boost C++ Libraries, (www.boost.org)
-* zlib compression library, (www.zlib.net)
-* kseq library to parse FASTA/FASTQ, (http://lh3lh3.users.sourceforge.net/parsefastq.shtml)
+* BamTools (https://github.com/pezmaster31/bamtools)
+* Boost C++ Libraries (www.boost.org)
+* OpenMP (www.openmp.org)
+* zlib compression library (www.zlib.net)
+* kseq library to parse FASTA/FASTQ (http://lh3lh3.users.sourceforge.net/parsefastq.shtml)
 
 Installing DELLY
 ----------------
