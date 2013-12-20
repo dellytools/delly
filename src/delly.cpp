@@ -850,7 +850,7 @@ _addOrientation(bool left, SVType<InversionTag>) {
 
 template<typename TConfig, typename TStructuralVariantRecord, typename TReadCountMap, typename TCountMap, typename TTag>
 inline void
-vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TReadCountMap& readCountMap, TCountMap& normalCountMap, TCountMap& abnormalCountMap, SVType<TTag> svType) 
+vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TReadCountMap const& readCountMap, TCountMap const& normalCountMap, TCountMap const& abnormalCountMap, SVType<TTag> svType) 
 {
   // Typedefs
   typedef typename TCountMap::key_type TSampleSVPair;
@@ -941,12 +941,12 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TR
       std::string sampleName(c.files[file_c].stem().string());
       TSampleSVPair sampleSVPairLeft = std::make_pair(sampleName, svIter->id);
       TSampleSVPair sampleSVPairRight = std::make_pair(sampleName, -svIter->id);
-      typename TCountMap::iterator countMapItLeft=normalCountMap.find(sampleSVPairLeft);
-      typename TCountMap::iterator countMapItRight=normalCountMap.find(sampleSVPairRight);
-      typename TCountMap::iterator abCountMapItLeft=abnormalCountMap.find(sampleSVPairLeft);
-      typename TCountMap::iterator abCountMapItRight=abnormalCountMap.find(sampleSVPairRight);
-      typename TCountMap::iterator countMapIt; 
-      typename TCountMap::iterator abCountMapIt;
+      typename TCountMap::const_iterator countMapItLeft=normalCountMap.find(sampleSVPairLeft);
+      typename TCountMap::const_iterator countMapItRight=normalCountMap.find(sampleSVPairRight);
+      typename TCountMap::const_iterator abCountMapItLeft=abnormalCountMap.find(sampleSVPairLeft);
+      typename TCountMap::const_iterator abCountMapItRight=abnormalCountMap.find(sampleSVPairRight);
+      typename TCountMap::const_iterator countMapIt; 
+      typename TCountMap::const_iterator abCountMapIt;
       // Always take the minimum to be conservative (and to flag unclear samples as LowQual)
       if (countMapItLeft->second[0].size() <= countMapItRight->second[0].size()) countMapIt=countMapItLeft;
       else countMapIt=countMapItRight;
@@ -958,7 +958,7 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TR
       // Compute genotype likelihoods
       //typedef boost::multiprecision::cpp_dec_float_50 FLP;
       typedef boost::multiprecision::number<boost::multiprecision::cpp_dec_float<25> > FLP;
-      std::vector<FLP> gl;
+      FLP gl[3];
       unsigned int glBest=0;
       unsigned int peDepth=mapqRef.size() + mapqAlt.size();
       FLP glBestVal=-std::numeric_limits<FLP>::infinity();
@@ -976,7 +976,7 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TR
 	for(;mapqAltIt!=mapqAltItEnd;++mapqAltIt) {
 	  altLike += boost::multiprecision::log10( ((FLP(2.0 - geno) * (FLP(1) - boost::multiprecision::pow(FLP(10), -FLP(*mapqAltIt)/FLP(10) ))) + FLP(geno) * boost::multiprecision::pow(FLP(10), -FLP(*mapqAltIt)/FLP(10) ) ) );
 	}
-	gl.push_back(scaling+refLike+altLike);
+	gl[geno]=scaling+refLike+altLike;
 	if (gl[geno] > glBestVal) {
 	  glBestVal=gl[geno];
 	  glBest = geno;
@@ -1000,7 +1000,7 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TR
       } else {
 	ofile << "\t./.:.,.,.:0:LowQual:";
       }
-      typename TReadCountMap::iterator readCountMapIt=readCountMap.find(sampleSVPairLeft);
+      typename TReadCountMap::const_iterator readCountMapIt=readCountMap.find(sampleSVPairLeft);
       ofile << readCountMapIt->second.second << ":" << mapqRef.size() << ":" << mapqAlt.size();
     }
     ofile << std::endl;

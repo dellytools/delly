@@ -15,6 +15,7 @@ DELLY dependencies
 * zlib compression library (www.zlib.net)
 * kseq library to parse FASTA/FASTQ (http://lh3lh3.users.sourceforge.net/parsefastq.shtml)
 
+
 Installing DELLY
 ----------------
 
@@ -25,6 +26,24 @@ Building DELLY just requires
 `make -B src/delly`
 
 Alternatively, a statically linked binary for Linux 64-bit is available [here](https://github.com/tobiasrausch/delly/releases/).
+
+
+DELLY multi-threading mode
+--------------------------
+DELLY supports parallel computing using the OpenMP API (www.openmp.org).
+
+`make PARALLEL=1 -B src/delly`
+
+There is also a statically linked, multi-threaded binary for Linux 64-bit available under [releases](https://github.com/tobiasrausch/delly/releases/).
+
+
+You can set the number of threads using the environment variable OMP_NUM_THREADS in your shell.
+
+`export OMP_NUM_THREADS=10`
+
+DELLY primarily parallelizes on the sample level. Hence, OMP_NUM_THREADS should be always smaller or equal to the number of input samples. 
+As a rule of thumb you should consider an additional memory demand of about 500MB per thread for human samples, about 100MB per thread for drosophila 
+and less than 50MB per thread for yeast. 
 
 
 Running DELLY
