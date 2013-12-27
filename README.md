@@ -42,7 +42,7 @@ You can set the number of threads using the environment variable OMP_NUM_THREADS
 `export OMP_NUM_THREADS=10`
 
 DELLY primarily parallelizes on the sample level. Hence, OMP_NUM_THREADS should be always smaller or equal to the number of input samples. 
-As a rule of thumb you should consider an additional memory demand of about 500MB per thread for human samples, about 100MB per thread for drosophila 
+As a rule of thumb you should consider an additional memory demand of about 1G per thread for human samples, about 100MB per thread for drosophila 
 and less than 50MB per thread for yeast. 
 
 
