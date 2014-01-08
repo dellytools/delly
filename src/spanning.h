@@ -84,19 +84,17 @@ namespace torali {
 
   template<typename TPos, typename TString>
     inline void
-    _buildMAPQString(std::vector< HitInterval<TPos, void> >&, TPos const, TPos const, std::vector<TString>&)
+    _buildMAPQString(std::vector< HitInterval<TPos, void> > const&, TPos const, TPos const, std::vector<TString>&)
   {
     // Nothing to do
   }
 
   template<typename TQual, typename TPos, typename TMapqVector>
     inline void
-    _buildMAPQString(std::vector< HitInterval<TPos, TQual> >& hit_vector, TPos const posStart, TPos const posEnd, std::vector<TMapqVector>& str)
+    _buildMAPQString(std::vector< HitInterval<TPos, TQual> > const& hit_vector, TPos const posStart, TPos const posEnd, std::vector<TMapqVector>& str)
   {
     typedef HitInterval<TPos, TQual> THit;
     typedef std::vector< THit > THits;
-    typename THits::const_iterator vecBeg = hit_vector.begin();
-    typename THits::const_iterator vecEnd = hit_vector.end();
 
     // Initialize result vector
     str.resize(posEnd-posStart);
@@ -105,11 +103,8 @@ namespace torali {
     // Add mapq counts
     int searchRange = posStart - 10000;
     if (searchRange < 0) searchRange=0;
-    THit hit;
-    hit.start=searchRange;
-    hit.end=searchRange;
-    typename THits::const_iterator vecIt = std::lower_bound(vecBeg, vecEnd, hit, SortHitInterval<THit>());
-    for(;vecIt!=vecEnd; ++vecIt) {
+    typename THits::const_iterator vecIt = std::lower_bound(hit_vector.begin(), hit_vector.end(), THit(searchRange,searchRange,0), SortHitInterval<THit>());
+    for(;vecIt!=hit_vector.end(); ++vecIt) {
       if (vecIt->end < posStart) continue;
       if (vecIt->start > posEnd) break;
       for (int i = (vecIt->start - 1); i<vecIt->end; ++i) {
@@ -143,7 +138,7 @@ namespace torali {
 
   template<typename TArrayType, typename THits, typename TCountMapIterator>
     inline void
-    _addCounts(TArrayType* normalCount, TArrayType* missingCount, THits&, THits&, TCountMapIterator& countMapIt, TCountMapIterator& abCountMapIt, int posStart, int posEnd, int) {
+    _addCounts(TArrayType* normalCount, TArrayType* missingCount, THits const&, THits const&, TCountMapIterator& countMapIt, TCountMapIterator& abCountMapIt, int const posStart, int const posEnd, int) {
     TArrayType* normalCountPoint = &normalCount[posStart];
     TArrayType* missingCountPoint = &missingCount[posStart];
     for(int i=posStart; i<posEnd; ++i, ++normalCountPoint, ++missingCountPoint) {
@@ -154,7 +149,7 @@ namespace torali {
 
   template<typename TArrayType, typename THits, typename TCountMapIterator>
     inline void
-    _addCounts(TArrayType*, TArrayType*, THits& normalSpan, THits& missingSpan, TCountMapIterator& countMapIt, TCountMapIterator& abCountMapIt, int posStart, int posEnd, std::vector<uint16_t>) {
+    _addCounts(TArrayType*, TArrayType*, THits const& normalSpan, THits const& missingSpan, TCountMapIterator& countMapIt, TCountMapIterator& abCountMapIt, int const posStart, int const posEnd, std::vector<uint16_t>) {
     std::vector<std::vector<uint16_t> > normalStr;
     std::vector<std::vector<uint16_t> > missingStr;
     _buildMAPQString(normalSpan, posStart, posEnd, normalStr);
@@ -266,7 +261,7 @@ namespace torali {
 	      if (itSize != svSizes.end()) {
 		validSize = (!_pairsDisagree(minPos, maxPos, al.Length, libIt->second.median, itSize->first, itSize->second, al.Length, libIt->second.median, _getSpanOrientation(al, libIt->second.defaultOrient, svType), _getSpanOrientation(al, libIt->second.defaultOrient, svType), svType));
 	      }
-	      if ((!svSizes.empty()) && (itSize != svSizes.begin())) {
+	      if ((!validSize) && (!svSizes.empty()) && (itSize != svSizes.begin())) {
 		--itSize;
 		validSize = (!_pairsDisagree(itSize->first, itSize->second, al.Length, libIt->second.median, minPos, maxPos, al.Length, libIt->second.median, _getSpanOrientation(al, libIt->second.defaultOrient, svType), _getSpanOrientation(al, libIt->second.defaultOrient, svType), svType));
 	      }
