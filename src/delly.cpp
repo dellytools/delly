@@ -116,9 +116,15 @@ template<typename TRecord>
 struct SortBamRecords : public std::binary_function<TRecord, TRecord, bool>
 {
   inline bool operator()(TRecord const& s1, TRecord const& s2) const {
-    return ((std::min(s1.Position,s1.MatePosition) < std::min(s2.Position,s2.MatePosition)) || 
-	   ((std::min(s1.Position,s1.MatePosition) == std::min(s2.Position,s2.MatePosition)) && (std::max(s1.Position,s1.MatePosition) < std::max(s2.Position,s2.MatePosition))) ||
-	   ((std::min(s1.Position,s1.MatePosition) == std::min(s2.Position,s2.MatePosition)) && (std::max(s1.Position,s1.MatePosition) == std::max(s2.Position,s2.MatePosition)) && (s1.maxNormalISize < s2.maxNormalISize)));
+    if (s1.RefID==s1.MateRefID) {
+      return ((std::min(s1.Position,s1.MatePosition) < std::min(s2.Position,s2.MatePosition)) || 
+	      ((std::min(s1.Position,s1.MatePosition) == std::min(s2.Position,s2.MatePosition)) && (std::max(s1.Position,s1.MatePosition) < std::max(s2.Position,s2.MatePosition))) ||
+	      ((std::min(s1.Position,s1.MatePosition) == std::min(s2.Position,s2.MatePosition)) && (std::max(s1.Position,s1.MatePosition) == std::max(s2.Position,s2.MatePosition)) && (s1.maxNormalISize < s2.maxNormalISize)));
+    } else {
+      return ((s1.Position < s2.Position) ||
+	      ((s1.Position == s2.Position) && (s1.MatePosition < s2.MatePosition)) ||
+	      ((s1.Position == s2.Position) && (s1.MatePosition == s2.MatePosition) && (s1.maxNormalISize < s2.maxNormalISize)));
+    }
   }
 };
 
@@ -180,10 +186,19 @@ struct ExcludeInterval {
   ExcludeInterval(int32_t r, int32_t s, int32_t e) : RefID(r), start(s), end(e) {}
 };
 
+// Sort exclude intervals
+template<typename TRecord>
+struct SortExcludeIntervals : public std::binary_function<TRecord, TRecord, bool>
+{
+  inline bool operator()(TRecord const& i1, TRecord const& i2) const {
+    return ((i1.RefID < i2.RefID) || ((i1.RefID == i2.RefID) && (i1.start < i2.start)) || ((i1.RefID == i2.RefID) && (i1.start == i2.start) && (i1.end < i2.end)));
+  }
+};
+
 // Deletions
 template<typename TUSize, typename TSize>
 inline bool
-_betterSplit(TUSize, TUSize, TUSize, TSize, TUSize oldOffset, TUSize skippedLength, TUSize initialLength, double epsilon, TUSize support, TUSize bestSupport, bool, SVType<DeletionTag>) {
+_betterSplit(TUSize, TUSize, TUSize, TSize, TUSize oldOffset, TUSize skippedLength, TUSize initialLength, double epsilon, TUSize support, TUSize bestSupport, int, SVType<DeletionTag>) {
   return ((std::abs((((double) oldOffset + skippedLength) / (double) initialLength) - 1.0) <= epsilon) && (support > bestSupport));
 }
 
@@ -191,7 +206,7 @@ _betterSplit(TUSize, TUSize, TUSize, TSize, TUSize oldOffset, TUSize skippedLeng
 // Duplications
 template<typename TUSize, typename TSize>
 inline bool
-_betterSplit(TUSize refSize, TUSize refSizeRight, TUSize, TSize oldDiag, TUSize oldOffset, TUSize skippedLength, TUSize initialLength, double epsilon, TUSize support, TUSize bestSupport, bool, SVType<DuplicationTag>) {
+_betterSplit(TUSize refSize, TUSize refSizeRight, TUSize, TSize oldDiag, TUSize oldOffset, TUSize skippedLength, TUSize initialLength, double epsilon, TUSize support, TUSize bestSupport, int, SVType<DuplicationTag>) {
   return ((oldDiag < (TSize) refSizeRight) && ((oldDiag + (TSize) oldOffset) > (TSize) refSizeRight) &&  (std::abs((( (double) refSize - (double) oldOffset + skippedLength) / (double) initialLength) - 1.0) <= epsilon) && (support > bestSupport));
 }
 
@@ -199,9 +214,9 @@ _betterSplit(TUSize refSize, TUSize refSizeRight, TUSize, TSize oldDiag, TUSize 
 // Inversions
 template<typename TUSize, typename TSize>
 inline bool
-_betterSplit(TUSize refSize, TUSize refSizeRight, TUSize refSizeLeft, TSize oldDiag, TUSize oldOffset, TUSize skippedLength, TUSize initialLength, double epsilon, TUSize support, TUSize bestSupport, bool left, SVType<InversionTag>) {
+_betterSplit(TUSize refSize, TUSize refSizeRight, TUSize refSizeLeft, TSize oldDiag, TUSize oldOffset, TUSize skippedLength, TUSize initialLength, double epsilon, TUSize support, TUSize bestSupport, int left, SVType<InversionTag>) {
   TSize oldSvSize = 0;
-  if (left) oldSvSize = (refSizeLeft - oldDiag) + refSize - (oldDiag + oldOffset);
+  if (left==1) oldSvSize = (refSizeLeft - oldDiag) + refSize - (oldDiag + oldOffset);
   else oldSvSize = oldDiag + refSizeRight - (refSize - (oldDiag + oldOffset)); 
   return ((oldDiag < (TSize) refSizeLeft) && ((oldDiag + (TSize) oldOffset) > (TSize) refSizeLeft) &&  (std::abs( ( ((double) oldSvSize + skippedLength) / (double) initialLength ) - 1.0) <= epsilon) && (support > bestSupport));
 }
@@ -245,7 +260,7 @@ _translateSVCoordinates(TUSize refSize, TUSize refSizeRight, TUSize refSizeLeft,
   finalGapStart = diagBeg + leftRefWalky + 1;
   finalGapEnd = diagEnd + consLen - (consLen - rightRefWalky) + 1;
   if ((finalGapEnd <= refSizeRight) || (finalGapStart >= refSizeLeft)) return true;
-  if (sv.left) {
+  if (sv.ct==1) {
     finalGapEnd = refSize - finalGapEnd;
     finalGapStart += sv.svStartBeg;
     finalGapEnd += sv.svStartBeg + (sv.svStartEnd - sv.svStartBeg) + (sv.svEndBeg - sv.svStartEnd) + 1;
@@ -366,7 +381,7 @@ void searchSplit(TConfig const& c, TStructuralVariantRecord& sv, std::string con
       if ((readVecIt->offset == oldOffset) && ((readVecIt->lastKmer - oldKmer) <= TIndex::kmer_size)) {
 	if (readVecIt->diag != oldDiag) ++support; // Count only unique reads (unique starting pos);
       } else {
-	if (_betterSplit(refSize, refSizeRight, refSizeLeft, oldDiag, oldOffset, skippedLength, initialLength, c.epsilon, support, bestSupport, sv.left, svType)) {
+	if (_betterSplit(refSize, refSizeRight, refSizeLeft, oldDiag, oldOffset, skippedLength, initialLength, c.epsilon, support, bestSupport, sv.ct, svType)) {
 	  bestSupport = support;
 	  bestBoundS = boundS;
 	  bestBoundE = bound;
@@ -378,7 +393,7 @@ void searchSplit(TConfig const& c, TStructuralVariantRecord& sv, std::string con
 	support = 1;
       }
     }
-    if (_betterSplit(refSize, refSizeRight, refSizeLeft, oldDiag, oldOffset, skippedLength, initialLength, c.epsilon, support, bestSupport, sv.left, svType)) {
+    if (_betterSplit(refSize, refSizeRight, refSizeLeft, oldDiag, oldOffset, skippedLength, initialLength, c.epsilon, support, bestSupport, sv.ct, svType)) {
       bestSupport = support;
       bestBoundS = boundS;
       bestBoundE = bound;
@@ -829,23 +844,38 @@ _addID(SVType<InversionTag>) {
   return "INV";
 }
 
+// Translocations
+inline std::string
+_addID(SVType<TranslocationTag>) {
+  return "TRA";
+}
+
 // Deletions
 inline std::string
-_addOrientation(bool, SVType<DeletionTag>) {
+_addOrientation(int, SVType<DeletionTag>) {
   return "3to5";
 }
 
 // Duplications
 inline std::string
-_addOrientation(bool, SVType<DuplicationTag>) {
+_addOrientation(int, SVType<DuplicationTag>) {
   return "5to3";
 }
 
 // Inversions
 inline std::string
-_addOrientation(bool left, SVType<InversionTag>) {
-  if (left) return "3to3";
+_addOrientation(int ct, SVType<InversionTag>) {
+  if (ct==1) return "3to3";
   else return "5to5";
+}
+
+// Translocations
+inline std::string
+_addOrientation(int ct, SVType<TranslocationTag>) {
+  if (ct==0) return "3to3";
+  else if (ct==1) return "5to5";
+  else if (ct==2) return "3to5";
+  else return "5to3";
 }
 
 template<typename TConfig, typename TStructuralVariantRecord, typename TReadCountMap, typename TCountMap, typename TTag>
@@ -868,9 +898,11 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TR
   ofile << "##ALT=<ID=DEL,Description=\"Deletion\">" << std::endl;
   ofile << "##ALT=<ID=DUP,Description=\"Duplication\">" << std::endl;
   ofile << "##ALT=<ID=INV,Description=\"Inversion\">" << std::endl;
+  ofile << "##ALT=<ID=TRA,Description=\"Translocation\">" << std::endl;
   ofile << "##FILTER=<ID=LowQual,Description=\"PE support below 3 or mapping quality below 20.\">" << std::endl;
   ofile << "##INFO=<ID=CIEND,Number=2,Type=Integer,Description=\"PE confidence interval around END\">" << std::endl;
   ofile << "##INFO=<ID=CIPOS,Number=2,Type=Integer,Description=\"PE confidence interval around POS\">" << std::endl;
+  ofile << "##INFO=<ID=CHR2,Number=1,Type=String,Description=\"Chromosome for END coordinate in case of a translocation\">" << std::endl;
   ofile << "##INFO=<ID=END,Number=1,Type=Integer,Description=\"End position of the structural variant\">" << std::endl;
   ofile << "##INFO=<ID=PE,Number=1,Type=Integer,Description=\"Paired-end support of the structural variant\">" << std::endl;
   ofile << "##INFO=<ID=MAPQ,Number=1,Type=Integer,Description=\"Median mapping quality of paired-ends\">" << std::endl;
@@ -922,9 +954,10 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TR
     ofile << "CIEND=" << -svIter->wiggle << "," << svIter->wiggle << ";CIPOS=" << -svIter->wiggle << "," << svIter->wiggle << ";";
     ofile << "SVTYPE=" << _addID(svType) << ";";
     ofile << "SVMETHOD=EMBL.DELLY;";
+    ofile << "CHR2=" << svIter->chr2 << ";";
     ofile << "END=" << svIter->svEnd << ";";
     ofile << "SVLEN=" << (svIter->svEnd - svIter->svStart) << ";";
-    ofile << "CT=" << _addOrientation(svIter->left, svType) << ";";
+    ofile << "CT=" << _addOrientation(svIter->ct, svType) << ";";
     ofile << "PE=" << svIter->peSupport << ";";
     ofile << "MAPQ=" << svIter->peMapQuality;
     if (svIter->precise)  {
@@ -1001,7 +1034,9 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TR
 	ofile << "\t./.:.,.,.:0:LowQual:";
       }
       typename TReadCountMap::const_iterator readCountMapIt=readCountMap.find(sampleSVPairLeft);
-      ofile << readCountMapIt->second.second << ":" << mapqRef.size() << ":" << mapqAlt.size();
+      int rcCount = 0;
+      if (readCountMapIt!=readCountMap.end()) rcCount = readCountMapIt->second.second;
+      ofile << rcCount << ":" << mapqRef.size() << ":" << mapqAlt.size();
     }
     ofile << std::endl;
   }
@@ -1028,7 +1063,7 @@ _getSVRef(TSeq const* const ref, TSVRecord const& svRec, SVType<DuplicationTag>)
 template<typename TSeq, typename TSVRecord>
 inline std::string
 _getSVRef(TSeq const* const ref, TSVRecord const& svRec, SVType<InversionTag>) {
-  if (svRec.left) {
+  if (svRec.ct==1) {
     std::string strEnd=boost::to_upper_copy(std::string(ref + svRec.svEndBeg, ref + svRec.svEndEnd));
     std::string strRevComp=strEnd;
     std::string::reverse_iterator itR = strEnd.rbegin();
@@ -1228,6 +1263,15 @@ findPutativeSplitReads(TConfig const& c, std::vector<TStructuralVariantRecord>& 
 }
 
 
+
+template<typename TConfig, typename TStructuralVariantRecord>
+inline bool
+findPutativeSplitReads(TConfig const&, std::vector<TStructuralVariantRecord>&,  SVType<TranslocationTag>) 
+{
+  return true;
+}
+
+
 // Initialize clique, deletions
 template<typename TBamRecordIterator, typename TSize>
 inline void
@@ -1250,13 +1294,30 @@ _initClique(TBamRecordIterator const& el, TSize& svStart, TSize& svEnd, TSize& w
 template<typename TBamRecordIterator, typename TSize>
 inline void
 _initClique(TBamRecordIterator const& el, TSize& svStart, TSize& svEnd, TSize& wiggle, SVType<InversionTag>) {
-  bool left=_getSpanOrientation(*el, el->libOrient, SVType<InversionTag>());
-  if (left) {
+  int ct=_getSpanOrientation(*el, el->libOrient, SVType<InversionTag>());
+  if (ct==1) {
     svStart = std::min(el->Position, el->MatePosition) + el->Length;
     svEnd = std::max(el->Position, el->MatePosition) + el->Length;
   } else {
     svStart = std::min(el->Position, el->MatePosition);
     svEnd = std::max(el->Position, el->MatePosition);
+  }
+  wiggle=el->maxNormalISize - el->Length;
+}
+
+// Initialize clique, translocations
+template<typename TBamRecordIterator, typename TSize>
+inline void
+_initClique(TBamRecordIterator const& el, TSize& svStart, TSize& svEnd, TSize& wiggle, SVType<TranslocationTag>) {
+  int ct=_getSpanOrientation(*el, el->libOrient, SVType<TranslocationTag>());
+  if (ct%2==0) {
+    svStart = el->Position + el->Length;
+    if (ct>=2) svEnd = el->MatePosition;
+    else svEnd = el->MatePosition + el->Length;
+  } else {
+    svStart = el->Position;
+    if (ct>=2) svEnd = el->MatePosition + el->Length;
+    else svEnd = el->MatePosition;
   }
   wiggle=el->maxNormalISize - el->Length;
 }
@@ -1310,12 +1371,12 @@ template<typename TBamRecordIterator, typename TSize>
 inline bool 
 _updateClique(TBamRecordIterator const& el, TSize& svStart, TSize& svEnd, TSize& wiggle, SVType<InversionTag>) 
 {
-  bool left=_getSpanOrientation(*el, el->libOrient, SVType<InversionTag>());
+  int ct=_getSpanOrientation(*el, el->libOrient, SVType<InversionTag>());
   TSize newSvStart;
   TSize newSvEnd;
   TSize newWiggle;
   TSize wiggleChange;
-  if (left) {
+  if (ct==1) {
     newSvStart = std::max(svStart, std::min(el->Position, el->MatePosition) + el->Length);
     newSvEnd = std::max(svEnd, std::max(el->Position, el->MatePosition) + el->Length);
     newWiggle = std::min(el->maxNormalISize - (newSvStart - std::min(el->Position, el->MatePosition)), el->maxNormalISize - (newSvEnd - std::max(el->Position, el->MatePosition)));
@@ -1338,6 +1399,93 @@ _updateClique(TBamRecordIterator const& el, TSize& svStart, TSize& svEnd, TSize&
   return false;
 }
 
+
+// Update clique, translocations
+template<typename TBamRecordIterator, typename TSize>
+inline bool 
+_updateClique(TBamRecordIterator const& el, TSize& svStart, TSize& svEnd, TSize& wiggle, SVType<TranslocationTag>) 
+{
+  int ct = _getSpanOrientation(*el, el->libOrient, SVType<TranslocationTag>());
+  TSize newSvStart;
+  TSize newSvEnd;
+  TSize newWiggle = wiggle;
+  if (ct%2==0) {
+    newSvStart = std::max(svStart, el->Position + el->Length);
+    newWiggle -= (newSvStart - svStart);
+    if (ct>=2) {
+      newSvEnd = std::min(svEnd, el->MatePosition);
+      newWiggle -= (svEnd - newSvEnd);
+    } else  {
+      newSvEnd = std::max(svEnd, el->MatePosition + el->Length);
+      newWiggle -= (newSvEnd - svEnd);
+    }
+  } else {
+    newSvStart = std::min(svStart, el->Position);
+    newWiggle -= (svStart - newSvStart);
+    if (ct>=2) {
+      newSvEnd = std::max(svEnd, el->MatePosition + el->Length);
+      newWiggle -= (newSvEnd - svEnd);
+    } else {
+      newSvEnd = std::min(svEnd, el->MatePosition);
+      newWiggle -= (svEnd - newSvEnd);
+    }
+  }
+  // Is this still a valid translocation cluster?
+  if (newWiggle>0) {
+    svStart = newSvStart;
+    svEnd = newSvEnd;
+    wiggle = newWiggle;
+    return true;
+  }
+  return false;
+}
+
+
+template<typename TFiles, typename TSampleLibrary, typename TSVs, typename TCountMap, typename TTag>
+inline void
+_annotateCoverage(TFiles const& files, TSampleLibrary& sampleLib, TSVs& svs, TCountMap& countMap, SVType<TTag>) 
+{
+  typedef typename TSampleLibrary::mapped_type TLibraryMap;
+  annotateCoverage(files, 20, false, sampleLib, svs, countMap, SingleHit<int32_t, void>());
+  boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
+  std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Library statistics" << std::endl;
+  typename TSampleLibrary::const_iterator sampleIt=sampleLib.begin();
+  for(;sampleIt!=sampleLib.end();++sampleIt) {
+    std::cout << "Sample: " << sampleIt->first << std::endl;
+    typename TLibraryMap::const_iterator libIt=sampleIt->second.begin();
+    for(;libIt!=sampleIt->second.end();++libIt) {
+      std::cout << "RG: ID=" << libIt->first << ",Median=" << libIt->second.median << ",MAD=" << libIt->second.mad << ",Orientation=" << (int) libIt->second.defaultOrient << ",MappedReads=" << libIt->second.mappedReads << ",DuplicatePairs=" << libIt->second.non_unique_pairs << ",UniquePairs=" << libIt->second.unique_pairs << std::endl;
+    }
+  }
+}
+
+template<typename TFiles, typename TSampleLibrary, typename TSVs, typename TCountMap>
+inline void
+_annotateCoverage(TFiles const&, TSampleLibrary&, TSVs&, TCountMap&, SVType<TranslocationTag>) 
+{
+  //Nop
+}
+
+template<typename TFiles, typename TSampleLibrary, typename TSVs, typename TCountMap, typename TTag>
+inline void
+_annotateSpanningCoverage(TFiles const& files, TSampleLibrary& sampleLib, TSVs& svs, TCountMap& normalCountMap, TCountMap& abnormalCountMap, SVType<TTag> svType) 
+{
+  typedef typename TSampleLibrary::mapped_type TLibraryMap;
+  annotateSpanningCoverage(files, 0, 20, sampleLib, svs, normalCountMap, abnormalCountMap, HitInterval<int32_t, uint16_t>(), svType);
+  boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
+  std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Library statistics" << std::endl;
+  typename TSampleLibrary::const_iterator sampleIt=sampleLib.begin();
+  for(;sampleIt!=sampleLib.end();++sampleIt) {
+    std::cout << "Sample: " << sampleIt->first << std::endl;
+    typename TLibraryMap::const_iterator libIt=sampleIt->second.begin();
+    for(;libIt!=sampleIt->second.end();++libIt) {
+      std::cout << "RG: ID=" << libIt->first << ",Median=" << libIt->second.median << ",MAD=" << libIt->second.mad << ",Orientation=" << (int) libIt->second.defaultOrient << ",MinInsertSize=" << libIt->second.minNormalISize << ",MaxInsertSize=" << libIt->second.maxNormalISize << ",DuplicatePairs=" << libIt->second.non_unique_pairs << ",UniquePairs=" << libIt->second.unique_pairs << std::endl;
+    }
+  }
+
+
+
+}
 
 
 template<typename TSVType>
@@ -1433,6 +1581,12 @@ inline int run(Config const& c, TSVType svType) {
       chrFile.close();
     }
   }
+  std::sort(exclIntervals.begin(), exclIntervals.end(), SortExcludeIntervals<ExcludeInterval>());
+
+  // Qualities
+  typedef boost::unordered_map<unsigned int, uint16_t> TQualities;
+  std::vector<TQualities> qualities;
+  qualities.resize(c.files.size());
 
   // Process chromosome by chromosome
   boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
@@ -1443,15 +1597,6 @@ inline int run(Config const& c, TSVType svType) {
     ++show_progress;
     if (!validChr[refIndex]) continue;
       
-    // Collect all black-masked intervals on this chromosome
-    typedef std::vector<std::pair<int32_t, int32_t> > TChrIntervals;
-    TChrIntervals blackMasked;
-    typename TExclInterval::const_iterator itExcl = exclIntervals.begin();
-    typename TExclInterval::const_iterator itExclEnd = exclIntervals.end();
-    for(;itExcl!=itExclEnd;++itExcl) 
-      if (itExcl->RefID == refIndex) blackMasked.push_back(std::make_pair(itExcl->start, itExcl->end));
-    std::sort(blackMasked.begin(), blackMasked.end());
-
     // Create bam alignment record vector
     typedef std::vector<BamAlignRecord> TBamRecord;
     TBamRecord bamRecord;
@@ -1472,24 +1617,23 @@ inline int run(Config const& c, TSVType svType) {
       typedef std::set<Hit> TUniquePairs;
       TUniquePairs unique_pairs;
 
-      // Qualities
-      typedef boost::unordered_map<unsigned int, uint16_t> TQualities;
-      TQualities qualities;
-
       // Read alignments
       BamTools::BamAlignment al;
       if ( reader.Jump(refIndex, 0) ) {
 	while( reader.GetNextAlignmentCore(al) ) {
 	  if (al.RefID!=refIndex) break; // Stop when we hit the next chromosome
-	  if ((al.AlignmentFlag & 0x0001) && !(al.AlignmentFlag & 0x0004) && !(al.AlignmentFlag & 0x0008) && !(al.AlignmentFlag & 0x0100) && !(al.AlignmentFlag & 0x0200) && !(al.AlignmentFlag & 0x0400) && (al.RefID==al.MateRefID) && (al.MapQuality >= c.minMapQual) && (al.Position!=al.MatePosition)) {
+	  if ((al.AlignmentFlag & 0x0001) && !(al.AlignmentFlag & 0x0004) && !(al.AlignmentFlag & 0x0008) && !(al.AlignmentFlag & 0x0100) && !(al.AlignmentFlag & 0x0200) && !(al.AlignmentFlag & 0x0400) && (al.MapQuality >= c.minMapQual)) {
+	    // Mapping positions valid?
+	    if (_mappingPos(al.RefID, al.MateRefID, al.Position, al.MatePosition, svType)) continue;
+
 	    // Is the read or its mate in a black-masked region
-	    if (!blackMasked.empty()) {
-	      typename TChrIntervals::const_iterator itBlackMask = std::lower_bound(blackMasked.begin(), blackMasked.end(), std::make_pair(al.Position, 0));
-	      if (itBlackMask!=blackMasked.begin()) --itBlackMask;
-	      if ((itBlackMask->first <= al.Position) && (al.Position<=itBlackMask->second)) continue;
-	      itBlackMask = std::lower_bound(blackMasked.begin(), blackMasked.end(), std::make_pair(al.MatePosition, 0));
-	      if (itBlackMask!=blackMasked.begin()) --itBlackMask;
-	      if ((itBlackMask->first <= al.MatePosition) && (al.MatePosition<=itBlackMask->second)) continue;
+	    if (!exclIntervals.empty()) {
+	      typename TExclInterval::const_iterator itBlackMask = std::lower_bound(exclIntervals.begin(), exclIntervals.end(), ExcludeInterval(al.RefID, al.Position, 0), SortExcludeIntervals<ExcludeInterval>());
+	      if (itBlackMask!=exclIntervals.begin()) --itBlackMask;
+	      if ((itBlackMask->RefID==al.RefID) && (itBlackMask->start <= al.Position) && (al.Position<=itBlackMask->end)) continue;
+	      itBlackMask = std::lower_bound(exclIntervals.begin(), exclIntervals.end(), ExcludeInterval(al.MateRefID, al.MatePosition, 0), SortExcludeIntervals<ExcludeInterval>());
+	      if (itBlackMask!=exclIntervals.begin()) --itBlackMask;
+	      if ((itBlackMask->RefID==al.MateRefID) && (itBlackMask->start <= al.MatePosition) && (al.MatePosition<=itBlackMask->end)) continue;
 	    }
 
 	    // Is this a discordantly mapped paired-end?
@@ -1502,15 +1646,15 @@ inline int run(Config const& c, TSVType svType) {
 	    if (_acceptedOrientation(libIt->second.defaultOrient, getStrandIndependentOrientation(al), svType)) continue;  // Orientation disagrees with SV type
 
 	    // Get or store the mapping quality for the partner
-	    if (al.Position<al.MatePosition) {
+	    if (_firstPairObs(al.RefID, al.MateRefID, al.Position, al.MatePosition, svType)) {
 	      // Hash the quality
 	      unsigned int index=((al.Position % (int)boost::math::pow<14>(2))<<14) + (al.MatePosition % (int)boost::math::pow<14>(2));
-	      qualities[index]=al.MapQuality;
+	      qualities[file_c][index]=al.MapQuality;
 	    } else {
 	      // Get the two mapping qualities
 	      unsigned int index=((al.MatePosition % (int)boost::math::pow<14>(2))<<14) + (al.Position % (int)boost::math::pow<14>(2));
-	      uint16_t pairQuality = std::min(qualities[index], al.MapQuality);
-	      qualities[index]=0;
+	      uint16_t pairQuality = std::min(qualities[file_c][index], al.MapQuality);
+	      qualities[file_c][index]=0;
 
 	      // Pair quality
 	      if (pairQuality < c.minMapQual) continue;
@@ -1533,6 +1677,9 @@ inline int run(Config const& c, TSVType svType) {
 	  }
 	}
       }
+
+      // Clean-up qualities
+      _resetQualities(qualities[file_c], svType);
     }
     
     // Sort BAM records according to position
@@ -1556,12 +1703,15 @@ inline int run(Config const& c, TSVType svType) {
     TBamRecord::const_iterator vecBeg = bamRecord.begin();
     TBamRecord::const_iterator vecEnd = bamRecord.end();
     for(;vecBeg!=vecEnd; ++vecBeg) {
-      int32_t const minCoord = std::min(vecBeg->Position, vecBeg->MatePosition);
-      int32_t const maxCoord = std::max(vecBeg->Position, vecBeg->MatePosition);
+      int32_t const minCoord = _minCoord(vecBeg->Position, vecBeg->MatePosition, svType);
+      int32_t const maxCoord = _maxCoord(vecBeg->Position, vecBeg->MatePosition, svType);
       TBamRecord::const_iterator vecNext = vecBeg + 1;
-      for(; ((vecNext != vecEnd) && (abs(std::min(vecNext->Position, vecNext->MatePosition) + vecNext->Length - minCoord) <= overallMaxISize)) ; ++vecNext) {
+      for(; ((vecNext != vecEnd) && (abs(_minCoord(vecNext->Position, vecNext->MatePosition, svType) + vecNext->Length - minCoord) <= overallMaxISize)) ; ++vecNext) {
+	// Check that mate chr agree (only for translocations)
+	if (vecBeg->MateRefID!=vecNext->MateRefID) continue;
+	
 	// Check combinability of pairs
-	if (_pairsDisagree(minCoord, maxCoord, vecBeg->Length, vecBeg->maxNormalISize, std::min(vecNext->Position, vecNext->MatePosition), std::max(vecNext->Position, vecNext->MatePosition), vecNext->Length, vecNext->maxNormalISize, _getSpanOrientation(*vecBeg, vecBeg->libOrient, svType), _getSpanOrientation(*vecNext, vecNext->libOrient, svType), svType)) continue;
+	if (_pairsDisagree(minCoord, maxCoord, vecBeg->Length, vecBeg->maxNormalISize, _minCoord(vecNext->Position, vecNext->MatePosition, svType), _maxCoord(vecNext->Position, vecNext->MatePosition, svType), vecNext->Length, vecNext->maxNormalISize, _getSpanOrientation(*vecBeg, vecBeg->libOrient, svType), _getSpanOrientation(*vecNext, vecNext->libOrient, svType), svType)) continue;
 	
 	TNameVertexMap::iterator pos;
 	bool inserted;
@@ -1593,14 +1743,14 @@ inline int run(Config const& c, TSVType svType) {
 	  boost::graph_traits<Graph>::edge_descriptor e;
 	  tie(e, inserted) = add_edge(u,v, g);
 	  if (inserted) {
-	    int locEdgeWeight=abs( abs( (std::min(vecNext->Position, vecNext->MatePosition) - minCoord) - (std::max(vecNext->Position, vecNext->MatePosition) - maxCoord) ) - abs(vecBeg->Median - vecNext->Median) );
+	    int locEdgeWeight=abs( abs( (_minCoord(vecNext->Position, vecNext->MatePosition, svType) - minCoord) - (_maxCoord(vecNext->Position, vecNext->MatePosition, svType) - maxCoord) ) - abs(vecBeg->Median - vecNext->Median) );
 	    weightMap[e] = (locEdgeWeight > 30000) ? 30000 : locEdgeWeight;
 	  }
 	}
       }
     }
     nameFrag.clear();
-
+  
     // Compute the connected components
     std::vector<int> my_comp(num_vertices(g));
     int numComp = boost::connected_components(g, &my_comp[0]);
@@ -1612,7 +1762,6 @@ inline int run(Config const& c, TSVType svType) {
     boost::graph_traits<Graph>::vertex_iterator vIt, vItEnd;
     for(boost::tie(vIt, vItEnd) = boost::vertices(g); vIt != vItEnd; ++vIt) ++compSize[my_comp[*vIt]];
     //for(TCompSize::const_iterator compIt = compSize.begin(); compIt!=compSize.end(); ++compIt) std::cerr << *compIt << std::endl;
-
 
     // Iterate each component
     #pragma omp parallel for default(shared)
@@ -1640,8 +1789,10 @@ inline int run(Config const& c, TSVType svType) {
       TCliqueMembers clique;
       TCliqueMembers incompatible;
       int svStart, svEnd, wiggle;
+      int32_t clusterRefID=g[itWEdge->source]->RefID;
+      int32_t clusterMateRefID=g[itWEdge->source]->MateRefID;
       _initClique(g[itWEdge->source], svStart, svEnd, wiggle, svType);
-      bool leftPECluster = _getSpanOrientation(*g[itWEdge->source], g[itWEdge->source]->libOrient, svType);
+      int connectionType = _getSpanOrientation(*g[itWEdge->source], g[itWEdge->source]->libOrient, svType);
       if (svStart >= svEnd)  continue;
       clique.insert(itWEdge->source);
       
@@ -1669,9 +1820,10 @@ inline int run(Config const& c, TSVType svType) {
 	}
       }
 
-      if ((clique.size()>1) && ((svEnd - svStart) >= 100)) {
+      if ((clique.size()>1) && ( (clusterRefID!=clusterMateRefID) || ((svEnd - svStart) >= 100) ) ) {
 	StructuralVariantRecord svRec;
 	svRec.chr = references[refIndex].RefName;
+	svRec.chr2 = references[clusterMateRefID].RefName;
 	svRec.svStartBeg = std::max((int) svStart - overallMaxISize, 0);
 	svRec.svStart = svStart +1;
 	svRec.svStartEnd = svStart + overallMaxISize;
@@ -1693,7 +1845,7 @@ inline int run(Config const& c, TSVType svType) {
 	svRec.srSupport=0;
 	svRec.srAlignQuality=0;
 	svRec.precise=false;
-	svRec.left=leftPECluster;
+	svRec.ct=connectionType;
         #pragma omp critical
 	{
 	  svRec.id = clique_count++;
@@ -1702,7 +1854,7 @@ inline int run(Config const& c, TSVType svType) {
       }
     }
   }
-   
+
   // Output library statistics
   now = boost::posix_time::second_clock::local_time();
   std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Library statistics" << std::endl;
@@ -1736,6 +1888,7 @@ inline int run(Config const& c, TSVType svType) {
       // Store as structural variant record
       StructuralVariantRecord svRec;
       svRec.chr = line.f0;
+      svRec.chr2 = line.f0;
       svRec.svStartBeg = std::max((int) line.f1 - overallMaxISize, 0);
       svRec.svStart = line.f1;
       svRec.svStartEnd = line.f1 + overallMaxISize;
@@ -1754,14 +1907,13 @@ inline int run(Config const& c, TSVType svType) {
       svRec.srSupport=0;
       svRec.srAlignQuality=0;
       svRec.precise=false;
-      svRec.left=true;
+      svRec.ct=true;
       svs.push_back(svRec);
     }
     map_file.close();
     now = boost::posix_time::second_clock::local_time();
     std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Created " << clique_count << " PE deletions." << std::endl;
   }
-
 
   // Split-read search
   if (boost::filesystem::exists(c.genome) && boost::filesystem::is_regular_file(c.genome) && boost::filesystem::file_size(c.genome)) {
@@ -1779,33 +1931,13 @@ inline int run(Config const& c, TSVType svType) {
   typedef boost::unordered_map<TSampleSVPair, TCountRange> TCountMap;
   TCountMap normalCountMap;
   TCountMap abnormalCountMap;
-  annotateSpanningCoverage(c.files, 0, 20, sampleLib, svs, normalCountMap, abnormalCountMap, HitInterval<int32_t, uint16_t>(), svType);
-  now = boost::posix_time::second_clock::local_time();
-  std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Library statistics" << std::endl;
-  sampleIt=sampleLib.begin();
-  for(;sampleIt!=sampleLib.end();++sampleIt) {
-    std::cout << "Sample: " << sampleIt->first << std::endl;
-    TLibraryMap::const_iterator libIt=sampleIt->second.begin();
-    for(;libIt!=sampleIt->second.end();++libIt) {
-      std::cout << "RG: ID=" << libIt->first << ",Median=" << libIt->second.median << ",MAD=" << libIt->second.mad << ",Orientation=" << (int) libIt->second.defaultOrient << ",MinInsertSize=" << libIt->second.minNormalISize << ",MaxInsertSize=" << libIt->second.maxNormalISize << ",DuplicatePairs=" << libIt->second.non_unique_pairs << ",UniquePairs=" << libIt->second.unique_pairs << std::endl;
-    }
-  }
+  _annotateSpanningCoverage(c.files, sampleLib, svs, normalCountMap, abnormalCountMap, svType);
 
   // Annotate coverage
   typedef std::pair<int, int> TBpRead;
   typedef boost::unordered_map<TSampleSVPair, TBpRead> TReadCountMap;
   TReadCountMap readCountMap;
-  annotateCoverage(c.files, 20, false, sampleLib, svs, readCountMap, SingleHit<int32_t, void>());
-  now = boost::posix_time::second_clock::local_time();
-  std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Library statistics" << std::endl;
-  sampleIt=sampleLib.begin();
-  for(;sampleIt!=sampleLib.end();++sampleIt) {
-    std::cout << "Sample: " << sampleIt->first << std::endl;
-    TLibraryMap::const_iterator libIt=sampleIt->second.begin();
-    for(;libIt!=sampleIt->second.end();++libIt) {
-      std::cout << "RG: ID=" << libIt->first << ",Median=" << libIt->second.median << ",MAD=" << libIt->second.mad << ",Orientation=" << (int) libIt->second.defaultOrient << ",MappedReads=" << libIt->second.mappedReads << ",DuplicatePairs=" << libIt->second.non_unique_pairs << ",UniquePairs=" << libIt->second.unique_pairs << std::endl;
-    }
-  }
+  _annotateCoverage(c.files, sampleLib, svs, readCountMap, svType);
 
   // VCF output
   if (svs.size()) {
@@ -1830,7 +1962,7 @@ int main(int argc, char **argv) {
   boost::program_options::options_description generic("Generic options");
   generic.add_options()
     ("help,?", "show help message")
-    ("type,t", boost::program_options::value<std::string>(&c.svType)->default_value("DEL"), "SV analysis type (DEL, DUP, INV)")
+    ("type,t", boost::program_options::value<std::string>(&c.svType)->default_value("DEL"), "SV analysis type (DEL, DUP, INV, TRA)")
     ("outfile,o", boost::program_options::value<boost::filesystem::path>(&c.outfile)->default_value("sv.vcf"), "SV output file")
     ("exclude,x", boost::program_options::value<boost::filesystem::path>(&c.exclude)->default_value(""), "file with chr to exclude")
     ;
@@ -1902,6 +2034,7 @@ int main(int argc, char **argv) {
   if (c.svType == "DEL") return run(c, SVType<DeletionTag>());
   else if (c.svType == "DUP") return run(c, SVType<DuplicationTag>());
   else if (c.svType == "INV") return run(c, SVType<InversionTag>());
+  else if (c.svType == "TRA") return run(c, SVType<TranslocationTag>());
   else {
     std::cerr << "SV analysis type not supported by Delly: " << c.svType << std::endl;
     return -1;
