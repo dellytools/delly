@@ -983,8 +983,8 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TR
       // Always take the minimum to be conservative (and to flag unclear samples as LowQual)
       if (countMapItLeft->second[0].size() <= countMapItRight->second[0].size()) countMapIt=countMapItLeft;
       else countMapIt=countMapItRight;
-      if (abCountMapItLeft->second[0].size() <= abCountMapItRight->second[0].size()) abCountMapIt=abCountMapItLeft;
-      else abCountMapIt=abCountMapItRight;
+      if ((svIter->chr != svIter->chr2) || (abCountMapItLeft->second[0].size() > abCountMapItRight->second[0].size())) abCountMapIt=abCountMapItRight;
+      else abCountMapIt=abCountMapItLeft;
       TMapqVector const& mapqRef = countMapIt->second[0];
       TMapqVector const& mapqAlt = abCountMapIt->second[0];
 

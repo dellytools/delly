@@ -160,6 +160,18 @@ namespace torali {
     }
   }
 
+  template<typename TRef, typename TQuality>
+    inline TQuality
+    _pairQuality(TRef const RefID, TRef const MateRefID, TQuality const q1, TQuality const q2, SVType<TranslocationTag>) {
+    if (RefID==MateRefID) return q2;
+    else return std::min(q1, q2);
+  }
+
+  template<typename TRef, typename TQuality, typename TTag>
+    inline TQuality
+    _pairQuality(TRef const, TRef const, TQuality const q1, TQuality const q2, SVType<TTag>) {
+    return std::min(q1, q2);
+  }
 
   template<typename TFiles, typename TSampleLibrary, typename TSVs, typename TCountMap, typename THitInterval, typename TSVType>
     inline void
@@ -188,6 +200,11 @@ namespace torali {
     // Sort Structural Variants
     std::sort(svs.begin(), svs.end(), SortSVs<StructuralVariantRecord>());
 
+    // Qualities
+    typedef boost::unordered_map<unsigned int, uint16_t> TQualities;
+    std::vector<TQualities> qualities;
+    qualities.resize(files.size());
+
     // Process chromosome by chromosome
     boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
     std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Breakpoint spanning coverage annotation" << std::endl;
@@ -199,13 +216,11 @@ namespace torali {
       // Collect all SV sizes on this chromosome
       typedef std::vector<std::pair<int, int> > TSVSizes;
       TSVSizes svSizes;
-      StructuralVariantRecord findSV(references[refIndex].RefName, 0, 0);
-      typename TSVs::const_iterator itSV = std::lower_bound(svs.begin(), svs.end(), findSV, SortSVs<StructuralVariantRecord>());
+      typename TSVs::const_iterator itSV = svs.begin();
       typename TSVs::const_iterator itSVEnd = svs.end();
       for(;itSV!=itSVEnd;++itSV) {
-	if (itSV->chr == references[refIndex].RefName) {
-	  svSizes.push_back(std::make_pair(itSV->svStart, itSV->svEnd));
-	} else break;
+	if (itSV->chr == references[refIndex].RefName) svSizes.push_back(std::make_pair(itSV->svStart, itSV->svEnd));
+	else if (itSV->chr2 == references[refIndex].RefName) svSizes.push_back(std::make_pair(itSV->svEnd, itSV->svStart));
       }
       std::sort(svSizes.begin(), svSizes.end());
       if (svSizes.empty()) continue;
@@ -231,16 +246,16 @@ namespace torali {
 	typedef std::set<Hit> TUniquePairs;
 	TUniquePairs unique_pairs;
 
-	// Qualities
-	typedef boost::unordered_map<unsigned int, uint16_t> TQualities;
-	TQualities qualities;
-
 	// Read alignments
 	BamTools::BamAlignment al;
 	if (reader.Jump(refIndex, 0)) {
 	  while( reader.GetNextAlignmentCore(al) ) {
 	    if (al.RefID != refIndex) break;
-	    if (!(al.AlignmentFlag & 0x0001) || (al.AlignmentFlag & 0x0004) || (al.AlignmentFlag & 0x0008) || (al.AlignmentFlag & 0x0100) || (al.AlignmentFlag & 0x0200) || (al.AlignmentFlag & 0x0400) || (al.Position==al.MatePosition) || (al.RefID!=al.MateRefID) || (al.MapQuality < minMapQual)) continue;
+	    if (!(al.AlignmentFlag & 0x0001) || (al.AlignmentFlag & 0x0004) || (al.AlignmentFlag & 0x0008) || (al.AlignmentFlag & 0x0100) || (al.AlignmentFlag & 0x0200) || (al.AlignmentFlag & 0x0400) || (al.MapQuality < minMapQual)) continue;
+
+	    // Mapping positions valid?
+	    if (_mappingPosGeno(al.RefID, al.MateRefID, al.Position, al.MatePosition, svType)) continue;
+
 	    // Get the library information
 	    al.BuildCharData();
 	    std::string rG = "DefaultLib";
@@ -249,16 +264,22 @@ namespace torali {
 	    if (libIt->second.median == 0) continue; // Single-end library
 	    int outerISize = std::abs(al.Position - al.MatePosition) + al.Length;
 
-	    if ((getStrandIndependentOrientation(al) != libIt->second.defaultOrient) || (outerISize > libIt->second.maxNormalISize)) {
+	    if ((getStrandIndependentOrientation(al) != libIt->second.defaultOrient) || (outerISize > libIt->second.maxNormalISize) || (al.RefID!=al.MateRefID)) {
 	      if (_acceptedInsertSize(libIt->second.maxNormalISize, libIt->second.median, abs(al.InsertSize), svType)) continue;  // Normal paired-end (for deletions only)
 	      if (_acceptedOrientation(libIt->second.defaultOrient, getStrandIndependentOrientation(al), svType)) continue;  // Orientation disagrees with SV type
 
 	      // Does the pair confirm a valid SV size
-	      int minPos = std::min(al.Position, al.MatePosition);
-	      int maxPos = std::max(al.Position, al.MatePosition);
+	      int32_t const minPos = _minCoord(al.Position, al.MatePosition, svType);
+	      int32_t const maxPos = _maxCoord(al.Position, al.MatePosition, svType);
+
 	      typename TSVSizes::const_iterator itSize = std::lower_bound(svSizes.begin(), svSizes.end(), std::make_pair(minPos, maxPos));
 	      bool validSize = false;
 	      if (itSize != svSizes.end()) {
+		++itSize;
+		if (itSize != svSizes.end()) validSize = (!_pairsDisagree(minPos, maxPos, al.Length, libIt->second.median, itSize->first, itSize->second, al.Length, libIt->second.median, _getSpanOrientation(al, libIt->second.defaultOrient, svType), _getSpanOrientation(al, libIt->second.defaultOrient, svType), svType));
+		--itSize;
+	      }
+	      if ((!validSize) && (itSize != svSizes.end())) {
 		validSize = (!_pairsDisagree(minPos, maxPos, al.Length, libIt->second.median, itSize->first, itSize->second, al.Length, libIt->second.median, _getSpanOrientation(al, libIt->second.defaultOrient, svType), _getSpanOrientation(al, libIt->second.defaultOrient, svType), svType));
 	      }
 	      if ((!validSize) && (!svSizes.empty()) && (itSize != svSizes.begin())) {
@@ -269,15 +290,17 @@ namespace torali {
 	    }
 
 	    // Get or store the mapping quality for the partner
-	    if (al.Position<al.MatePosition) {
+	    if (_firstPairObs(al.RefID, al.MateRefID, al.Position, al.MatePosition, svType)) {
 	      // Hash the quality
 	      unsigned int index=((al.Position % (int)boost::math::pow<14>(2))<<14) + (al.MatePosition % (int)boost::math::pow<14>(2));
-	      qualities[index]=al.MapQuality;
+	      qualities[file_c][index]=al.MapQuality;
 	    } else {
 	      // Get the two mapping qualities
 	      unsigned int index=((al.MatePosition % (int)boost::math::pow<14>(2))<<14) + (al.Position % (int)boost::math::pow<14>(2));
-	      uint16_t pairQuality = std::min(qualities[index], al.MapQuality);
-	      qualities[index]=0;
+	      uint16_t pairQuality = _pairQuality(al.RefID, al.MateRefID, qualities[file_c][index], al.MapQuality, svType);
+	      qualities[file_c][index]=0;
+
+	      // Pair quality
 	      if (pairQuality < minMapQual) continue;
 
 	      // Is it a unique pair
@@ -287,19 +310,25 @@ namespace torali {
 	      boost::tie(pos, inserted) = unique_pairs.insert(hitPos);
 	      if (inserted) {
 		// Insert the interval
-		if ((getStrandIndependentOrientation(al) == libIt->second.defaultOrient) && (outerISize >= libIt->second.minNormalISize) && (outerISize <= libIt->second.maxNormalISize)) {
+		if ((getStrandIndependentOrientation(al) == libIt->second.defaultOrient) && (outerISize >= libIt->second.minNormalISize) && (outerISize <= libIt->second.maxNormalISize) && (al.RefID==al.MateRefID)) {
 		  // Normal spanning coverage
-		  normalSpan.push_back(THitInterval(al.MatePosition, al.Position+al.Length, pairQuality));
-		} else if ((getStrandIndependentOrientation(al) != libIt->second.defaultOrient) || (outerISize > libIt->second.maxNormalISize)) {
+		  normalSpan.push_back(THitInterval(std::min(al.Position, al.MatePosition), std::max(al.Position, al.MatePosition) + al.Length, pairQuality));
+		} else if ((getStrandIndependentOrientation(al) != libIt->second.defaultOrient) || (outerISize > libIt->second.maxNormalISize) || (al.RefID!=al.MateRefID)) {
 		  // Missing spanning coverage
 		  if (_mateIsUpstream(libIt->second.defaultOrient, (al.AlignmentFlag & 0x0040), (al.AlignmentFlag & 0x0010))) 
 		    missingSpan.push_back(THitInterval(al.Position, al.Position + libIt->second.median, pairQuality));
+		  //missingSpan.push_back(THitInterval(al.Position, al.Position + libIt->second.maxNormalISize, pairQuality));
 		  else
 		    missingSpan.push_back(THitInterval(std::max(0, al.Position + al.Length - libIt->second.median), al.Position + al.Length, pairQuality));
-		  if (_mateIsUpstream(libIt->second.defaultOrient, !(al.AlignmentFlag & 0x0040), (al.AlignmentFlag & 0x0020)))
-		    missingSpan.push_back(THitInterval(al.MatePosition, al.MatePosition + libIt->second.median, pairQuality));
-		  else
-		    missingSpan.push_back(THitInterval(std::max(0, al.MatePosition + al.Length - libIt->second.median), al.MatePosition + al.Length, pairQuality));
+		  //missingSpan.push_back(THitInterval(std::max(0, al.Position + al.Length - libIt->second.maxNormalISize), al.Position + al.Length, pairQuality));
+		  if (al.RefID==al.MateRefID) {
+		    if (_mateIsUpstream(libIt->second.defaultOrient, !(al.AlignmentFlag & 0x0040), (al.AlignmentFlag & 0x0020)))
+		      missingSpan.push_back(THitInterval(al.MatePosition, al.MatePosition + libIt->second.median, pairQuality));
+		    //missingSpan.push_back(THitInterval(al.MatePosition, al.MatePosition + libIt->second.maxNormalISize, pairQuality));
+		    else
+		      missingSpan.push_back(THitInterval(std::max(0, al.MatePosition + al.Length - libIt->second.median), al.MatePosition + al.Length, pairQuality));
+		    //missingSpan.push_back(THitInterval(std::max(0, al.MatePosition + al.Length - libIt->second.maxNormalISize), al.MatePosition + al.Length, pairQuality));
+		  }
 		}
 		++libIt->second.unique_pairs;
 	      } else {
@@ -324,8 +353,7 @@ namespace torali {
 	_addReadAndBpCounts(missingSpan, missingCount);
 
 	// Store spanning coverage for all input intervals
-	StructuralVariantRecord findSV(references[refIndex].RefName, 0, 0);
-	typename TSVs::const_iterator itSV = std::lower_bound(svs.begin(), svs.end(), findSV, SortSVs<StructuralVariantRecord>());
+	typename TSVs::const_iterator itSV = svs.begin();
 	typename TSVs::const_iterator itSVEnd = svs.end();
 	#pragma omp critical
 	{
@@ -344,30 +372,34 @@ namespace torali {
 	      int posStart = (itSV->svStart - bpWindowOffset < 0) ? 0 : (itSV->svStart - bpWindowOffset);
 	      int posEnd = (bpWindowOffset) ? (itSV->svStart + bpWindowOffset) : (itSV->svStart + 1);
 	      _addCounts(normalCount, missingCount, normalSpan, missingSpan, countMapIt, abCountMapIt, posStart, posEnd, TCount());
-	    
+	    }
+
+	    if (itSV->chr2 == references[refIndex].RefName) {
 	      // Second breakpoint
-	      svSample = std::make_pair(sampleName, itSV->id);
-	      countMapIt=normalCountMap.find(svSample);
-	      abCountMapIt=abnormalCountMap.find(svSample);
+	      TSampleSVPair svSample = std::make_pair(sampleName, itSV->id);
+	      typename TCountMap::iterator countMapIt=normalCountMap.find(svSample);
+	      typename TCountMap::iterator abCountMapIt=abnormalCountMap.find(svSample);
 	      if (countMapIt==normalCountMap.end()) {
 		normalCountMap.insert(std::make_pair(svSample, TCountRange()));
 		abnormalCountMap.insert(std::make_pair(svSample, TCountRange()));
 		countMapIt=normalCountMap.find(svSample);
 		abCountMapIt=abnormalCountMap.find(svSample);
 	      }
-	      posStart = (itSV->svEnd - bpWindowOffset < 0) ? 0 : (itSV->svEnd - bpWindowOffset);
-	      posEnd = (bpWindowOffset) ? (itSV->svEnd + bpWindowOffset) : (itSV->svEnd + 1);
+	      int posStart = (itSV->svEnd - bpWindowOffset < 0) ? 0 : (itSV->svEnd - bpWindowOffset);
+	      int posEnd = (bpWindowOffset) ? (itSV->svEnd + bpWindowOffset) : (itSV->svEnd + 1);
 	      _addCounts(normalCount, missingCount, normalSpan, missingSpan, countMapIt, abCountMapIt, posStart, posEnd, TCount());
-	    } else break;
+	    }
 	  }
 	}
 
 	// Clean-up
 	delete[] normalCount;
 	delete[] missingCount;
+
+	// Clean-up qualities
+	_resetQualities(qualities[file_c], svType);
       }
     }
-
   }
 
 }

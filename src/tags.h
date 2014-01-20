@@ -273,6 +273,20 @@ namespace torali {
   // Deletions, duplications and inversions
   template<typename TRef, typename TPos, typename TTag>
     inline bool
+    _mappingPosGeno(TRef const refID, TRef const mateRefID, TPos const position, TPos const matePosition, SVType<TTag>) {
+    return ((refID!=mateRefID) || (position==matePosition));
+  }
+
+  // Translocations
+  template<typename TRef, typename TPos>
+    inline bool
+    _mappingPosGeno(TRef const refID, TRef const mateRefID, TPos const position, TPos const matePosition, SVType<TranslocationTag>) {
+    return ((refID==mateRefID) && (position==matePosition));
+  }
+
+  // Deletions, duplications and inversions
+  template<typename TRef, typename TPos, typename TTag>
+    inline bool
     _firstPairObs(TRef const, TRef const, TPos const position, TPos const matePosition, SVType<TTag>) {
     return (position<matePosition);
   }
