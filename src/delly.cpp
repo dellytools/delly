@@ -196,7 +196,7 @@ struct SortExcludeIntervals : public std::binary_function<TRecord, TRecord, bool
 // Deletions
 template<typename TUSize, typename TSize>
 inline bool
-_betterSplit(TUSize, TUSize, TUSize, TSize, TUSize oldOffset, TUSize skippedLength, TUSize initialLength, double epsilon, TUSize support, TUSize bestSupport, int, SVType<DeletionTag>) {
+_betterSplit(TUSize, TUSize, TUSize, TSize, TUSize oldOffset, TUSize skippedLength, TUSize initialLength, double epsilon, TUSize support, TUSize bestSupport, int, int, SVType<DeletionTag>) {
   return ((std::abs((((double) oldOffset + skippedLength) / (double) initialLength) - 1.0) <= epsilon) && (support > bestSupport));
 }
 
@@ -204,7 +204,7 @@ _betterSplit(TUSize, TUSize, TUSize, TSize, TUSize oldOffset, TUSize skippedLeng
 // Duplications
 template<typename TUSize, typename TSize>
 inline bool
-_betterSplit(TUSize refSize, TUSize refSizeRight, TUSize, TSize oldDiag, TUSize oldOffset, TUSize skippedLength, TUSize initialLength, double epsilon, TUSize support, TUSize bestSupport, int, SVType<DuplicationTag>) {
+_betterSplit(TUSize refSize, TUSize refSizeRight, TUSize, TSize oldDiag, TUSize oldOffset, TUSize skippedLength, TUSize initialLength, double epsilon, TUSize support, TUSize bestSupport, int, int, SVType<DuplicationTag>) {
   return ((oldDiag < (TSize) refSizeRight) && ((oldDiag + (TSize) oldOffset) > (TSize) refSizeRight) &&  (std::abs((( (double) refSize - (double) oldOffset + skippedLength) / (double) initialLength) - 1.0) <= epsilon) && (support > bestSupport));
 }
 
@@ -212,12 +212,21 @@ _betterSplit(TUSize refSize, TUSize refSizeRight, TUSize, TSize oldDiag, TUSize 
 // Inversions
 template<typename TUSize, typename TSize>
 inline bool
-_betterSplit(TUSize refSize, TUSize refSizeRight, TUSize refSizeLeft, TSize oldDiag, TUSize oldOffset, TUSize skippedLength, TUSize initialLength, double epsilon, TUSize support, TUSize bestSupport, int left, SVType<InversionTag>) {
+_betterSplit(TUSize refSize, TUSize refSizeRight, TUSize refSizeLeft, TSize oldDiag, TUSize oldOffset, TUSize skippedLength, TUSize initialLength, double epsilon, TUSize support, TUSize bestSupport, int ct, int, SVType<InversionTag>) {
   TSize oldSvSize = 0;
-  if (left==1) oldSvSize = (refSizeLeft - oldDiag) + refSize - (oldDiag + oldOffset);
+  if (ct==1) oldSvSize = (refSizeLeft - oldDiag) + refSize - (oldDiag + oldOffset);
   else oldSvSize = oldDiag + refSizeRight - (refSize - (oldDiag + oldOffset)); 
   return ((oldDiag < (TSize) refSizeLeft) && ((oldDiag + (TSize) oldOffset) > (TSize) refSizeLeft) &&  (std::abs( ( ((double) oldSvSize + skippedLength) / (double) initialLength ) - 1.0) <= epsilon) && (support > bestSupport));
 }
+
+// Translocations
+template<typename TUSize, typename TSize>
+inline bool
+_betterSplit(TUSize, TUSize, TUSize refSizeLeft, TSize oldDiag, TUSize oldOffset, TUSize, TUSize, double, TUSize support, TUSize bestSupport, int, int readLen, SVType<TranslocationTag>) {
+  return ((oldDiag < refSizeLeft) && ((oldDiag + oldOffset + readLen) > refSizeLeft) && (support > bestSupport));
+}
+
+
 
 
 // Deletions
@@ -271,6 +280,51 @@ _translateSVCoordinates(TUSize refSize, TUSize refSizeRight, TUSize refSizeLeft,
   return false;
 }
 
+// Translocations
+template<typename TUSize, typename TSize, typename TBamRecord>
+inline bool
+_translateSVCoordinates(TUSize refSize, TUSize, TUSize refSizeLeft, TSize diagBeg, TSize diagEnd, TUSize leftRefWalky, TUSize rightRefWalky, TUSize consLen, TBamRecord const& sv, TUSize& finalGapStart, TUSize& finalGapEnd, TUSize& predictedLength, SVType<TranslocationTag>) {
+  finalGapStart = diagBeg + leftRefWalky + 1;
+  finalGapEnd = diagEnd + consLen - (consLen - rightRefWalky) + 1;
+  predictedLength = sv.svEnd - sv.svStart + 1;  // Useless for translocations
+  if (finalGapStart > refSizeLeft) return true;
+  if (finalGapEnd < refSizeLeft) return true;
+  if (sv.ct%2==0) {
+    finalGapStart += sv.svStartBeg;
+    if (sv.ct>=2) finalGapEnd = sv.svEndBeg + (finalGapEnd - refSizeLeft) - 1;
+    else finalGapEnd = sv.svEndBeg + (refSize - finalGapEnd) + 1;
+  } else {
+    if (sv.ct>=2) finalGapStart += sv.svEndBeg;
+    else finalGapStart = sv.svEndBeg + (refSizeLeft - finalGapStart);
+    finalGapEnd = sv.svStartBeg + (finalGapEnd - refSizeLeft) - 1;
+  }
+  if (sv.ct%2!=0) {
+    TUSize tmpStart = finalGapStart;
+    finalGapStart = finalGapEnd;
+    finalGapEnd = tmpStart;
+  }
+  return false;
+}
+
+// Translocations
+template<typename TUSize, typename TStructuralVariantRecord>
+inline void
+_initRefSize(TUSize const refSize, TStructuralVariantRecord const& sv, TUSize& refSizeLeft, TUSize& refSizeRight, SVType<TranslocationTag>) {
+  if (sv.ct%2==0) {
+    refSizeRight = sv.svEndEnd - sv.svEndBeg;
+    refSizeLeft = refSize - refSizeRight;
+  } else {
+    refSizeRight = sv.svStartEnd - sv.svStartBeg;
+    refSizeLeft = refSize - refSizeRight;
+  } 
+}
+
+// All other SVs
+template<typename TUSize, typename TStructuralVariantRecord, typename TTag>
+inline void
+_initRefSize(TUSize const, TStructuralVariantRecord const&, TUSize&, TUSize&, SVType<TTag>) {
+  //Nop
+}
 
 template<typename TConfig, typename TStructuralVariantRecord, typename TReadSet, typename TTag>
 inline
@@ -290,6 +344,7 @@ void searchSplit(TConfig const& c, TStructuralVariantRecord& sv, std::string con
   unsigned int refSize = index.refSequence.size();
   unsigned int refSizeLeft = sv.svStartEnd - sv.svStartBeg;
   unsigned int refSizeRight = refSize - refSizeLeft;
+  _initRefSize(refSize, sv, refSizeLeft, refSizeRight, svType);
 
   // Collect all potential split sites
   typedef std::vector<SplitReadCoord> TReadVec;
@@ -379,7 +434,7 @@ void searchSplit(TConfig const& c, TStructuralVariantRecord& sv, std::string con
       if ((readVecIt->offset == oldOffset) && ((readVecIt->lastKmer - oldKmer) <= TIndex::kmer_size)) {
 	if (readVecIt->diag != oldDiag) ++support; // Count only unique reads (unique starting pos);
       } else {
-	if (_betterSplit(refSize, refSizeRight, refSizeLeft, oldDiag, oldOffset, skippedLength, initialLength, c.epsilon, support, bestSupport, sv.ct, svType)) {
+	if (_betterSplit(refSize, refSizeRight, refSizeLeft, oldDiag, oldOffset, skippedLength, initialLength, c.epsilon, support, bestSupport, sv.ct, readVecIt->read.size(), svType)) {
 	  bestSupport = support;
 	  bestBoundS = boundS;
 	  bestBoundE = bound;
@@ -391,7 +446,7 @@ void searchSplit(TConfig const& c, TStructuralVariantRecord& sv, std::string con
 	support = 1;
       }
     }
-    if (_betterSplit(refSize, refSizeRight, refSizeLeft, oldDiag, oldOffset, skippedLength, initialLength, c.epsilon, support, bestSupport, sv.ct, svType)) {
+    if (_betterSplit(refSize, refSizeRight, refSizeLeft, oldDiag, oldOffset, skippedLength, initialLength, c.epsilon, support, bestSupport, sv.ct, readVecIt->read.size(), svType)) {
       bestSupport = support;
       bestBoundS = boundS;
       bestBoundE = bound;
@@ -960,7 +1015,8 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TR
     ofile << "SVMETHOD=EMBL.DELLY;";
     ofile << "CHR2=" << references[svIter->chr2].RefName << ";";
     ofile << "END=" << svIter->svEnd << ";";
-    ofile << "SVLEN=" << (svIter->svEnd - svIter->svStart) << ";";
+    if (svIter->chr == svIter->chr2) ofile << "SVLEN=" << (svIter->svEnd - svIter->svStart) << ";";
+    else ofile << "SVLEN=0;";
     ofile << "CT=" << _addOrientation(svIter->ct, svType) << ";";
     ofile << "PE=" << svIter->peSupport << ";";
     ofile << "MAPQ=" << svIter->peMapQuality;
@@ -1050,23 +1106,23 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TR
 
 
 // Deletions
-template<typename TSeq, typename TSVRecord>
+template<typename TSeq, typename TSVRecord, typename TRef>
 inline std::string
-_getSVRef(TSeq const* const ref, TSVRecord const& svRec, SVType<DeletionTag>) {
+_getSVRef(TSeq const* const ref, TSVRecord const& svRec, TRef const, SVType<DeletionTag>) {
   return boost::to_upper_copy(std::string(ref + svRec.svStartBeg, ref + svRec.svStartEnd)) + boost::to_upper_copy(std::string(ref + svRec.svEndBeg, ref + svRec.svEndEnd));
 }
 
 // Duplications
-template<typename TSeq, typename TSVRecord>
+template<typename TSeq, typename TSVRecord, typename TRef>
 inline std::string
-_getSVRef(TSeq const* const ref, TSVRecord const& svRec, SVType<DuplicationTag>) {
+_getSVRef(TSeq const* const ref, TSVRecord const& svRec, TRef const, SVType<DuplicationTag>) {
   return boost::to_upper_copy(std::string(ref + svRec.svEndBeg, ref + svRec.svEndEnd)) + boost::to_upper_copy(std::string(ref + svRec.svStartBeg, ref + svRec.svStartEnd));
 }
 
 // Inversions
-template<typename TSeq, typename TSVRecord>
+template<typename TSeq, typename TSVRecord, typename TRef>
 inline std::string
-_getSVRef(TSeq const* const ref, TSVRecord const& svRec, SVType<InversionTag>) {
+_getSVRef(TSeq const* const ref, TSVRecord const& svRec, TRef const, SVType<InversionTag>) {
   if (svRec.ct==1) {
     std::string strEnd=boost::to_upper_copy(std::string(ref + svRec.svEndBeg, ref + svRec.svEndEnd));
     std::string strRevComp=strEnd;
@@ -1100,6 +1156,62 @@ _getSVRef(TSeq const* const ref, TSVRecord const& svRec, SVType<InversionTag>) {
     }
     return strRevComp + boost::to_upper_copy(std::string(ref + svRec.svEndBeg, ref + svRec.svEndEnd));
   }
+}
+
+// Translocations
+template<typename TSeq, typename TSVRecord, typename TRef>
+inline std::string
+_getSVRef(TSeq const* const ref, TSVRecord const& svRec, TRef const refIndex, SVType<TranslocationTag>) {
+  if (svRec.ct%2==0) {
+    if (svRec.chr==refIndex) return boost::to_upper_copy(std::string(ref + svRec.svStartBeg, ref + svRec.svStartEnd)) + svRec.consensus;
+    if (svRec.ct>=2) {
+      if (svRec.chr2==refIndex) return boost::to_upper_copy(std::string(ref + svRec.svEndBeg, ref + svRec.svEndEnd));
+    } else {
+      // Reverse complement
+      if (svRec.chr2==refIndex) {
+	std::string strEnd=boost::to_upper_copy(std::string(ref + svRec.svEndBeg, ref + svRec.svEndEnd));
+	std::string refPart=strEnd;
+	std::string::reverse_iterator itR = strEnd.rbegin();
+	std::string::reverse_iterator itREnd = strEnd.rend();
+	for(unsigned int i = 0; itR!=itREnd; ++itR, ++i) {
+	  switch (*itR) {
+	  case 'A': refPart[i]='T'; break;
+	  case 'C': refPart[i]='G'; break;
+	  case 'G': refPart[i]='C'; break;
+	  case 'T': refPart[i]='A'; break;
+	  case 'N': refPart[i]='N'; break;
+	  default: break;
+	  }
+	}
+	return refPart;
+      }
+    }
+  } else {
+    if (svRec.ct>=2) {
+      if (svRec.chr2==refIndex) return boost::to_upper_copy(std::string(ref + svRec.svEndBeg, ref + svRec.svEndEnd));
+    } else {
+      // Reverse complement
+      if (svRec.chr2==refIndex) {
+	std::string strEnd=boost::to_upper_copy(std::string(ref + svRec.svEndBeg, ref + svRec.svEndEnd));
+	std::string refPart=strEnd;
+	std::string::reverse_iterator itR = strEnd.rbegin();
+	std::string::reverse_iterator itREnd = strEnd.rend();
+	for(unsigned int i = 0; itR!=itREnd; ++itR, ++i) {
+	  switch (*itR) {
+	  case 'A': refPart[i]='T'; break;
+	  case 'C': refPart[i]='G'; break;
+	  case 'G': refPart[i]='C'; break;
+	  case 'T': refPart[i]='A'; break;
+	  case 'N': refPart[i]='N'; break;
+	  default: break;
+	  }
+	}
+	return refPart;
+      }
+    }
+    if (svRec.chr==refIndex) return svRec.consensus + boost::to_upper_copy(std::string(ref + svRec.svStartBeg, ref + svRec.svStartEnd));
+  }
+  return "";
 }
 
 template<typename TConfig, typename TStructuralVariantRecord, typename TTag>
@@ -1163,9 +1275,14 @@ findPutativeSplitReads(TConfig const& c, std::vector<TStructuralVariantRecord>& 
 	typename TSVs::iterator svIt = svs.begin();
 	typename TSVs::iterator svItEnd = svs.end();
 	for(;svIt!=svItEnd; ++svIt) {
+	  if ((svIt->chr != svIt->chr2) && (svIt->chr2 == refIndex)) {
+	    // For translocations temporarily store the first reference part in the consensus string
+	    svIt->consensus = _getSVRef(seq->seq.s, *svIt, refIndex, svType);
+	  }
 	  if (svIt->chr == refIndex) {
 	    // Get the SV reference
-	    std::string svRefStr = _getSVRef(seq->seq.s, *svIt, svType);
+	    std::string svRefStr = _getSVRef(seq->seq.s, *svIt, refIndex, svType);
+	    svIt->consensus = "";
 	    typedef std::set<std::string> TSplitReadSet;
 	    TSplitReadSet splitReadSet;
 
@@ -1183,7 +1300,7 @@ findPutativeSplitReads(TConfig const& c, std::vector<TStructuralVariantRecord>& 
 	      reader.LocateIndex();
 
 	      BamTools::BamAlignment al;
-	      if ( reader.SetRegion(refIndex, (svIt->svStartBeg + svIt->svStart)/2, refIndex, (svIt->svStart + svIt->svStartEnd)/2 ) ) {
+	      if ( reader.SetRegion(svIt->chr, (svIt->svStartBeg + svIt->svStart)/2, svIt->chr, (svIt->svStart + svIt->svStartEnd)/2 ) ) {
 		while (reader.GetNextAlignmentCore(al)) {
 		  if (!(al.AlignmentFlag & 0x0004) && !(al.AlignmentFlag & 0x0100) && !(al.AlignmentFlag & 0x0200) && !(al.AlignmentFlag & 0x0400)) {
 		    al.BuildCharData();
@@ -1210,7 +1327,7 @@ findPutativeSplitReads(TConfig const& c, std::vector<TStructuralVariantRecord>& 
 		  }
 		}
 	      }
-	      if ( reader.SetRegion(refIndex, (svIt->svEndBeg + svIt->svEnd)/2, refIndex, (svIt->svEnd + svIt->svEndEnd)/2 ) ) {
+	      if ( reader.SetRegion(svIt->chr2, (svIt->svEndBeg + svIt->svEnd)/2, svIt->chr2, (svIt->svEnd + svIt->svEndEnd)/2 ) ) {
 		while (reader.GetNextAlignmentCore(al)) {
 		  if (!(al.AlignmentFlag & 0x0004) && !(al.AlignmentFlag & 0x0100) && !(al.AlignmentFlag & 0x0200) && !(al.AlignmentFlag & 0x0400)) {
 		    al.BuildCharData();
@@ -1264,15 +1381,6 @@ findPutativeSplitReads(TConfig const& c, std::vector<TStructuralVariantRecord>& 
   gzclose(fp);
 
   return (totalSplitReadsAligned>0);
-}
-
-
-
-template<typename TConfig, typename TStructuralVariantRecord>
-inline bool
-findPutativeSplitReads(TConfig const&, std::vector<TStructuralVariantRecord>&,  SVType<TranslocationTag>) 
-{
-  return true;
 }
 
 
