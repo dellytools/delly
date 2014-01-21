@@ -194,12 +194,12 @@ namespace torali {
     bool precise;
     int ct;
     uint16_t peMapQuality;
-    std::string chr;
-    std::string chr2;
+    int32_t chr;
+    int32_t chr2;
     std::string consensus;
 
     StructuralVariantRecord() {}
-  StructuralVariantRecord(std::string const& c, int s, int e) : svStart(s), svEnd(e), chr(c) {}
+  StructuralVariantRecord(int32_t const c, int const s, int const e) : svStart(s), svEnd(e), chr(c) {}
   };
 
   template<typename TSV>

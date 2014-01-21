@@ -75,7 +75,6 @@ using namespace torali;
 
 // Config arguments
 struct Config {
-  bool peMode;
   unsigned short minMapQual;
   unsigned short madCutoff;
   unsigned int minimumFlankSize;
@@ -87,7 +86,6 @@ struct Config {
   std::string svType;
   boost::filesystem::path outfile;
   boost::filesystem::path genome;
-  boost::filesystem::path variants;
   boost::filesystem::path exclude;
   std::vector<boost::filesystem::path> files;
 };
@@ -887,6 +885,11 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TR
   typedef typename TCountMap::mapped_type TCountRange;
   typedef typename TCountRange::value_type TMapqVector;
 
+  // Get the references
+  BamTools::BamReader reader;
+  reader.Open(c.files[0].string());
+  BamTools::RefVector references = reader.GetReferenceData();
+
   // Output all structural variants
   std::ofstream ofile(c.outfile.string().c_str());
 
@@ -941,12 +944,13 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TR
 
     // Output main vcf fields
     std::string filterField="PASS";
-    if ((svIter->peSupport < 3) || (svIter->peMapQuality < 20)) {
+    if ((svIter->peSupport < 3) || (svIter->peMapQuality < 20) || ( (svIter->chr != svIter->chr2) && (svIter->peSupport < 5) ) ) {
       filterField="LowQual";
     }
+    
     std::stringstream id;
     id << _addID(svType) << std::setw(8) << std::setfill('0') << svIter->id;
-    ofile << svIter->chr << "\t" << svIter->svStart << "\t" << id.str() << "\tN\t<" << _addID(svType) << ">\t.\t" <<  filterField << "\t";
+    ofile << references[svIter->chr].RefName << "\t" << svIter->svStart << "\t" << id.str() << "\tN\t<" << _addID(svType) << ">\t.\t" <<  filterField << "\t";
 
     // Add info fields
     if (svIter->precise) ofile << "PRECISE;";
@@ -954,7 +958,7 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TR
     ofile << "CIEND=" << -svIter->wiggle << "," << svIter->wiggle << ";CIPOS=" << -svIter->wiggle << "," << svIter->wiggle << ";";
     ofile << "SVTYPE=" << _addID(svType) << ";";
     ofile << "SVMETHOD=EMBL.DELLY;";
-    ofile << "CHR2=" << svIter->chr2 << ";";
+    ofile << "CHR2=" << references[svIter->chr2].RefName << ";";
     ofile << "END=" << svIter->svEnd << ";";
     ofile << "SVLEN=" << (svIter->svEnd - svIter->svStart) << ";";
     ofile << "CT=" << _addOrientation(svIter->ct, svType) << ";";
@@ -1155,11 +1159,11 @@ findPutativeSplitReads(TConfig const& c, std::vector<TStructuralVariantRecord>& 
       if (seq->name.s == references[refIndex].RefName) {
 	++show_progress;
 
-	// Iterate all deletions on this chromosome
+	// Iterate all structural variants on this chromosome
 	typename TSVs::iterator svIt = svs.begin();
 	typename TSVs::iterator svItEnd = svs.end();
 	for(;svIt!=svItEnd; ++svIt) {
-	  if (svIt->chr == references[refIndex].RefName) {
+	  if (svIt->chr == refIndex) {
 	    // Get the SV reference
 	    std::string svRefStr = _getSVRef(seq->seq.s, *svIt, svType);
 	    typedef std::set<std::string> TSplitReadSet;
@@ -1593,7 +1597,7 @@ inline int run(Config const& c, TSVType svType) {
   std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Paired-end clustering" << std::endl;
   boost::progress_display show_progress( (references.end() - references.begin()) );
   itRef = references.begin();
-  for(int refIndex=0;((itRef!=references.end()) && (c.peMode));++itRef, ++refIndex) {
+  for(int refIndex=0; itRef!=references.end(); ++itRef, ++refIndex) {
     ++show_progress;
     if (!validChr[refIndex]) continue;
       
@@ -1822,8 +1826,8 @@ inline int run(Config const& c, TSVType svType) {
 
       if ((clique.size()>1) && ( (clusterRefID!=clusterMateRefID) || ((svEnd - svStart) >= 100) ) ) {
 	StructuralVariantRecord svRec;
-	svRec.chr = references[refIndex].RefName;
-	svRec.chr2 = references[clusterMateRefID].RefName;
+	svRec.chr = refIndex;
+	svRec.chr2 = clusterMateRefID;
 	svRec.svStartBeg = std::max((int) svStart - overallMaxISize, 0);
 	svRec.svStart = svStart +1;
 	svRec.svStartEnd = svStart + overallMaxISize;
@@ -1865,54 +1869,6 @@ inline int run(Config const& c, TSVType svType) {
     for(;libIt!=sampleIt->second.end();++libIt) {
       std::cout << "RG: ID=" << libIt->first << ",Median=" << libIt->second.median << ",MAD=" << libIt->second.mad << ",Orientation=" << (int) libIt->second.defaultOrient << ",InsertSizeCutoff=" << libIt->second.maxNormalISize << ",DuplicateDiscordantPairs=" << libIt->second.non_unique_pairs << ",UniqueDiscordantPairs=" << libIt->second.unique_pairs << std::endl;
     }
-  }
-
-  // No PEM mode
-  if (!c.peMode) {
-  boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
-  std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "No paired-end analysis!" << std::endl;
-
-    // Read structural variant intervals
-    typedef Record<std::string, unsigned int, unsigned int, std::string, void, void, void, void, void, void, void, void> TRecord;
-    Memory_mapped_file map_file(c.variants.string().c_str());
-    char buffer[Memory_mapped_file::MAX_LINE_LENGTH];
-    while (map_file.left_bytes() > 0) {
-      map_file.read_line(buffer);
-      Tokenizer token(buffer, Memory_mapped_file::MAX_LINE_LENGTH);
-      TRecord line;
-      addF0(token, line);
-      addF1(token, line);
-      addF2(token, line);
-      addF3(token, line);
-
-      // Store as structural variant record
-      StructuralVariantRecord svRec;
-      svRec.chr = line.f0;
-      svRec.chr2 = line.f0;
-      svRec.svStartBeg = std::max((int) line.f1 - overallMaxISize, 0);
-      svRec.svStart = line.f1;
-      svRec.svStartEnd = line.f1 + overallMaxISize;
-      svRec.svEndBeg = std::max((int) line.f2 - overallMaxISize, 0);
-      svRec.svEnd = line.f2;
-      svRec.svEndEnd = line.f2 + overallMaxISize;
-      svRec.wiggle = overallMaxISize;
-      if (svRec.svStartEnd > svRec.svEndBeg) {
-	unsigned int midPointDel = ((svRec.svEnd - svRec.svStart) / 2) + svRec.svStart;
-	svRec.svStartEnd = midPointDel -1;
-	svRec.svEndBeg = midPointDel;
-      }
-      svRec.peSupport = 3;
-      svRec.peMapQuality = 20;
-      svRec.id = clique_count++;
-      svRec.srSupport=0;
-      svRec.srAlignQuality=0;
-      svRec.precise=false;
-      svRec.ct=true;
-      svs.push_back(svRec);
-    }
-    map_file.close();
-    now = boost::posix_time::second_clock::local_time();
-    std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Created " << clique_count << " PE deletions." << std::endl;
   }
 
   // Split-read search
@@ -1971,7 +1927,6 @@ int main(int argc, char **argv) {
   pem.add_options()
     ("map-qual,q", boost::program_options::value<unsigned short>(&c.minMapQual)->default_value(0), "min. paired-end mapping quality")
     ("mad-cutoff,s", boost::program_options::value<unsigned short>(&c.madCutoff)->default_value(5), "insert size cutoff, median+s*MAD (deletions only)")
-    ("variants,v", boost::program_options::value<boost::filesystem::path>(&c.variants), "BED interval file (turns PE off)")
     ;
 
   boost::program_options::options_description breaks("SR breakpoint options");
@@ -2025,10 +1980,6 @@ int main(int argc, char **argv) {
   std::cout << '[' << boost::posix_time::to_simple_string(now) << "] ";
   for(int i=0; i<argc; ++i) { std::cout << argv[i] << ' '; }
   std::cout << std::endl;
-
-  // Do we need to run PE mapping
-  if (boost::filesystem::exists(c.variants) && boost::filesystem::is_regular_file(c.variants) && boost::filesystem::file_size(c.variants)) c.peMode=false;
-  else c.peMode=true;
 
   // Run main program
   if (c.svType == "DEL") return run(c, SVType<DeletionTag>());

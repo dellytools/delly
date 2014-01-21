@@ -219,8 +219,8 @@ namespace torali {
       typename TSVs::const_iterator itSV = svs.begin();
       typename TSVs::const_iterator itSVEnd = svs.end();
       for(;itSV!=itSVEnd;++itSV) {
-	if (itSV->chr == references[refIndex].RefName) svSizes.push_back(std::make_pair(itSV->svStart, itSV->svEnd));
-	else if (itSV->chr2 == references[refIndex].RefName) svSizes.push_back(std::make_pair(itSV->svEnd, itSV->svStart));
+	if (itSV->chr == refIndex) svSizes.push_back(std::make_pair(itSV->svStart, itSV->svEnd));
+	else if (itSV->chr2 == refIndex) svSizes.push_back(std::make_pair(itSV->svEnd, itSV->svStart));
       }
       std::sort(svSizes.begin(), svSizes.end());
       if (svSizes.empty()) continue;
@@ -358,7 +358,7 @@ namespace torali {
 	#pragma omp critical
 	{
 	  for(;itSV!=itSVEnd;++itSV) {
-	    if (itSV->chr == references[refIndex].RefName) {
+	    if (itSV->chr == refIndex) {
 	      // First breakpoint
 	      TSampleSVPair svSample = std::make_pair(sampleName, -itSV->id);
 	      typename TCountMap::iterator countMapIt=normalCountMap.find(svSample);
@@ -374,7 +374,7 @@ namespace torali {
 	      _addCounts(normalCount, missingCount, normalSpan, missingSpan, countMapIt, abCountMapIt, posStart, posEnd, TCount());
 	    }
 
-	    if (itSV->chr2 == references[refIndex].RefName) {
+	    if (itSV->chr2 == refIndex) {
 	      // Second breakpoint
 	      TSampleSVPair svSample = std::make_pair(sampleName, itSV->id);
 	      typename TCountMap::iterator countMapIt=normalCountMap.find(svSample);

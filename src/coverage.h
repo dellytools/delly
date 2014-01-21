@@ -217,9 +217,9 @@ annotateCoverage(TFiles const& files, uint16_t minMapQual, bool inclCigar, TSamp
       _addReadAndBpCounts(hit_vector, read_count, bp_count);
 
       // Store coverage for all input intervals
-      typename TSVs::const_iterator itSV = std::lower_bound(svs.begin(), svs.end(), StructuralVariantRecord(references[refIndex].RefName, 0, 0), SortSVs<StructuralVariantRecord>());
+      typename TSVs::const_iterator itSV = std::lower_bound(svs.begin(), svs.end(), StructuralVariantRecord(refIndex, 0, 0), SortSVs<StructuralVariantRecord>());
       for(;itSV!=svs.end();++itSV) {
-	if (itSV->chr != references[refIndex].RefName) break;
+	if (itSV->chr != refIndex) break;
 	TSampleSVPair svSample = std::make_pair(sampleName, itSV->id);
 	int32_t pos = itSV->svStart;
 	int32_t window_len = itSV->svEnd;
