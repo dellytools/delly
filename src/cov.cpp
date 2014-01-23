@@ -100,6 +100,11 @@ run(Config const& c, TSingleHit)
     sampleLib.insert(std::make_pair(sampleName, libInfo));
   }
 
+  // Get references
+  BamTools::BamReader readerRef;
+  if ( ! readerRef.Open(c.files[0].string()) ) return -1;
+  BamTools::RefVector references = readerRef.GetReferenceData();
+
   // Read all SV intervals
   typedef std::vector<StructuralVariantRecord> TSVs;
   TSVs svs;
@@ -113,8 +118,15 @@ run(Config const& c, TSingleHit)
       // Read single interval line
       StructuralVariantRecord sv;
       Tokenizer token(interval_buffer, Memory_mapped_file::MAX_LINE_LENGTH);
-      std::string interval_rname;
-      token.getString(sv.chr);
+      std::string chrName;
+      token.getString(chrName);
+      typename BamTools::RefVector::const_iterator itRef = references.begin();
+      for(int refIndex=0;itRef!=references.end();++itRef, ++refIndex) {
+	if (chrName==references[refIndex].RefName) {
+	  sv.chr = refIndex;
+	  break;
+	}
+      }
       sv.svStart = token.getUInt();
       sv.svEnd = token.getUInt() + 1;
       std::string svName;
@@ -126,9 +138,6 @@ run(Config const& c, TSingleHit)
     interval_file.close();
   } else {
     // Create artificial intervals
-    BamTools::BamReader readerRef;
-    if ( ! readerRef.Open(c.files[0].string()) ) return -1;
-    BamTools::RefVector references = readerRef.GetReferenceData();
     typename BamTools::RefVector::const_iterator itRef = references.begin();
     for(int refIndex=0;itRef!=references.end();++itRef, ++refIndex) {
       int32_t pos = 0;
@@ -136,11 +145,11 @@ run(Config const& c, TSingleHit)
 	int32_t window_len = pos+c.window_size;
 	if (window_len > references[refIndex].RefLength) window_len = references[refIndex].RefLength;
 	StructuralVariantRecord sv;
-	sv.chr = references[refIndex].RefName;
+	sv.chr = refIndex;
 	sv.svStart = pos;
 	sv.svEnd = window_len;
 	std::stringstream s; 
-	s << sv.chr << ":" << sv.svStart << "-" << sv.svEnd;
+	s << references[sv.chr].RefName << ":" << sv.svStart << "-" << sv.svEnd;
 	idToName.insert(std::make_pair(intervalCount, s.str()));
 	sv.id = intervalCount++;
 	svs.push_back(sv);
@@ -178,7 +187,7 @@ run(Config const& c, TSingleHit)
   typename TSVs::const_iterator itSV = svs.begin();
   typename TSVs::const_iterator itSVEnd = svs.end();
   for(;itSV!=itSVEnd;++itSV) {
-    dataOut << itSV->chr << "\t" << itSV->svStart << "\t" << itSV->svEnd << "\t" << idToName.find(itSV->id)->second;
+    dataOut << references[itSV->chr].RefName << "\t" << itSV->svStart << "\t" << itSV->svEnd << "\t" << idToName.find(itSV->id)->second;
     // Iterate all samples
     for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
       // Get the sample name
