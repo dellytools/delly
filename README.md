@@ -50,7 +50,7 @@ Running DELLY
 -------------
 
 DELLY just needs one bam file for every sample and the reference genome to identify split-reads. The output is in [vcf](http://vcftools.sourceforge.net/) format.
-The SV type can be DEL, DUP, INV or JMP for deletions, tandem duplications, inversions and translocations, respectively.
+The SV type can be DEL, DUP, INV or TRA for deletions, tandem duplications, inversions and translocations, respectively.
 
 `./src/delly -t DEL -o del.vcf -g <ref.fa> <sample1.sort.bam> ... <sampleN.sort.bam>`
 
@@ -73,9 +73,6 @@ There are also external packages that consume VCF files with per-sample genotype
 
 FAQ
 ---
-* What about translocations?  
-Not yet supported in DELLY v0.1.2. Please use the old single sample DELLY version available [here](http://www.embl.de/~rausch/delly.html).
-
 * What is the smallest SV size DELLY can call?  
 This depends on the sharpness of the insert size distribution. For an insert size of 200-300bp with a 20-30bp standard deviation, DELLY starts to call reliable SVs >=300bp.
 
