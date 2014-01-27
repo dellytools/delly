@@ -37,16 +37,18 @@ Contact: Tobias Rausch (rausch@embl.de)
 #include <boost/iostreams/filtering_stream.hpp>
 #include <boost/iostreams/filter/zlib.hpp>
 #include <boost/iostreams/filter/gzip.hpp>
+#include <boost/tokenizer.hpp>
 #include <boost/progress.hpp>
 #include "api/BamReader.h"
 #include "api/BamIndex.h"
 
+#ifdef OPENMP
+#include <omp.h>
+#endif
+
 #include "tags.h"
 #include "coverage.h"
-#include "tokenizer.h"
-#include "memory_mapped_file.h"
 #include "version.h"
-#include "fasta_reader.h"
 #include "util.h"
 
 using namespace torali;
@@ -64,9 +66,9 @@ struct Config {
 };
 
 
-template<typename TSingleHit>
+template<typename TSingleHit, typename TCoverageType>
 inline int
-run(Config const& c, TSingleHit)
+run(Config const& c, TSingleHit, TCoverageType covType)
 {
   // Create library objects
   typedef std::map<std::string, LibraryInfo> TLibraryMap;
@@ -111,31 +113,39 @@ run(Config const& c, TSingleHit)
   std::map<unsigned int, std::string> idToName;
   unsigned int intervalCount=1;
   if (boost::filesystem::exists(c.int_file) && boost::filesystem::is_regular_file(c.int_file) && boost::filesystem::file_size(c.int_file)) {
-    Memory_mapped_file interval_file(c.int_file.string().c_str());
-    char interval_buffer[Memory_mapped_file::MAX_LINE_LENGTH];
-    while (interval_file.left_bytes() > 0) {
-      interval_file.read_line(interval_buffer);
-      // Read single interval line
-      StructuralVariantRecord sv;
-      Tokenizer token(interval_buffer, Memory_mapped_file::MAX_LINE_LENGTH);
-      std::string chrName;
-      token.getString(chrName);
-      typename BamTools::RefVector::const_iterator itRef = references.begin();
-      for(int refIndex=0;itRef!=references.end();++itRef, ++refIndex) {
-	if (chrName==references[refIndex].RefName) {
-	  sv.chr = refIndex;
-	  break;
+    typedef boost::unordered_map<std::string, unsigned int> TMapChr;
+    TMapChr mapChr;
+    typename BamTools::RefVector::const_iterator itRef = references.begin();
+    for(unsigned int i = 0;itRef!=references.end();++itRef, ++i) mapChr[ itRef->RefName ] = i;
+    std::ifstream interval_file(c.int_file.string().c_str(), std::ifstream::in);
+    if (interval_file.is_open()) {
+      while (interval_file.good()) {
+	std::string intervalLine;
+	getline(interval_file, intervalLine);
+	typedef boost::tokenizer< boost::char_separator<char> > Tokenizer;
+	boost::char_separator<char> sep(" \t,;");
+	Tokenizer tokens(intervalLine, sep);
+	Tokenizer::iterator tokIter = tokens.begin();
+	if (tokIter!=tokens.end()) {
+	  std::string chrName=*tokIter++;
+	  TMapChr::const_iterator mapChrIt = mapChr.find(chrName);
+	  if (mapChrIt != mapChr.end()) {
+	    if (tokIter!=tokens.end()) {
+	      StructuralVariantRecord sv;	  
+	      sv.chr = mapChrIt->second;
+	      sv.chr2 = mapChrIt->second;
+	      sv.svStart = boost::lexical_cast<int32_t>(*tokIter++);
+	      sv.svEnd = boost::lexical_cast<int32_t>(*tokIter++) + 1;
+	      std::string svName = *tokIter;
+	      idToName.insert(std::make_pair(intervalCount, svName));
+	      sv.id = intervalCount++;
+	      svs.push_back(sv);
+	    }
+	  }
 	}
       }
-      sv.svStart = token.getUInt();
-      sv.svEnd = token.getUInt() + 1;
-      std::string svName;
-      token.getString(svName);
-      idToName.insert(std::make_pair(intervalCount, svName));
-      sv.id = intervalCount++;
-      svs.push_back(sv);
+      interval_file.close();
     }
-    interval_file.close();
   } else {
     // Create artificial intervals
     typename BamTools::RefVector::const_iterator itRef = references.begin();
@@ -146,6 +156,7 @@ run(Config const& c, TSingleHit)
 	if (window_len > references[refIndex].RefLength) window_len = references[refIndex].RefLength;
 	StructuralVariantRecord sv;
 	sv.chr = refIndex;
+	sv.chr2 = refIndex;
 	sv.svStart = pos;
 	sv.svEnd = window_len;
 	std::stringstream s; 
@@ -165,7 +176,7 @@ run(Config const& c, TSingleHit)
   TCountMap countMap;
 
   // Annotate coverage
-  annotateCoverage(c.files, c.minMapQual, c.inclCigar, sampleLib, svs, countMap, TSingleHit());
+  annotateCoverage(c.files, c.minMapQual, c.inclCigar, sampleLib, svs, countMap, TSingleHit(), covType);
 
   // Output library statistics
   std::cout << "Library statistics" << std::endl;
@@ -218,6 +229,7 @@ int main(int argc, char **argv) {
     ("help,?", "show help message")
     ("bp-count,b", "show base pair count")
     ("avg-cov,a", "show average coverage")
+    ("disable-redundancy,d", "disable redundancy filtering")
     ("quality-cut,q", boost::program_options::value<uint16_t>(&c.minMapQual)->default_value(0), "exclude all alignments with quality < q")
     ("outfile,f", boost::program_options::value<boost::filesystem::path>(&c.outfile)->default_value("cov.gz"), "coverage output file")
     ;
@@ -268,6 +280,8 @@ int main(int argc, char **argv) {
     }
     return 1; 
   }
+  bool disableRedFilter=false;
+  if (vm.count("disable-redundancy")) disableRedFilter=true;
   if (vm.count("bp-count")) c.bp_flag = true;
   else c.bp_flag = false;
   if (vm.count("avg-cov")) c.avg_flag = true;
@@ -282,6 +296,11 @@ int main(int argc, char **argv) {
   std::cout << std::endl;
  
   // Run coverage annotation
-  if (c.inclCigar) return run(c, SingleHit<int32_t, std::string>());
-  else return run(c, SingleHit<int32_t, void>());
+  if (c.inclCigar) {
+    if (disableRedFilter) return run(c, SingleHit<int32_t, std::string>(), CoverageType<NoRedundancyFilterTag>());
+    else return run(c, SingleHit<int32_t, std::string>(), CoverageType<RedundancyFilterTag>());
+  } else {
+    if (disableRedFilter) run(c, SingleHit<int32_t, void>(), CoverageType<NoRedundancyFilterTag>());
+    else return run(c, SingleHit<int32_t, void>(), CoverageType<RedundancyFilterTag>());
+  }
 }

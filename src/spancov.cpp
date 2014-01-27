@@ -38,16 +38,20 @@ Contact: Tobias Rausch (rausch@embl.de)
 #include <boost/iostreams/filter/zlib.hpp>
 #include <boost/iostreams/filter/gzip.hpp>
 #include <boost/math/special_functions/pow.hpp>
+#include <boost/tokenizer.hpp>
 #include <boost/functional/hash.hpp>
 #include <boost/filesystem.hpp>
 #include <boost/progress.hpp>
 #include "api/BamIndex.h"
 #include "api/BamReader.h"
 
+#ifdef OPENMP
+#include <omp.h>
+#endif
+
 #include "version.h"
 #include "util.h"
 #include "tags.h"
-#include "tokenizer.h"
 #include "spanning.h"
 #include "intervaltree.h"
 
@@ -134,30 +138,50 @@ run(Config const& c, THitInterval, TCount, TSVType svType)
     sampleLib.insert(std::make_pair(sampleName, libInfo));
   }
 
+  // Get references
+  BamTools::BamReader readerRef;
+  if ( ! readerRef.Open(c.files[0].string()) ) return -1;
+  BamTools::RefVector references = readerRef.GetReferenceData();
+
   // Read all SV intervals
   typedef std::vector<StructuralVariantRecord> TSVs;
   TSVs svs;
   std::map<unsigned int, std::string> idToName;
   unsigned int intervalCount=1;
   if (boost::filesystem::exists(c.int_file) && boost::filesystem::is_regular_file(c.int_file) && boost::filesystem::file_size(c.int_file)) {
-    Memory_mapped_file interval_file(c.int_file.string().c_str());
-    char interval_buffer[Memory_mapped_file::MAX_LINE_LENGTH];
-    while (interval_file.left_bytes() > 0) {
-      interval_file.read_line(interval_buffer);
-      // Read single interval line
-      StructuralVariantRecord sv;
-      Tokenizer token(interval_buffer, Memory_mapped_file::MAX_LINE_LENGTH);
-      std::string interval_rname;
-      token.getString(sv.chr);
-      sv.svStart = token.getUInt();
-      sv.svEnd = token.getUInt();
-      std::string svName;
-      token.getString(svName);
-      idToName.insert(std::make_pair(intervalCount, svName));
-      sv.id = intervalCount++;
-      svs.push_back(sv);
+    typedef boost::unordered_map<std::string, unsigned int> TMapChr;
+    TMapChr mapChr;
+    typename BamTools::RefVector::const_iterator itRef = references.begin();
+    for(unsigned int i = 0;itRef!=references.end();++itRef, ++i) mapChr[ itRef->RefName ] = i;
+    std::ifstream interval_file(c.int_file.string().c_str(), std::ifstream::in);
+    if (interval_file.is_open()) {
+      while (interval_file.good()) {
+	std::string intervalLine;
+	getline(interval_file, intervalLine);
+	typedef boost::tokenizer< boost::char_separator<char> > Tokenizer;
+	boost::char_separator<char> sep(" \t,;");
+	Tokenizer tokens(intervalLine, sep);
+	Tokenizer::iterator tokIter = tokens.begin();
+	if (tokIter!=tokens.end()) {
+	  std::string chrName=*tokIter++;
+	  TMapChr::const_iterator mapChrIt = mapChr.find(chrName);
+	  if (mapChrIt != mapChr.end()) {
+	    if (tokIter!=tokens.end()) {
+	      StructuralVariantRecord sv;
+	      sv.chr = mapChrIt->second;
+	      sv.chr2 = mapChrIt->second;
+	      sv.svStart = boost::lexical_cast<int32_t>(*tokIter++);
+	      sv.svEnd = boost::lexical_cast<int32_t>(*tokIter++);
+	      std::string svName = *tokIter;
+	      idToName.insert(std::make_pair(intervalCount, svName));
+	      sv.id = intervalCount++;
+	      svs.push_back(sv);
+	    }
+	  }
+	}
+      }
+      interval_file.close();
     }
-    interval_file.close();
   }
 
   // Output data types
@@ -200,7 +224,7 @@ run(Config const& c, THitInterval, TCount, TSVType svType)
 	posEnd = (c.bpWindowOffset) ? (itSV->svEnd + c.bpWindowOffset) : (itSV->svEnd + 1);
       }
       for(int i=0;i<(posEnd-posStart);++i) {
-	dataOut << idToName.find(itSV->id)->second << "\t" << ((bpOrder+1)/2) << "\t" << itSV->chr << "\t" << (i+posStart);
+	dataOut << idToName.find(itSV->id)->second << "\t" << ((bpOrder+1)/2) << "\t" << references[itSV->chr].RefName << "\t" << (i+posStart);
 	// Iterate all samples
 	for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
 	  // Get the sample name

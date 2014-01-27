@@ -113,10 +113,28 @@ struct SortSingleHits : public std::binary_function<THit, THit, bool>
 };
 
 
+template<typename TBamRecord, typename TUniquePairs>
+inline bool 
+_redundancyFilter(TBamRecord const& al, TUniquePairs& uRead1, TUniquePairs& uRead2, CoverageType<RedundancyFilterTag>) {
+  Hit hitPos(al);
+  bool inserted;
+  typename TUniquePairs::const_iterator pos;
+  if (al.AlignmentFlag & 0x0040) boost::tie(pos, inserted) = uRead1.insert(hitPos);
+  else boost::tie(pos, inserted) = uRead2.insert(hitPos);
+  return inserted;
+}
 
-template<typename TFiles, typename TSampleLibrary, typename TSVs, typename TCountMap, typename TSingleHit>
+template<typename TBamRecord, typename TUniquePairs>
+inline bool
+_redundancyFilter(TBamRecord const&, TUniquePairs&, TUniquePairs&, CoverageType<NoRedundancyFilterTag>) {
+  return true;
+}
+
+
+
+ template<typename TFiles, typename TSampleLibrary, typename TSVs, typename TCountMap, typename TSingleHit, typename TCoverageType>
 inline void
-annotateCoverage(TFiles const& files, uint16_t minMapQual, bool inclCigar, TSampleLibrary& sampleLib, TSVs& svs, TCountMap& countMap, TSingleHit)
+annotateCoverage(TFiles const& files, uint16_t minMapQual, bool inclCigar, TSampleLibrary& sampleLib, TSVs& svs, TCountMap& countMap, TSingleHit, TCoverageType covType)
 {
   typedef typename TCountMap::key_type TSampleSVPair;
   typedef typename TSampleLibrary::mapped_type TLibraryMap;
@@ -187,11 +205,7 @@ annotateCoverage(TFiles const& files, uint16_t minMapQual, bool inclCigar, TSamp
 	  typename TLibraryMap::iterator libIt=sampleIt->second.find(rG);
 
 	  // Is it a unique pair
-	  Hit hitPos(al);
-	  typename TUniquePairs::const_iterator pos;
-	  bool inserted;
-	  if (al.AlignmentFlag & 0x0040) boost::tie(pos, inserted) = unique_pairs_read1.insert(hitPos);
-	  else boost::tie(pos, inserted) = unique_pairs_read2.insert(hitPos);
+	  bool inserted = _redundancyFilter(al, unique_pairs_read1, unique_pairs_read2, covType);
 	  if ((inserted) || !(al.AlignmentFlag & 0x0001)) {
 	    hit_vector.push_back(TSingleHit(al));
 	    ++libIt->second.mappedReads;
