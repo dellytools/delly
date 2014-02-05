@@ -409,7 +409,7 @@ namespace torali {
     _pairsDisagree(TSize const pair1Min, TSize const pair1Max, TSize const pair1ReadLength, TISize const pair1maxNormalISize, TSize const pair2Min, TSize const pair2Max, TSize const pair2ReadLength, TISize const pair2maxNormalISize, int const ct1, int const ct2, SVType<TranslocationTag>) {
     // Do both pairs support the same translocation type
     if (ct1 != ct2) return true;
-	  
+
     // Check read offsets
     if (ct1%2==0) {
       if ((pair2Min + pair2ReadLength - pair1Min) > pair1maxNormalISize) return true;

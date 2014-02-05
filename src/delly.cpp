@@ -1821,7 +1821,7 @@ inline int run(Config const& c, TSVType svType) {
       for(; ((vecNext != vecEnd) && (abs(_minCoord(vecNext->Position, vecNext->MatePosition, svType) + vecNext->Length - minCoord) <= overallMaxISize)) ; ++vecNext) {
 	// Check that mate chr agree (only for translocations)
 	if (vecBeg->MateRefID!=vecNext->MateRefID) continue;
-	
+
 	// Check combinability of pairs
 	if (_pairsDisagree(minCoord, maxCoord, vecBeg->Length, vecBeg->maxNormalISize, _minCoord(vecNext->Position, vecNext->MatePosition, svType), _maxCoord(vecNext->Position, vecNext->MatePosition, svType), vecNext->Length, vecNext->maxNormalISize, _getSpanOrientation(*vecBeg, vecBeg->libOrient, svType), _getSpanOrientation(*vecNext, vecNext->libOrient, svType), svType)) continue;
 	
@@ -1905,7 +1905,7 @@ inline int run(Config const& c, TSVType svType) {
       int32_t clusterMateRefID=g[itWEdge->source]->MateRefID;
       _initClique(g[itWEdge->source], svStart, svEnd, wiggle, svType);
       int connectionType = _getSpanOrientation(*g[itWEdge->source], g[itWEdge->source]->libOrient, svType);
-      if (svStart >= svEnd)  continue;
+      if ((clusterRefID==clusterMateRefID) && (svStart >= svEnd))  continue;
       clique.insert(itWEdge->source);
       
       // Grow the clique from the seeding edge
@@ -1949,7 +1949,7 @@ inline int run(Config const& c, TSVType svType) {
 	for(;itC!=clique.end();++itC) mapQV.push_back(g[*itC]->MapQuality);
 	std::sort(mapQV.begin(), mapQV.end());
 	svRec.peMapQuality = mapQV[mapQV.size()/2];
-	if (svRec.svStartEnd > svRec.svEndBeg) {
+	if ((refIndex==clusterMateRefID) && (svRec.svStartEnd > svRec.svEndBeg)) {
 	  unsigned int midPointDel = ((svRec.svEnd - svRec.svStart) / 2) + svRec.svStart;
 	  svRec.svStartEnd = midPointDel -1;
 	  svRec.svEndBeg = midPointDel;

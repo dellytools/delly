@@ -65,6 +65,27 @@ namespace torali {
     };
 
 
+  template<typename TPos, typename TCT>
+    struct SVSizeType {
+      TPos start;
+      TPos end;
+      TCT ct;
+  
+      SVSizeType() {}
+      
+    SVSizeType(TPos const s, TPos const e, TCT const c) : start(s), end(e), ct(c) {}
+    };
+
+  template<typename TSVSize>
+    struct SortSVSizes : public std::binary_function<TSVSize, TSVSize, bool>
+    {
+      inline bool operator()(TSVSize const& s1, TSVSize const& s2) {
+	return (s1.ct < s2.ct) || ((s1.ct==s2.ct) && (s1.start < s2.start)) || ((s1.ct==s2.ct) && (s1.start == s2.start) && (s1.end < s2.end));
+      }
+    };
+
+
+
   template<typename TPos, typename TQual, typename TArrayType>
     inline void
     _addReadAndBpCounts(std::vector<HitInterval<TPos, TQual> > const& hit_vector, TArrayType* bp_count)
@@ -214,15 +235,16 @@ namespace torali {
       ++show_progress;
 
       // Collect all SV sizes on this chromosome
-      typedef std::vector<std::pair<int, int> > TSVSizes;
+      typedef SVSizeType<int, int> TSVSizeType;
+      typedef std::vector<TSVSizeType> TSVSizes;
       TSVSizes svSizes;
       typename TSVs::const_iterator itSV = svs.begin();
       typename TSVs::const_iterator itSVEnd = svs.end();
       for(;itSV!=itSVEnd;++itSV) {
-	if (itSV->chr == refIndex) svSizes.push_back(std::make_pair(itSV->svStart, itSV->svEnd));
-	else if (itSV->chr2 == refIndex) svSizes.push_back(std::make_pair(itSV->svEnd, itSV->svStart));
+	if (itSV->chr == refIndex) svSizes.push_back(TSVSizeType(itSV->svStart, itSV->svEnd, itSV->ct));
+	else if (itSV->chr2 == refIndex) svSizes.push_back(TSVSizeType(itSV->svEnd, itSV->svStart, itSV->ct));
       }
-      std::sort(svSizes.begin(), svSizes.end());
+      std::sort(svSizes.begin(), svSizes.end(), SortSVSizes<TSVSizeType>());
       if (svSizes.empty()) continue;
 
       // Iterate all samples
@@ -264,6 +286,7 @@ namespace torali {
 	    if (libIt->second.median == 0) continue; // Single-end library
 	    int outerISize = std::abs(al.Position - al.MatePosition) + al.Length;
 
+	    // Abnormal paired-end
 	    if ((getStrandIndependentOrientation(al) != libIt->second.defaultOrient) || (outerISize > libIt->second.maxNormalISize) || (al.RefID!=al.MateRefID)) {
 	      if (_acceptedInsertSize(libIt->second.maxNormalISize, libIt->second.median, abs(al.InsertSize), svType)) continue;  // Normal paired-end (for deletions only)
 	      if (_acceptedOrientation(libIt->second.defaultOrient, getStrandIndependentOrientation(al), svType)) continue;  // Orientation disagrees with SV type
@@ -272,19 +295,19 @@ namespace torali {
 	      int32_t const minPos = _minCoord(al.Position, al.MatePosition, svType);
 	      int32_t const maxPos = _maxCoord(al.Position, al.MatePosition, svType);
 
-	      typename TSVSizes::const_iterator itSize = std::lower_bound(svSizes.begin(), svSizes.end(), std::make_pair(minPos, maxPos));
+	      typename TSVSizes::const_iterator itSize = std::lower_bound(svSizes.begin(), svSizes.end(), TSVSizeType(minPos, maxPos, _getSpanOrientation(al, libIt->second.defaultOrient, svType)), SortSVSizes<TSVSizeType>());
 	      bool validSize = false;
 	      if (itSize != svSizes.end()) {
 		++itSize;
-		if (itSize != svSizes.end()) validSize = (!_pairsDisagree(minPos, maxPos, al.Length, libIt->second.median, itSize->first, itSize->second, al.Length, libIt->second.median, _getSpanOrientation(al, libIt->second.defaultOrient, svType), _getSpanOrientation(al, libIt->second.defaultOrient, svType), svType));
+		if (itSize != svSizes.end()) validSize = (!_pairsDisagree(minPos, maxPos, al.Length, libIt->second.maxNormalISize, itSize->start, itSize->end, al.Length, libIt->second.maxNormalISize, _getSpanOrientation(al, libIt->second.defaultOrient, svType), itSize->ct, svType));
 		--itSize;
 	      }
 	      if ((!validSize) && (itSize != svSizes.end())) {
-		validSize = (!_pairsDisagree(minPos, maxPos, al.Length, libIt->second.median, itSize->first, itSize->second, al.Length, libIt->second.median, _getSpanOrientation(al, libIt->second.defaultOrient, svType), _getSpanOrientation(al, libIt->second.defaultOrient, svType), svType));
+		validSize = (!_pairsDisagree(minPos, maxPos, al.Length, libIt->second.maxNormalISize, itSize->start, itSize->end, al.Length, libIt->second.maxNormalISize, _getSpanOrientation(al, libIt->second.defaultOrient, svType), itSize->ct, svType));
 	      }
 	      if ((!validSize) && (!svSizes.empty()) && (itSize != svSizes.begin())) {
 		--itSize;
-		validSize = (!_pairsDisagree(itSize->first, itSize->second, al.Length, libIt->second.median, minPos, maxPos, al.Length, libIt->second.median, _getSpanOrientation(al, libIt->second.defaultOrient, svType), _getSpanOrientation(al, libIt->second.defaultOrient, svType), svType));
+		validSize = (!_pairsDisagree(itSize->start, itSize->end, al.Length, libIt->second.maxNormalISize, minPos, maxPos, al.Length, libIt->second.maxNormalISize, itSize->ct, _getSpanOrientation(al, libIt->second.defaultOrient, svType), svType));
 	      }
 	      if (!validSize) continue;
 	    }
@@ -316,18 +339,14 @@ namespace torali {
 		} else if ((getStrandIndependentOrientation(al) != libIt->second.defaultOrient) || (outerISize > libIt->second.maxNormalISize) || (al.RefID!=al.MateRefID)) {
 		  // Missing spanning coverage
 		  if (_mateIsUpstream(libIt->second.defaultOrient, (al.AlignmentFlag & 0x0040), (al.AlignmentFlag & 0x0010))) 
-		    missingSpan.push_back(THitInterval(al.Position, al.Position + libIt->second.median, pairQuality));
-		  //missingSpan.push_back(THitInterval(al.Position, al.Position + libIt->second.maxNormalISize, pairQuality));
+		    missingSpan.push_back(THitInterval(al.Position, al.Position + libIt->second.maxNormalISize, pairQuality));
 		  else
-		    missingSpan.push_back(THitInterval(std::max(0, al.Position + al.Length - libIt->second.median), al.Position + al.Length, pairQuality));
-		  //missingSpan.push_back(THitInterval(std::max(0, al.Position + al.Length - libIt->second.maxNormalISize), al.Position + al.Length, pairQuality));
+		    missingSpan.push_back(THitInterval(std::max(0, al.Position + al.Length - libIt->second.maxNormalISize), al.Position + al.Length, pairQuality));
 		  if (al.RefID==al.MateRefID) {
 		    if (_mateIsUpstream(libIt->second.defaultOrient, !(al.AlignmentFlag & 0x0040), (al.AlignmentFlag & 0x0020)))
-		      missingSpan.push_back(THitInterval(al.MatePosition, al.MatePosition + libIt->second.median, pairQuality));
-		    //missingSpan.push_back(THitInterval(al.MatePosition, al.MatePosition + libIt->second.maxNormalISize, pairQuality));
+		      missingSpan.push_back(THitInterval(al.MatePosition, al.MatePosition + libIt->second.maxNormalISize, pairQuality));
 		    else
-		      missingSpan.push_back(THitInterval(std::max(0, al.MatePosition + al.Length - libIt->second.median), al.MatePosition + al.Length, pairQuality));
-		    //missingSpan.push_back(THitInterval(std::max(0, al.MatePosition + al.Length - libIt->second.maxNormalISize), al.MatePosition + al.Length, pairQuality));
+		      missingSpan.push_back(THitInterval(std::max(0, al.MatePosition + al.Length - libIt->second.maxNormalISize), al.MatePosition + al.Length, pairQuality));
 		  }
 		}
 		++libIt->second.unique_pairs;
