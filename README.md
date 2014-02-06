@@ -62,13 +62,12 @@ If you omit the reference sequence DELLY skips the split-read analysis. The vcf 
 
 `grep "^#" del.vcf`
 
-Delly ships with a small python script to annotate differential read-depth between SV carrier and non-carrier samples. This script is primarily meant as an example of how you can filter and annotate the final DELLY vcf file further. 
+Delly ships with two small python scripts, one to filter somatic variants for tumor/normal comparisons and one to filter confident SV sites in population sequencing.
 
-`python diffRC.py -t DEL -v del.vcf -o del.rd.vcf`
+`python somaticFilter.py -v del.vcf -o del.somatic.vcf -t DEL -s 500 -f`
+`python populationFilter.py -v del.vcf -o del.sites.vcf -g 30 -m 500 -n 5000000 -f`
 
-There are also external packages that consume VCF files with per-sample genotype likelihoods. The [arfer](https://github.com/ekg/arfer) package annotates, for instance, Hardy-Weinberg Equilibrium and the inbreeding coefficient, which is useful for selecting polymorphic sites in the genome across a population.
-
-`cat del.rd.vcf | ./arfer/arfer > del.rd.arfer.vcf`
+These python scripts are primarily meant as an example of how you can filter and annotate the final DELLY vcf file further. They may require further fine-tuning depending on your application.
 
 
 FAQ
