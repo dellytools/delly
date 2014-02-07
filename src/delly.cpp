@@ -1235,7 +1235,7 @@ findPutativeSplitReads(TConfig const& c, std::vector<TStructuralVariantRecord>& 
     BamTools::BamAlignment al;
     while( reader.GetNextAlignmentCore(al) ) {
       // Read unmapped and paired-end partner is mapped
-      if ((al.AlignmentFlag & 0x0004) && (al.AlignmentFlag & 0x0001) && !(al.AlignmentFlag & 0x0008) && !(al.AlignmentFlag & 0x0100) && !(al.AlignmentFlag & 0x0200) && !(al.AlignmentFlag & 0x0400) && (al.Position!=al.MatePosition)) {
+      if ((al.AlignmentFlag & 0x0004) && (al.AlignmentFlag & 0x0001) && !(al.AlignmentFlag & 0x0008) && !(al.AlignmentFlag & 0x0100) && !(al.AlignmentFlag & 0x0200) && !(al.AlignmentFlag & 0x0400) && !(al.AlignmentFlag & 0x0800) && (al.Position!=al.MatePosition)) {
 	// Check qualities
 	al.BuildCharData();
 	std::string::const_iterator qIter= al.Qualities.begin();
@@ -1302,7 +1302,7 @@ findPutativeSplitReads(TConfig const& c, std::vector<TStructuralVariantRecord>& 
 	      BamTools::BamAlignment al;
 	      if ( reader.SetRegion(svIt->chr, (svIt->svStartBeg + svIt->svStart)/2, svIt->chr, (svIt->svStart + svIt->svStartEnd)/2 ) ) {
 		while (reader.GetNextAlignmentCore(al)) {
-		  if (!(al.AlignmentFlag & 0x0004) && !(al.AlignmentFlag & 0x0100) && !(al.AlignmentFlag & 0x0200) && !(al.AlignmentFlag & 0x0400)) {
+		  if (!(al.AlignmentFlag & 0x0004) && !(al.AlignmentFlag & 0x0100) && !(al.AlignmentFlag & 0x0200) && !(al.AlignmentFlag & 0x0400) && !(al.AlignmentFlag & 0x0800)) {
 		    al.BuildCharData();
 		    // Single-anchored read?
 		    if ((al.AlignmentFlag & 0x0001) && (al.AlignmentFlag & 0x0008)) {
@@ -1329,7 +1329,7 @@ findPutativeSplitReads(TConfig const& c, std::vector<TStructuralVariantRecord>& 
 	      }
 	      if ( reader.SetRegion(svIt->chr2, (svIt->svEndBeg + svIt->svEnd)/2, svIt->chr2, (svIt->svEnd + svIt->svEndEnd)/2 ) ) {
 		while (reader.GetNextAlignmentCore(al)) {
-		  if (!(al.AlignmentFlag & 0x0004) && !(al.AlignmentFlag & 0x0100) && !(al.AlignmentFlag & 0x0200) && !(al.AlignmentFlag & 0x0400)) {
+		  if (!(al.AlignmentFlag & 0x0004) && !(al.AlignmentFlag & 0x0100) && !(al.AlignmentFlag & 0x0200) && !(al.AlignmentFlag & 0x0400) && !(al.AlignmentFlag & 0x0800)) {
 		    al.BuildCharData();
 		    // Single-anchored read?
 		    if ((al.AlignmentFlag & 0x0001) && (al.AlignmentFlag & 0x0008)) {
@@ -1734,7 +1734,7 @@ inline int run(Config const& c, TSVType svType) {
       if ( reader.Jump(refIndex, 0) ) {
 	while( reader.GetNextAlignmentCore(al) ) {
 	  if (al.RefID!=refIndex) break; // Stop when we hit the next chromosome
-	  if ((al.AlignmentFlag & 0x0001) && !(al.AlignmentFlag & 0x0004) && !(al.AlignmentFlag & 0x0008) && !(al.AlignmentFlag & 0x0100) && !(al.AlignmentFlag & 0x0200) && !(al.AlignmentFlag & 0x0400) && (al.MapQuality >= c.minMapQual)) {
+	  if ((al.AlignmentFlag & 0x0001) && !(al.AlignmentFlag & 0x0004) && !(al.AlignmentFlag & 0x0008) && !(al.AlignmentFlag & 0x0100) && !(al.AlignmentFlag & 0x0200) && !(al.AlignmentFlag & 0x0400) && !(al.AlignmentFlag & 0x0800) && (al.MapQuality >= c.minMapQual)) {
 	    // Mapping positions valid?
 	    if (_mappingPos(al.RefID, al.MateRefID, al.Position, al.MatePosition, svType)) continue;
 

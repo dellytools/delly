@@ -197,7 +197,7 @@ annotateCoverage(TFiles const& files, uint16_t minMapQual, bool inclCigar, TSamp
       if (reader.Jump(refIndex, 0)) {
 	while( reader.GetNextAlignmentCore(al) ) {
 	  if (al.RefID != refIndex) break;
-	  if ((al.AlignmentFlag & 0x0004) || (al.AlignmentFlag & 0x0200) || (al.AlignmentFlag & 0x0400) || (al.MapQuality < minMapQual) || (!(inclCigar) && (al.AlignmentFlag & 0x0100)) ) continue;
+	  if ((al.AlignmentFlag & 0x0004) || (al.AlignmentFlag & 0x0200) || (al.AlignmentFlag & 0x0400) || (al.MapQuality < minMapQual) || (!(inclCigar) && ((al.AlignmentFlag & 0x0100) || (al.AlignmentFlag & 0x0800)))) continue;
 	  // Get the library information
 	  al.BuildCharData();
 	  std::string rG = "DefaultLib";
