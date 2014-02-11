@@ -27,14 +27,18 @@ parser = argparse.ArgumentParser(description='Filter for somatic SVs.')
 parser.add_argument('-v', '--vcf', metavar='variants.vcf', required=True, dest='vcfFile', help='input vcf file (required)')
 parser.add_argument('-o', '--out', metavar='out.vcf', required=True, dest='outFile', help='output vcf file (required)')
 parser.add_argument('-t', '--type', metavar='DEL', required=True, dest='svType', help='SV type [DEL, DUP, INV] (required)')
-parser.add_argument('-s', '--size', metavar='500', required=False, dest='sizeCut', help='min. required size (optional)')
+parser.add_argument('-m', '--minsize', metavar='500', required=False, dest='minSize', help='min. size (optional)')
+parser.add_argument('-n', '--maxsize', metavar='500000000', required=False, dest='maxSize', help='max. size (optional)')
 parser.add_argument('-f', '--filter', dest='siteFilter', action='store_true', help='Filter sites for PASS')
 args = parser.parse_args()
 
 # Command-line args
 minSize = 500
-if args.sizeCut:
-    minSize = int(args.sizeCut)
+if args.minSize:
+    minSize = int(args.minSize)
+maxSize = 500000000
+if args.maxSize:
+    maxSize = int(args.maxSize)
 
 # Collect high-quality SVs
 sv = dict()
@@ -44,11 +48,13 @@ if args.vcfFile:
         rcRef = []
         rcAlt = []
         for call in record.samples:
+            #if (re.search(r"[Nn]ormal", call.sample) != None) and (call.called) and (call['FT'] == "PASS") and (call.gt_type == 0) and (call['DV'] <= 1):
             if (re.search(r"[Nn]ormal", call.sample) != None) and (call.called) and (call['FT'] == "PASS") and (call.gt_type == 0) and (call['DV'] == 0):
                 rcRef.append(call['RC'])
+            #if (re.search(r"[Tt]umor", call.sample) != None) and (call.called) and (call['DV'] >= 2):
             if (re.search(r"[Tt]umor", call.sample) != None) and (call.called) and (call['FT'] == "PASS") and (call.gt_type != 0):
                 rcAlt.append(call['RC'])
-        if (len(rcRef) > 0) and (len(rcAlt) > 0) and (record.INFO['SVLEN'] >= minSize):
+        if (len(rcRef) > 0) and (len(rcAlt) > 0) and (record.INFO['SVLEN'] >= minSize) and (record.INFO['SVLEN'] <= maxSize):
             rdRatio = numpy.median(rcAlt)/numpy.median(rcRef)
             if (args.svType == 'INV') or (record.INFO['SVLEN'] <= 10000) or ((args.svType == 'DEL') and (rdRatio <= 0.75)) or ((args.svType == 'DUP') and (rdRatio >= 1.25)):
                 if (not args.siteFilter) or (len(record.FILTER) == 0):
