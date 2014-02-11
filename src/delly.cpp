@@ -1364,7 +1364,8 @@ findPutativeSplitReads(TConfig const& c, std::vector<TStructuralVariantRecord>& 
 	      typename TSplitReadSet::const_iterator itSplit=splitReadSet.begin();
 	      typename TSplitReadSet::const_iterator itSplitEnd=splitReadSet.end();
 	      for(unsigned int splitCount=0; ((itSplit!=itSplitEnd) && (splitCount<1000));++itSplit, ++splitCount) {
-		splitCandidates.push_back(*itSplit);
+		// Minimum read-length
+		if (itSplit->size()>=35) splitCandidates.push_back(*itSplit);
 	      }
 	      
 	      totalSplitReadsAligned += splitCandidates.size();
