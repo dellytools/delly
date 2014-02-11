@@ -85,6 +85,7 @@ struct Config {
   float percentAbnormal;
   std::string svType;
   boost::filesystem::path outfile;
+  boost::filesystem::path vcffile;
   boost::filesystem::path genome;
   boost::filesystem::path exclude;
   std::vector<boost::filesystem::path> files;
@@ -880,6 +881,136 @@ void searchSplit(TConfig const& c, TStructuralVariantRecord& sv, std::string con
 
 
 // Deletions
+inline int
+_decodeOrientation(std::string const, SVType<DeletionTag>) {
+  return 1;
+}
+
+// Duplications
+inline int
+_decodeOrientation(std::string const, SVType<DuplicationTag>) {
+  return 1;
+}
+
+// Inversions
+inline int
+_decodeOrientation(std::string const ct, SVType<InversionTag>) {
+  if (ct=="3to3") return 1;
+  else return 0;
+}
+
+// Translocations
+inline int
+_decodeOrientation(std::string const ct, SVType<TranslocationTag>) {
+  if (ct=="3to3") return 0;
+  else if (ct=="5to5") return 1;
+  else if (ct=="3to5") return 2;
+  else return 3;
+}
+
+// Parse Delly vcf file
+template<typename TConfig, typename TReferences, typename TSize, typename TStructuralVariantRecord, typename TTag>
+inline void
+vcfParse(TConfig const& c, TReferences const references, TSize const overallMaxISize, std::vector<TStructuralVariantRecord>& svs, SVType<TTag> svType)
+{
+  std::ifstream vcfFile(c.vcffile.string().c_str(), std::ifstream::in);
+  if (vcfFile.is_open()) {
+    typedef boost::unordered_map<std::string, unsigned int> TMapChr;
+    TMapChr mapChr;
+    typename TReferences::const_iterator itRef = references.begin();
+    for(unsigned int i = 0;itRef!=references.end();++itRef, ++i) mapChr[ itRef->RefName ] = i;
+    while (vcfFile.good()) {
+      std::string vcfLine;
+      getline(vcfFile, vcfLine);
+      if (vcfLine[0]=='#') continue;
+      typedef boost::tokenizer< boost::char_separator<char> > Tokenizer;
+      boost::char_separator<char> sep("\t");
+      Tokenizer tokens(vcfLine, sep);
+      Tokenizer::iterator tokIter = tokens.begin();
+      if (tokIter!=tokens.end()) {
+	std::string chr=*tokIter++;
+	TMapChr::const_iterator mapChrIt = mapChr.find(chr);
+	if (mapChrIt != mapChr.end()) {
+	  if (tokIter!=tokens.end()) {
+	    StructuralVariantRecord svRec;
+	    svRec.chr = mapChrIt->second;
+	    svRec.chr2 = mapChrIt->second;
+	    svRec.svStart = boost::lexical_cast<int32_t>(*tokIter++);
+	    std::string id = *tokIter++;
+	    for(unsigned int i=3; i<id.size();++i) {
+	      if (id[i]!='0') {
+		id=id.substr(i);
+		break;
+	      }
+	    }
+	    svRec.id = boost::lexical_cast<unsigned int>(id);
+	    svRec.srSupport=0;
+	    svRec.srAlignQuality=0;
+	    svRec.wiggle = 0;
+	    svRec.precise = false;
+	    // Ignore ref, alt, qual and filter
+	    tokIter++; tokIter++; tokIter++; tokIter++;
+	    // Parse info string
+	    std::string infoStr = *tokIter++;
+	    boost::char_separator<char> sepInfo(";");
+	    Tokenizer infoTokens(infoStr, sepInfo);
+	    Tokenizer::iterator infoIter = infoTokens.begin();
+	    for (;infoIter!=infoTokens.end();++infoIter) {
+	      std::string keyValue = *infoIter;
+	      std::size_t found = keyValue.find('=');
+	      if (found==std::string::npos) {
+		if (keyValue=="PRECISE") svRec.precise=true;
+		continue;
+	      }
+	      std::string key = keyValue.substr(0, found);
+	      std::string value = keyValue.substr(found+1);
+	      if (key == "PE") svRec.peSupport = boost::lexical_cast<int>(value);
+	      else if (key == "MAPQ") svRec.peMapQuality = boost::lexical_cast<uint16_t>(value);
+	      else if (key == "SR") svRec.srSupport = boost::lexical_cast<int>(value);
+	      else if (key == "SRQ") svRec.srAlignQuality = boost::lexical_cast<double>(value);
+	      else if (key == "CHR2") {
+		TMapChr::const_iterator mapChr2It = mapChr.find(value);
+		if (mapChrIt != mapChr.end()) svRec.chr2 = mapChr2It->second;
+	      }
+	      else if (key == "END") svRec.svEnd = boost::lexical_cast<int32_t>(value);
+	      else if (key == "CONSENSUS") svRec.consensus = value;
+	      else if (key == "CIPOS") {
+		std::size_t foundComma = value.find(',');
+		int off1 = boost::lexical_cast<int>(value.substr(0, foundComma));
+		int off2 = boost::lexical_cast<int>(value.substr(foundComma+1));
+		if (abs(off1)>svRec.wiggle) svRec.wiggle=abs(off1);
+		if (abs(off2)>svRec.wiggle) svRec.wiggle=abs(off2);
+	      }
+	      else if (key == "CIEND") {
+		std::size_t foundComma = value.find(',');
+		int endOff1 = boost::lexical_cast<int>(value.substr(0, foundComma));
+		int endOff2 = boost::lexical_cast<int>(value.substr(foundComma+1));
+		if (abs(endOff1)>svRec.wiggle) svRec.wiggle=abs(endOff1);
+		if (abs(endOff2)>svRec.wiggle) svRec.wiggle=abs(endOff2);
+	      }
+	      else if (key == "CT") svRec.ct = _decodeOrientation(value, svType);
+	      else continue;
+	    }
+	    svRec.svStartBeg = std::max(svRec.svStart - 1 - overallMaxISize, 0);
+	    svRec.svStartEnd = svRec.svStart - 1 + overallMaxISize;
+	    svRec.svEndBeg = std::max(svRec.svEnd - 1 - overallMaxISize, 0);
+	    svRec.svEndEnd = svRec.svEnd - 1 + overallMaxISize;
+	    if ((svRec.chr==svRec.chr2) && (svRec.svStartEnd > svRec.svEndBeg)) {
+	      unsigned int midPointDel = ((svRec.svEnd - svRec.svStart) / 2) + svRec.svStart;
+	      svRec.svStartEnd = midPointDel -1;
+	      svRec.svEndBeg = midPointDel;
+	    }
+	    svs.push_back(svRec);
+	  }
+	}
+      }
+    }
+    vcfFile.close();
+  }
+}
+
+
+// Deletions
 inline std::string
 _addID(SVType<DeletionTag>) {
   return "DEL";
@@ -930,6 +1061,7 @@ _addOrientation(int ct, SVType<TranslocationTag>) {
   else if (ct==2) return "3to5";
   else return "5to3";
 }
+
 
 template<typename TConfig, typename TStructuralVariantRecord, typename TReadCountMap, typename TCountMap, typename TTag>
 inline void
@@ -1696,6 +1828,10 @@ inline int run(Config const& c, TSVType svType) {
   }
   std::sort(exclIntervals.begin(), exclIntervals.end(), SortExcludeIntervals<ExcludeInterval>());
 
+  // Do we have an input vcffile 
+  bool peMapping=true;
+  if (boost::filesystem::exists(c.vcffile) && boost::filesystem::is_regular_file(c.vcffile) && boost::filesystem::file_size(c.vcffile)) peMapping=false;
+
   // Qualities
   typedef boost::unordered_map<unsigned int, uint16_t> TQualities;
   std::vector<TQualities> qualities;
@@ -1706,7 +1842,7 @@ inline int run(Config const& c, TSVType svType) {
   std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Paired-end clustering" << std::endl;
   boost::progress_display show_progress( (references.end() - references.begin()) );
   itRef = references.begin();
-  for(int refIndex=0; itRef!=references.end(); ++itRef, ++refIndex) {
+  for(int refIndex=0; (itRef!=references.end()) && (peMapping); ++itRef, ++refIndex) {
     ++show_progress;
     if (!validChr[refIndex]) continue;
       
@@ -1981,13 +2117,22 @@ inline int run(Config const& c, TSVType svType) {
   }
 
   // Split-read search
-  if (boost::filesystem::exists(c.genome) && boost::filesystem::is_regular_file(c.genome) && boost::filesystem::file_size(c.genome)) {
-    if (!svs.empty()) {
-      findPutativeSplitReads(c, svs, svType);
-    } else {
-      std::cerr << "No deletions found!" << std::endl;
-      return -1;
-    }
+  if (peMapping) {
+    if (boost::filesystem::exists(c.genome) && boost::filesystem::is_regular_file(c.genome) && boost::filesystem::file_size(c.genome)) 
+      if (!svs.empty()) 
+	findPutativeSplitReads(c, svs, svType);
+  } else {
+    // Read SV records from input vcffile
+    vcfParse(c, references, overallMaxISize, svs, svType);
+  }
+
+  // Debug output
+  //for (TVariants::const_iterator s = svs.begin();s!=svs.end();++s) std::cerr << s->svStart << ',' << s->svEnd << ',' <<  s->svStartBeg << ',' << s->svStartEnd << ',' << s->svEndBeg << ',' << s->svEndEnd << ',' << s->peSupport << ',' << s->srSupport << ',' << s->wiggle << ',' << s->srAlignQuality << ',' << s->precise << ',' << s->ct << ',' << s->peMapQuality << ',' << s->chr << ',' << s->chr2 << ',' << s->consensus << std::endl;
+
+  // Any SVs for genotyping
+  if (svs.empty()) {
+    std::cerr << "No structural variants found!" << std::endl;
+    return -1;
   }
 
   // Annotate spanning coverage
@@ -2050,6 +2195,7 @@ int main(int argc, char **argv) {
   hidden.add_options()
     ("input-file", boost::program_options::value< std::vector<boost::filesystem::path> >(&c.files), "input file")
     ("pe-fraction,c", boost::program_options::value<float>(&c.percentAbnormal)->default_value(0.0), "fixed fraction c of discordant PEs, for c=0 MAD cutoff is used")
+    ("vcfgeno,v", boost::program_options::value<boost::filesystem::path>(&c.vcffile)->default_value(""), "input vcf file for genotyping only")
     ("num-split,n", boost::program_options::value<unsigned int>(&c.minimumSplitRead)->default_value(2), "minimum number of splitted reads")
     ("flanking,f", boost::program_options::value<unsigned int>(&c.flankQuality)->default_value(80), "quality of the aligned flanking region")
     ("pruning,j", boost::program_options::value<unsigned int>(&c.graphPruning)->default_value(100), "PE graph pruning cutoff")
