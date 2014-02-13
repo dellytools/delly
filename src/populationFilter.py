@@ -25,9 +25,11 @@ def overlapValid(s1, e1, s2, e2, reciprocalOverlap=0.5, maxOffset=500):
 parser = argparse.ArgumentParser(description='Filter for reliable SV sites.')
 parser.add_argument('-v', '--vcf', metavar='variants.vcf', required=True, dest='vcfFile', help='input vcf file (required)')
 parser.add_argument('-o', '--out', metavar='out.vcf', required=True, dest='outFile', help='output vcf file (required)')
-parser.add_argument('-g', '--gq', metavar='20', required=False, dest='gqCut', help='min. GQ (optional)')
+parser.add_argument('-g', '--gqAlt', metavar='15', required=False, dest='gqAlt', help='min. GQ for carriers (optional)')
+parser.add_argument('-q', '--gqRef', metavar='15', required=False, dest='gqRef', help='min. GQ for non-carriers (optional)')
 parser.add_argument('-m', '--minsize', metavar='500', required=False, dest='minSize', help='min. size (optional)')
 parser.add_argument('-n', '--maxsize', metavar='5000000', required=False, dest='maxSize', help='max. size (optional)')
+parser.add_argument('-a', '--altaf', metavar='0.4', required=False, dest='altAF', help='min. alt. AF (optional)')
 parser.add_argument('-s', '--sample', metavar='NA12878', required=False, dest='sampleID', help='required carrier sample (optional)')
 parser.add_argument('-f', '--filter', dest='siteFilter', action='store_true', help='Filter sites for PASS')
 args = parser.parse_args()
@@ -36,15 +38,21 @@ args = parser.parse_args()
 sampleID = ""
 if args.sampleID:
     sampleID = args.sampleID
-gqCut = 20
-if args.gqCut:
-    gqCut = int(args.gqCut)
+gqAltCut = 15
+if args.gqAlt:
+    gqAltCut = int(args.gqAlt)
+gqRefCut = 15
+if args.gqRef:
+    gqRefCut = int(args.gqRef)
 minSize = 500
 if args.minSize:
     minSize = int(args.minSize)
 maxSize = 5000000
 if args.maxSize:
     maxSize = int(args.maxSize)
+altAF = 0.4
+if args.altAF:
+    altAF = float(args.altAF)
 
 # Collect high-quality SVs
 sv = dict()
@@ -60,20 +68,21 @@ if args.vcfFile:
             if sampleID == "":
                 carrierSample = True
             for call in record.samples:
-                if (call.called) and (call['FT'] == "PASS"):
+                if (call.called):
                     if call.gt_type == 0:
-                        if call['DV'] == 0:
+                        if (call['DV'] == 0) and (call['FT'] == "PASS"):
                             gqRef.append(call['GQ'])
                         else:
                             ratioRef.append(float(call['DV'])/float(call['DR'] + call['DV']))
                     if call.gt_type != 0:
-                        if (not carrierSample) and (call.sample == sampleID):
-                            carrierSample = True
-                        gqAlt.append(call['GQ'])
-                        ratioAlt.append(float(call['DV'])/float(call['DR'] + call['DV']))
+                        if (call['FT'] == "PASS"):
+                            if (not carrierSample) and (call.sample == sampleID):
+                                carrierSample = True
+                            gqAlt.append(call['GQ'])
+                            ratioAlt.append(float(call['DV'])/float(call['DR'] + call['DV']))
             if carrierSample:
-                if (len(gqRef)) and (len(gqAlt)) and (record.INFO['SVLEN'] >= minSize) and (record.INFO['SVLEN'] <= maxSize) and (numpy.median(gqRef) >= gqCut) and (numpy.median(gqAlt) >= gqCut):
-                    if (len(ratioRef) == 0) and (numpy.median(ratioAlt) >= 0.3):
+                if (len(gqRef)) and (len(gqAlt)) and (record.INFO['SVLEN'] >= minSize) and (record.INFO['SVLEN'] <= maxSize) and (numpy.percentile(gqRef,25) >= gqRefCut) and (numpy.percentile(gqAlt,25) >= gqAltCut):
+                    if (max(ratioRef) == 0) and (numpy.percentile(ratioAlt,25) >= altAF):
                         if not sv.has_key(record.CHROM):
                             sv[record.CHROM] = banyan.SortedDict(key_type=(int, int), alg=banyan.RED_BLACK_TREE, updator=banyan.OverlappingIntervalsUpdator)
                         sv[record.CHROM][(record.POS, record.INFO['END'])] = (record.ID, record.INFO['PE'])
