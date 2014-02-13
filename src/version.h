@@ -36,7 +36,7 @@ namespace torali
       std::cout << "certain conditions (GPL); for license details use '-l'." << std::endl;
       std::cout << "This program comes with ABSOLUTELY NO WARRANTY; for details use '-w'." << std::endl;
       std::cout <<  std::endl;
-      std::cout <<  title << " (Version: 0.3.2)" << std::endl;
+      std::cout <<  title << " (Version: 0.3.3)" << std::endl;
       std::cout << "Contact: Tobias Rausch (rausch@embl.de)" << std::endl;
       std::cout << "**********************************************************************" << std::endl;
       std::cout << std::endl;

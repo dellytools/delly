@@ -25,7 +25,7 @@ def overlapValid(s1, e1, s2, e2, reciprocalOverlap=0.5, maxOffset=500):
 parser = argparse.ArgumentParser(description='Filter for reliable SV sites.')
 parser.add_argument('-v', '--vcf', metavar='variants.vcf', required=True, dest='vcfFile', help='input vcf file (required)')
 parser.add_argument('-o', '--out', metavar='out.vcf', required=True, dest='outFile', help='output vcf file (required)')
-parser.add_argument('-g', '--gq', metavar='30', required=False, dest='gqCut', help='min. GQ (optional)')
+parser.add_argument('-g', '--gq', metavar='20', required=False, dest='gqCut', help='min. GQ (optional)')
 parser.add_argument('-m', '--minsize', metavar='500', required=False, dest='minSize', help='min. size (optional)')
 parser.add_argument('-n', '--maxsize', metavar='5000000', required=False, dest='maxSize', help='max. size (optional)')
 parser.add_argument('-s', '--sample', metavar='NA12878', required=False, dest='sampleID', help='required carrier sample (optional)')
@@ -36,7 +36,7 @@ args = parser.parse_args()
 sampleID = ""
 if args.sampleID:
     sampleID = args.sampleID
-gqCut = 30
+gqCut = 20
 if args.gqCut:
     gqCut = int(args.gqCut)
 minSize = 500
