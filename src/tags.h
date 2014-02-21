@@ -263,10 +263,24 @@ namespace torali {
     // Nop
   }
 
-  // Deletions, duplications and inversions
-  template<typename TRef, typename TPos, typename TTag>
+  // Deletions
+  template<typename TRef, typename TPos>
     inline bool
-    _mappingPos(TRef const refID, TRef const mateRefID, TPos const position, TPos const matePosition, SVType<TTag>) {
+    _mappingPos(TRef const refID, TRef const mateRefID, TPos const position, TPos const matePosition, SVType<DeletionTag>) {
+    return ((refID!=mateRefID) || (position==matePosition));
+  }
+
+  // Duplications
+  template<typename TRef, typename TPos>
+    inline bool
+    _mappingPos(TRef const refID, TRef const mateRefID, TPos const position, TPos const matePosition, SVType<DuplicationTag>) {
+    return ((refID!=mateRefID) || (std::abs(position - matePosition) < 100 ));
+  }
+
+  // Inversions
+  template<typename TRef, typename TPos>
+    inline bool
+    _mappingPos(TRef const refID, TRef const mateRefID, TPos const position, TPos const matePosition, SVType<InversionTag>) {
     return ((refID!=mateRefID) || (position==matePosition));
   }
 
@@ -280,8 +294,8 @@ namespace torali {
   // Deletions, duplications and inversions
   template<typename TRef, typename TPos, typename TTag>
     inline bool
-    _mappingPosGeno(TRef const refID, TRef const mateRefID, TPos const position, TPos const matePosition, SVType<TTag>) {
-    return ((refID!=mateRefID) || (position==matePosition));
+    _mappingPosGeno(TRef const refID, TRef const mateRefID, TPos const position, TPos const matePosition, SVType<TTag> svType) {
+    return _mappingPos(refID, mateRefID, position, matePosition, svType);
   }
 
   // Translocations

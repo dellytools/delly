@@ -339,7 +339,15 @@ namespace torali {
 		  int32_t sPos = std::min(al.Position, al.MatePosition);
 		  int32_t ePos = std::max(al.Position, al.MatePosition) + al.Length;
 		  int32_t midPoint = sPos+(ePos-sPos)/2;
-		  normalSpan.push_back(THitInterval(std::max(sPos, midPoint - al.Length), std::min(ePos, midPoint + al.Length), pairQuality));
+		  sPos=std::max(sPos, midPoint - al.Length);
+		  ePos=std::min(ePos, midPoint + al.Length);
+		  int32_t innerSPos = std::min(al.Position, al.MatePosition) + al.Length;
+		  int32_t innerEPos = std::max(al.Position, al.MatePosition);
+		  if ((innerSPos<innerEPos) && ((innerEPos - innerSPos) > (ePos-sPos))) {
+		    normalSpan.push_back(THitInterval(innerSPos, innerEPos, pairQuality));
+		  } else {
+		    normalSpan.push_back(THitInterval(sPos, ePos, pairQuality));
+		  }		      
 		} else if ((getStrandIndependentOrientation(al) != libIt->second.defaultOrient) || (outerISize > libIt->second.maxNormalISize) || (al.RefID!=al.MateRefID)) {
 		  // Missing spanning coverage
 		  if (_mateIsUpstream(libIt->second.defaultOrient, (al.AlignmentFlag & 0x0040), (al.AlignmentFlag & 0x0010))) 
