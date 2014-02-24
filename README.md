@@ -84,11 +84,8 @@ No, DELLY does not produce any graphical output. However, there are many viewers
 * How can DELLY be used to call somatic SVs?  
 Run DELLY jointly on the cancer data and the matched control sequencing data. Ideally, you include many control samples in a single run because assuming that any reference mapping artifact is recurrent, multiple control samples from different patients will help you to catch these reference-biases more easily. In the end, one just filters the tumor SVs against all SVs present in any of the control genomes. For copy-number variable events (CNVs), such as deletions and tandem duplications the additional normalized read-count genotype field (RC) can help to differentiate complex rearrangements that do not necessarily show a read-depth change from simple CNVs that have a supporting read-depth signal. Do not run multiple tumor genomes together since overlapping somatic SVs might have different coordinates in different tumor genomes. The setup should be tumor.bam + control.bam(s).
 
-* Can DELLY be used on bwa mem alignments?  
-DELLY can be used with bwa mem but you have to mark shorter split-read alignments as secondary alignments using the '-M' option, e.g. bwa mem -M ref.fa file.fq.gz.
-
 * Are non-unique alignments, multi-mappings and/or multiple split-read alignments allowed?  
-DELLY expects two alignment records in the bam file for every paired-end, one for the first and one for the second read. Multiple split-read alignment records of a given read are allowed if and only if one of them (e.g. the longest split alignment) is a primary alignment whereas all others are marked as secondary (flag 0x0100).
+DELLY expects two alignment records in the bam file for every paired-end, one for the first and one for the second read. Multiple split-read alignment records of a given read are allowed if and only if one of them (e.g. the longest split alignment) is a primary alignment whereas all others are marked as secondary or supplementary (flag 0x0100 or flag 0x0800).
 
 
 Citation
