@@ -62,7 +62,7 @@ if args.vcfFile:
         if (not args.siteFilter) or (len(record.FILTER) == 0):
             gqRef = []
             gqAlt = []
-            ratioRef = []
+            ratioRef = [0]
             ratioAlt = []
             carrierSample = False
             if sampleID == "":
@@ -70,14 +70,16 @@ if args.vcfFile:
             for call in record.samples:
                 if (call.called):
                     if call.gt_type == 0:
-                        if (call['DV'] == 0) and (call['FT'] == "PASS"):
+                        #if (call['FT'] == "PASS") and (call['DV'] == 0):
+                        if (call['DV'] == 0): # More stringent because then the GQ cutoffs demand that only very few samples are LowQual
                             gqRef.append(call['GQ'])
                         else:
                             ratioRef.append(float(call['DV'])/float(call['DR'] + call['DV']))
                     if call.gt_type != 0:
-                        if (call['FT'] == "PASS"):
-                            if (not carrierSample) and (call.sample == sampleID):
-                                carrierSample = True
+                        if (not carrierSample) and (call.sample == sampleID):
+                            carrierSample = True
+                        #if (call['FT'] == "PASS") and (call['DV'] >= 2):
+                        if (call['DV'] >= 2): # More stringent because then the GQ cutoffs demand that only very few samples are LowQual
                             gqAlt.append(call['GQ'])
                             ratioAlt.append(float(call['DV'])/float(call['DR'] + call['DV']))
             if carrierSample:
