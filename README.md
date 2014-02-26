@@ -56,7 +56,7 @@ The SV type can be DEL, DUP, INV or TRA for deletions, tandem duplications, inve
 
 Each bam file is assumed to be one sample. If you do have multiple bam files for a single sample please merge these bams using tools such as [Picard](http://picard.sourceforge.net/) and tag each library with a ReadGroup. To save runtime it is advisable to exclude telomere and centromere regions. For human, DELLY ships with such an exclude list.
 
-`./src/delly -t DEL -x human.hg19.excl.tsv -o del.vcf -g <ref.fa> <sample1.sort.bam> ... <sampleN.sort.bam>`
+`./src/delly -t DEL -x human.hg19.excl.tsv -o del.vcf -g <ref.fa> <sample1.bam> ... <sampleN.bam>`
 
 If you omit the reference sequence DELLY skips the split-read analysis. The vcf file follows the [vcf specification](http://vcftools.sourceforge.net/specs.html) and all output fields are explained in the vcf header.
 
