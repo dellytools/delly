@@ -35,8 +35,6 @@ Contact: Tobias Rausch (rausch@embl.de)
 #include <boost/filesystem.hpp>
 #include <boost/progress.hpp>
 
-#include "version.h"
-#include "fasta_reader.h"
 #include <zlib.h>
 #include "kseq.h"
 KSEQ_INIT(gzFile, gzread)

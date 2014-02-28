@@ -31,8 +31,6 @@ Contact: Tobias Rausch (rausch@embl.de)
 
 
 #include "version.h"
-#include "fasta_reader.h"
-#include "record.h"
 #include "extract.h"
 
 #define MAX_CHROM_SIZE 250000000
