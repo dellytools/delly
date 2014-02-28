@@ -87,6 +87,9 @@ Run DELLY jointly on the cancer data and the matched control sequencing data. Id
 * Are non-unique alignments, multi-mappings and/or multiple split-read alignments allowed?  
 DELLY expects two alignment records in the bam file for every paired-end, one for the first and one for the second read. Multiple split-read alignment records of a given read are allowed if and only if one of them (e.g. the longest split alignment) is a primary alignment whereas all others are marked as secondary or supplementary (flag 0x0100 or flag 0x0800).
 
+* Auxiliary tools?
+DELLY includes a couple of handy tools to work with SV lists such as a generic tool to annotate the coverage across several samples, a tool to extract FASTA sub-sequences and a tool to annotate and overlap arbitrary SV intervals. Small usage descriptions are available in the Delly [wiki](https://github.com/tobiasrausch/delly/wiki).
+
 
 Citation
 --------
