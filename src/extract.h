@@ -29,11 +29,18 @@ Contact: Tobias Rausch (rausch@embl.de)
 #include <boost/program_options/options_description.hpp>
 #include <boost/program_options/parsers.hpp>
 #include <boost/program_options/variables_map.hpp>
+#include <boost/date_time/posix_time/posix_time.hpp>
+#include <boost/date_time/gregorian/gregorian.hpp>
+#include <boost/tokenizer.hpp>
+#include <boost/filesystem.hpp>
+#include <boost/progress.hpp>
 
 #include "version.h"
 #include "fasta_reader.h"
+#include <zlib.h>
+#include "kseq.h"
+KSEQ_INIT(gzFile, gzread)
 
-#define MAX_CHROM_SIZE 250000000
 
 namespace torali {
 
@@ -41,221 +48,137 @@ namespace torali {
     unsigned int start;
     unsigned int end;
     unsigned int linesize;
-    unsigned int field_identifier;
     bool breaks;
     bool closed;
-    bool revComp;
-    std::string genome;
     std::string chr;
-    std::string intervals;
-    std::ostream& file;
-
-    ExtractConfig() : start(0), end(1), linesize(60), field_identifier(0), breaks(false), closed(false), revComp(true), genome(""), chr(""), intervals(""), file(std::cout) {}
-
-    template<typename TFile>
-    ExtractConfig(TFile& f) : start(0), end(1), linesize(60), field_identifier(0), breaks(false), closed(false), revComp(true), genome(""), chr(""), intervals(""), file(f) {}
-
+    boost::filesystem::path outfile;
+    boost::filesystem::path genome;
+    boost::filesystem::path intervals;
   };
 
 
-  template<typename TConfig, typename TFastaRecord, typename TRecords>
-    inline 
-    void printIntervals(TConfig const& c, Fasta_reader<TFastaRecord> const& rFasta, TRecords const& rec, std::string*) 
-  {
-    typedef Fasta_reader<TFastaRecord> TFastaReader;
-    typename TRecords::const_iterator recIt = rec.begin();
-    typename TRecords::const_iterator recItEnd = rec.end();
-    for(;recIt!=recItEnd; ++recIt) {
-      typename TFastaReader::TFastaVec::const_iterator fastaIt = rFasta.faVec.begin();
-      typename TFastaReader::TFastaVec::const_iterator fastaItEnd = rFasta.faVec.end();
-      for(;fastaIt!=fastaItEnd;++fastaIt) {
-	if (!recIt->f0.compare(fastaIt->chrName)) {	
-	  c.file << ">" << recIt->f4 << std::endl;
-	  typename std::string::const_iterator sIt = recIt->f3.begin();
-	  typename std::string::const_iterator sItEnd = recIt->f3.end();
-	  unsigned int start = 0;
-	  unsigned int pos = 0;
-	  typedef std::vector<unsigned int> TPosition;
-	  TPosition position;
-	  for(;sIt!=sItEnd;++sIt, ++pos) {
-	    if (*sIt == ',') {
-	      position.push_back(atoi(recIt->f3.substr(start, pos - start).c_str()));
-	      start = pos + 1;
-	    }
-	  }
-	  if (start<pos) position.push_back(atoi(recIt->f3.substr(start, pos - start).c_str()));
-	  if (position.empty()) {
-	    position.push_back(recIt->f1);
-	    position.push_back(recIt->f2);
-	  }
-	  TPosition::const_iterator posIt = position.begin();
-	  TPosition::const_iterator posItEnd = position.end();
-	  unsigned int count = 1;
-	  for(;posIt!=posItEnd; ++posIt) {
-	    typename TFastaRecord::TSequence::const_iterator beg = fastaIt->seq.begin() + *posIt;
-	    ++posIt;
-	    if (posIt==posItEnd) break;
-	    typename TFastaRecord::TSequence::const_iterator begEnd = fastaIt->seq.begin() + *posIt;
-	    if (*(posIt-1) <= *posIt) {
-	      for(;((beg<fastaIt->seq.end()) && (beg!=(begEnd + (int) c.closed)));++beg,++count) {
-		c.file << dna5_decode[(int) *beg];
-		if (count % c.linesize == 0) c.file << std::endl;
-	      }
-	    } else {
-	      beg += (int) c.closed;
-	      if (beg > fastaIt->seq.end()) beg=fastaIt->seq.end();
-	      if (beg > fastaIt->seq.begin()) {
-		do {
-		  --beg;
-		  int letter = (int) *beg;
-		  if (c.revComp) {
-		    switch (*beg) {
-		    case 0: letter = 3; break;
-		    case 1: letter = 2; break;
-		    case 2: letter = 1; break;
-		    case 3: letter = 0; break;
-		    default: break;
-		    }
-		  }
-		  c.file << dna5_decode[letter];
-		  if (count % c.linesize == 0) c.file << std::endl;
-		  ++count;
-		} while ((beg>fastaIt->seq.begin()) && (beg!=begEnd));
-	      }
-	    }
-	  }
-	  if ((count - 1) % c.linesize != 0) c.file << std::endl;
-	  break;
-	}
-      }
-    }
-  }
-  
+  struct GenomicInterval {
+    std::string chr;
+    std::string id;
+    std::vector<unsigned int> breaks;
+    
+  GenomicInterval(std::string c, std::string i, std::vector<unsigned int> b) : chr(c), id(i), breaks(b) {}
+  };
 
-  template<typename TConfig, typename TFastaRecord, typename TRecords>
-    inline 
-    void printIntervals(TConfig const& c, Fasta_reader<TFastaRecord> const& rFasta, TRecords const& rec, void*) 
+
+  inline 
+    int runExtract(ExtractConfig const& c) 
   {
-    typedef Fasta_reader<TFastaRecord> TFastaReader;
-    typename TRecords::const_iterator recIt = rec.begin();
-    typename TRecords::const_iterator recItEnd = rec.end();
-    for(;recIt!=recItEnd; ++recIt) {
-      typename TFastaReader::TFastaVec::const_iterator fastaIt = rFasta.faVec.begin();
-      typename TFastaReader::TFastaVec::const_iterator fastaItEnd = rFasta.faVec.end();
-      for(;fastaIt!=fastaItEnd;++fastaIt) {
-	if (!recIt->f0.compare(fastaIt->chrName)) {
-	  c.file << ">" << recIt->f4 << std::endl;
-	  unsigned int count = 1;
-	  typename TFastaRecord::TSequence::const_iterator beg = fastaIt->seq.begin() + recIt->f1;
-	  typename TFastaRecord::TSequence::const_iterator begEnd = fastaIt->seq.begin() + recIt->f2;
-	  if (recIt->f1 <= recIt->f2) {
-	    for(;((beg!=(begEnd + (int) c.closed)) && (beg!=fastaIt->seq.end())) ;++beg,++count) {
-	      c.file << dna5_decode[(int) *beg];
-	      if (count % c.linesize == 0) c.file << std::endl;
-	    }
-	  } else {
-	    beg += (int) c.closed;
-	    if (beg>=fastaIt->seq.end()) beg=fastaIt->seq.end();
-	    do {
-	      --beg;
-	      int letter = (int) *beg;
-	      if (c.revComp) {
-		switch (*beg) {
-		case 0: letter = 3; break;
-		case 1: letter = 2; break;
-		case 2: letter = 1; break;
-		case 3: letter = 0; break;
-		default: break;
+      typedef std::vector<GenomicInterval> TGenInt;
+      TGenInt rec;
+      if (boost::filesystem::exists(c.intervals) && boost::filesystem::is_regular_file(c.intervals) && boost::filesystem::file_size(c.intervals)) {
+	std::ifstream iFile(c.intervals.string().c_str(), std::ifstream::in);
+	if (iFile.is_open()) {
+	  while (iFile.good()) {
+	    std::string intervalLine;
+	    getline(iFile, intervalLine);
+	    typedef boost::tokenizer< boost::char_separator<char> > Tokenizer;
+	    boost::char_separator<char> sep(" \t;");
+	    Tokenizer tokens(intervalLine, sep);
+	    Tokenizer::iterator tokIter = tokens.begin();
+	    if (tokIter!=tokens.end()) {
+	      std::string chr = *tokIter++;
+	      unsigned int start =  boost::lexical_cast<unsigned int>(*tokIter++);
+	      unsigned int end =  boost::lexical_cast<unsigned int>(*tokIter++);
+	      std::vector<unsigned int> br;
+	      br.push_back(start - 1);
+	      br.push_back(end - 1);
+	      std::stringstream s;
+	      s << chr << "_" << start << "_" << end;
+	      std::string id = s.str();
+	      if (tokIter!=tokens.end()) {
+		id = *tokIter++;
+		if ((c.breaks) && (tokIter!=tokens.end())) {
+		  // Parse breaks
+		  br.clear();
+		  boost::char_separator<char> split(",");
+		  Tokenizer bTok(*tokIter++, split);
+		  Tokenizer::iterator bTokIter = bTok.begin();
+		  for(;bTokIter!=bTok.end(); ++bTokIter) br.push_back(boost::lexical_cast<unsigned int>(*bTokIter) - 1);
 		}
 	      }
-	      c.file << dna5_decode[letter];
-	      if (count % c.linesize == 0) c.file << std::endl;
-	      ++count;
-	    } while (beg!=begEnd);
-	  }
-	  if ((count - 1) % c.linesize != 0) c.file << std::endl;
-	  break;
-	}
-      }
-    }
-  }
-
-
-
-  template<typename TToken, typename TRecord>
-    inline
-    void addPartialF3(TToken& token, TRecord& line, std::string*) {
-    addF3(token, line);
-    line.f4 = line.f3;
-  }
-  
-  template<typename TToken, typename TRecord>
-    inline
-    void addPartialF3(TToken& token, TRecord& line, void*) {
-    token.getString(line.f4);
-  }
-  
-  template<typename TBreaks>
-    inline 
-    void runExtract(ExtractConfig const& c) 
-    {
-      TBreaks* tmp = 0;
-      typedef Record<std::string, unsigned int, unsigned int, TBreaks, std::string, void, void, void, void, void, void, void> TRecord;
-      typedef std::vector<TRecord> TVecRecord;
-      TVecRecord rec;
-      if (!c.intervals.empty()) {
-	// Read reference interval file
-	Memory_mapped_file map_file(c.intervals.c_str());
-	char buffer[Memory_mapped_file::MAX_LINE_LENGTH];
-	while (map_file.left_bytes() > 0) {
-	  map_file.read_line(buffer);
-	  Tokenizer token(buffer, Memory_mapped_file::MAX_LINE_LENGTH);
-	  TRecord line;
-	  addF0(token, line);
-	  addF1(token, line);
-	  addF2(token, line);
-	  addPartialF3(token, line, tmp);
-	  if (c.field_identifier != 0) {
-	    if (c.field_identifier == 1) line.f4 = line.f0;
-	    else if (c.field_identifier == 2) line.f4 = line.f1;
-	    else if (c.field_identifier == 3) line.f4 = line.f2;
-	    else if (c.field_identifier > 4) {
-	      unsigned int k = 5;
-	      for (;k < c.field_identifier;++k) token.skipNextChunk();
-	      token.getString(line.f4);
+	      rec.push_back(GenomicInterval(chr, id, br));
 	    }
-	  } else {
-	    std::stringstream s;
-	    s << line.f0 << "_" << line.f1 << "_" << line.f2;
-	    line.f4 = s.str();
 	  }
-	  line.f0.reserve(0);
-	  line.f4.reserve(0);
-	  rec.push_back(line);
-	}
-	map_file.close();
+	} 
       } else {
-	TRecord line;
-	line.f0 = c.chr;
-	line.f1 = c.start;
-	line.f2 = c.end;
+	std::vector<unsigned int> br;
+	br.push_back(c.start - 1);
+	br.push_back(c.end - 1);
 	std::stringstream s;
-	s << line.f0 << "_" << line.f1 << "_" << line.f2;
-	line.f4 = s.str();
-	rec.push_back(line);
+	s << c.chr << "_" << c.start << "_" << c.end;
+	rec.push_back(GenomicInterval(c.chr, s.str(), br));
       }
-      
-      // Read fasta file
-      typedef std::vector<char> TSequence;
-      typedef FastaRecord<std::string, unsigned long, Dna5Alphabet, TSequence, void> TFastaRecord;
-      typedef Fasta_reader<TFastaRecord> TFastaReader;
-      TFastaReader rFasta;
-      rFasta.read_fasta(c.genome.c_str());
-      
 
-      // Print intervals
-      printIntervals(c, rFasta, rec, tmp);
-    }
+      // Outfile
+      std::ofstream ofile(c.outfile.string().c_str());
+      
+      // Print genomic intervals
+      kseq_t *seq;
+      int l;
+      gzFile fp = gzopen(c.genome.string().c_str(), "r");
+      seq = kseq_init(fp);
+      boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
+      std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Extracting Regions" << std::endl;
+      boost::progress_display show_progress( rec.size() );
+      unsigned int countProcessed = 0;
+      while (((l = kseq_read(seq)) >= 0) && (countProcessed<rec.size())) {
+	TGenInt::const_iterator genIntIter = rec.begin();
+	for(;genIntIter!=rec.end(); ++genIntIter) {
+	  if (genIntIter->chr == seq->name.s) {
+	    ofile << ">" << genIntIter->id << std::endl;
+	    typedef std::vector<unsigned int> TPosition;
+	    TPosition::const_iterator posIt = genIntIter->breaks.begin();
+	    TPosition::const_iterator posItEnd = genIntIter->breaks.end();
+	    unsigned int count = 1;
+	    for(;posIt!=posItEnd; ++posIt) {
+	      unsigned int start= *posIt;
+	      if (++posIt==posItEnd) break;
+	      unsigned int end = *posIt; 
+	      if (start <= end) {
+		std::string fasta = std::string(seq->seq.s + start, seq->seq.s + std::min((unsigned int) seq->seq.l, end + (int) c.closed));
+		std::string::iterator itF = fasta.begin();
+		std::string::iterator itFEnd = fasta.end();
+		for (; itF!=itFEnd; ++itF, ++count) {
+		  ofile << *itF;
+		  if (count % c.linesize == 0) ofile << std::endl;
+		}
+	      } else {
+		std::string fasta = std::string(seq->seq.s + end, seq->seq.s + std::min((unsigned int) seq->seq.l, start + (int) c.closed));
+		std::string::reverse_iterator itR = fasta.rbegin();
+		std::string::reverse_iterator itREnd = fasta.rend();
+		for(; itR!=itREnd; ++itR, ++count) {
+		  switch (*itR) {
+		  case 'A': ofile << 'T'; break;
+		  case 'C': ofile << 'G'; break;
+		  case 'G': ofile << 'C'; break;
+		  case 'T': ofile << 'A'; break;
+		  case 'N': ofile << 'N'; break;
+		  default: break;
+		  }
+		  if (count % c.linesize == 0) ofile << std::endl;
+		}
+	      }
+	    }
+	    if ((count - 1) % c.linesize != 0) ofile << std::endl;
+	    ++show_progress;
+	    ++countProcessed;
+	  }
+	}
+      }
+      ofile.close();
+
+      // End
+      now = boost::posix_time::second_clock::local_time();
+      std::cout << '[' << boost::posix_time::to_simple_string(now) << "] Done." << std::endl;
+
+      return 0;
+  }
 
 }
 

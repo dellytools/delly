@@ -42,27 +42,23 @@ using namespace torali;
 int main(int argc, char **argv) {
   // Define command-line options
   ExtractConfig c;
-  c.breaks = false;
-  c.closed = false;
-  c.revComp = true;
 
   // Define required options
   boost::program_options::options_description required("Required options");
   required.add_options()
-    ("genome,g", boost::program_options::value<std::string>(&c.genome), "genome multi-fasta file")
+    ("genome,g", boost::program_options::value<boost::filesystem::path>(&c.genome), "genome multi-fasta file")
     ;
 
   boost::program_options::options_description region("Region options");
   region.add_options()
     ("chr,c", boost::program_options::value<std::string>(&c.chr)->default_value("chrX"), "chromosome identifier")
-    ("start,s", boost::program_options::value<unsigned int>(&c.start)->default_value(0), "region start (inclusive, 0-based)")
-    ("end,e", boost::program_options::value<unsigned int>(&c.end)->default_value(1), "region end (exclusive, 0-based)")
+    ("start,s", boost::program_options::value<unsigned int>(&c.start)->default_value(0), "region start (inclusive, 1-based)")
+    ("end,e", boost::program_options::value<unsigned int>(&c.end)->default_value(1), "region end (exclusive, 1-based)")
     ;
 
   boost::program_options::options_description interval("Interval options");
   interval.add_options()
-    ("interval,i", boost::program_options::value<std::string>(&c.intervals), "file with intervals")
-    ("field-identifier,f", boost::program_options::value<unsigned int>(&c.field_identifier)->default_value(0), "field identifier index")
+    ("interval,i", boost::program_options::value<boost::filesystem::path>(&c.intervals), "file with intervals")
     ("breaks,b", "parse list of breaks")
     ;
 
@@ -71,8 +67,8 @@ int main(int argc, char **argv) {
   generic.add_options()
     ("help,?", "show help message")
     ("linesize,z", boost::program_options::value<unsigned int>(&c.linesize)->default_value(60), "line size")
-    ("closed-interval,o", "use closed interval [a,b], instead of [a,b[")
-    ("no-reverse-complement,n", "do not reverse complement intervals [b,a] with b>a")
+    ("closed-interval,d", "closed intervals [start, end]")
+    ("outfile,o", boost::program_options::value<boost::filesystem::path>(&c.outfile)->default_value("out.fasta"), "FASTA output file")
     ;
 
   // Define hidden options
@@ -93,8 +89,11 @@ int main(int argc, char **argv) {
 
   // Check command line arguments
   if (vm.count("breaks")) c.breaks = true;
+  else c.breaks = false;
   if (vm.count("closed-interval")) c.closed = true;
-  if (vm.count("no-reverse-complement")) c.revComp = false;
+  else c.closed = false;
+
+  // Help message
   if ((vm.count("help")) || (!vm.count("genome")) ) {
     printTitle("Region extraction");
     if (vm.count("warranty")) {
@@ -108,21 +107,12 @@ int main(int argc, char **argv) {
     return 1; 
   }
 
-  // Show command line arguments
-  std::cerr << "Region extraction" << std::endl;
-  std::cerr << "Genome file: " << c.genome << std::endl;
-  std::cerr << "Interval file: " << c.intervals << std::endl;
-  std::cerr << "Chromosome identifier: " << c.chr << std::endl;
-  std::cerr << "Start position: " << c.start << std::endl;
-  std::cerr << "End position: " << c.end << std::endl;
-  std::cerr << "Line size: " << c.linesize << std::endl;
-  std::cerr << "Parse breaks: " << c.breaks << std::endl;
-  std::cerr << "Closed-intervals: " << c.closed << std::endl;
-  std::cerr << "Reverse-complement: " << c.revComp << std::endl;
+  // Show cmd
+  boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
+  std::cout << '[' << boost::posix_time::to_simple_string(now) << "] ";
+  for(int i=0; i<argc; ++i) { std::cout << argv[i] << ' '; }
+  std::cout << std::endl;
 
   // Run region extractor
-  if (c.breaks) runExtract<std::string>(c);
-  else runExtract<void>(c);
-
-  return 0;
+  return runExtract(c);
 }
