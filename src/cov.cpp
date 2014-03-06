@@ -194,6 +194,17 @@ run(Config const& c, TSingleHit, TCoverageType covType)
   dataOut.push(boost::iostreams::gzip_compressor());
   dataOut.push(boost::iostreams::file_sink(c.outfile.string().c_str(), std::ios_base::out | std::ios_base::binary));
 
+  // Print header
+  dataOut << "#chr\tstart\tend\tid";
+  for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
+    std::string sampleName(c.files[file_c].stem().string());
+    dataOut << "\t";
+    if (c.avg_flag) dataOut << sampleName << "_avgcov" << "\t";
+    if (c.bp_flag) dataOut << sampleName << "_bpcount" << "\t";
+    dataOut << sampleName << "_readcount";
+  }
+  dataOut << std::endl;
+
   // Iterate all SVs
   typename TSVs::const_iterator itSV = svs.begin();
   typename TSVs::const_iterator itSVEnd = svs.end();
