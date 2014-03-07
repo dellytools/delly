@@ -32,6 +32,7 @@ parser.add_argument('-n', '--maxsize', metavar='5000000', required=False, dest='
 parser.add_argument('-a', '--altaf', metavar='0.4', required=False, dest='altAF', help='min. alt. AF (optional)')
 parser.add_argument('-s', '--sample', metavar='NA12878', required=False, dest='sampleID', help='required carrier sample (optional)')
 parser.add_argument('-f', '--filter', dest='siteFilter', action='store_true', help='Filter sites for PASS')
+parser.add_argument('-p', '--paired', dest='pairedFilter', action='store_true', help='Require 3to3 and 5to5 inversion support')
 args = parser.parse_args()
 
 # Command-line args
@@ -59,7 +60,7 @@ sv = dict()
 if args.vcfFile:
     vcf_reader = vcf.Reader(open(args.vcfFile), 'r')
     for record in vcf_reader:
-        if (not args.siteFilter) or (len(record.FILTER) == 0):
+        if (record.INFO['SVLEN'] >= minSize) and (record.INFO['SVLEN'] <= maxSize) and ((not args.siteFilter) or (len(record.FILTER) == 0)):
             gqRef = []
             gqAlt = []
             ratioRef = [0]
@@ -70,24 +71,38 @@ if args.vcfFile:
             for call in record.samples:
                 if (call.called):
                     if call.gt_type == 0:
-                        #if (call['FT'] == "PASS") and (call['DV'] == 0):
-                        if (call['DV'] == 0): # More stringent because then the GQ cutoffs demand that only very few samples are LowQual
+                        ratioRef.append(float(call['DV'])/float(call['DR'] + call['DV']))
+                        if (call['FT'] == "PASS") and (call['DV'] == 0):
                             gqRef.append(call['GQ'])
-                        else:
-                            ratioRef.append(float(call['DV'])/float(call['DR'] + call['DV']))
                     if call.gt_type != 0:
+                        ratioAlt.append(float(call['DV'])/float(call['DR'] + call['DV']))
                         if (not carrierSample) and (call.sample == sampleID):
                             carrierSample = True
-                        #if (call['FT'] == "PASS") and (call['DV'] >= 2):
-                        if (call['DV'] >= 2): # More stringent because then the GQ cutoffs demand that only very few samples are LowQual
+                        if (call['FT'] == "PASS") and (call['DV'] >= 2):
                             gqAlt.append(call['GQ'])
-                            ratioAlt.append(float(call['DV'])/float(call['DR'] + call['DV']))
-            if carrierSample:
-                if (len(gqRef)) and (len(gqAlt)) and (record.INFO['SVLEN'] >= minSize) and (record.INFO['SVLEN'] <= maxSize) and (numpy.percentile(gqRef,25) >= gqRefCut) and (numpy.percentile(gqAlt,25) >= gqAltCut):
-                    if (max(ratioRef) == 0) and (numpy.percentile(ratioAlt,25) >= altAF):
+            genotypeRatio = float(len(gqAlt)+len(gqRef)) /  float(len(record.samples))
+            if (carrierSample) and (genotypeRatio>0.4):
+                if (len(gqRef)) and (len(gqAlt)) and (numpy.median(gqRef) >= gqRefCut) and (numpy.median(gqAlt) >= gqAltCut):
+                    if (numpy.percentile(ratioRef, 99) == 0) and (numpy.median(ratioAlt) >= altAF):
                         if not sv.has_key(record.CHROM):
                             sv[record.CHROM] = banyan.SortedDict(key_type=(int, int), alg=banyan.RED_BLACK_TREE, updator=banyan.OverlappingIntervalsUpdator)
-                        sv[record.CHROM][(record.POS, record.INFO['END'])] = (record.ID, record.INFO['PE'])
+                        sv[record.CHROM][(record.POS, record.INFO['END'])] = (record.ID, record.INFO['PE'], record.INFO['CT'])
+
+
+# Kick-out the unpaired SVs
+if (args.pairedFilter):
+    filteredSVs = dict()
+    for chrName in sv.keys():
+        for start, end in sv[chrName].keys():
+            overlapList = sv[chrName].overlap((start, end))
+            svID, score, ct = sv[chrName][(start, end)]
+            for cStart, cEnd in overlapList:
+                cSvID, cScore, cCt = sv[chrName][(cStart, cEnd)]
+                if (svID!=cSvID) and (ct!=cCt) and (overlapValid(start, end, cStart, cEnd, 0.9, 100)):
+                    if not filteredSVs.has_key(chrName):
+                        filteredSVs[chrName] = banyan.SortedDict(key_type=(int, int), alg=banyan.RED_BLACK_TREE, updator=banyan.OverlappingIntervalsUpdator)
+                    filteredSVs[chrName][(start, end)] = sv[chrName][(start, end)]
+    sv=filteredSVs
 
 # Output vcf records
 if args.vcfFile:
@@ -97,12 +112,13 @@ if args.vcfFile:
         if (record.CHROM not in sv.keys()) or ((record.POS, record.INFO['END']) not in sv[record.CHROM].keys()):
             continue
         overlapList = sv[record.CHROM].overlap((record.POS, record.INFO['END']))
-        svID, score = sv[record.CHROM][(record.POS, record.INFO['END'])]
+        svID, score, ct = sv[record.CHROM][(record.POS, record.INFO['END'])]
         foundBetterHit = False
         for cStart, cEnd in overlapList:
-            cSvID, cScore = sv[record.CHROM][(cStart, cEnd)]
+            cSvID, cScore, cCt = sv[record.CHROM][(cStart, cEnd)]
             if svID == cSvID:
                 continue
+            # There should be at least 10% overlap otherwise ignore it
             if not overlapValid(record.POS, record.INFO['END'], cStart, cEnd, 0.1, 10000000):
                 continue
             if (cScore > score) or ((cScore == score) and (cSvID < svID)):
