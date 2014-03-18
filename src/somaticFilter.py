@@ -49,17 +49,18 @@ sv = dict()
 if args.vcfFile:
     vcf_reader = vcf.Reader(open(args.vcfFile), 'r')
     for record in vcf_reader:
-        rcRef = []
-        rcAlt = []
-        for call in record.samples:
-            if (re.search(r"[Nn]ormal", call.sample) != None) and (call.called) and (call.gt_type == 0) and (call['DV'] == 0):
-                rcRef.append(call['RC'])
-            if (re.search(r"[Tt]umor", call.sample) != None) and (call.called) and (call.gt_type != 0) and (call['DV'] >= 2) and (float(call['DV'])/float(call['DV']+call['DR'])>=altAF):
-                rcAlt.append(call['RC'])
-        if (len(rcRef) > 0) and (len(rcAlt) > 0) and (record.INFO['SVLEN'] >= minSize) and (record.INFO['SVLEN'] <= maxSize):
-            rdRatio = numpy.median(rcAlt)/numpy.median(rcRef)
-            if (args.svType == 'INV') or (record.INFO['SVLEN'] <= 10000) or ((args.svType == 'DEL') and (rdRatio <= 0.75)) or ((args.svType == 'DUP') and (rdRatio >= 1.25)):
-                if (not args.siteFilter) or (len(record.FILTER) == 0):
+        if (record.INFO['SVLEN'] >= minSize) and (record.INFO['SVLEN'] <= maxSize) and ((not args.siteFilter) or (len(record.FILTER) == 0)):
+            rcRef = []
+            rcAlt = []
+            for call in record.samples:
+                if (re.search(r"[Nn]ormal", call.sample) != None) and (call.called) and (call.gt_type == 0) and (call['DV'] == 0):
+                    rcRef.append(call['RC'])
+                if (re.search(r"[Tt]umor", call.sample) != None) and (call.called) and (call.gt_type != 0) and (call['DV'] >= 2) and (float(call['DV'])/float(call['DV']+call['DR'])>=altAF):
+                    rcAlt.append(call['RC'])
+
+            if (len(rcRef) > 0) and (len(rcAlt) > 0):
+                rdRatio = numpy.median(rcAlt)/numpy.median(rcRef)
+                if (args.svType == 'INV') or (record.INFO['SVLEN'] <= 10000) or ((args.svType == 'DEL') and (rdRatio <= 0.85)) or ((args.svType == 'DUP') and (rdRatio >= 1.15)):
                     if not sv.has_key(record.CHROM):
                         sv[record.CHROM] = banyan.SortedDict(key_type=(int, int), alg=banyan.RED_BLACK_TREE, updator=banyan.OverlappingIntervalsUpdator)
                     sv[record.CHROM][(record.POS, record.INFO['END'])] = (record.ID, record.INFO['PE'])
