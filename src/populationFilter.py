@@ -30,6 +30,7 @@ parser.add_argument('-q', '--gqRef', metavar='15', required=False, dest='gqRef',
 parser.add_argument('-m', '--minsize', metavar='500', required=False, dest='minSize', help='min. size (optional)')
 parser.add_argument('-n', '--maxsize', metavar='5000000', required=False, dest='maxSize', help='max. size (optional)')
 parser.add_argument('-a', '--altaf', metavar='0.4', required=False, dest='altAF', help='min. alt. AF (optional)')
+parser.add_argument('-r', '--ratioGeno', metavar='0.4', required=False, dest='ratioGeno', help='min. fraction of genotyped samples (optional)')
 parser.add_argument('-s', '--sample', metavar='NA12878', required=False, dest='sampleID', help='required carrier sample (optional)')
 parser.add_argument('-f', '--filter', dest='siteFilter', action='store_true', help='Filter sites for PASS')
 parser.add_argument('-p', '--paired', dest='pairedFilter', action='store_true', help='Require 3to3 and 5to5 inversion support')
@@ -54,6 +55,9 @@ if args.maxSize:
 altAF = 0.4
 if args.altAF:
     altAF = float(args.altAF)
+ratioGeno = 0.4
+if args.ratioGeno:
+    ratioGeno = float(args.ratioGeno)
 
 # Collect high-quality SVs
 sv = dict()
@@ -72,18 +76,19 @@ if args.vcfFile:
                 if (call.called):
                     if call.gt_type == 0:
                         ratioRef.append(float(call['DV'])/float(call['DR'] + call['DV']))
-                        if (call['FT'] == "PASS") and (call['DV'] == 0):
+                        if (call['DV'] == 0):
                             gqRef.append(call['GQ'])
                     if call.gt_type != 0:
                         ratioAlt.append(float(call['DV'])/float(call['DR'] + call['DV']))
                         if (not carrierSample) and (call.sample == sampleID):
                             carrierSample = True
-                        if (call['FT'] == "PASS") and (call['DV'] >= 2):
+                        if (call['DV'] >= 2):
                             gqAlt.append(call['GQ'])
             genotypeRatio = float(len(gqAlt)+len(gqRef)) /  float(len(record.samples))
-            if (carrierSample) and (genotypeRatio>0.4):
+            if (carrierSample) and (genotypeRatio>ratioGeno):
                 if (len(gqRef)) and (len(gqAlt)) and (numpy.median(gqRef) >= gqRefCut) and (numpy.median(gqAlt) >= gqAltCut):
                     if (numpy.percentile(ratioRef, 99) == 0) and (numpy.median(ratioAlt) >= altAF):
+                        print(record.CHROM, record.POS, record.INFO['END'], record.INFO['CT'])
                         if not sv.has_key(record.CHROM):
                             sv[record.CHROM] = banyan.SortedDict(key_type=(int, int), alg=banyan.RED_BLACK_TREE, updator=banyan.OverlappingIntervalsUpdator)
                         sv[record.CHROM][(record.POS, record.INFO['END'])] = (record.ID, record.INFO['PE'], record.INFO['CT'])
@@ -102,6 +107,7 @@ if (args.pairedFilter):
                     if not filteredSVs.has_key(chrName):
                         filteredSVs[chrName] = banyan.SortedDict(key_type=(int, int), alg=banyan.RED_BLACK_TREE, updator=banyan.OverlappingIntervalsUpdator)
                     filteredSVs[chrName][(start, end)] = sv[chrName][(start, end)]
+                    break
     sv=filteredSVs
 
 # Output vcf records
