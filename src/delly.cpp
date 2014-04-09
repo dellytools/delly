@@ -944,6 +944,8 @@ vcfParse(TConfig const& c, TReferences const references, TSize const overallMaxI
 	      }
 	    }
 	    svRec.id = boost::lexical_cast<unsigned int>(id);
+	    svRec.peSupport=0;
+	    svRec.peMapQuality=0;
 	    svRec.srSupport=0;
 	    svRec.srAlignQuality=0;
 	    svRec.wiggle = 0;
