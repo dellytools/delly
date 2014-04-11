@@ -88,7 +88,6 @@ if args.vcfFile:
             if (carrierSample) and (genotypeRatio>ratioGeno):
                 if (len(gqRef)) and (len(gqAlt)) and (numpy.median(gqRef) >= gqRefCut) and (numpy.median(gqAlt) >= gqAltCut):
                     if (numpy.percentile(ratioRef, 99) == 0) and (numpy.median(ratioAlt) >= altAF):
-                        print(record.CHROM, record.POS, record.INFO['END'], record.INFO['CT'])
                         if not sv.has_key(record.CHROM):
                             sv[record.CHROM] = banyan.SortedDict(key_type=(int, int), alg=banyan.RED_BLACK_TREE, updator=banyan.OverlappingIntervalsUpdator)
                         sv[record.CHROM][(record.POS, record.INFO['END'])] = (record.ID, record.INFO['PE'], record.INFO['CT'])
