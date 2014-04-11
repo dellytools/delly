@@ -62,14 +62,13 @@ Contact: Tobias Rausch (rausch@embl.de)
 #include "tags.h"
 #include "spanning.h"
 #include "coverage.h"
+#include "junction.h"
 
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>
 #include <zlib.h>
 #include <stdio.h>
-#include "kseq.h"
-KSEQ_INIT(gzFile, gzread)
 
 using namespace torali;
 
@@ -908,6 +907,30 @@ _decodeOrientation(std::string const ct, SVType<TranslocationTag>) {
   else return 3;
 }
 
+// Deletions
+inline std::string
+_addID(SVType<DeletionTag>) {
+  return "DEL";
+}
+
+// Duplications
+inline std::string
+_addID(SVType<DuplicationTag>) {
+  return "DUP";
+}
+
+// Inversions
+inline std::string
+_addID(SVType<InversionTag>) {
+  return "INV";
+}
+
+// Translocations
+inline std::string
+_addID(SVType<TranslocationTag>) {
+  return "TRA";
+}
+
 // Parse Delly vcf file
 template<typename TConfig, typename TReferences, typename TSize, typename TStructuralVariantRecord, typename TTag>
 inline void
@@ -937,6 +960,7 @@ vcfParse(TConfig const& c, TReferences const references, TSize const overallMaxI
 	    svRec.chr2 = mapChrIt->second;
 	    svRec.svStart = boost::lexical_cast<int32_t>(*tokIter++);
 	    std::string id = *tokIter++;
+	    if (id.substr(0,3)!=_addID(svType)) continue;
 	    for(unsigned int i=3; i<id.size();++i) {
 	      if (id[i]!='0') {
 		id=id.substr(i);
@@ -1014,30 +1038,6 @@ vcfParse(TConfig const& c, TReferences const references, TSize const overallMaxI
 
 // Deletions
 inline std::string
-_addID(SVType<DeletionTag>) {
-  return "DEL";
-}
-
-// Duplications
-inline std::string
-_addID(SVType<DuplicationTag>) {
-  return "DUP";
-}
-
-// Inversions
-inline std::string
-_addID(SVType<InversionTag>) {
-  return "INV";
-}
-
-// Translocations
-inline std::string
-_addID(SVType<TranslocationTag>) {
-  return "TRA";
-}
-
-// Deletions
-inline std::string
 _addOrientation(int, SVType<DeletionTag>) {
   return "3to5";
 }
@@ -1065,9 +1065,9 @@ _addOrientation(int ct, SVType<TranslocationTag>) {
 }
 
 
-template<typename TConfig, typename TStructuralVariantRecord, typename TReadCountMap, typename TCountMap, typename TTag>
+template<typename TConfig, typename TStructuralVariantRecord, typename TJunctionCountMap, typename TReadCountMap, typename TCountMap, typename TTag>
 inline void
-vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TReadCountMap const& readCountMap, TCountMap const& normalCountMap, TCountMap const& abnormalCountMap, SVType<TTag> svType) 
+vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJunctionCountMap const& jctCountMap, TReadCountMap const& readCountMap, TCountMap const& normalCountMap, TCountMap const& abnormalCountMap, SVType<TTag> svType) 
 {
   // Typedefs
   typedef typename TCountMap::key_type TSampleSVPair;
@@ -1114,6 +1114,8 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TR
   ofile << "##FORMAT=<ID=RC,Number=1,Type=Integer,Description=\"Normalized high-quality read count for the SV\">" << std::endl;
   ofile << "##FORMAT=<ID=DR,Number=1,Type=Integer,Description=\"# high-quality reference pairs\">" << std::endl;
   ofile << "##FORMAT=<ID=DV,Number=1,Type=Integer,Description=\"# high-quality variant pairs\">" << std::endl;
+  ofile << "##FORMAT=<ID=RR,Number=1,Type=Integer,Description=\"# high-quality reference junction reads\">" << std::endl;
+  ofile << "##FORMAT=<ID=RV,Number=1,Type=Integer,Description=\"# high-quality variant junction reads\">" << std::endl;
   ofile << "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT";
   for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
     std::string sampleName(c.files[file_c].stem().string());
@@ -1162,12 +1164,13 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TR
 
 
     // Add genotype columns (right bp only across all samples)
-    ofile << "\tGT:GL:GQ:FT:RC:DR:DV";
+    ofile << "\tGT:GL:GQ:FT:RC:DR:DV:RR:RV";
     for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
       // Get the sample name
       std::string sampleName(c.files[file_c].stem().string());
       TSampleSVPair sampleSVPairLeft = std::make_pair(sampleName, svIter->id);
       TSampleSVPair sampleSVPairRight = std::make_pair(sampleName, -svIter->id);
+      typename TJunctionCountMap::const_iterator jctCountMapIt=jctCountMap.find(sampleSVPairLeft);
       typename TCountMap::const_iterator countMapItLeft=normalCountMap.find(sampleSVPairLeft);
       typename TCountMap::const_iterator countMapItRight=normalCountMap.find(sampleSVPairRight);
       typename TCountMap::const_iterator abCountMapItLeft=abnormalCountMap.find(sampleSVPairLeft);
@@ -1179,8 +1182,17 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TR
       else countMapIt=countMapItRight;
       if ((svIter->chr != svIter->chr2) || (abCountMapItLeft->second[0].size() > abCountMapItRight->second[0].size())) abCountMapIt=abCountMapItRight;
       else abCountMapIt=abCountMapItLeft;
-      TMapqVector const& mapqRef = countMapIt->second[0];
-      TMapqVector const& mapqAlt = abCountMapIt->second[0];
+      TMapqVector mapqRef;
+      TMapqVector mapqAlt;
+      if ((svIter->precise) && ((jctCountMapIt->second.first.size()) || (jctCountMapIt->second.second.size()))) {
+	// Genotyping for precise events uses junction read qualities
+	mapqRef = jctCountMapIt->second.first;
+	mapqAlt = jctCountMapIt->second.second;
+      } else {
+	// Genotyping for imprecise events uses paired-end qualities
+	mapqRef = countMapIt->second[0];
+	mapqAlt = abCountMapIt->second[0];
+      }
 
       // Compute genotype likelihoods
       //typedef boost::multiprecision::cpp_dec_float_50 FLP;
@@ -1228,9 +1240,12 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TR
 	ofile << "\t./.:.,.,.:0:LowQual:";
       }
       typename TReadCountMap::const_iterator readCountMapIt=readCountMap.find(sampleSVPairLeft);
-      int rcCount = 0;
-      if (readCountMapIt!=readCountMap.end()) rcCount = readCountMapIt->second.second;
-      ofile << rcCount << ":" << mapqRef.size() << ":" << mapqAlt.size();
+      int rcCount = readCountMapIt->second.second;
+      int drCount = countMapIt->second[0].size();
+      int dvCount = abCountMapIt->second[0].size();
+      int rrCount = jctCountMapIt->second.first.size();
+      int rvCount = jctCountMapIt->second.second.size();
+      ofile << rcCount << ":" << drCount << ":" << dvCount << ":" << rrCount << ":" << rvCount;
     }
     ofile << std::endl;
   }
@@ -1688,6 +1703,14 @@ _updateClique(TBamRecordIterator const& el, TSize& svStart, TSize& svEnd, TSize&
 }
 
 
+template<typename TFiles, typename TGenome, typename TSampleLibrary, typename TSVs, typename TCountMap, typename TTag>
+inline void
+_annotateJunctionReads(TFiles const& files, TGenome const& genome, TSampleLibrary& sampleLib, TSVs& svs, TCountMap& junctionCountMap, SVType<TTag>) 
+{
+  annotateJunctionReads(files, genome, 20, sampleLib, svs, junctionCountMap);
+}
+
+
 template<typename TFiles, typename TSampleLibrary, typename TSVs, typename TCountMap, typename TTag>
 inline void
 _annotateCoverage(TFiles const& files, TSampleLibrary& sampleLib, TSVs& svs, TCountMap& countMap, SVType<TTag>) 
@@ -2137,8 +2160,14 @@ inline int run(Config const& c, TSVType svType) {
     return -1;
   }
 
-  // Annotate spanning coverage
+  // Annotate junction reads
   typedef std::pair<std::string, int> TSampleSVPair;
+  typedef std::pair<std::vector<uint16_t>, std::vector<uint16_t> > TJunctionReadQual;
+  typedef boost::unordered_map<TSampleSVPair, TJunctionReadQual> TJunctionCountMap;
+  TJunctionCountMap junctionCountMap;
+  _annotateJunctionReads(c.files, c.genome, sampleLib, svs, junctionCountMap, svType);
+
+  // Annotate spanning coverage
   typedef std::vector<std::vector<uint16_t> > TCountRange;
   typedef boost::unordered_map<TSampleSVPair, TCountRange> TCountMap;
   TCountMap normalCountMap;
@@ -2153,7 +2182,7 @@ inline int run(Config const& c, TSVType svType) {
 
   // VCF output
   if (svs.size()) {
-    vcfOutput(c, svs, readCountMap, normalCountMap, abnormalCountMap, svType);
+    vcfOutput(c, svs, junctionCountMap, readCountMap, normalCountMap, abnormalCountMap, svType);
   }
 
 #ifdef PROFILE
@@ -2175,6 +2204,7 @@ int main(int argc, char **argv) {
   generic.add_options()
     ("help,?", "show help message")
     ("type,t", boost::program_options::value<std::string>(&c.svType)->default_value("DEL"), "SV analysis type (DEL, DUP, INV, TRA)")
+    ("genome,g", boost::program_options::value<boost::filesystem::path>(&c.genome), "genome fasta file")
     ("outfile,o", boost::program_options::value<boost::filesystem::path>(&c.outfile)->default_value("sv.vcf"), "SV output file")
     ("exclude,x", boost::program_options::value<boost::filesystem::path>(&c.exclude)->default_value(""), "file with chr to exclude")
     ;
@@ -2187,7 +2217,6 @@ int main(int argc, char **argv) {
 
   boost::program_options::options_description breaks("SR breakpoint options");
   breaks.add_options()
-    ("genome,g", boost::program_options::value<boost::filesystem::path>(&c.genome), "genome fasta file")
     ("min-flank,m", boost::program_options::value<unsigned int>(&c.minimumFlankSize)->default_value(13), "minimum flanking sequence size")
     ("epsilon,e", boost::program_options::value<float>(&c.epsilon)->default_value(0.1), "allowed epsilon deviation of PE vs. SR deletion")
     ;
@@ -2219,7 +2248,7 @@ int main(int argc, char **argv) {
 
 
   // Check command line arguments
-  if ((vm.count("help")) || (!vm.count("input-file"))) { 
+  if ((vm.count("help")) || (!vm.count("genome")) || (!vm.count("input-file"))) { 
     printTitle("DELLY");
     if (vm.count("warranty")) {
       displayWarranty();
