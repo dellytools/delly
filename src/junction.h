@@ -183,15 +183,16 @@ inline void
 	typename TSVs::const_iterator itSVEnd = svs.end();
 	for(;itSV!=itSVEnd;++itSV) {
 	  if (itSV->consensus.empty()) continue;
-	  unsigned int consLen = itSV->consensus.size();
 	  if (itSV->chr2 == refIndex) {
+	    int consLen = itSV->consensus.size();
             // For translocations temporarily store the first reference part in the probe strings
-	    refProbes[itSV->id]=boost::to_upper_copy(std::string(seq->seq.s + itSV->svEnd - consLen, seq->seq.s + itSV->svEnd + consLen));
+	    refProbes[itSV->id]=boost::to_upper_copy(std::string(seq->seq.s + std::max(itSV->svEnd - consLen, 0), seq->seq.s + itSV->svEnd + consLen));
 	  }
           if (itSV->chr == refIndex) {
+	    int consLen = itSV->consensus.size();
 	    std::string sourceRight=refProbes[itSV->id];
 	    refProbes[itSV->id]="";
-	    std::string sourceLeft=boost::to_upper_copy(std::string(seq->seq.s + itSV->svStart - consLen, seq->seq.s + itSV->svStart + consLen));
+	    std::string sourceLeft=boost::to_upper_copy(std::string(seq->seq.s + std::max(itSV->svStart - consLen, 0), seq->seq.s + itSV->svStart + consLen));
 	    std::string cons=boost::to_upper_copy(itSV->consensus);
 	    for (unsigned int kmerLength=11; kmerLength<MAXKMERLENGTH; kmerLength+=2) {
 	      unsigned int minReqHammingDist = (unsigned int) (kmerLength * 0.3);
@@ -221,8 +222,8 @@ inline void
 		TKmerSet consKmerSet;
 		_getKmers(cons, consKmerSet, kmerLength, 4);
 		TUniqueKmers uniqueRefKmers;
-		refLeft=refLeft.substr(refLeft.size()/2 - kmerLength, 2*kmerLength);
-		refRight=refRight.substr(refRight.size()/2 - kmerLength, 2*kmerLength);
+		refLeft=refLeft.substr(std::max((int) refLeft.size()/2 - (int) kmerLength, 0), 2*kmerLength);
+		refRight=refRight.substr(std::max((int) refRight.size()/2 - (int) kmerLength, 0), 2*kmerLength);
 		_getUniqueKmers(refLeft, consKmerSet, uniqueRefKmers, kmerLength, 4);
 		_getUniqueKmers(refRight, consKmerSet, uniqueRefKmers, kmerLength, 4);
 		unsigned int maxRefHammingDistance=0;
