@@ -1240,11 +1240,16 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
 	ofile << "\t./.:.,.,.:0:LowQual:";
       }
       typename TReadCountMap::const_iterator readCountMapIt=readCountMap.find(sampleSVPairLeft);
-      int rcCount = readCountMapIt->second.second;
+      int rcCount = 0;
+      if (readCountMapIt!=readCountMap.end()) rcCount = readCountMapIt->second.second;
       int drCount = countMapIt->second[0].size();
       int dvCount = abCountMapIt->second[0].size();
-      int rrCount = jctCountMapIt->second.first.size();
-      int rvCount = jctCountMapIt->second.second.size();
+      int rrCount = 0;
+      int rvCount = 0;
+      if (jctCountMapIt!=jctCountMap.end()) {
+	rrCount = jctCountMapIt->second.first.size();
+	rvCount = jctCountMapIt->second.second.size();
+      }
       ofile << rcCount << ":" << drCount << ":" << dvCount << ":" << rrCount << ":" << rvCount;
     }
     ofile << std::endl;
@@ -2165,7 +2170,8 @@ inline int run(Config const& c, TSVType svType) {
   typedef std::pair<std::vector<uint16_t>, std::vector<uint16_t> > TJunctionReadQual;
   typedef boost::unordered_map<TSampleSVPair, TJunctionReadQual> TJunctionCountMap;
   TJunctionCountMap junctionCountMap;
-  _annotateJunctionReads(c.files, c.genome, sampleLib, svs, junctionCountMap, svType);
+  if (boost::filesystem::exists(c.genome) && boost::filesystem::is_regular_file(c.genome) && boost::filesystem::file_size(c.genome))
+    _annotateJunctionReads(c.files, c.genome, sampleLib, svs, junctionCountMap, svType);
 
   // Annotate spanning coverage
   typedef std::vector<std::vector<uint16_t> > TCountRange;
@@ -2248,7 +2254,7 @@ int main(int argc, char **argv) {
 
 
   // Check command line arguments
-  if ((vm.count("help")) || (!vm.count("genome")) || (!vm.count("input-file"))) { 
+  if ((vm.count("help")) || (!vm.count("input-file"))) { 
     printTitle("DELLY");
     if (vm.count("warranty")) {
       displayWarranty();

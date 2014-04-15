@@ -161,6 +161,11 @@ inline void
   std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Junction read annotation" << std::endl;
   boost::progress_display show_progress( references.size() );
 
+  // Get junction probes for all SVs on this chromosome
+  typedef boost::unordered_map<unsigned int, std::string> TProbes;
+  TProbes altProbes;
+  TProbes refProbes;
+
   // Parse genome
   kseq_t *seq;
   int l;
@@ -172,23 +177,28 @@ inline void
     for(unsigned int refIndex=0;itRef!=references.end();++itRef, ++refIndex) {
       if (seq->name.s == references[refIndex].RefName) {
         ++show_progress;
-
-	// Get junction probes for all SVs on this chromosome
-	typedef boost::unordered_map<unsigned int, std::string> TProbes;
-	TProbes altProbes;
-	TProbes refProbes;
+	
+	// Iterate SVs
 	typename TSVs::const_iterator itSV = svs.begin();
 	typename TSVs::const_iterator itSVEnd = svs.end();
 	for(;itSV!=itSVEnd;++itSV) {
-	  if ((itSV->chr == refIndex) && (!itSV->consensus.empty())) {
-	    unsigned int consLen = itSV->consensus.size();
-	    std::string refLeft=boost::to_upper_copy(std::string(seq->seq.s + itSV->svStart - consLen, seq->seq.s + itSV->svStart + consLen));
-	    std::string refRight=boost::to_upper_copy(std::string(seq->seq.s + itSV->svEnd - consLen, seq->seq.s + itSV->svEnd + consLen));
+	  if (itSV->consensus.empty()) continue;
+	  unsigned int consLen = itSV->consensus.size();
+	  if (itSV->chr2 == refIndex) {
+            // For translocations temporarily store the first reference part in the probe strings
+	    refProbes[itSV->id]=boost::to_upper_copy(std::string(seq->seq.s + itSV->svEnd - consLen, seq->seq.s + itSV->svEnd + consLen));
+	  }
+          if (itSV->chr == refIndex) {
+	    std::string sourceRight=refProbes[itSV->id];
+	    refProbes[itSV->id]="";
+	    std::string sourceLeft=boost::to_upper_copy(std::string(seq->seq.s + itSV->svStart - consLen, seq->seq.s + itSV->svStart + consLen));
 	    std::string cons=boost::to_upper_copy(itSV->consensus);
 	    for (unsigned int kmerLength=11; kmerLength<MAXKMERLENGTH; kmerLength+=2) {
 	      unsigned int minReqHammingDist = (unsigned int) (kmerLength * 0.3);
 	      typedef boost::unordered_set<uint64_t> TKmerSet;
 	      TKmerSet refKmerSet;
+	      std::string refLeft=sourceLeft;
+	      std::string refRight=sourceRight;
 	      _getKmers(refLeft, refKmerSet, kmerLength, 4);
 	      _getKmers(refRight, refKmerSet, kmerLength, 4);
 	      typedef boost::unordered_set<std::string> TUniqueKmers;
@@ -211,8 +221,8 @@ inline void
 		TKmerSet consKmerSet;
 		_getKmers(cons, consKmerSet, kmerLength, 4);
 		TUniqueKmers uniqueRefKmers;
-		refLeft=boost::to_upper_copy(std::string(seq->seq.s + itSV->svStart - kmerLength, seq->seq.s + itSV->svStart + kmerLength));
-		refRight=boost::to_upper_copy(std::string(seq->seq.s + itSV->svEnd - kmerLength, seq->seq.s + itSV->svEnd + kmerLength));
+		refLeft=refLeft.substr(refLeft.size()/2 - kmerLength, 2*kmerLength);
+		refRight=refRight.substr(refRight.size()/2 - kmerLength, 2*kmerLength);
 		_getUniqueKmers(refLeft, consKmerSet, uniqueRefKmers, kmerLength, 4);
 		_getUniqueKmers(refRight, consKmerSet, uniqueRefKmers, kmerLength, 4);
 		unsigned int maxRefHammingDistance=0;
