@@ -1184,7 +1184,7 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
       else abCountMapIt=abCountMapItLeft;
       TMapqVector mapqRef;
       TMapqVector mapqAlt;
-      if ((svIter->precise) && ((jctCountMapIt->second.first.size()) || (jctCountMapIt->second.second.size()))) {
+      if (svIter->precise) {
 	// Genotyping for precise events uses junction read qualities
 	mapqRef = jctCountMapIt->second.first;
 	mapqAlt = jctCountMapIt->second.second;

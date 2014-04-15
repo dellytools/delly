@@ -41,6 +41,24 @@ namespace torali {
 
   unsigned int const MAXKMERLENGTH=32;
 
+inline std::string
+  _reverseComplement(std::string const& ref) {
+  std::string rev=ref;
+  std::string::const_reverse_iterator itR = ref.rbegin();
+  std::string::const_reverse_iterator itREnd = ref.rend();
+  for(unsigned int i = 0; itR!=itREnd; ++itR, ++i) {
+    switch (*itR) {
+    case 'A': rev[i]='T'; break;
+    case 'C': rev[i]='G'; break;
+    case 'G': rev[i]='C'; break;
+    case 'T': rev[i]='A'; break;
+    case 'N': rev[i]='N'; break;
+    default: break;
+    }
+  }
+  return rev;
+}
+
 
   template<typename TReference, typename TKmer>
 inline unsigned int
@@ -58,7 +76,7 @@ inline unsigned int
 
   template<typename TReference, typename TKmerSet>
 inline void
-    _getKmers(TReference const& ref, TKmerSet& kmerSet, uint64_t kmerLength, uint64_t alphsize) {
+    __getKmers(TReference const& ref, TKmerSet& kmerSet, uint64_t kmerLength, uint64_t alphsize) {
     char currentk[MAXKMERLENGTH];
     for(unsigned int i = 0; i<MAXKMERLENGTH; ++i) currentk[i] = 0;
     uint64_t kmerlen=0;
@@ -81,6 +99,13 @@ inline void
       }
     }
     if (kmerlen == kmerLength) kmerSet.insert(bucket);
+  }
+
+  template<typename TReference, typename TKmerSet>
+inline void
+    _getKmers(TReference const& ref, TKmerSet& kmerSet, uint64_t kmerLength, uint64_t alphsize) {
+    __getKmers(ref,kmerSet, kmerLength, alphsize);
+    __getKmers(_reverseComplement(ref),kmerSet, kmerLength, alphsize);
   }
 
   template<typename TReference, typename TKmerSet, typename TUniqueKmer>
@@ -183,12 +208,13 @@ inline void
 	      }
 	      if (maxHammingDistance) {
 		// Found suitable kmer
-		unsigned int offsetKmer = std::min(kmerLength, consLen/2);
-		std::string localRef=boost::to_upper_copy(std::string(seq->seq.s + itSV->svStart - offsetKmer, seq->seq.s + itSV->svStart + offsetKmer)) + boost::to_upper_copy(std::string(seq->seq.s + itSV->svEnd - offsetKmer, seq->seq.s + itSV->svEnd + offsetKmer));
 		TKmerSet consKmerSet;
 		_getKmers(cons, consKmerSet, kmerLength, 4);
 		TUniqueKmers uniqueRefKmers;
-		_getUniqueKmers(localRef, consKmerSet, uniqueRefKmers, kmerLength, 4);
+		refLeft=boost::to_upper_copy(std::string(seq->seq.s + itSV->svStart - kmerLength, seq->seq.s + itSV->svStart + kmerLength));
+		refRight=boost::to_upper_copy(std::string(seq->seq.s + itSV->svEnd - kmerLength, seq->seq.s + itSV->svEnd + kmerLength));
+		_getUniqueKmers(refLeft, consKmerSet, uniqueRefKmers, kmerLength, 4);
+		_getUniqueKmers(refRight, consKmerSet, uniqueRefKmers, kmerLength, 4);
 		unsigned int maxRefHammingDistance=0;
 		std::string maxRefHammingKmer="";
 		if (uniqueRefKmers.size()) {
@@ -205,9 +231,7 @@ inline void
 		  //std::cerr << "RefLeft: " << refLeft << std::endl;
 		  //std::cerr << "RefRight: " << refRight << std::endl;
 		  //std::cerr << "Contig: " << cons << std::endl;
-		  //std::cerr << "kmer: " << kmerLength << std::endl;
-		  //std::cerr << maxHammingKmer << ',' << maxHammingDistance << std::endl;
-		  //std::cerr << maxRefHammingKmer << ',' << maxRefHammingDistance << std::endl;
+		  //std::cerr << itSV->id << ',' << kmerLength << ',' << maxRefHammingKmer << ',' << maxRefHammingDistance << ',' << maxHammingKmer << ',' << maxHammingDistance << std::endl;
 		  altProbes[itSV->id]=maxHammingKmer;
 		  refProbes[itSV->id]=maxRefHammingKmer;
 		  break;
@@ -273,7 +297,9 @@ inline void
 		      std::string::size_type altKmerPos;
 		      std::string::size_type refKmerPos;
 		      altKmerPos = al.QueryBases.find(altKmer);
+		      if (altKmerPos==al.QueryBases.npos) altKmerPos = al.QueryBases.find(_reverseComplement(altKmer));
 		      refKmerPos = al.QueryBases.find(refKmer);
+		      if (refKmerPos==al.QueryBases.npos) refKmerPos = al.QueryBases.find(_reverseComplement(refKmer));
 		      if ((altKmerPos!=al.QueryBases.npos) || (refKmerPos!=al.QueryBases.npos)) {
 			if ((altKmerPos!=al.QueryBases.npos) && (refKmerPos==al.QueryBases.npos)) {
 			  altKmerCount.push_back(al.MapQuality);
