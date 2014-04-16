@@ -5,6 +5,7 @@ import vcf
 import argparse
 import numpy
 import banyan
+import gzip
 
 
 #Functions
@@ -62,9 +63,13 @@ if args.ratioGeno:
 # Collect high-quality SVs
 sv = dict()
 if args.vcfFile:
-    vcf_reader = vcf.Reader(open(args.vcfFile), 'r')
+    vcfIn = gzip.open(args.vcfFile) if args.vcfFile.endswith('.gz') else open(args.vcfFile)
+    vcf_reader = vcf.Reader(vcfIn)
     for record in vcf_reader:
         if (record.INFO['SVLEN'] >= minSize) and (record.INFO['SVLEN'] <= maxSize) and ((not args.siteFilter) or (len(record.FILTER) == 0)):
+            precise = False
+            if ('PRECISE' in record.INFO.keys()):
+                precise = record.INFO['PRECISE']
             gqRef = []
             gqAlt = []
             ratioRef = [0]
@@ -75,14 +80,20 @@ if args.vcfFile:
             for call in record.samples:
                 if (call.called):
                     if call.gt_type == 0:
-                        ratioRef.append(float(call['DV'])/float(call['DR'] + call['DV']))
-                        if (call['DV'] == 0):
+                        if precise:
+                            ratioRef.append(float(call['RV'])/float(call['RR'] + call['RV']))
+                        else:
+                            ratioRef.append(float(call['DV'])/float(call['DR'] + call['DV']))
+                        if ((precise) and (call['RV'] == 0)) or ((not precise) and (call['DV'] == 0)):
                             gqRef.append(call['GQ'])
                     if call.gt_type != 0:
-                        ratioAlt.append(float(call['DV'])/float(call['DR'] + call['DV']))
+                        if precise:
+                            ratioAlt.append(float(call['RV'])/float(call['RR'] + call['RV']))
+                        else:
+                            ratioAlt.append(float(call['DV'])/float(call['DR'] + call['DV']))
                         if (not carrierSample) and (call.sample == sampleID):
                             carrierSample = True
-                        if (call['DV'] >= 2):
+                        if ((precise) and (call['RV'] >= 2)) or ((not precise) and (call['DV'] >= 2)):
                             gqAlt.append(call['GQ'])
             genotypeRatio = float(len(gqAlt)+len(gqRef)) /  float(len(record.samples))
             if (carrierSample) and (genotypeRatio>ratioGeno):
