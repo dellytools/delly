@@ -330,7 +330,7 @@ template<typename TConfig, typename TStructuralVariantRecord, typename TReadSet,
 inline
 void searchSplit(TConfig const& c, TStructuralVariantRecord& sv, std::string const& svRefStr, TReadSet const& splitReadSet, SVType<TTag> svType) {
   // Index SV reference
-  typedef Index<int, int,  char, 11, 4> TIndex;
+  typedef Index<int64_t, uint64_t,  char, 11, 4> TIndex;
   TIndex index;
   index.indexSequence(svRefStr);
 
@@ -770,7 +770,7 @@ void searchSplit(TConfig const& c, TStructuralVariantRecord& sv, std::string con
 	double quality = (double) maxScore / (double) (matchScore * leftWalky + matchScore * (consLen - rightWalky + 1));
 
 	// Valid breakpoint?
-	if ((!invalidAlignment) && (readAlignCount >= c.minimumSplitRead) && (leftWalky >= c.minimumFlankSize) && ((consLen - rightWalky) >= c.minimumFlankSize) && (std::abs(((double) predictedLength / (double) initialLength) - 1.0) <= c.epsilon) && (quality >= (double) c.flankQuality / 100.0)) {
+	if ((!invalidAlignment) && (readAlignCount >= c.minimumSplitRead) && (leftWalky >= c.minimumFlankSize) && ((consLen - rightWalky) >= c.minimumFlankSize) && (std::abs(((double) predictedLength / (double) initialLength) - 1.0) <= c.epsilon) && (quality >= (double) c.flankQuality / 100.0) && (abs(sv.svStart- (int) finalGapStart)<=std::max(sv.wiggle, 50)) && (abs(sv.svEnd - (int) finalGapEnd)<=std::max(sv.wiggle, 50))) {
 	  sv.precise=true;
 	  sv.svStart=finalGapStart;
 	  sv.svEnd=finalGapEnd;

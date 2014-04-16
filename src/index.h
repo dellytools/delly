@@ -50,7 +50,7 @@ namespace torali {
 
 
 
-  template<typename TGenomicPos, typename TUSize64, typename TAlphabet, unsigned int KMER, unsigned int ALPHSIZE>
+  template<typename TGenomicPos, typename TUSize64, typename TAlphabet, uint64_t KMER, uint64_t ALPHSIZE>
     struct Index {
       enum { kmer_size = KMER, alph_size = ALPHSIZE };
 
@@ -87,32 +87,28 @@ namespace torali {
 	for(TUSize64 i = 0; i <= (TUSize64) power<ALPHSIZE, KMER>::value; ++i) kt[i] = 0;
 
 	// Current kmer
-	unsigned int currentk[KMER];
+	char currentk[KMER];
 	for(unsigned int i = 0; i<KMER; ++i) currentk[i] = 0;
 
 	// Count kmer's
 	typename TSequence::const_iterator refSeqIt = refSequence.begin();
 	typename TSequence::const_iterator refSeqItEnd = refSequence.end();
-	TGenomicPos seqSize = 0;
 	TUSize64 bucket = 0;
-	unsigned int ch = 0;
-	unsigned int kmerlen = 0;
-	for(;refSeqIt != refSeqItEnd; ++refSeqIt) {
-	  ch = dna5_encode[(int) *refSeqIt];
-	  if (ch != 4) {
+	TUSize64 kmerlen = 0;
+	for(TUSize64 seqIndex=0;refSeqIt != refSeqItEnd; ++refSeqIt, ++seqIndex) {
+	  if (dna5_encode[(int) *refSeqIt] != 4) {
 	    if (kmerlen == KMER) {
 	      ++kt[bucket];
-	      bucket -= currentk[seqSize % KMER] * (TUSize64) power<ALPHSIZE, KMER - 1>::value;
-	      bucket *= ALPHSIZE;
-	      bucket += ch;
-	    } else bucket += ch * (TUSize64) std::pow((double) ALPHSIZE, (int) (KMER - (++kmerlen) ));
-	    currentk[seqSize % KMER] = ch;
+	      bucket -= ((TUSize64) currentk[seqIndex % KMER] * (TUSize64) power<ALPHSIZE, KMER - 1>::value);
+	      bucket *= (TUSize64) ALPHSIZE;
+	      bucket += (TUSize64) dna5_encode[(int) *refSeqIt];
+	    } else bucket += ((TUSize64) dna5_encode[(int) *refSeqIt] * (TUSize64) std::pow((TUSize64) ALPHSIZE, (TUSize64) KMER - (++kmerlen)));
+	    currentk[seqIndex % KMER] = dna5_encode[(int) *refSeqIt];
 	  } else {
 	    // Handle N's properly
 	    if (kmerlen == KMER) ++kt[bucket];
 	    kmerlen = bucket = 0;
 	  }
-	  ++seqSize;
 	}
 	if (kmerlen == KMER) ++kt[bucket];
 
@@ -133,30 +129,27 @@ namespace torali {
 	}
 	
 	// Populate hit list
-	seqSize = 0;
 	bucket = 0;
-	ch = 0;
 	kmerlen = 0;
 	refSeqIt = refSequence.begin();
 	refSeqItEnd = refSequence.end();
-	for(;refSeqIt != refSeqItEnd; ++refSeqIt) {
-	  ch = dna5_encode[(int) *refSeqIt];
-	  if (ch != 4) {
+	TUSize64 seqIndex=0;
+	for(;refSeqIt != refSeqItEnd; ++refSeqIt, ++seqIndex) {
+	  if (dna5_encode[(int) *refSeqIt] != 4) {
 	    if (kmerlen == KMER) {
-	      hit[kt[bucket]++] = seqSize - KMER;
-	      bucket -= currentk[seqSize % KMER] * (TUSize64) power<ALPHSIZE, KMER - 1>::value;
-	      bucket *= ALPHSIZE;
-	      bucket += ch;
-	    } else bucket += ch * (TUSize64) std::pow((double) ALPHSIZE, (int) (KMER - (++kmerlen) ));
-	    currentk[seqSize % KMER] = ch;
+	      hit[kt[bucket]++] = seqIndex - KMER;
+	      bucket -= ((TUSize64) currentk[seqIndex % KMER] * (TUSize64) power<ALPHSIZE, KMER - 1>::value);
+	      bucket *= (TUSize64) ALPHSIZE;
+	      bucket += (TUSize64) dna5_encode[(int) *refSeqIt];
+	    } else bucket += ((TUSize64) dna5_encode[(int) *refSeqIt] * (TUSize64) std::pow((TUSize64) ALPHSIZE, (TUSize64) KMER - (++kmerlen)));
+	    currentk[seqIndex % KMER] = dna5_encode[(int) *refSeqIt];
 	  } else {
 	    // Handle N's properly
-	    if (kmerlen == KMER) hit[kt[bucket]++] = seqSize - KMER;
+	    if (kmerlen == KMER) hit[kt[bucket]++] = seqIndex - KMER;
 	    kmerlen = bucket = 0;
 	  }
-	  ++seqSize;
 	}
-	if (kmerlen == KMER) hit[kt[bucket]++] = seqSize - KMER;
+	if (kmerlen == KMER) hit[kt[bucket]++] = seqIndex - KMER;
 
 	// Reset all the pointers
 	TGenomicPos newPos = kt[0];
@@ -173,33 +166,32 @@ namespace torali {
       inline void
       diagonalForwardKmerCount(TSeq& seq, TDiag& forward) {
 	// Current kmer
-	unsigned int currentk[KMER];
+	char currentk[KMER];
 	for(unsigned int i = 0; i<KMER; ++i) currentk[i] = 0;
 
 	// Count kmer's for forward read
-	typedef long int TGenomicDiag;
 	TUSize64 bucket = 0;
-	TGenomicDiag seqSize = 0;
-	unsigned int kmerlen = 0;
+	TUSize64 kmerlen = 0;
 	typename TSeq::const_iterator p = seq.begin();
 	typename TSeq::const_iterator pEnd = seq.end();
-	for(; p!=pEnd; ++p, ++seqSize) {
-	  if ((unsigned int) *p != 4) {
+	TUSize64 seqIndex=0;
+	for(; p!=pEnd; ++p, ++seqIndex) {
+	  if ((TUSize64) *p != 4) {
 	    if (kmerlen == KMER) {
 	      TGenomicPos itBeg = kt[bucket];
 	      TGenomicPos itEnd = kt[bucket+1];
-	      for(;itBeg != itEnd; ++itBeg) forward.push_back(std::make_pair(hit[itBeg] - (seqSize - KMER), (seqSize - KMER)));
-	      bucket -= currentk[seqSize % KMER] * (TUSize64) power<ALPHSIZE, KMER - 1>::value;
-	      bucket *= ALPHSIZE;
-	      bucket += (unsigned int) *p;
-	    } else bucket += ((unsigned int) *p) * (TUSize64) std::pow((double) ALPHSIZE, (int) (KMER - (++kmerlen) ));
-	    currentk[seqSize % KMER] = (unsigned int) *p;
+	      for(;itBeg != itEnd; ++itBeg) forward.push_back(std::make_pair(hit[itBeg] - (seqIndex - KMER), (seqIndex - KMER)));
+	      bucket -= ((TUSize64) currentk[seqIndex % KMER] * (TUSize64) power<ALPHSIZE, KMER - 1>::value);
+	      bucket *= (TUSize64) ALPHSIZE;
+	      bucket += (TUSize64) *p;
+	    } else bucket += (((TUSize64) *p) * (TUSize64) std::pow((TUSize64) ALPHSIZE, (TUSize64) KMER - (++kmerlen)));
+	    currentk[seqIndex % KMER] = *p;
 	  } else {
 	    // Handle N's properly
 	    if (kmerlen == KMER) {
 	      TGenomicPos itBeg = kt[bucket];
 	      TGenomicPos itEnd = kt[bucket+1];
-	      for(;itBeg != itEnd; ++itBeg) forward.push_back(std::make_pair(hit[itBeg] - (seqSize - KMER), (seqSize - KMER)));
+	      for(;itBeg != itEnd; ++itBeg) forward.push_back(std::make_pair(hit[itBeg] - (seqIndex - KMER), (seqIndex - KMER)));
 	    }
 	    kmerlen = bucket = 0;
 	  }
@@ -207,7 +199,7 @@ namespace torali {
 	if (kmerlen == KMER) {
 	  TGenomicPos itBeg = kt[bucket];
 	  TGenomicPos itEnd = kt[bucket+1];
-	  for(;itBeg != itEnd; ++itBeg) forward.push_back(std::make_pair(hit[itBeg] - (seqSize - KMER), (seqSize - KMER)));
+	  for(;itBeg != itEnd; ++itBeg) forward.push_back(std::make_pair(hit[itBeg] - (seqIndex - KMER), (seqIndex - KMER)));
 	}
       }
 
@@ -215,50 +207,49 @@ namespace torali {
       inline void
       diagonalReverseKmerCount(TSeq& seq, TDiag& reverse) {
 	// Current kmer
-	unsigned int currentk[KMER];
+	char currentk[KMER];
 	for(unsigned int i = 0; i<KMER; ++i) currentk[i] = 0;
 
 	// Count kmer's for forward read
-	typedef long int TGenomicDiag;
 	TUSize64 bucket = 0;
-	TGenomicDiag seqSize = 0;
-	unsigned int kmerlen = 0;
+	TUSize64 seqIndex = 0;
+	TUSize64 kmerlen = 0;
 	typename TSeq::const_iterator pEnd = seq.begin();
 	typename TSeq::const_iterator p = seq.end();
 	do {
 	  --p;
-	  unsigned int ch = 0;
-	  switch((unsigned int) *p) {
+	  char ch = 0;
+	  switch((TUSize64) *p) {
 	  case 0: ch = 3; break;
 	  case 1: ch = 2; break;
 	  case 2: ch = 1; break;
 	  case 3: ch = 0; break;
 	  }
-	  if (ch != 4) {
+	  if ((TUSize64) ch != 4) {
 	    if (kmerlen == KMER) {
 	      TGenomicPos itBeg = kt[bucket];
 	      TGenomicPos itEnd = kt[bucket+1];
-	      for(;itBeg != itEnd; ++itBeg) reverse.push_back(std::make_pair(hit[itBeg] - (seqSize - KMER), (seqSize - KMER)));
-	      bucket -= currentk[seqSize % KMER] * (TUSize64) power<ALPHSIZE, KMER - 1>::value;
-	      bucket *= ALPHSIZE;
-	      bucket += ch;
-	    } else bucket += ch * (TUSize64) std::pow((double) ALPHSIZE, (int) (KMER - (++kmerlen) ));
-	    currentk[seqSize % KMER] = ch;
+	      for(;itBeg != itEnd; ++itBeg) reverse.push_back(std::make_pair(hit[itBeg] - (seqIndex - KMER), (seqIndex - KMER)));
+	      bucket -= ((TUSize64) currentk[seqIndex % KMER] * (TUSize64) power<ALPHSIZE, KMER - 1>::value);
+	      bucket *= (TUSize64) ALPHSIZE;
+	      bucket += (TUSize64) ch;
+	    } else bucket += ((TUSize64) ch * (TUSize64) std::pow((TUSize64) ALPHSIZE, (TUSize64) KMER - (++kmerlen)));
+	    currentk[seqIndex % KMER] = ch;
 	  } else {
 	    // Handle N's properly
 	    if (kmerlen == KMER) {
 	      TGenomicPos itBeg = kt[bucket];
 	      TGenomicPos itEnd = kt[bucket+1];
-	      for(;itBeg != itEnd; ++itBeg) reverse.push_back(std::make_pair(hit[itBeg] - (seqSize - KMER), (seqSize - KMER)));
+	      for(;itBeg != itEnd; ++itBeg) reverse.push_back(std::make_pair(hit[itBeg] - (seqIndex - KMER), (seqIndex - KMER)));
 	    }
 	    kmerlen = bucket = 0;
 	  }
-	  ++seqSize;
+	  ++seqIndex;
 	} while (p!=pEnd);
 	if (kmerlen == KMER) {
 	  TGenomicPos itBeg = kt[bucket];
 	  TGenomicPos itEnd = kt[bucket+1];
-	  for(;itBeg != itEnd; ++itBeg) reverse.push_back(std::make_pair(hit[itBeg] - (seqSize - KMER), (seqSize - KMER)));
+	  for(;itBeg != itEnd; ++itBeg) reverse.push_back(std::make_pair(hit[itBeg] - (seqIndex - KMER), (seqIndex - KMER)));
 	}
       }
 
