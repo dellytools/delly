@@ -27,6 +27,8 @@ Contact: Tobias Rausch (rausch@embl.de)
 namespace torali
 {
 
+  std::string dellyVersionNumber = "0.5.2";
+
   inline 
     void printTitle(std::string const& title) 
     {
@@ -36,7 +38,7 @@ namespace torali
       std::cout << "certain conditions (GPL); for license details use '-l'." << std::endl;
       std::cout << "This program comes with ABSOLUTELY NO WARRANTY; for details use '-w'." << std::endl;
       std::cout <<  std::endl;
-      std::cout <<  title << " (Version: 0.5.1)" << std::endl;
+      std::cout <<  title << " (Version: " << dellyVersionNumber << ")" << std::endl;
       std::cout << "Contact: Tobias Rausch (rausch@embl.de)" << std::endl;
       std::cout << "**********************************************************************" << std::endl;
       std::cout << std::endl;

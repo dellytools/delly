@@ -75,6 +75,7 @@ using namespace torali;
 // Config arguments
 struct Config {
   unsigned short minMapQual;
+  unsigned short minGenoQual;
   unsigned short madCutoff;
   unsigned int minimumFlankSize;
   unsigned int minimumSplitRead;
@@ -770,7 +771,7 @@ void searchSplit(TConfig const& c, TStructuralVariantRecord& sv, std::string con
 	double quality = (double) maxScore / (double) (matchScore * leftWalky + matchScore * (consLen - rightWalky + 1));
 
 	// Valid breakpoint?
-	if ((!invalidAlignment) && (readAlignCount >= c.minimumSplitRead) && (leftWalky >= c.minimumFlankSize) && ((consLen - rightWalky) >= c.minimumFlankSize) && (std::abs(((double) predictedLength / (double) initialLength) - 1.0) <= c.epsilon) && (quality >= (double) c.flankQuality / 100.0) && (abs(sv.svStart- (int) finalGapStart)<=std::max(sv.wiggle, 50)) && (abs(sv.svEnd - (int) finalGapEnd)<=std::max(sv.wiggle, 50))) {
+	if ((!invalidAlignment) && (readAlignCount >= c.minimumSplitRead) && (leftWalky >= c.minimumFlankSize) && ((consLen - rightWalky) >= c.minimumFlankSize) && (std::abs(((double) predictedLength / (double) initialLength) - 1.0) <= c.epsilon) && (quality >= (double) c.flankQuality / 100.0)) {
 	  sv.precise=true;
 	  sv.svStart=finalGapStart;
 	  sv.svEnd=finalGapEnd;
@@ -1148,7 +1149,7 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
     else ofile << "IMPRECISE;";
     ofile << "CIEND=" << -svIter->wiggle << "," << svIter->wiggle << ";CIPOS=" << -svIter->wiggle << "," << svIter->wiggle << ";";
     ofile << "SVTYPE=" << _addID(svType) << ";";
-    ofile << "SVMETHOD=EMBL.DELLY;";
+    ofile << "SVMETHOD=EMBL.DELLYv" << dellyVersionNumber << ";";
     ofile << "CHR2=" << references[svIter->chr2].RefName << ";";
     ofile << "END=" << svIter->svEnd << ";";
     if (svIter->chr == svIter->chr2) ofile << "SVLEN=" << (svIter->svEnd - svIter->svStart) << ";";
@@ -1379,37 +1380,7 @@ findPutativeSplitReads(TConfig const& c, std::vector<TStructuralVariantRecord>& 
   if ( ! reader.Open(c.files[0].string())) return -1;
   BamTools::RefVector references = reader.GetReferenceData();
 
-  // Collect good quality single-anchored reads from all samples
-  typedef boost::unordered_map<std::size_t, std::string> TSingleMap;
-  TSingleMap singleAnchored;
-  #pragma omp parallel for default(shared)
-  for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
-    BamTools::BamReader reader;
-    reader.Open(c.files[file_c].string());
-    BamTools::BamAlignment al;
-    while( reader.GetNextAlignmentCore(al) ) {
-      // Read unmapped and paired-end partner is mapped
-      if ((al.AlignmentFlag & 0x0004) && (al.AlignmentFlag & 0x0001) && !(al.AlignmentFlag & 0x0008) && !(al.AlignmentFlag & 0x0100) && !(al.AlignmentFlag & 0x0200) && !(al.AlignmentFlag & 0x0400) && !(al.AlignmentFlag & 0x0800) && (al.Position!=al.MatePosition)) {
-	// Check qualities
-	al.BuildCharData();
-	std::string::const_iterator qIter= al.Qualities.begin();
-	int meanQual = 0;
-	for(;qIter!=al.Qualities.end();++qIter) meanQual+=static_cast<int>(*qIter);
-	meanQual /= al.Length;
-	meanQual -=33;
-	if (meanQual >= 20) {
-	  #pragma omp critical
-	  {
-	    boost::hash<std::string> hashStr;
-	    singleAnchored.insert(std::make_pair(hashStr(al.Name), al.QueryBases));
-	  }
-	}
-      }
-    }
-  }
-  //std::cout << "Num. single-anchored reads: " << singleAnchored.size() << std::endl;
-
-  // Parse genome
+  // Parse genome, no single-anchored reads anymore only soft-clipped reads
   unsigned int totalSplitReadsAligned = 0;
   kseq_t *seq;
   int l;
@@ -1443,66 +1414,42 @@ findPutativeSplitReads(TConfig const& c, std::vector<TStructuralVariantRecord>& 
 	    // Find putative split reads in all samples
             #pragma omp parallel for default(shared)
 	    for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
-	      // Dummy placeholders for softclips
-	      std::vector<int> clipSizes;
-	      std::vector<int> readPositions;
-	      std::vector<int> genomePositions;
-
 	      // Initialize bam file
 	      BamTools::BamReader reader;
 	      reader.Open(c.files[file_c].string());
 	      reader.LocateIndex();
 
 	      BamTools::BamAlignment al;
-	      if ( reader.SetRegion(svIt->chr, (svIt->svStartBeg + svIt->svStart)/2, svIt->chr, (svIt->svStart + svIt->svStartEnd)/2 ) ) {
-		while (reader.GetNextAlignmentCore(al)) {
-		  if (!(al.AlignmentFlag & 0x0004) && !(al.AlignmentFlag & 0x0100) && !(al.AlignmentFlag & 0x0200) && !(al.AlignmentFlag & 0x0400) && !(al.AlignmentFlag & 0x0800)) {
-		    al.BuildCharData();
-		    // Single-anchored read?
-		    if ((al.AlignmentFlag & 0x0001) && (al.AlignmentFlag & 0x0008)) {
-		      boost::hash<std::string> hashStr;
-		      TSingleMap::const_iterator singleIt = singleAnchored.find(hashStr(al.Name));
-		      if (singleIt!=singleAnchored.end()) {
-			#pragma omp critical
-			{
-			  splitReadSet.insert(singleIt->second);
-			}
-		      }
-		    }
-		    // Clipped read or large edit distance
-		    unsigned int editDistance = 0;
-		    al.GetTag("NM", editDistance);
-		    if ((editDistance>10) || (al.GetSoftClips(clipSizes, readPositions, genomePositions, false))) {
-		      #pragma omp critical
-		      {
-			splitReadSet.insert(al.QueryBases);
-		      }
-		    }
-		  }
+	      for (unsigned int bpPoint = 0; bpPoint<2; ++bpPoint) {
+		int32_t regionChr = svIt->chr;
+		int regionStart = (svIt->svStartBeg + svIt->svStart)/2;
+		int regionEnd = (svIt->svStart + svIt->svStartEnd)/2;
+		if (bpPoint == 1) {
+		  regionChr = svIt->chr2;
+		  regionStart = (svIt->svEndBeg + svIt->svEnd)/2;
+		  regionEnd = (svIt->svEnd + svIt->svEndEnd)/2;
 		}
-	      }
-	      if ( reader.SetRegion(svIt->chr2, (svIt->svEndBeg + svIt->svEnd)/2, svIt->chr2, (svIt->svEnd + svIt->svEndEnd)/2 ) ) {
-		while (reader.GetNextAlignmentCore(al)) {
-		  if (!(al.AlignmentFlag & 0x0004) && !(al.AlignmentFlag & 0x0100) && !(al.AlignmentFlag & 0x0200) && !(al.AlignmentFlag & 0x0400) && !(al.AlignmentFlag & 0x0800)) {
-		    al.BuildCharData();
-		    // Single-anchored read?
-		    if ((al.AlignmentFlag & 0x0001) && (al.AlignmentFlag & 0x0008)) {
-		      boost::hash<std::string> hashStr;
-		      TSingleMap::const_iterator singleIt = singleAnchored.find(hashStr(al.Name));
-		      if (singleIt!=singleAnchored.end()) {
+		if (reader.SetRegion(regionChr, regionStart, regionChr, regionEnd)) {
+		  while (reader.GetNextAlignmentCore(al)) {
+		    if (al.RefID != refIndex) break;
+		    if (!(al.AlignmentFlag & 0x0004) && !(al.AlignmentFlag & 0x0100) && !(al.AlignmentFlag & 0x0200) && !(al.AlignmentFlag & 0x0400) && !(al.AlignmentFlag & 0x0800)) {
+		      // Clipped read
+		      typedef std::vector<int> TIntVector;
+		      TIntVector clipSizes;
+		      TIntVector readPositions;
+		      TIntVector genomePositions;
+		      bool hasSoftClips = al.GetSoftClips(clipSizes, readPositions, genomePositions, false);
+		      // Exactly one soft clip
+		      if ((hasSoftClips) && (clipSizes.size()==1)) {
+			// Get the sequence
+			al.BuildCharData();
+			  
+			// Minimum clip size length fulfilled?
+			int minClipSize = (int) (log10(al.QueryBases.size()) * 10);
                         #pragma omp critical
 			{
-			  splitReadSet.insert(singleIt->second);
+			  if (clipSizes[0]>=minClipSize) splitReadSet.insert(al.QueryBases);
 			}
-		      }
-		    }
-		    // Clipped read or large edit distance
-		    unsigned int editDistance = 0;
-		    al.GetTag("NM", editDistance);
-		    if ((editDistance>10) || (al.GetSoftClips(clipSizes, readPositions, genomePositions, false))) {
-		      #pragma omp critical
-		      {
-			splitReadSet.insert(al.QueryBases);
 		      }
 		    }
 		  }
@@ -1708,20 +1655,20 @@ _updateClique(TBamRecordIterator const& el, TSize& svStart, TSize& svEnd, TSize&
 }
 
 
-template<typename TFiles, typename TGenome, typename TSampleLibrary, typename TSVs, typename TCountMap, typename TTag>
+template<typename TConfig, typename TSampleLibrary, typename TSVs, typename TCountMap, typename TTag>
 inline void
-_annotateJunctionReads(TFiles const& files, TGenome const& genome, TSampleLibrary& sampleLib, TSVs& svs, TCountMap& junctionCountMap, SVType<TTag>) 
+_annotateJunctionReads(TConfig const& c, TSampleLibrary& sampleLib, TSVs& svs, TCountMap& junctionCountMap, SVType<TTag>) 
 {
-  annotateJunctionReads(files, genome, 20, sampleLib, svs, junctionCountMap);
+  annotateJunctionReads(c.files, c.genome, c.minGenoQual, sampleLib, svs, junctionCountMap);
 }
 
 
-template<typename TFiles, typename TSampleLibrary, typename TSVs, typename TCountMap, typename TTag>
+template<typename TConfig, typename TSampleLibrary, typename TSVs, typename TCountMap, typename TTag>
 inline void
-_annotateCoverage(TFiles const& files, TSampleLibrary& sampleLib, TSVs& svs, TCountMap& countMap, SVType<TTag>) 
+_annotateCoverage(TConfig const& c, TSampleLibrary& sampleLib, TSVs& svs, TCountMap& countMap, SVType<TTag>) 
 {
   typedef typename TSampleLibrary::mapped_type TLibraryMap;
-  annotateCoverage(files, 20, false, sampleLib, svs, countMap, SingleHit<int32_t, void>(), CoverageType<RedundancyFilterTag>());
+  annotateCoverage(c.files, c.minGenoQual, false, sampleLib, svs, countMap, SingleHit<int32_t, void>(), CoverageType<RedundancyFilterTag>());
   boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
   std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Library statistics" << std::endl;
   typename TSampleLibrary::const_iterator sampleIt=sampleLib.begin();
@@ -1734,19 +1681,19 @@ _annotateCoverage(TFiles const& files, TSampleLibrary& sampleLib, TSVs& svs, TCo
   }
 }
 
-template<typename TFiles, typename TSampleLibrary, typename TSVs, typename TCountMap>
+template<typename TConfig, typename TSampleLibrary, typename TSVs, typename TCountMap>
 inline void
-_annotateCoverage(TFiles const&, TSampleLibrary&, TSVs&, TCountMap&, SVType<TranslocationTag>) 
+_annotateCoverage(TConfig const&, TSampleLibrary&, TSVs&, TCountMap&, SVType<TranslocationTag>) 
 {
   //Nop
 }
 
-template<typename TFiles, typename TSampleLibrary, typename TSVs, typename TCountMap, typename TTag>
+template<typename TConfig, typename TSampleLibrary, typename TSVs, typename TCountMap, typename TTag>
 inline void
-_annotateSpanningCoverage(TFiles const& files, TSampleLibrary& sampleLib, TSVs& svs, TCountMap& normalCountMap, TCountMap& abnormalCountMap, SVType<TTag> svType) 
+_annotateSpanningCoverage(TConfig const& c, TSampleLibrary& sampleLib, TSVs& svs, TCountMap& normalCountMap, TCountMap& abnormalCountMap, SVType<TTag> svType) 
 {
   typedef typename TSampleLibrary::mapped_type TLibraryMap;
-  annotateSpanningCoverage(files, 0, 20, sampleLib, svs, normalCountMap, abnormalCountMap, HitInterval<int32_t, uint16_t>(), svType);
+  annotateSpanningCoverage(c.files, 0, c.minGenoQual, sampleLib, svs, normalCountMap, abnormalCountMap, HitInterval<int32_t, uint16_t>(), svType);
   boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
   std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Library statistics" << std::endl;
   typename TSampleLibrary::const_iterator sampleIt=sampleLib.begin();
@@ -2171,20 +2118,20 @@ inline int run(Config const& c, TSVType svType) {
   typedef boost::unordered_map<TSampleSVPair, TJunctionReadQual> TJunctionCountMap;
   TJunctionCountMap junctionCountMap;
   if (boost::filesystem::exists(c.genome) && boost::filesystem::is_regular_file(c.genome) && boost::filesystem::file_size(c.genome))
-    _annotateJunctionReads(c.files, c.genome, sampleLib, svs, junctionCountMap, svType);
+    _annotateJunctionReads(c, sampleLib, svs, junctionCountMap, svType);
 
   // Annotate spanning coverage
   typedef std::vector<std::vector<uint16_t> > TCountRange;
   typedef boost::unordered_map<TSampleSVPair, TCountRange> TCountMap;
   TCountMap normalCountMap;
   TCountMap abnormalCountMap;
-  _annotateSpanningCoverage(c.files, sampleLib, svs, normalCountMap, abnormalCountMap, svType);
+  _annotateSpanningCoverage(c, sampleLib, svs, normalCountMap, abnormalCountMap, svType);
 
   // Annotate coverage
   typedef std::pair<int, int> TBpRead;
   typedef boost::unordered_map<TSampleSVPair, TBpRead> TReadCountMap;
   TReadCountMap readCountMap;
-  _annotateCoverage(c.files, sampleLib, svs, readCountMap, svType);
+  _annotateCoverage(c, sampleLib, svs, readCountMap, svType);
 
   // VCF output
   if (svs.size()) {
@@ -2210,7 +2157,6 @@ int main(int argc, char **argv) {
   generic.add_options()
     ("help,?", "show help message")
     ("type,t", boost::program_options::value<std::string>(&c.svType)->default_value("DEL"), "SV analysis type (DEL, DUP, INV, TRA)")
-    ("genome,g", boost::program_options::value<boost::filesystem::path>(&c.genome), "genome fasta file")
     ("outfile,o", boost::program_options::value<boost::filesystem::path>(&c.outfile)->default_value("sv.vcf"), "SV output file")
     ("exclude,x", boost::program_options::value<boost::filesystem::path>(&c.exclude)->default_value(""), "file with chr to exclude")
     ;
@@ -2221,18 +2167,24 @@ int main(int argc, char **argv) {
     ("mad-cutoff,s", boost::program_options::value<unsigned short>(&c.madCutoff)->default_value(5), "insert size cutoff, median+s*MAD (deletions only)")
     ;
 
-  boost::program_options::options_description breaks("SR breakpoint options");
+  boost::program_options::options_description breaks("SR options");
   breaks.add_options()
+    ("genome,g", boost::program_options::value<boost::filesystem::path>(&c.genome), "genome fasta file")
     ("min-flank,m", boost::program_options::value<unsigned int>(&c.minimumFlankSize)->default_value(13), "minimum flanking sequence size")
-    ("epsilon,e", boost::program_options::value<float>(&c.epsilon)->default_value(0.1), "allowed epsilon deviation of PE vs. SR deletion")
+    ;
+
+  boost::program_options::options_description geno("Genotyping options");
+  geno.add_options()
+    ("vcfgeno,v", boost::program_options::value<boost::filesystem::path>(&c.vcffile)->default_value("site.vcf"), "input vcf file for genotyping only")
+    ("geno-qual,u", boost::program_options::value<unsigned short>(&c.minGenoQual)->default_value(20), "min. mapping quality for genotyping")
     ;
 
   // Define hidden options
   boost::program_options::options_description hidden("Hidden options");
   hidden.add_options()
     ("input-file", boost::program_options::value< std::vector<boost::filesystem::path> >(&c.files), "input file")
+    ("epsilon,e", boost::program_options::value<float>(&c.epsilon)->default_value(0.1), "allowed epsilon deviation of PE vs. SR deletion")
     ("pe-fraction,c", boost::program_options::value<float>(&c.percentAbnormal)->default_value(0.0), "fixed fraction c of discordant PEs, for c=0 MAD cutoff is used")
-    ("vcfgeno,v", boost::program_options::value<boost::filesystem::path>(&c.vcffile)->default_value(""), "input vcf file for genotyping only")
     ("num-split,n", boost::program_options::value<unsigned int>(&c.minimumSplitRead)->default_value(2), "minimum number of splitted reads")
     ("flanking,f", boost::program_options::value<unsigned int>(&c.flankQuality)->default_value(80), "quality of the aligned flanking region")
     ("pruning,j", boost::program_options::value<unsigned int>(&c.graphPruning)->default_value(100), "PE graph pruning cutoff")
@@ -2245,9 +2197,9 @@ int main(int argc, char **argv) {
 
   // Set the visibility
   boost::program_options::options_description cmdline_options;
-  cmdline_options.add(generic).add(pem).add(breaks).add(hidden);
+  cmdline_options.add(generic).add(pem).add(breaks).add(geno).add(hidden);
   boost::program_options::options_description visible_options;
-  visible_options.add(generic).add(pem).add(breaks);
+  visible_options.add(generic).add(pem).add(breaks).add(geno);
   boost::program_options::variables_map vm;
   boost::program_options::store(boost::program_options::command_line_parser(argc, argv).options(cmdline_options).positional(pos_args).run(), vm);
   boost::program_options::notify(vm);

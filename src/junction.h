@@ -239,10 +239,12 @@ inline void
 		  }
 		}
 		if (maxRefHammingDistance) {
-		  //std::cerr << "RefLeft: " << refLeft << std::endl;
-		  //std::cerr << "RefRight: " << refRight << std::endl;
+		  //std::cerr << references[itSV->chr].RefName << ',' << itSV->svStart << ',' << itSV->svEnd << std::endl;
+		  //std::cerr << "RefLeft: " << sourceLeft << std::endl;
+		  //std::cerr << "RefRight: " << sourceRight << std::endl;
 		  //std::cerr << "Contig: " << cons << std::endl;
-		  //std::cerr << itSV->id << ',' << kmerLength << ',' << maxRefHammingKmer << ',' << maxRefHammingDistance << ',' << maxHammingKmer << ',' << maxHammingDistance << std::endl;
+		  //std::cerr << "KmerLength: " << kmerLength << std::endl;
+		  //std::cerr << maxRefHammingKmer << ',' << maxRefHammingDistance << ',' << maxHammingKmer << ',' << maxHammingDistance << std::endl;
 		  altProbes[itSV->id]=maxHammingKmer;
 		  refProbes[itSV->id]=maxRefHammingKmer;
 		  break;
