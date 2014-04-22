@@ -13,7 +13,7 @@ DELLY dependencies
 * Boost C++ Libraries (www.boost.org)
 * OpenMP (www.openmp.org)
 * zlib compression library (www.zlib.net)
-* kseq library to parse FASTA/FASTQ (http://lh3lh3.users.sourceforge.net/parsefastq.shtml)
+* kseq library to parse FASTA/FASTQ (https://github.com/lh3/seqtk)
 
 
 Installing DELLY
