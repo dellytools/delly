@@ -29,6 +29,7 @@ Contact: Tobias Rausch (rausch@embl.de)
 #include "api/BamIndex.h"
 #include "api/BamAlignment.h"
 
+#include <boost/multiprecision/cpp_int.hpp>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -39,7 +40,7 @@ KSEQ_INIT(gzFile, gzread)
 
 namespace torali {
 
-  unsigned int const MAXKMERLENGTH=32;
+unsigned int const MAXKMERLENGTH=64;
 
 inline std::string
   _reverseComplement(std::string const& ref) {
@@ -62,9 +63,9 @@ inline std::string
 
   template<typename TReference, typename TKmer>
 inline unsigned int
-    _getMinHammingDistance(TReference const& ref, TKmer const& kmer) {
+    _getMinHammingDistance(TReference const& ref, TKmer const& kmer, unsigned int minReqDist) {
     unsigned int minHammingDist=kmer.size();
-    for(unsigned int seqIndex=0;seqIndex<(ref.size()-kmer.size());++seqIndex) {
+    for(unsigned int seqIndex=0;((seqIndex<(ref.size()-kmer.size())) && (minHammingDist>minReqDist));++seqIndex) {
       unsigned int hammingDist=0;
       for(unsigned int k=0;k<kmer.size();++k) 
 	if (ref[seqIndex+k]!=kmer[k]) ++hammingDist;
@@ -76,21 +77,23 @@ inline unsigned int
 
   template<typename TReference, typename TKmerSet>
 inline void
-    __getKmers(TReference const& ref, TKmerSet& kmerSet, uint64_t kmerLength, uint64_t alphsize) {
+    __getKmers(TReference const& ref, TKmerSet& kmerSet, unsigned int kmerLength, unsigned int alphsize) {
+    typedef typename TKmerSet::key_type TUSize;
+    
     char currentk[MAXKMERLENGTH];
     for(unsigned int i = 0; i<MAXKMERLENGTH; ++i) currentk[i] = 0;
-    uint64_t kmerlen=0;
-    uint64_t bucket = 0;
+    unsigned int kmerlen=0;
+    TUSize bucket = 0;
     std::string::const_iterator sIt= ref.begin();
     std::string::const_iterator sItEnd= ref.end();
     for(unsigned int seqIndex=0;sIt!=sItEnd;++sIt,++seqIndex) {
       if (*sIt!='N') {
 	if (kmerlen==kmerLength) {
 	  kmerSet.insert(bucket);
-	  bucket -= ((uint64_t) currentk[seqIndex % kmerLength] * (uint64_t) std::pow(alphsize, kmerLength - 1));
-	  bucket *= (uint64_t) alphsize;
-	  bucket += (uint64_t) dna_encode[int(*sIt)];
-	} else bucket += ((uint64_t) dna_encode[int(*sIt)] * (uint64_t) std::pow(alphsize, kmerLength - (++kmerlen)));
+	  bucket -= ((TUSize) currentk[seqIndex % kmerLength] * (TUSize) std::pow(alphsize, kmerLength - 1));
+	  bucket *= (TUSize) alphsize;
+	  bucket += (TUSize) dna_encode[int(*sIt)];
+	} else bucket += ((TUSize) dna_encode[int(*sIt)] * (TUSize) std::pow(alphsize, kmerLength - (++kmerlen)));
 	currentk[seqIndex % kmerLength] = dna_encode[int(*sIt)];
       } else {
 	if (kmerlen == kmerLength) kmerSet.insert(bucket);
@@ -103,28 +106,30 @@ inline void
 
   template<typename TReference, typename TKmerSet>
 inline void
-    _getKmers(TReference const& ref, TKmerSet& kmerSet, uint64_t kmerLength, uint64_t alphsize) {
+    _getKmers(TReference const& ref, TKmerSet& kmerSet, unsigned int kmerLength, unsigned int alphsize) {
     __getKmers(ref,kmerSet, kmerLength, alphsize);
     __getKmers(_reverseComplement(ref),kmerSet, kmerLength, alphsize);
   }
 
   template<typename TReference, typename TKmerSet, typename TUniqueKmer>
 inline void
-    _getUniqueKmers(TReference const& ref, TKmerSet const& kmerSet, TUniqueKmer& uniqueKmer, uint64_t kmerLength, uint64_t alphsize) {
+    _getUniqueKmers(TReference const& ref, TKmerSet const& kmerSet, TUniqueKmer& uniqueKmer, unsigned int kmerLength, unsigned int alphsize) {
+    typedef typename TKmerSet::key_type TUSize;
+
     char currentk[MAXKMERLENGTH];
     for(unsigned int i = 0; i<MAXKMERLENGTH; ++i) currentk[i] = 0;
-    uint64_t kmerlen=0;
-    uint64_t bucket = 0;
+    unsigned int kmerlen=0;
+    TUSize bucket = 0;
     std::string::const_iterator sIt= ref.begin();
     std::string::const_iterator sItEnd= ref.end();
     for(unsigned int seqIndex=0;sIt!=sItEnd;++sIt,++seqIndex) {
       if (*sIt!='N') {
 	if (kmerlen==kmerLength) {
 	  if (kmerSet.find(bucket)==kmerSet.end()) uniqueKmer.insert(ref.substr(seqIndex-kmerlen, kmerlen));
-	  bucket -= ((uint64_t) currentk[seqIndex % kmerLength] * (uint64_t) std::pow(alphsize, kmerLength - 1));
-	  bucket *= (uint64_t) alphsize;
-	  bucket += (uint64_t) dna_encode[int(*sIt)];
-	} else bucket += ((uint64_t) dna_encode[int(*sIt)] * (uint64_t) std::pow(alphsize, kmerLength - (++kmerlen)));
+	  bucket -= ((TUSize) currentk[seqIndex % kmerLength] * (TUSize) std::pow(alphsize, kmerLength - 1));
+	  bucket *= (TUSize) alphsize;
+	  bucket += (TUSize) dna_encode[int(*sIt)];
+	} else bucket += ((TUSize) dna_encode[int(*sIt)] * (TUSize) std::pow(alphsize, kmerLength - (++kmerlen)));
 	currentk[seqIndex % kmerLength] = dna_encode[int(*sIt)];
       } else {
 	if ((kmerlen == kmerLength) && (kmerSet.find(bucket)==kmerSet.end())) uniqueKmer.insert(ref.substr(seqIndex-kmerlen, kmerlen));
@@ -195,8 +200,8 @@ inline void
 	    std::string sourceLeft=boost::to_upper_copy(std::string(seq->seq.s + std::max(itSV->svStart - consLen, 0), seq->seq.s + itSV->svStart + consLen));
 	    std::string cons=boost::to_upper_copy(itSV->consensus);
 	    for (unsigned int kmerLength=11; kmerLength<MAXKMERLENGTH; kmerLength+=2) {
-	      unsigned int minReqHammingDist = (unsigned int) (kmerLength * 0.3);
-	      typedef boost::unordered_set<uint64_t> TKmerSet;
+	      unsigned int minReqHammingDist = (unsigned int) ((std::log(kmerLength) * std::log(kmerLength)) / std::log(4));
+	      typedef std::set<boost::multiprecision::uint128_t> TKmerSet;
 	      TKmerSet refKmerSet;
 	      std::string refLeft=sourceLeft;
 	      std::string refRight=sourceRight;
@@ -210,7 +215,7 @@ inline void
 	      if (uniqueKmers.size()) {
 		TUniqueKmers::iterator itK = uniqueKmers.begin();
 		for(;itK!=uniqueKmers.end();++itK) {
-		  unsigned int hammingDist = std::min(_getMinHammingDistance(refLeft, *itK), _getMinHammingDistance(refRight, *itK));
+		  unsigned int hammingDist = std::min(_getMinHammingDistance(refLeft, *itK, minReqHammingDist), _getMinHammingDistance(refRight, *itK, minReqHammingDist));
 		  if ((hammingDist>minReqHammingDist) && (hammingDist>maxHammingDistance)) {
 		    maxHammingDistance=hammingDist;
 		    maxHammingKmer=*itK;
@@ -222,8 +227,8 @@ inline void
 		TKmerSet consKmerSet;
 		_getKmers(cons, consKmerSet, kmerLength, 4);
 		TUniqueKmers uniqueRefKmers;
-		refLeft=refLeft.substr(std::max((int) refLeft.size()/2 - (int) kmerLength, 0), 2*kmerLength);
-		refRight=refRight.substr(std::max((int) refRight.size()/2 - (int) kmerLength, 0), 2*kmerLength);
+		refLeft=refLeft.substr(std::max((int) refLeft.size()/2 - (int) kmerLength, 0), 2 * kmerLength);
+		refRight=refRight.substr(std::max((int) refRight.size()/2 - (int) kmerLength, 0), 2 * kmerLength);
 		_getUniqueKmers(refLeft, consKmerSet, uniqueRefKmers, kmerLength, 4);
 		_getUniqueKmers(refRight, consKmerSet, uniqueRefKmers, kmerLength, 4);
 		unsigned int maxRefHammingDistance=0;
@@ -231,7 +236,7 @@ inline void
 		if (uniqueRefKmers.size()) {
 		  TUniqueKmers::iterator itK = uniqueRefKmers.begin();
 		  for(;itK!=uniqueRefKmers.end();++itK) {
-		    unsigned int hammingDist = _getMinHammingDistance(cons, *itK);
+		    unsigned int hammingDist = _getMinHammingDistance(cons, *itK, minReqHammingDist);
 		    if ((hammingDist>minReqHammingDist) && (hammingDist>maxRefHammingDistance)) {
 		      maxRefHammingDistance=hammingDist;
 		      maxRefHammingKmer=*itK;
