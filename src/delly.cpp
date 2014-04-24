@@ -74,6 +74,7 @@ using namespace torali;
 
 // Config arguments
 struct Config {
+  bool junction;
   unsigned short minMapQual;
   unsigned short minGenoQual;
   unsigned short madCutoff;
@@ -1176,16 +1177,22 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
       typename TCountMap::const_iterator countMapItRight=normalCountMap.find(sampleSVPairRight);
       typename TCountMap::const_iterator abCountMapItLeft=abnormalCountMap.find(sampleSVPairLeft);
       typename TCountMap::const_iterator abCountMapItRight=abnormalCountMap.find(sampleSVPairRight);
-      typename TCountMap::const_iterator countMapIt; 
-      typename TCountMap::const_iterator abCountMapIt;
+      typename TCountMap::const_iterator countMapIt = normalCountMap.end(); 
+      typename TCountMap::const_iterator abCountMapIt = abnormalCountMap.end();
+
       // Always take the minimum to be conservative (and to flag unclear samples as LowQual)
-      if (countMapItLeft->second[0].size() <= countMapItRight->second[0].size()) countMapIt=countMapItLeft;
-      else countMapIt=countMapItRight;
-      if ((svIter->chr != svIter->chr2) || (abCountMapItLeft->second[0].size() > abCountMapItRight->second[0].size())) abCountMapIt=abCountMapItRight;
-      else abCountMapIt=abCountMapItLeft;
+      if ((countMapItLeft!=normalCountMap.end()) && (countMapItRight!=normalCountMap.end())) {
+	if (countMapItLeft->second[0].size() <= countMapItRight->second[0].size()) countMapIt=countMapItLeft;
+	else countMapIt=countMapItRight;
+      }
+      if ((abCountMapItLeft!=abnormalCountMap.end()) && (abCountMapItRight!=abnormalCountMap.end())) {
+	if ((svIter->chr != svIter->chr2) || (abCountMapItLeft->second[0].size() > abCountMapItRight->second[0].size())) abCountMapIt=abCountMapItRight;
+	else abCountMapIt=abCountMapItLeft;
+      }
+
       TMapqVector mapqRef;
       TMapqVector mapqAlt;
-      if (svIter->precise) {
+      if ((svIter->precise) || (c.junction)) {
 	// Genotyping for precise events uses junction read qualities
 	mapqRef = jctCountMapIt->second.first;
 	mapqAlt = jctCountMapIt->second.second;
@@ -1243,8 +1250,10 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
       typename TReadCountMap::const_iterator readCountMapIt=readCountMap.find(sampleSVPairLeft);
       int rcCount = 0;
       if (readCountMapIt!=readCountMap.end()) rcCount = readCountMapIt->second.second;
-      int drCount = countMapIt->second[0].size();
-      int dvCount = abCountMapIt->second[0].size();
+      int drCount = 0;
+      int dvCount = 0;
+      if (countMapIt!=normalCountMap.end()) drCount = countMapIt->second[0].size();
+      if (abCountMapIt!=abnormalCountMap.end()) dvCount = abCountMapIt->second[0].size();
       int rrCount = 0;
       int rvCount = 0;
       if (jctCountMapIt!=jctCountMap.end()) {
@@ -2125,13 +2134,13 @@ inline int run(Config const& c, TSVType svType) {
   typedef boost::unordered_map<TSampleSVPair, TCountRange> TCountMap;
   TCountMap normalCountMap;
   TCountMap abnormalCountMap;
-  _annotateSpanningCoverage(c, sampleLib, svs, normalCountMap, abnormalCountMap, svType);
+  if (!c.junction) _annotateSpanningCoverage(c, sampleLib, svs, normalCountMap, abnormalCountMap, svType);
 
   // Annotate coverage
   typedef std::pair<int, int> TBpRead;
   typedef boost::unordered_map<TSampleSVPair, TBpRead> TReadCountMap;
   TReadCountMap readCountMap;
-  _annotateCoverage(c, sampleLib, svs, readCountMap, svType);
+  if (!c.junction) _annotateCoverage(c, sampleLib, svs, readCountMap, svType);
 
   // VCF output
   if (svs.size()) {
@@ -2188,6 +2197,7 @@ int main(int argc, char **argv) {
     ("num-split,n", boost::program_options::value<unsigned int>(&c.minimumSplitRead)->default_value(2), "minimum number of splitted reads")
     ("flanking,f", boost::program_options::value<unsigned int>(&c.flankQuality)->default_value(80), "quality of the aligned flanking region")
     ("pruning,j", boost::program_options::value<unsigned int>(&c.graphPruning)->default_value(100), "PE graph pruning cutoff")
+    ("junction-geno-only,p", "omit spanning coverage and read-depth genotyping")
     ("warranty,w", "show warranty")
     ("license,l", "show license")
     ;
@@ -2218,6 +2228,8 @@ int main(int argc, char **argv) {
     }
     return 1; 
   }
+  if (vm.count("junction-geno-only")) c.junction = true;
+  else c.junction = false;
 
   // Show cmd
   boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
