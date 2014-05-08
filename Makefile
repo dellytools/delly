@@ -2,14 +2,14 @@ DEBUG ?= 0
 PARALLEL ?= 0
 
 # External libraries
-BOOST=/g/solexa/bin/software/boost_1_53_0
-BAMTOOLS=/g/solexa/bin/software/bamtools-2.3.0/
-KSEQ=/g/solexa/bin/software/kseq/
+BOOST_ROOT ?= /g/solexa/bin/software/boost_1_53_0
+BAMTOOLS_ROOT ?= /g/solexa/bin/software/bamtools-2.3.0/
+SEQTK_ROOT ?= /g/solexa/bin/software/kseq/
 
 # Flags
 CXX=g++
-CXXFLAGS += -isystem ${BOOST}/include -isystem ${BAMTOOLS}/include -isystem ${KSEQ} -pedantic -W -Wall -Wno-unknown-pragmas
-LDFLAGS += -L${BOOST}/lib -lboost_iostreams -lboost_filesystem -lboost_system -lboost_program_options -lboost_date_time -L${BAMTOOLS}/lib -lbamtools -lz
+CXXFLAGS += -isystem ${BOOST_ROOT}/include -isystem ${BAMTOOLS_ROOT}/include -isystem ${SEQTK_ROOT} -pedantic -W -Wall -Wno-unknown-pragmas
+LDFLAGS += -L${BOOST_ROOT}/lib -lboost_iostreams -lboost_filesystem -lboost_system -lboost_program_options -lboost_date_time -L${BAMTOOLS_ROOT}/lib -lbamtools -lz
 
 # Additional flags for release/debug
 ifeq (${PARALLEL}, 1)
