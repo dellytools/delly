@@ -90,10 +90,10 @@ inline void
       if (*sIt!='N') {
 	if (kmerlen==kmerLength) {
 	  kmerSet.insert(bucket);
-	  bucket -= ((TUSize) currentk[seqIndex % kmerLength] * (TUSize) std::pow(alphsize, kmerLength - 1));
+	  bucket -= ((TUSize) currentk[seqIndex % kmerLength] * (TUSize) std::pow((long double) alphsize, (long double) kmerLength - 1));
 	  bucket *= (TUSize) alphsize;
 	  bucket += (TUSize) dna_encode[int(*sIt)];
-	} else bucket += ((TUSize) dna_encode[int(*sIt)] * (TUSize) std::pow(alphsize, kmerLength - (++kmerlen)));
+	} else bucket += ((TUSize) dna_encode[int(*sIt)] * (TUSize) std::pow((long double) alphsize, (long double) kmerLength - (++kmerlen)));
 	currentk[seqIndex % kmerLength] = dna_encode[int(*sIt)];
       } else {
 	if (kmerlen == kmerLength) kmerSet.insert(bucket);
@@ -126,10 +126,10 @@ inline void
       if (*sIt!='N') {
 	if (kmerlen==kmerLength) {
 	  if (kmerSet.find(bucket)==kmerSet.end()) uniqueKmer.insert(ref.substr(seqIndex-kmerlen, kmerlen));
-	  bucket -= ((TUSize) currentk[seqIndex % kmerLength] * (TUSize) std::pow(alphsize, kmerLength - 1));
+	  bucket -= ((TUSize) currentk[seqIndex % kmerLength] * (TUSize) std::pow((long double) alphsize, (long double) kmerLength - 1));
 	  bucket *= (TUSize) alphsize;
 	  bucket += (TUSize) dna_encode[int(*sIt)];
-	} else bucket += ((TUSize) dna_encode[int(*sIt)] * (TUSize) std::pow(alphsize, kmerLength - (++kmerlen)));
+	} else bucket += ((TUSize) dna_encode[int(*sIt)] * (TUSize) std::pow((long double) alphsize, (long double) kmerLength - (++kmerlen)));
 	currentk[seqIndex % kmerLength] = dna_encode[int(*sIt)];
       } else {
 	if ((kmerlen == kmerLength) && (kmerSet.find(bucket)==kmerSet.end())) uniqueKmer.insert(ref.substr(seqIndex-kmerlen, kmerlen));
@@ -179,7 +179,7 @@ inline void
   while ((l = kseq_read(seq)) >= 0) {
     // Find reference index
     BamTools::RefVector::const_iterator itRef = references.begin();
-    for(unsigned int refIndex=0;itRef!=references.end();++itRef, ++refIndex) {
+    for(int32_t refIndex=0;itRef!=references.end();++itRef, ++refIndex) {
       if (seq->name.s == references[refIndex].RefName) {
         ++show_progress;
 	
