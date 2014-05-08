@@ -35,6 +35,7 @@ namespace torali {
   struct DuplicationTag;
   struct InversionTag;
   struct TranslocationTag;
+  struct InsertionTag;
 
   template<typename SvTag>
     struct SVType {
@@ -172,6 +173,13 @@ namespace torali {
     }
   }
 
+  // Insertion
+  template<typename TBamRecord>
+    inline int 
+    _getSpanOrientation(TBamRecord const&, int const, SVType<InsertionTag>) {
+    return 1;
+  }
+
   // Unique paired-end data structure for single chromosome only
   struct Hit {
     int32_t minPos;
@@ -289,6 +297,13 @@ namespace torali {
     inline bool
     _mappingPos(TRef const refID, TRef const mateRefID, TPos const, TPos const, SVType<TranslocationTag>) {
     return (refID==mateRefID);
+  }
+
+  // Insertion
+  template<typename TRef, typename TPos>
+    inline bool
+    _mappingPos(TRef const refID, TRef const mateRefID, TPos const position, TPos const matePosition, SVType<InsertionTag>) {
+    return ((refID!=mateRefID) || (position==matePosition));
   }
 
   // Deletions, duplications and inversions
@@ -456,6 +471,15 @@ namespace torali {
 	}
       }
     }
+    return false;
+  }
+
+
+  // Insertions
+  template<typename TSize, typename TISize>
+    inline bool
+    _pairsDisagree(TSize const, TSize const, TSize const, TISize const, TSize const, TSize const, TSize const, TISize const, int const, int const, SVType<InsertionTag>) {
+    // ToDo
     return false;
   }
 
