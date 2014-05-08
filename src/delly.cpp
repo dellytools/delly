@@ -225,7 +225,15 @@ _betterSplit(TUSize refSize, TUSize refSizeRight, TUSize refSizeLeft, TSize oldD
 template<typename TUSize, typename TSize>
 inline bool
 _betterSplit(TUSize, TUSize, TUSize refSizeLeft, TSize oldDiag, TUSize oldOffset, TUSize, TUSize, double, TUSize support, TUSize bestSupport, int, int readLen, SVType<TranslocationTag>) {
-  return ((oldDiag < refSizeLeft) && ((oldDiag + oldOffset + readLen) > refSizeLeft) && (support > bestSupport));
+  return ((oldDiag < (TSize) refSizeLeft) && ((oldDiag + oldOffset + readLen) > refSizeLeft) && (support > bestSupport));
+}
+
+// Insertion
+template<typename TUSize, typename TSize>
+inline bool
+_betterSplit(TUSize, TUSize, TUSize, TSize, TUSize, TUSize, TUSize, double, TUSize, TUSize, int, int, SVType<InsertionTag>) {
+  //ToDo
+  return false;
 }
 
 
@@ -305,6 +313,14 @@ _translateSVCoordinates(TUSize refSize, TUSize, TUSize refSizeLeft, TSize diagBe
     finalGapStart = finalGapEnd;
     finalGapEnd = tmpStart;
   }
+  return false;
+}
+
+// Insertions
+template<typename TUSize, typename TSize, typename TBamRecord>
+inline bool
+_translateSVCoordinates(TUSize, TUSize, TUSize, TSize, TSize, TUSize, TUSize, TUSize, TBamRecord const&, TUSize&, TUSize&, TUSize&, SVType<InsertionTag>) {
+  //ToDo
   return false;
 }
 
@@ -756,7 +772,9 @@ void searchSplit(TConfig const& c, TStructuralVariantRecord& sv, std::string con
 	if (invalidAlignment) return;
 	
 	// Get the start and end of the structural variant
-	unsigned int finalGapStart, finalGapEnd, predictedLength;
+	unsigned int finalGapStart = 0;
+	unsigned int finalGapEnd = 0;
+	unsigned int predictedLength = 0;
 	invalidAlignment=_translateSVCoordinates(refSize, refSizeRight, refSizeLeft, diagBeg, diagEnd, leftRefWalky, rightRefWalky, consLen, sv, finalGapStart, finalGapEnd, predictedLength, svType);
 
 	// Count the final number of aligned reads
@@ -909,6 +927,12 @@ _decodeOrientation(std::string const ct, SVType<TranslocationTag>) {
   else return 3;
 }
 
+// Insertions
+inline int
+_decodeOrientation(std::string const, SVType<InsertionTag>) {
+  return 4;
+}
+
 // Deletions
 inline std::string
 _addID(SVType<DeletionTag>) {
@@ -931,6 +955,12 @@ _addID(SVType<InversionTag>) {
 inline std::string
 _addID(SVType<TranslocationTag>) {
   return "TRA";
+}
+
+// Insertion
+inline std::string
+_addID(SVType<InsertionTag>) {
+  return "INS";
 }
 
 // Parse Delly vcf file
@@ -1066,6 +1096,12 @@ _addOrientation(int ct, SVType<TranslocationTag>) {
   else return "5to3";
 }
 
+// Insertion
+inline std::string
+_addOrientation(int, SVType<InsertionTag>) {
+  return "NtoN";
+}
+
 
 template<typename TConfig, typename TStructuralVariantRecord, typename TJunctionCountMap, typename TReadCountMap, typename TCountMap, typename TTag>
 inline void
@@ -1093,6 +1129,7 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
   ofile << "##ALT=<ID=DUP,Description=\"Duplication\">" << std::endl;
   ofile << "##ALT=<ID=INV,Description=\"Inversion\">" << std::endl;
   ofile << "##ALT=<ID=TRA,Description=\"Translocation\">" << std::endl;
+  ofile << "##ALT=<ID=INS,Description=\"Insertion\">" << std::endl;
   ofile << "##FILTER=<ID=LowQual,Description=\"PE support below 3 or mapping quality below 20.\">" << std::endl;
   ofile << "##INFO=<ID=CIEND,Number=2,Type=Integer,Description=\"PE confidence interval around END\">" << std::endl;
   ofile << "##INFO=<ID=CIPOS,Number=2,Type=Integer,Description=\"PE confidence interval around POS\">" << std::endl;
@@ -1378,6 +1415,14 @@ _getSVRef(TSeq const* const ref, TSVRecord const& svRec, TRef const refIndex, SV
   return "";
 }
 
+// Insertions
+template<typename TSeq, typename TSVRecord, typename TRef>
+inline std::string
+_getSVRef(TSeq const* const ref, TSVRecord const& svRec, TRef const, SVType<InsertionTag>) {
+  return boost::to_upper_copy(std::string(ref + svRec.svStartBeg, ref + svRec.svStartEnd)) + boost::to_upper_copy(std::string(ref + svRec.svEndBeg, ref + svRec.svEndEnd));
+}
+
+
 template<typename TConfig, typename TStructuralVariantRecord, typename TTag>
 inline bool
 findPutativeSplitReads(TConfig const& c, std::vector<TStructuralVariantRecord>& svs,  SVType<TTag> svType) 
@@ -1401,7 +1446,7 @@ findPutativeSplitReads(TConfig const& c, std::vector<TStructuralVariantRecord>& 
   while ((l = kseq_read(seq)) >= 0) {
     // Find reference index
     BamTools::RefVector::const_iterator itRef = references.begin();
-    for(unsigned int refIndex=0;itRef!=references.end();++itRef, ++refIndex) {
+    for(int32_t refIndex=0;itRef!=references.end();++itRef, ++refIndex) {
       if (seq->name.s == references[refIndex].RefName) {
 	++show_progress;
 
@@ -1545,6 +1590,14 @@ _initClique(TBamRecordIterator const& el, TSize& svStart, TSize& svEnd, TSize& w
   wiggle=el->maxNormalISize - el->Length;
 }
 
+// Initialize clique, insertions
+template<typename TBamRecordIterator, typename TSize>
+inline void
+_initClique(TBamRecordIterator const& el, TSize& svStart, TSize& svEnd, TSize& wiggle, SVType<InsertionTag>) {
+  svStart = std::min(el->Position + el->Length, el->MatePosition + el->Length);
+  svEnd = std::max(el->Position, el->MatePosition);
+  wiggle =  abs(el->Position - el->MatePosition) + el->Length - el->maxNormalISize -(svEnd -svStart);
+}
 
 
 // Update clique, deletions
@@ -1663,6 +1716,26 @@ _updateClique(TBamRecordIterator const& el, TSize& svStart, TSize& svEnd, TSize&
   return false;
 }
 
+// Update clique, insertions
+template<typename TBamRecordIterator, typename TSize>
+inline bool 
+_updateClique(TBamRecordIterator const& el, TSize& svStart, TSize& svEnd, TSize& wiggle, SVType<InsertionTag>) 
+{
+  TSize newSvStart = std::max(svStart, std::min(el->Position + el->Length, el->MatePosition + el->Length));
+  TSize newSvEnd = std::min(svEnd, std::max(el->Position, el->MatePosition));
+  TSize newWiggle = abs(el->Position - el->MatePosition) + el->Length - el->maxNormalISize -(newSvEnd - newSvStart);
+  TSize wiggleChange = wiggle + (svEnd-svStart) - (newSvEnd - newSvStart);
+  if (wiggleChange > newWiggle) newWiggle=wiggleChange;
+
+  // Does the new deletion size agree with all pairs
+  if ((newSvStart < newSvEnd) && (newWiggle<=0)) {
+    svStart = newSvStart;
+    svEnd = newSvEnd;
+    wiggle = newWiggle;
+    return true;
+  }
+  return false;
+}
 
 template<typename TConfig, typename TSampleLibrary, typename TSVs, typename TCountMap, typename TTag>
 inline void
@@ -2242,6 +2315,7 @@ int main(int argc, char **argv) {
   else if (c.svType == "DUP") return run(c, SVType<DuplicationTag>());
   else if (c.svType == "INV") return run(c, SVType<InversionTag>());
   else if (c.svType == "TRA") return run(c, SVType<TranslocationTag>());
+  else if (c.svType == "INS") return run(c, SVType<InsertionTag>());
   else {
     std::cerr << "SV analysis type not supported by Delly: " << c.svType << std::endl;
     return -1;
