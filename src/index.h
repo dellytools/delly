@@ -102,7 +102,7 @@ namespace torali {
 	      bucket -= ((TUSize64) currentk[seqIndex % KMER] * (TUSize64) power<ALPHSIZE, KMER - 1>::value);
 	      bucket *= (TUSize64) ALPHSIZE;
 	      bucket += (TUSize64) dna5_encode[(int) *refSeqIt];
-	    } else bucket += ((TUSize64) dna5_encode[(int) *refSeqIt] * (TUSize64) std::pow((TUSize64) ALPHSIZE, (TUSize64) KMER - (++kmerlen)));
+	    } else bucket += ((TUSize64) dna5_encode[(int) *refSeqIt] * (TUSize64) std::pow((long double) ALPHSIZE, (long double) KMER - (++kmerlen)));
 	    currentk[seqIndex % KMER] = dna5_encode[(int) *refSeqIt];
 	  } else {
 	    // Handle N's properly
@@ -141,7 +141,7 @@ namespace torali {
 	      bucket -= ((TUSize64) currentk[seqIndex % KMER] * (TUSize64) power<ALPHSIZE, KMER - 1>::value);
 	      bucket *= (TUSize64) ALPHSIZE;
 	      bucket += (TUSize64) dna5_encode[(int) *refSeqIt];
-	    } else bucket += ((TUSize64) dna5_encode[(int) *refSeqIt] * (TUSize64) std::pow((TUSize64) ALPHSIZE, (TUSize64) KMER - (++kmerlen)));
+	    } else bucket += ((TUSize64) dna5_encode[(int) *refSeqIt] * (TUSize64) std::pow((long double) ALPHSIZE, (long double) KMER - (++kmerlen)));
 	    currentk[seqIndex % KMER] = dna5_encode[(int) *refSeqIt];
 	  } else {
 	    // Handle N's properly
@@ -184,7 +184,7 @@ namespace torali {
 	      bucket -= ((TUSize64) currentk[seqIndex % KMER] * (TUSize64) power<ALPHSIZE, KMER - 1>::value);
 	      bucket *= (TUSize64) ALPHSIZE;
 	      bucket += (TUSize64) *p;
-	    } else bucket += (((TUSize64) *p) * (TUSize64) std::pow((TUSize64) ALPHSIZE, (TUSize64) KMER - (++kmerlen)));
+	    } else bucket += (((TUSize64) *p) * (TUSize64) std::pow((long double) ALPHSIZE, (long double) KMER - (++kmerlen)));
 	    currentk[seqIndex % KMER] = *p;
 	  } else {
 	    // Handle N's properly
@@ -233,7 +233,7 @@ namespace torali {
 	      bucket -= ((TUSize64) currentk[seqIndex % KMER] * (TUSize64) power<ALPHSIZE, KMER - 1>::value);
 	      bucket *= (TUSize64) ALPHSIZE;
 	      bucket += (TUSize64) ch;
-	    } else bucket += ((TUSize64) ch * (TUSize64) std::pow((TUSize64) ALPHSIZE, (TUSize64) KMER - (++kmerlen)));
+	    } else bucket += ((TUSize64) ch * (TUSize64) std::pow((long double) ALPHSIZE, (long double) KMER - (++kmerlen)));
 	    currentk[seqIndex % KMER] = ch;
 	  } else {
 	    // Handle N's properly
