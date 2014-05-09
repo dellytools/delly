@@ -1,6 +1,6 @@
 # Delly Dockerfile
 #
-# Version 0.0.2
+# Version 0.0.3
 # build with: sudo docker build -t delly - < Dockerfile
 # run with: sudo docker run -i -t delly /bin/bash
 
