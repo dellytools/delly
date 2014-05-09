@@ -12,8 +12,8 @@ MAINTAINER Tobias Rausch rausch@embl.de
 # update package repository
 RUN apt-get update
 
-# install g++, git, cmake, boost, ...
-RUN apt-get install -y build-essential g++ git cmake libboost-all-dev 
+# install g++, git, zlib, cmake, boost, ...
+RUN apt-get install -y build-essential g++ git cmake zlib1g-dev libboost-date-time-dev libboost-program-options-dev libboost-system-dev libboost-filesystem-dev libboost-iostreams-dev
 
 # install bamtools
 RUN git clone https://github.com/pezmaster31/bamtools.git
