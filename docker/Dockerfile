@@ -5,6 +5,7 @@
 # run with: sudo docker run -i -t delly /bin/bash
 
 # use the ubuntu base image
+# FROM ubuntu:13.10
 FROM ubuntu
 
 MAINTAINER Tobias Rausch rausch@embl.de
