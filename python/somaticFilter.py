@@ -6,7 +6,8 @@ import vcf
 import numpy
 import re
 import banyan
-
+import collections
+import copy
 
 #Functions
 def overlapValid(s1, e1, s2, e2, reciprocalOverlap=0.5, maxOffset=500):
@@ -26,7 +27,7 @@ def overlapValid(s1, e1, s2, e2, reciprocalOverlap=0.5, maxOffset=500):
 parser = argparse.ArgumentParser(description='Filter for somatic SVs.')
 parser.add_argument('-v', '--vcf', metavar='variants.vcf', required=True, dest='vcfFile', help='input vcf file (required)')
 parser.add_argument('-o', '--out', metavar='out.vcf', required=True, dest='outFile', help='output vcf file (required)')
-parser.add_argument('-t', '--type', metavar='DEL', required=True, dest='svType', help='SV type [DEL, DUP, INV] (required)')
+parser.add_argument('-t', '--type', metavar='DEL', required=True, dest='svType', help='SV type [DEL, DUP, INV, INS] (required)')
 parser.add_argument('-a', '--altaf', metavar='0.25', required=False, dest='altAF', help='min. alt. AF (optional)')
 parser.add_argument('-m', '--minsize', metavar='500', required=False, dest='minSize', help='min. size (optional)')
 parser.add_argument('-n', '--maxsize', metavar='500000000', required=False, dest='maxSize', help='max. size (optional)')
@@ -46,24 +47,37 @@ if args.altAF:
 
 # Collect high-quality SVs
 sv = dict()
+svDups = collections.defaultdict(list)
+validRecordID = set()
 if args.vcfFile:
     vcf_reader = vcf.Reader(open(args.vcfFile), 'r')
     for record in vcf_reader:
         if (record.INFO['SVLEN'] >= minSize) and (record.INFO['SVLEN'] <= maxSize) and ((not args.siteFilter) or (len(record.FILTER) == 0)):
+            precise = False
+            if ('PRECISE' in record.INFO.keys()):
+                precise = record.INFO['PRECISE']
             rcRef = []
             rcAlt = []
             for call in record.samples:
-                if (re.search(r"[Nn]ormal", call.sample) != None) and (call.called) and (call.gt_type == 0) and (call['DV'] == 0):
-                    rcRef.append(call['RC'])
-                if (re.search(r"[Tt]umor", call.sample) != None) and (call.called) and (call.gt_type != 0) and (call['DV'] >= 2) and (float(call['DV'])/float(call['DV']+call['DR'])>=altAF):
-                    rcAlt.append(call['RC'])
-
+                if (call.called):
+                    if (re.search(r"[Nn]ormal", call.sample) != None) and (call.gt_type == 0):
+                        if ((not precise) and (call['DV'] == 0)) or ((precise) and (call['RV']==0)):
+                            rcRef.append(call['RC'])
+                    if (re.search(r"[Tt]umor", call.sample) != None) and (call.gt_type != 0):
+                        if ((not precise) and (call['DV'] >= 2) and (float(call['DV'])/float(call['DV']+call['DR'])>=altAF)) or ((precise) and (call['RV'] >= 2) and (float(call['RV'])/float(call['RR'] + call['RV'])>=altAF)):
+                            rcAlt.append(call['RC'])
             if (len(rcRef) > 0) and (len(rcAlt) > 0):
-                rdRatio = numpy.median(rcAlt)/numpy.median(rcRef)
-                if (args.svType == 'INV') or (record.INFO['SVLEN'] <= 10000) or ((args.svType == 'DEL') and (rdRatio <= 0.85)) or ((args.svType == 'DUP') and (rdRatio >= 1.15)):
+                rdRatio = 1
+                if numpy.median(rcRef):
+                    rdRatio = numpy.median(rcAlt)/numpy.median(rcRef)
+                if (args.svType == 'INV') or (args.svType == 'INS') or (record.INFO['SVLEN'] <= 10000) or ((args.svType == 'DEL') and (rdRatio <= 0.85)) or ((args.svType == 'DUP') and (rdRatio >= 1.15)):
+                    validRecordID.add(record.ID)
                     if not sv.has_key(record.CHROM):
                         sv[record.CHROM] = banyan.SortedDict(key_type=(int, int), alg=banyan.RED_BLACK_TREE, updator=banyan.OverlappingIntervalsUpdator)
-                    sv[record.CHROM][(record.POS, record.INFO['END'])] = (record.ID, record.INFO['PE'])
+                    if (record.POS, record.INFO['END']) in sv[record.CHROM]:
+                        svDups[(record.CHROM, record.POS, record.INFO['END'])].append((record.ID, record.INFO['PE']))
+                    else:
+                        sv[record.CHROM][(record.POS, record.INFO['END'])] = (record.ID, record.INFO['PE'])
 
 # Output vcf records
 if args.vcfFile:
@@ -71,18 +85,22 @@ if args.vcfFile:
     vcf_reader.infos['SOMATIC'] = vcf.parser._Info('SOMATIC', 0, 'Flag', 'Somatic structural variant.')
     vcf_writer = vcf.Writer(open(args.outFile, 'w'), vcf_reader, lineterminator='\n')
     for record in vcf_reader:
-        if (record.CHROM not in sv.keys()) or ((record.POS, record.INFO['END']) not in sv[record.CHROM].keys()):
+        # Is it a valid SV?
+        if (record.ID not in validRecordID):
             continue
-        overlapList = sv[record.CHROM].overlap((record.POS, record.INFO['END']))
-        svID, score = sv[record.CHROM][(record.POS, record.INFO['END'])]
-        foundBetterHit = False
-        for cStart, cEnd in overlapList:
-            if not overlapValid(record.POS, record.INFO['END'], cStart, cEnd):
-                continue
+        # Collect overlapping and identical calls
+        overlapCalls = list()
+        for cSvID, cScore in svDups[(record.CHROM, record.POS, record.INFO['END'])]:
+            if (record.ID != cSvID):
+                overlapCalls.append((cSvID, cScore))
+        for cStart, cEnd in sv[record.CHROM].overlap((record.POS, record.INFO['END'])):
             cSvID, cScore = sv[record.CHROM][(cStart, cEnd)]
-            if svID == cSvID:
-                continue
-            if (cScore > score) or ((cScore == score) and (cSvID < svID)):
+            if (record.ID != cSvID) and (overlapValid(record.POS, record.INFO['END'], cStart, cEnd)):
+                overlapCalls.append(sv[record.CHROM][(cStart, cEnd)])
+        # Judge wether overlapping calls are better
+        foundBetterHit = False
+        for cSvID, cScore in overlapCalls:
+            if (cScore > record.INFO['PE']) or ((cScore == record.INFO['PE']) and (cSvID < record.ID)):
                 foundBetterHit = True
                 break
         if not foundBetterHit:
