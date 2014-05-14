@@ -10,15 +10,21 @@ import collections
 import copy
 
 #Functions
-def overlapValid(s1, e1, s2, e2, reciprocalOverlap=0.5, maxOffset=500):
+def overlapValid(s1, e1, s2, e2, reciprocalOverlap=0.8, maxOffset=250):
     if (e1 < s2) or (s1 > e2):
         return False
     overlapLen = float(min(e1, e2) - max(s1, s2))
+    lenA=float(e1-s1)
+    lenB=float(e2-s2)
+    if (overlapLen<0):
+        sys.exit("Sites are not overlapping.")
+    if (lenA<=0) or (lenB<=0):
+        sys.exit("Invalid intervals.")
     # Check reciprocal overlap
-    if (overlapLen < 1) or (float(e1-s1)/overlapLen < reciprocalOverlap) or (float(e2-s2)/overlapLen < reciprocalOverlap):
+    if (overlapLen/max(lenA,lenB))<reciprocalOverlap:
         return False
     # Check offset
-    if (abs(s2-s1) > maxOffset) or (abs(e2-e1) > maxOffset):
+    if max(abs(s2-s1), abs(e2-e1))>maxOffset:
         return False
     return True
 
@@ -96,7 +102,7 @@ if args.vcfFile:
         for cStart, cEnd in sv[record.CHROM].overlap((record.POS, record.INFO['END'])):
             cSvID, cScore = sv[record.CHROM][(cStart, cEnd)]
             if (record.ID != cSvID) and (overlapValid(record.POS, record.INFO['END'], cStart, cEnd)):
-                overlapCalls.append(sv[record.CHROM][(cStart, cEnd)])
+                overlapCalls.append((cSvID, cScore))
         # Judge wether overlapping calls are better
         foundBetterHit = False
         for cSvID, cScore in overlapCalls:
