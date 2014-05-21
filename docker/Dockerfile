@@ -1,7 +1,7 @@
 # Delly Dockerfile
 #
 # Version 0.0.3
-# build with: sudo docker build -t delly - < Dockerfile
+# build with: sudo docker build --rm --no-cache -t delly - < Dockerfile
 # run with: sudo docker run -i -t delly /bin/bash
 
 # use the ubuntu base image
