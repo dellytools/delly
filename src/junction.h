@@ -278,7 +278,9 @@ inline void
 	      // Consensus length
 	      unsigned int consLen = itSV->consensus.size();
 	      std::string altKmer = altProbes[itSV->id];
+	      std::string rAltKmer = _reverseComplement(altKmer);
 	      std::string refKmer = refProbes[itSV->id];
+	      std::string rRefKmer = _reverseComplement(refKmer);
 	      TQualVector altKmerCount;
 	      TQualVector refKmerCount;
 	      
@@ -314,16 +316,15 @@ inline void
 		    if (inserted) {
 		      std::string::size_type altKmerPos;
 		      std::string::size_type refKmerPos;
-		      altKmerPos = al.QueryBases.find(altKmer);
-		      if (altKmerPos==al.QueryBases.npos) altKmerPos = al.QueryBases.find(_reverseComplement(altKmer));
-		      refKmerPos = al.QueryBases.find(refKmer);
-		      if (refKmerPos==al.QueryBases.npos) refKmerPos = al.QueryBases.find(_reverseComplement(refKmer));
-		      if ((altKmerPos!=al.QueryBases.npos) || (refKmerPos!=al.QueryBases.npos)) {
-			if ((altKmerPos!=al.QueryBases.npos) && (refKmerPos==al.QueryBases.npos)) {
-			  altKmerCount.push_back(al.MapQuality);
-			} else if ((altKmerPos==al.QueryBases.npos) && (refKmerPos!=al.QueryBases.npos)) {
-			  refKmerCount.push_back(al.MapQuality);
-			}
+		      unsigned int hamCutoff=2;
+		      unsigned int altHam=_getMinHammingDistance(al.QueryBases, altKmer, 0);
+		      if (altHam>hamCutoff) altHam=_getMinHammingDistance(al.QueryBases, rAltKmer, 0);
+		      unsigned int refHam=_getMinHammingDistance(al.QueryBases, refKmer, 0);
+		      if (refHam>hamCutoff) refHam=_getMinHammingDistance(al.QueryBases, rRefKmer, 0);
+		      if ((altHam<=hamCutoff) && (refHam>hamCutoff)) {
+			altKmerCount.push_back(al.MapQuality);
+		      } else if ((altHam>hamCutoff) && (refHam<=hamCutoff)) {
+			refKmerCount.push_back(al.MapQuality);
 		      }
 		    }
 		  }
