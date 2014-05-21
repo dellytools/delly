@@ -65,11 +65,13 @@ inline std::string
 inline unsigned int
     _getMinHammingDistance(TReference const& ref, TKmer const& kmer, unsigned int minReqDist) {
     unsigned int minHammingDist=kmer.size();
-    for(unsigned int seqIndex=0;((seqIndex<(ref.size()-kmer.size())) && (minHammingDist>minReqDist));++seqIndex) {
-      unsigned int hammingDist=0;
-      for(unsigned int k=0;k<kmer.size();++k) 
-	if (ref[seqIndex+k]!=kmer[k]) ++hammingDist;
-      if (hammingDist<minHammingDist) minHammingDist=hammingDist;
+    if (ref.size()>=kmer.size()) {
+      for(unsigned int seqIndex=0;((seqIndex<=(ref.size()-kmer.size())) && (minHammingDist>minReqDist));++seqIndex) {
+	unsigned int hammingDist=0;
+	for(unsigned int k=0;k<kmer.size();++k) 
+	  if (ref[seqIndex+k]!=kmer[k]) ++hammingDist;
+	if (hammingDist<minHammingDist) minHammingDist=hammingDist;
+      }
     }
     return minHammingDist;
   }
