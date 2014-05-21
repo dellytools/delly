@@ -314,8 +314,6 @@ inline void
 		    bool inserted;
 		    boost::tie(pos, inserted) = unique_reads.insert(string_hash(al.QueryBases));
 		    if (inserted) {
-		      std::string::size_type altKmerPos;
-		      std::string::size_type refKmerPos;
 		      unsigned int hamCutoff=2;
 		      unsigned int altHam=_getMinHammingDistance(al.QueryBases, altKmer, 0);
 		      if (altHam>hamCutoff) altHam=_getMinHammingDistance(al.QueryBases, rAltKmer, 0);
