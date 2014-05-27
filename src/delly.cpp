@@ -1949,10 +1949,7 @@ inline int run(Config const& c, TSVType svType) {
 	    std::string rG = "DefaultLib";
 	    al.GetTag("RG", rG);
 	    TLibraryMap::iterator libIt=sampleIt->second.find(rG);
-	    if (libIt==sampleIt->second.end()) {
-              std::cerr << "Missing read group: " << rG << std::endl;
-              return -1;
-            }
+	    if (libIt==sampleIt->second.end()) std::cerr << "Missing read group: " << rG << std::endl;
 	    if (libIt->second.median == 0) continue; // Single-end library
 	    if (_acceptedInsertSize(libIt->second.maxNormalISize, libIt->second.median, abs(al.InsertSize), svType)) continue;  // Normal paired-end (for deletions only)
 	    if (_acceptedOrientation(libIt->second.defaultOrient, getStrandIndependentOrientation(al), svType)) continue;  // Orientation disagrees with SV type
