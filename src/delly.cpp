@@ -1949,6 +1949,10 @@ inline int run(Config const& c, TSVType svType) {
 	    std::string rG = "DefaultLib";
 	    al.GetTag("RG", rG);
 	    TLibraryMap::iterator libIt=sampleIt->second.find(rG);
+	    if (libIt==sampleIt->second.end()) {
+              std::cerr << "Missing read group: " << rG << std::endl;
+              return -1;
+            }
 	    if (libIt->second.median == 0) continue; // Single-end library
 	    if (_acceptedInsertSize(libIt->second.maxNormalISize, libIt->second.median, abs(al.InsertSize), svType)) continue;  // Normal paired-end (for deletions only)
 	    if (_acceptedOrientation(libIt->second.defaultOrient, getStrandIndependentOrientation(al), svType)) continue;  // Orientation disagrees with SV type
@@ -2190,8 +2194,9 @@ inline int run(Config const& c, TSVType svType) {
 
   // Any SVs for genotyping
   if (svs.empty()) {
-    std::cerr << "No structural variants found!" << std::endl;
-    return -1;
+    std::cout << "No structural variants found!" << std::endl;
+    std::cout << "Done." << std::endl;
+    return 0;
   }
 
   // Annotate junction reads
