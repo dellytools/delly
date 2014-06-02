@@ -172,10 +172,19 @@ namespace torali
       libInfo.insert(std::make_pair("DefaultLib", LibraryInfo()));
       params.insert(std::make_pair("DefaultLib", _LibraryParams()));
     }
+
+    // Initialize arrays
+    for(TParams::iterator paramIt = params.begin(); paramIt!=params.end(); ++paramIt) {
+      paramIt->second.processedNumPairs=0;
+      for(unsigned int i=0;i<4;++i) paramIt->second.orient[i]=0;
+      paramIt->second.vecISize.clear();
+    }
+
+    // Collect insert sizes
     bool missingPairs=true;
     BamTools::BamAlignment al;
     while ((reader.GetNextAlignmentCore(al)) && (missingPairs)) {
-      if ((al.AlignmentFlag & 0x0001) && !(al.AlignmentFlag & 0x0004) && !(al.AlignmentFlag & 0x0008) && (al.AlignmentFlag & 0x0040) && (al.RefID==al.MateRefID)) {
+      if ((al.AlignmentFlag & 0x0001) && !(al.AlignmentFlag & 0x0004) && !(al.AlignmentFlag & 0x0008) && (al.AlignmentFlag & 0x0040) && (al.RefID==al.MateRefID) && !(al.AlignmentFlag & 0x0100) && !(al.AlignmentFlag & 0x0200)  && !(al.AlignmentFlag & 0x0400) && !(al.AlignmentFlag & 0x0800)) {
 	al.BuildCharData();
 	std::string rG = "DefaultLib";
 	al.GetTag("RG", rG);
