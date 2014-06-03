@@ -1219,24 +1219,28 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
 
       // Always take the minimum to be conservative (and to flag unclear samples as LowQual)
       if ((countMapItLeft!=normalCountMap.end()) && (countMapItRight!=normalCountMap.end())) {
-	if (countMapItLeft->second[0].size() <= countMapItRight->second[0].size()) countMapIt=countMapItLeft;
-	else countMapIt=countMapItRight;
+	if ((!countMapItLeft->second.empty()) && (!countMapItRight->second.empty())) {
+	  if (countMapItLeft->second[0].size() <= countMapItRight->second[0].size()) countMapIt=countMapItLeft;
+	  else countMapIt=countMapItRight;
+	}
       }
       if ((abCountMapItLeft!=abnormalCountMap.end()) && (abCountMapItRight!=abnormalCountMap.end())) {
-	if ((svIter->chr != svIter->chr2) || (abCountMapItLeft->second[0].size() > abCountMapItRight->second[0].size())) abCountMapIt=abCountMapItRight;
-	else abCountMapIt=abCountMapItLeft;
+	if ((!abCountMapItLeft->second.empty()) && (!abCountMapItRight->second.empty())) {
+	  if ((svIter->chr != svIter->chr2) || (abCountMapItLeft->second[0].size() > abCountMapItRight->second[0].size())) abCountMapIt=abCountMapItRight;
+	  else abCountMapIt=abCountMapItLeft;
+	}
       }
 
-      TMapqVector mapqRef;
-      TMapqVector mapqAlt;
+      TMapqVector mapqRef = TMapqVector();
+      TMapqVector mapqAlt = TMapqVector();
       if ((svIter->precise) || (c.junction)) {
 	// Genotyping for precise events uses junction read qualities
 	mapqRef = jctCountMapIt->second.first;
 	mapqAlt = jctCountMapIt->second.second;
       } else {
 	// Genotyping for imprecise events uses paired-end qualities
-	mapqRef = countMapIt->second[0];
-	mapqAlt = abCountMapIt->second[0];
+	if ((countMapIt!=normalCountMap.end()) && (!countMapIt->second.empty())) mapqRef = countMapIt->second[0];
+	if ((abCountMapIt!=abnormalCountMap.end()) && (!abCountMapIt->second.empty())) mapqAlt = abCountMapIt->second[0];
       }
 
       // Compute genotype likelihoods
