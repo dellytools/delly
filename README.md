@@ -91,7 +91,7 @@ DELLY expects two alignment records in the bam file for every paired-end, one fo
 * Auxiliary tools?     
 DELLY includes a couple of handy tools to work with SV lists such as a generic tool to annotate the coverage across several samples, a tool to extract FASTA sub-sequences and a tool to annotate and overlap arbitrary SV intervals. Small usage descriptions are available in the [Delly wiki](https://github.com/tobiasrausch/delly/wiki).
 
-* Usage/discussion mailing list?
+* Usage/discussion mailing list?         
 There is a delly discussion group [delly-users](http://groups.google.com/d/forum/delly-users).
 
 
