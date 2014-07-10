@@ -25,7 +25,7 @@ Building DELLY just requires
 
 `make -B src/delly`
 
-Alternatively, a statically linked binary for Linux 64-bit is available [here](https://github.com/tobiasrausch/delly/releases/).
+Statically linked binaries for Linux 64-bit are available [here](https://github.com/tobiasrausch/delly/releases/). There is a DELLY discussion group [delly-users](http://groups.google.com/d/forum/delly-users).
 
 
 DELLY multi-threading mode
