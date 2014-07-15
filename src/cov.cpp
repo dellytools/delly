@@ -201,7 +201,8 @@ run(Config const& c, TSingleHit, TCoverageType covType)
     dataOut << "\t";
     if (c.avg_flag) dataOut << sampleName << "_avgcov" << "\t";
     if (c.bp_flag) dataOut << sampleName << "_bpcount" << "\t";
-    dataOut << sampleName << "_readcount";
+    if ((c.bp_flag) || (c.avg_flag)) dataOut << sampleName << "_readcount";
+    else dataOut << sampleName;
   }
   dataOut << std::endl;
 
