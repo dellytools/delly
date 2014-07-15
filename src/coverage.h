@@ -134,7 +134,7 @@ _redundancyFilter(TBamRecord const&, TUniquePairs&, TUniquePairs&, CoverageType<
 
  template<typename TFiles, typename TSampleLibrary, typename TSVs, typename TCountMap, typename TSingleHit, typename TCoverageType>
 inline void
-annotateCoverage(TFiles const& files, uint16_t minMapQual, bool inclCigar, TSampleLibrary& sampleLib, TSVs& svs, TCountMap& countMap, TSingleHit, TCoverageType covType)
+annotateCoverage(TFiles const& files, uint16_t minMapQual, bool inclCigar, bool cov_norm, TSampleLibrary& sampleLib, TSVs& svs, TCountMap& countMap, TSingleHit, TCoverageType covType)
 {
   typedef typename TCountMap::key_type TSampleSVPair;
   typedef typename TSampleLibrary::mapped_type TLibraryMap;
@@ -272,7 +272,7 @@ annotateCoverage(TFiles const& files, uint16_t minMapQual, bool inclCigar, TSamp
   sampleIt=sampleLib.begin();
   for(;sampleIt!=sampleLib.end();++sampleIt) {
     typename TSampleNorm::iterator sampleNormIt = sampleNorm.find(sampleIt->first);
-    if (sampleNormIt->second!=0) sampleNormIt->second = median/sampleNormIt->second;
+    if ((cov_norm) && (sampleNormIt->second!=0)) sampleNormIt->second = median/sampleNormIt->second;
     else sampleNormIt->second = 1.0;
   }
   //std::cerr << "Median: " << median << std::endl;

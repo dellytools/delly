@@ -60,6 +60,7 @@ struct Config {
   bool bp_flag;
   bool avg_flag;
   bool inclCigar;
+  bool cov_norm;
   boost::filesystem::path outfile;
   boost::filesystem::path int_file;
   std::vector<boost::filesystem::path> files;
@@ -176,7 +177,7 @@ run(Config const& c, TSingleHit, TCoverageType covType)
   TCountMap countMap;
 
   // Annotate coverage
-  annotateCoverage(c.files, c.minMapQual, c.inclCigar, sampleLib, svs, countMap, TSingleHit(), covType);
+  annotateCoverage(c.files, c.minMapQual, c.inclCigar, c.cov_norm, sampleLib, svs, countMap, TSingleHit(), covType);
 
   // Output library statistics
   std::cout << "Library statistics" << std::endl;
@@ -239,8 +240,9 @@ int main(int argc, char **argv) {
   boost::program_options::options_description generic("Generic options");
   generic.add_options()
     ("help,?", "show help message")
-    ("bp-count,b", "show base pair count")
     ("avg-cov,a", "show average coverage")
+    ("bp-count,b", "show base pair count")
+    ("disable-covnorm,c", "disable coverage normalization")
     ("disable-redundancy,d", "disable redundancy filtering")
     ("quality-cut,q", boost::program_options::value<uint16_t>(&c.minMapQual)->default_value(0), "exclude all alignments with quality < q")
     ("outfile,f", boost::program_options::value<boost::filesystem::path>(&c.outfile)->default_value("cov.gz"), "coverage output file")
@@ -294,6 +296,8 @@ int main(int argc, char **argv) {
   }
   bool disableRedFilter=false;
   if (vm.count("disable-redundancy")) disableRedFilter=true;
+  if (vm.count("disable-covnorm")) c.cov_norm = false;
+  else c.cov_norm = true;
   if (vm.count("bp-count")) c.bp_flag = true;
   else c.bp_flag = false;
   if (vm.count("avg-cov")) c.avg_flag = true;

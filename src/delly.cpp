@@ -1754,7 +1754,7 @@ inline void
 _annotateCoverage(TConfig const& c, TSampleLibrary& sampleLib, TSVs& svs, TCountMap& countMap, SVType<TTag>) 
 {
   typedef typename TSampleLibrary::mapped_type TLibraryMap;
-  annotateCoverage(c.files, c.minGenoQual, false, sampleLib, svs, countMap, SingleHit<int32_t, void>(), CoverageType<RedundancyFilterTag>());
+  annotateCoverage(c.files, c.minGenoQual, false, true, sampleLib, svs, countMap, SingleHit<int32_t, void>(), CoverageType<RedundancyFilterTag>());
   boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
   std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Library statistics" << std::endl;
   typename TSampleLibrary::const_iterator sampleIt=sampleLib.begin();
