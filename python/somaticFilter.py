@@ -69,21 +69,20 @@ if args.vcfFile:
                     if (re.search(r"[Nn]ormal", call.sample) != None) and (call.gt_type == 0):
                         if ((not precise) and (call['DV'] == 0)) or ((precise) and (call['RV']==0)):
                             rcRef.append(call['RC'])
-                    if (re.search(r"[Tt]umor", call.sample) != None) and (call.gt_type != 0):
+                    if (re.search(r"[Tt]umo[ur]", call.sample) != None) and (call.gt_type != 0):
                         if ((not precise) and (call['DV'] >= 2) and (float(call['DV'])/float(call['DV']+call['DR'])>=altAF)) or ((precise) and (call['RV'] >= 2) and (float(call['RV'])/float(call['RR'] + call['RV'])>=altAF)):
                             rcAlt.append(call['RC'])
             if (len(rcRef) > 0) and (len(rcAlt) > 0):
                 rdRatio = 1
                 if numpy.median(rcRef):
                     rdRatio = numpy.median(rcAlt)/numpy.median(rcRef)
-                if (args.svType == 'INV') or (args.svType == 'INS') or (record.INFO['SVLEN'] <= 10000) or ((args.svType == 'DEL') and (rdRatio <= 0.85)) or ((args.svType == 'DUP') and (rdRatio >= 1.15)):
-                    validRecordID.add(record.ID)
-                    if not sv.has_key(record.CHROM):
-                        sv[record.CHROM] = banyan.SortedDict(key_type=(int, int), alg=banyan.RED_BLACK_TREE, updator=banyan.OverlappingIntervalsUpdator)
-                    if (record.POS, record.INFO['END']) in sv[record.CHROM]:
-                        svDups[(record.CHROM, record.POS, record.INFO['END'])].append((record.ID, record.INFO['PE']))
-                    else:
-                        sv[record.CHROM][(record.POS, record.INFO['END'])] = (record.ID, record.INFO['PE'])
+                validRecordID.add(record.ID)
+                if not sv.has_key(record.CHROM):
+                    sv[record.CHROM] = banyan.SortedDict(key_type=(int, int), alg=banyan.RED_BLACK_TREE, updator=banyan.OverlappingIntervalsUpdator)
+                if (record.POS, record.INFO['END']) in sv[record.CHROM]:
+                    svDups[(record.CHROM, record.POS, record.INFO['END'])].append((record.ID, record.INFO['PE']))
+                else:
+                    sv[record.CHROM][(record.POS, record.INFO['END'])] = (record.ID, record.INFO['PE'])
 
 # Output vcf records
 if args.vcfFile:
