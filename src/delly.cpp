@@ -1050,9 +1050,9 @@ vcfParse(TConfig const& c, TReferences const references, TSize const overallMaxI
 	      else continue;
 	    }
 	    svRec.svStartBeg = std::max(svRec.svStart - 1 - overallMaxISize, 0);
-	    svRec.svStartEnd = svRec.svStart - 1 + overallMaxISize;
+	    svRec.svStartEnd = std::min(svRec.svStart - 1 + overallMaxISize, references[svRec.chr].RefLength);
 	    svRec.svEndBeg = std::max(svRec.svEnd - 1 - overallMaxISize, 0);
-	    svRec.svEndEnd = svRec.svEnd - 1 + overallMaxISize;
+	    svRec.svEndEnd = std::min(svRec.svEnd - 1 + overallMaxISize, references[svRec.chr2].RefLength);
 	    if ((svRec.chr==svRec.chr2) && (svRec.svStartEnd > svRec.svEndBeg)) {
 	      unsigned int midPointDel = ((svRec.svEnd - svRec.svStart) / 2) + svRec.svStart;
 	      svRec.svStartEnd = midPointDel -1;
@@ -2138,11 +2138,11 @@ inline int run(Config const& c, TSVType svType) {
 	svRec.chr = refIndex;
 	svRec.chr2 = clusterMateRefID;
 	svRec.svStartBeg = std::max((int) svStart - overallMaxISize, 0);
-	svRec.svStart = svStart +1;
-	svRec.svStartEnd = svStart + overallMaxISize;
+	svRec.svStart = std::min(svStart + 1, references[refIndex].RefLength);
+	svRec.svStartEnd = std::min(svStart + overallMaxISize, references[refIndex].RefLength);
 	svRec.svEndBeg = std::max((int) svEnd - overallMaxISize, 0);
-	svRec.svEnd = svEnd+1;
-	svRec.svEndEnd = svEnd + overallMaxISize;
+	svRec.svEnd = std::min(svEnd+1, references[clusterMateRefID].RefLength);
+	svRec.svEndEnd = std::min(svEnd + overallMaxISize, references[clusterMateRefID].RefLength);
 	svRec.peSupport = clique.size();
 	svRec.wiggle = abs(wiggle);
 	std::vector<uint16_t> mapQV;
