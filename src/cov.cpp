@@ -56,6 +56,7 @@ using namespace torali;
 struct Config {
   unsigned int window_size;
   unsigned int window_offset;
+  unsigned int window_num;
   uint16_t minMapQual;
   bool bp_flag;
   bool avg_flag;
@@ -152,8 +153,14 @@ run(Config const& c, TSingleHit, TCoverageType covType)
     typename BamTools::RefVector::const_iterator itRef = references.begin();
     for(int refIndex=0;itRef!=references.end();++itRef, ++refIndex) {
       int32_t pos = 0;
+      unsigned int wSize = c.window_size;
+      unsigned int wOffset = c.window_offset;
+      if (c.window_num>0) {
+	wSize=(itRef->RefLength / c.window_num) + 1;
+	wOffset=wSize;
+      }
       while (pos < references[refIndex].RefLength) {
-	int32_t window_len = pos+c.window_size;
+	int32_t window_len = pos+wSize;
 	if (window_len > references[refIndex].RefLength) window_len = references[refIndex].RefLength;
 	StructuralVariantRecord sv;
 	sv.chr = refIndex;
@@ -165,7 +172,7 @@ run(Config const& c, TSingleHit, TCoverageType covType)
 	idToName.insert(std::make_pair(intervalCount, s.str()));
 	sv.id = intervalCount++;
 	svs.push_back(sv);
-	pos += c.window_offset;
+	pos += wOffset;
       }
     }
   }
@@ -253,6 +260,7 @@ int main(int argc, char **argv) {
   window.add_options()
     ("window-size,s", boost::program_options::value<unsigned int>(&c.window_size)->default_value(10000), "window size")
     ("window-offset,o", boost::program_options::value<unsigned int>(&c.window_offset)->default_value(10000), "window offset")
+    ("window-num,n", boost::program_options::value<unsigned int>(&c.window_num)->default_value(0), "#windows per chr, used if #n>0")
     ;
 
   // Define interval options
