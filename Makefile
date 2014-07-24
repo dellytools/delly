@@ -52,5 +52,8 @@ src/cov:
 src/spancov:
 	$(CXX) $(CXXFLAGS) $@.cpp -o $@ $(LDFLAGS)
 
+src/stats:
+	$(CXX) $(CXXFLAGS) $@.cpp -o $@ $(LDFLAGS)
+
 clean:
 	rm -f $(TARGETS) $(TARGETS:=.o)
