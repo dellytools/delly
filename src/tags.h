@@ -76,6 +76,34 @@ namespace torali {
     }
   }
 
+  //FF+ 0
+  //FF- 1
+  //FR+ 2
+  //FR- 3
+  //RF+ 4
+  //RF- 5
+  //RR+ 6
+  //RR- 7
+
+  template<typename TBamRecord>
+  inline int
+    getStrandSpecificOrientation(TBamRecord const& al) {
+    if (!(al.AlignmentFlag  & 0x0010)) {
+      if (!(al.AlignmentFlag & 0x0020)) {
+        return (al.Position < al.MatePosition) ? 0 : 1;
+      } else {
+        return (al.Position < al.MatePosition) ? 2 : 3;
+      }
+    } else {
+      if (!(al.AlignmentFlag & 0x0020)) {
+        return (al.Position > al.MatePosition) ? 4 : 5;
+      } else {
+        return (al.Position > al.MatePosition) ? 6 : 7;
+      }
+    }
+  }
+
+
   // Deletions
   template<typename TBamRecord>
     inline int 

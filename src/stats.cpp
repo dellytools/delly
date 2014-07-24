@@ -29,17 +29,28 @@ Contact: Tobias Rausch (rausch@embl.de)
 #include <boost/program_options/variables_map.hpp>
 #include <boost/date_time/posix_time/posix_time.hpp>
 #include <boost/date_time/gregorian/gregorian.hpp>
+#include <boost/iostreams/stream.hpp>
+#include <boost/iostreams/stream_buffer.hpp>
+#include <boost/iostreams/device/file.hpp>
+#include <boost/iostreams/filtering_stream.hpp>
+#include <boost/iostreams/filter/zlib.hpp>
+#include <boost/iostreams/filter/gzip.hpp>
 #include <boost/filesystem.hpp>
 #include "api/BamReader.h"
 #include "api/BamIndex.h"
+
 #include "version.h"
+#include "util.h"
+#include "tags.h"
 
 using namespace torali;
 
 // Config arguments
 struct Config {
+  bool iout;
   boost::filesystem::path bam;
   boost::filesystem::path outfile;
+  boost::filesystem::path insertfile;
 };
 
 
@@ -85,6 +96,13 @@ inline int run(Config const& c) {
 
   // Open output file
   std::ofstream ofile(c.outfile.string().c_str());
+
+  // Open insert output file
+  boost::iostreams::filtering_ostream dataOut;
+  if (c.iout) {
+    dataOut.push(boost::iostreams::gzip_compressor());
+    dataOut.push(boost::iostreams::file_sink(c.insertfile.string().c_str(), std::ios_base::out | std::ios_base::binary));
+  }
 
   // Get references
   BamTools::RefVector references = reader.GetReferenceData();
@@ -159,7 +177,45 @@ inline int run(Config const& c) {
 	  // Same chr?
 	  if (al.RefID == al.MateRefID) {
 	    ++pairedReadSameChr;
-	    if (al.AlignmentFlag & 0x0040) vecISize.push_back(abs(al.InsertSize));
+	    if (al.AlignmentFlag & 0x0040) {
+	      switch(getStrandSpecificOrientation(al)) {
+	      case 0:
+		if (c.iout) dataOut << al.Name << "\tFF+\tF+\t" << references[al.RefID].RefName << "\t" << al.Position << "\t" <<  references[al.MateRefID].RefName << "\t" <<  al.MatePosition << "\t" << (al.InsertSize + al.QueryBases.size()) << std::endl;
+		vecISize.push_back(al.InsertSize + al.QueryBases.size());
+		break;
+	      case 1:
+		if (c.iout) dataOut << al.Name << "\tFF-\tF-\t" << references[al.RefID].RefName << "\t" << al.Position << "\t" <<  references[al.MateRefID].RefName << "\t" <<  al.MatePosition << "\t" << (-al.InsertSize + al.QueryBases.size()) << std::endl;
+		vecISize.push_back(-al.InsertSize + al.QueryBases.size());
+		break;
+	      case 2:
+		if (c.iout) dataOut << al.Name << "\tFR+\tR+\t" << references[al.RefID].RefName << "\t" << al.Position << "\t" <<  references[al.MateRefID].RefName << "\t" <<  al.MatePosition << "\t" << al.InsertSize << std::endl;
+		vecISize.push_back(al.InsertSize);
+		break;
+	      case 3:
+		if (c.iout) dataOut << al.Name << "\tFR-\tR-\t" << references[al.RefID].RefName << "\t" << al.Position << "\t" <<  references[al.MateRefID].RefName << "\t" <<  al.MatePosition << "\t" << (-al.InsertSize + (al.QueryBases.size() + al.QueryBases.size())) << std::endl;
+		vecISize.push_back(-al.InsertSize + (al.QueryBases.size() + al.QueryBases.size()));
+		break;
+	      case 4:
+		if (c.iout) dataOut << al.Name << "\tRF+\tR+\t" << references[al.RefID].RefName << "\t" << al.Position << "\t" <<  references[al.MateRefID].RefName << "\t" <<  al.MatePosition << "\t" << -al.InsertSize << std::endl;
+		vecISize.push_back(-al.InsertSize);
+		break;
+	      case 5:
+		if (c.iout) dataOut << al.Name << "\tRF-\tR-\t" << references[al.RefID].RefName << "\t" << al.Position << "\t" <<  references[al.MateRefID].RefName << "\t" <<  al.MatePosition << "\t" << (al.InsertSize + (al.QueryBases.size() + al.QueryBases.size())) << std::endl;
+		vecISize.push_back(al.InsertSize + (al.QueryBases.size() + al.QueryBases.size()));
+		break;
+	      case 6:
+	        if (c.iout) dataOut << al.Name << "\tRR+\tF+\t" << references[al.RefID].RefName << "\t" << al.Position << "\t" <<  references[al.MateRefID].RefName << "\t" <<  al.MatePosition << "\t" << (-al.InsertSize + al.QueryBases.size()) << std::endl;
+		vecISize.push_back(-al.InsertSize + al.QueryBases.size());
+		break;
+	      case 7:
+		if (c.iout) dataOut << al.Name << "\tRR-\tF-\t" << references[al.RefID].RefName << "\t" << al.Position << "\t" <<  references[al.MateRefID].RefName << "\t" <<  al.MatePosition << "\t" << (al.InsertSize + al.QueryBases.size()) << std::endl;
+		vecISize.push_back(al.InsertSize + al.QueryBases.size());
+		break;
+	      default:
+		std::cerr << "False orientation." << std::endl;
+		return -1;
+	      }
+	    }
 	  }
 	  // Collect all paired-end mapped reads
 	  if (al.AlignmentFlag & 0x0040) {
@@ -300,6 +356,7 @@ int main(int argc, char **argv) {
   generic.add_options()
     ("help,?", "show help message")
     ("outfile,o", boost::program_options::value<boost::filesystem::path>(&c.outfile)->default_value("stat.txt"), "statistics output file")
+    ("insert,i", boost::program_options::value<boost::filesystem::path>(&c.insertfile)->default_value(""), "gzip insert size output file")
     ;
 
   // Define hidden options
@@ -336,6 +393,10 @@ int main(int argc, char **argv) {
     }
     return 1; 
   }
+  
+  // Output insert sizes
+  if (c.insertfile.string().size()) c.iout = true;
+  else c.iout = false;
 
   // Show cmd
   boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
@@ -346,3 +407,7 @@ int main(int argc, char **argv) {
   // Run stats
   return run(c);
 }
+
+
+
+
