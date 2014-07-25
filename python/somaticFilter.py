@@ -11,20 +11,15 @@ import copy
 
 #Functions
 def overlapValid(s1, e1, s2, e2, reciprocalOverlap=0.8, maxOffset=250):
-    if (e1 < s2) or (s1 > e2):
-        return False
+    bpOffset = max(abs(s2-s1), abs(e2-e1))
     overlapLen = float(min(e1, e2) - max(s1, s2))
     lenA=float(e1-s1)
     lenB=float(e2-s2)
-    if (overlapLen<0):
-        sys.exit("Sites are not overlapping.")
-    if (lenA<=0) or (lenB<=0):
-        sys.exit("Invalid intervals.")
-    # Check reciprocal overlap
-    if (overlapLen/max(lenA,lenB))<reciprocalOverlap:
+    # Check for any overlap
+    if (e1 < s2) or (s1 > e2) or (lenA<=0) or (lenB<=0) or (overlapLen<=0):
         return False
-    # Check offset
-    if max(abs(s2-s1), abs(e2-e1))>maxOffset:
+    # Check reciprocal overlap and offset
+    if ((overlapLen/max(lenA,lenB))<reciprocalOverlap) or (bpOffset>maxOffset):
         return False
     return True
 
@@ -33,7 +28,7 @@ def overlapValid(s1, e1, s2, e2, reciprocalOverlap=0.8, maxOffset=250):
 parser = argparse.ArgumentParser(description='Filter for somatic SVs.')
 parser.add_argument('-v', '--vcf', metavar='variants.vcf', required=True, dest='vcfFile', help='input vcf file (required)')
 parser.add_argument('-o', '--out', metavar='out.vcf', required=True, dest='outFile', help='output vcf file (required)')
-parser.add_argument('-t', '--type', metavar='DEL', required=True, dest='svType', help='SV type [DEL, DUP, INV, INS] (required)')
+parser.add_argument('-t', '--type', metavar='DEL', required=True, dest='svType', help='SV type [DEL, DUP, INV, INS, TRA] (required)')
 parser.add_argument('-a', '--altaf', metavar='0.25', required=False, dest='altAF', help='min. alt. AF (optional)')
 parser.add_argument('-m', '--minsize', metavar='500', required=False, dest='minSize', help='min. size (optional)')
 parser.add_argument('-n', '--maxsize', metavar='500000000', required=False, dest='maxSize', help='max. size (optional)')
@@ -79,11 +74,24 @@ if args.vcfFile:
                 validRecordID.add(record.ID)
                 if not sv.has_key(record.CHROM):
                     sv[record.CHROM] = banyan.SortedDict(key_type=(int, int), alg=banyan.RED_BLACK_TREE, updator=banyan.OverlappingIntervalsUpdator)
-                if (record.POS, record.INFO['END']) in sv[record.CHROM]:
-                    svDups[(record.CHROM, record.POS, record.INFO['END'])].append((record.ID, record.INFO['PE']))
+                if not sv.has_key(record.INFO['CHR2']):
+                    sv[record.INFO['CHR2']] = banyan.SortedDict(key_type=(int, int), alg=banyan.RED_BLACK_TREE, updator=banyan.OverlappingIntervalsUpdator)
+                if (args.svType=='TRA'):
+                    traWindow=5000  # 5kb translocation window
+                    if (record.POS - traWindow, record.POS + traWindow) in sv[record.CHROM]:
+                        svDups[(record.CHROM, record.POS - traWindow, record.POS + traWindow)].append((record.ID, record.INFO['PE']))
+                    else:
+                        sv[record.CHROM][(record.POS - traWindow, record.POS + traWindow)] = (record.ID, record.INFO['PE'])
+                    if (record.INFO['END'] - traWindow, record.INFO['END'] + traWindow) in sv[record.INFO['CHR2']]:
+                        svDups[(record.INFO['CHR2'], record.INFO['END'] - traWindow, record.INFO['END'] + traWindow)].append((record.ID, record.INFO['PE']))
+                    else:
+                        sv[record.INFO['CHR2']][(record.INFO['END'] - traWindow, record.INFO['END'] + traWindow)] = (record.ID, record.INFO['PE'])
                 else:
-                    sv[record.CHROM][(record.POS, record.INFO['END'])] = (record.ID, record.INFO['PE'])
-
+                    if (record.POS, record.INFO['END']) in sv[record.CHROM]:
+                        svDups[(record.CHROM, record.POS, record.INFO['END'])].append((record.ID, record.INFO['PE']))
+                    else:
+                        sv[record.CHROM][(record.POS, record.INFO['END'])] = (record.ID, record.INFO['PE'])
+                        
 # Output vcf records
 if args.vcfFile:
     vcf_reader = vcf.Reader(open(args.vcfFile), 'r')
@@ -93,21 +101,27 @@ if args.vcfFile:
         # Is it a valid SV?
         if (record.ID not in validRecordID):
             continue
-        # Collect overlapping and identical calls
-        overlapCalls = list()
-        for cSvID, cScore in svDups[(record.CHROM, record.POS, record.INFO['END'])]:
-            if (record.ID != cSvID):
-                overlapCalls.append((cSvID, cScore))
-        for cStart, cEnd in sv[record.CHROM].overlap((record.POS, record.INFO['END'])):
-            cSvID, cScore = sv[record.CHROM][(cStart, cEnd)]
-            if (record.ID != cSvID) and (overlapValid(record.POS, record.INFO['END'], cStart, cEnd)):
-                overlapCalls.append((cSvID, cScore))
         # Judge wether overlapping calls are better
         foundBetterHit = False
-        for cSvID, cScore in overlapCalls:
-            if (cScore > record.INFO['PE']) or ((cScore == record.INFO['PE']) and (cSvID < record.ID)):
-                foundBetterHit = True
-                break
+        if (args.svType=='TRA'):
+            for (chrName, start, end) in [ (record.CHROM, record.POS - traWindow, record.POS + traWindow), (record.INFO['CHR2'], record.INFO['END'] - traWindow, record.INFO['END'] + traWindow) ]:
+                for cStart, cEnd in sv[chrName].overlap((start, end)):
+                    for cSvID, cScore in svDups[(chrName, cStart, cEnd)] + [sv[chrName][(cStart, cEnd)]]:
+                        if (record.ID != cSvID):
+                            if (cScore > record.INFO['PE']) or ((cScore == record.INFO['PE']) and (cSvID < record.ID)):
+                                foundBetterHit = True
+                                break
+                    if (foundBetterHit):
+                        break
+        else:
+            for cStart, cEnd in sv[record.CHROM].overlap((record.POS, record.INFO['END'])):
+                for cSvID, cScore in svDups[(record.CHROM, cStart, cEnd)] + [sv[record.CHROM][(cStart, cEnd)]]:
+                    if (record.ID != cSvID) and (overlapValid(record.POS, record.INFO['END'], cStart, cEnd)):
+                        if (cScore > record.INFO['PE']) or ((cScore == record.INFO['PE']) and (cSvID < record.ID)):
+                            foundBetterHit = True
+                            break
+                if (foundBetterHit):
+                    break
         if not foundBetterHit:
             record.INFO['SOMATIC'] = True
             vcf_writer.write_record(record)
