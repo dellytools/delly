@@ -319,8 +319,8 @@ inline int run(Config const& c) {
   }
 
   // Print insert size bins
-  typename TVecISize::const_iterator binIt = vecISizeBins.begin();
-  typename TVecISize::const_iterator binItEnd = vecISizeBins.end();
+  TVecISize::const_iterator binIt = vecISizeBins.begin();
+  TVecISize::const_iterator binItEnd = vecISizeBins.end();
   unsigned int sumBin = 0;
   for(;binIt!=binItEnd; ++binIt) sumBin += *binIt;
   ofile << "Insert size counts for all non-redundant read pairs mapped to the same chromosome" << std::endl;
@@ -356,7 +356,7 @@ int main(int argc, char **argv) {
   generic.add_options()
     ("help,?", "show help message")
     ("outfile,o", boost::program_options::value<boost::filesystem::path>(&c.outfile)->default_value("stat.txt"), "statistics output file")
-    ("insert,i", boost::program_options::value<boost::filesystem::path>(&c.insertfile)->default_value(""), "gzip insert size output file")
+    ("insert,i", boost::program_options::value<boost::filesystem::path>(&c.insertfile)->default_value(""), "gzipped insert size output file")
     ;
 
   // Define hidden options
