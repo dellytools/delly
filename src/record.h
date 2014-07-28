@@ -425,62 +425,6 @@ namespace torali
     token.skipNextChunk();
   }
 
-
-
-
-
-  /*
-  template<typename TRecord>
-  inline int
-  getStrandIndependentOrientation(TRecord const& rec) {
-    if (rec.f1 & 0x0040) {
-      if (!(rec.f1 & 0x0010)) {
-	if (!(rec.f1 & 0x0020)) return (rec.f3 < rec.f7) ? 0 : 1;
-	else return (rec.f3 < rec.f7) ? 2 : 3;
-      } else {
-	if (!(rec.f1 & 0x0020)) return (rec.f3 > rec.f7) ? 2 : 3;
-	else return (rec.f3 > rec.f7) ? 0 : 1;
-      }
-    } else {
-      if (!(rec.f1 & 0x0010)) {
-	if (!(rec.f1 & 0x0020)) return (rec.f3 < rec.f7) ? 1 : 0;
-	else return (rec.f3 < rec.f7) ? 2 : 3;
-      } else {
-	if (!(rec.f1 & 0x0020)) return (rec.f3 > rec.f7) ? 2 : 3;
-	else return (rec.f3 > rec.f7) ? 1 : 0;
-      }
-    }
-  }
-  */
-
-
-  //FF+ 0
-  //FF- 1
-  //FR+ 2
-  //FR- 3
-  //RF+ 4
-  //RF- 5
-  //RR+ 6
-  //RR- 7
-
-  template<typename TRecord>
-    inline
-    int getStrandSpecificOrientation(TRecord const& rec) {
-    if (!(rec.f1  & 0x0010)) {
-      if (!(rec.f1 & 0x0020)) {
-	return (rec.f3 < rec.f7) ? 0 : 1;
-      } else {
-	return (rec.f3 < rec.f7) ? 2 : 3;
-      }
-    } else {
-      if (!(rec.f1 & 0x0020)) {
-	return (rec.f3 > rec.f7) ? 4 : 5;
-      } else {
-	return (rec.f3 > rec.f7) ? 6 : 7;
-      }
-    }
-  }
-
 }
 
 #endif
