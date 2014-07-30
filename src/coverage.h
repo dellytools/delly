@@ -221,11 +221,11 @@ annotateCoverage(TFiles const& files, uint16_t minMapQual, bool inclCigar, bool 
 
       // Declare the chromosome array
       typedef unsigned short TArrayType;
-      unsigned int arrayLen=itRef->RefLength + 1000000;
+      uint64_t arrayLen=itRef->RefLength + 1000000;
       TArrayType* read_count = new TArrayType[arrayLen];
       TArrayType* bp_count = new TArrayType[arrayLen];
-      memset(read_count, 0, arrayLen * sizeof(TArrayType));
-      memset(bp_count, 0, arrayLen * sizeof(TArrayType));
+      memset(read_count, 0, arrayLen * (uint64_t) sizeof(TArrayType));
+      memset(bp_count, 0, arrayLen * (uint64_t) sizeof(TArrayType));
 
       // Iterate all reads of that chromosome
       _addReadAndBpCounts(hit_vector, read_count, bp_count);

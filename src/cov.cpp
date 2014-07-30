@@ -37,6 +37,7 @@ Contact: Tobias Rausch (rausch@embl.de)
 #include <boost/iostreams/filtering_stream.hpp>
 #include <boost/iostreams/filter/zlib.hpp>
 #include <boost/iostreams/filter/gzip.hpp>
+#include <boost/filesystem.hpp>
 #include <boost/tokenizer.hpp>
 #include <boost/progress.hpp>
 #include "api/BamReader.h"
