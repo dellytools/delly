@@ -26,7 +26,6 @@ Contact: Tobias Rausch (rausch@embl.de)
 
 #include <math.h>
 #include "tags.h"
-#include "fasta_reader.h"
 
 
 namespace torali
@@ -41,6 +40,8 @@ namespace torali
     int maxNormalISize;
     int defaultOrient;
     unsigned int mappedReads;
+    unsigned int non_unique_abnormal_pairs;
+    unsigned int abnormal_pairs;
     unsigned int non_unique_pairs;
     unsigned int unique_pairs;
 
