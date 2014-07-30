@@ -74,7 +74,6 @@ using namespace torali;
 
 // Config arguments
 struct Config {
-  bool junction;
   unsigned short minMapQual;
   unsigned short minGenoQual;
   unsigned short madCutoff;
@@ -1105,12 +1104,12 @@ _addOrientation(int, SVType<InsertionTag>) {
 
 template<typename TConfig, typename TStructuralVariantRecord, typename TJunctionCountMap, typename TReadCountMap, typename TCountMap, typename TTag>
 inline void
-vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJunctionCountMap const& jctCountMap, TReadCountMap const& readCountMap, TCountMap const& normalCountMap, TCountMap const& abnormalCountMap, SVType<TTag> svType) 
+vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJunctionCountMap const& jctCountMap, TReadCountMap const& readCountMap, TCountMap const& spanCountMap, SVType<TTag> svType) 
 {
   // Typedefs
   typedef typename TCountMap::key_type TSampleSVPair;
-  typedef typename TCountMap::mapped_type TCountRange;
-  typedef typename TCountRange::value_type TMapqVector;
+  typedef typename TCountMap::mapped_type TCountPair;
+  typedef typename TCountPair::first_type TMapqVector;
 
   // Get the references
   BamTools::BamReader reader;
@@ -1210,37 +1209,22 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
       TSampleSVPair sampleSVPairLeft = std::make_pair(sampleName, svIter->id);
       TSampleSVPair sampleSVPairRight = std::make_pair(sampleName, -svIter->id);
       typename TJunctionCountMap::const_iterator jctCountMapIt=jctCountMap.find(sampleSVPairLeft);
-      typename TCountMap::const_iterator countMapItLeft=normalCountMap.find(sampleSVPairLeft);
-      typename TCountMap::const_iterator countMapItRight=normalCountMap.find(sampleSVPairRight);
-      typename TCountMap::const_iterator abCountMapItLeft=abnormalCountMap.find(sampleSVPairLeft);
-      typename TCountMap::const_iterator abCountMapItRight=abnormalCountMap.find(sampleSVPairRight);
-      typename TCountMap::const_iterator countMapIt = normalCountMap.end(); 
-      typename TCountMap::const_iterator abCountMapIt = abnormalCountMap.end();
+      typename TCountMap::const_iterator spanLeftIt=spanCountMap.find(sampleSVPairLeft);
+      typename TCountMap::const_iterator spanRightIt=spanCountMap.find(sampleSVPairRight);
 
-      // Always take the minimum to be conservative (and to flag unclear samples as LowQual)
-      if ((countMapItLeft!=normalCountMap.end()) && (countMapItRight!=normalCountMap.end())) {
-	if ((!countMapItLeft->second.empty()) && (!countMapItRight->second.empty())) {
-	  if (countMapItLeft->second[0].size() <= countMapItRight->second[0].size()) countMapIt=countMapItLeft;
-	  else countMapIt=countMapItRight;
-	}
-      }
-      if ((abCountMapItLeft!=abnormalCountMap.end()) && (abCountMapItRight!=abnormalCountMap.end())) {
-	if ((!abCountMapItLeft->second.empty()) && (!abCountMapItRight->second.empty())) {
-	  if ((svIter->chr != svIter->chr2) || (abCountMapItLeft->second[0].size() > abCountMapItRight->second[0].size())) abCountMapIt=abCountMapItRight;
-	  else abCountMapIt=abCountMapItLeft;
-	}
-      }
-
+      // Junction counts
       TMapqVector mapqRef = TMapqVector();
       TMapqVector mapqAlt = TMapqVector();
-      if ((svIter->precise) || (c.junction)) {
+      if (svIter->precise) {
 	// Genotyping for precise events uses junction read qualities
 	mapqRef = jctCountMapIt->second.first;
 	mapqAlt = jctCountMapIt->second.second;
       } else {
-	// Genotyping for imprecise events uses paired-end qualities
-	if ((countMapIt!=normalCountMap.end()) && (!countMapIt->second.empty())) mapqRef = countMapIt->second[0];
-	if ((abCountMapIt!=abnormalCountMap.end()) && (!abCountMapIt->second.empty())) mapqAlt = abCountMapIt->second[0];
+	// Genotyping for imprecise events uses spanning pair qualities, always use the minimum of left and right breakpoint
+	if (spanLeftIt->second.first.size() <= spanRightIt->second.first.size()) mapqRef=spanLeftIt->second.first;
+	else mapqRef=spanRightIt->second.first;
+	if (spanLeftIt->second.second.size() <= spanRightIt->second.second.size()) mapqAlt=spanLeftIt->second.second;
+	else mapqAlt=spanRightIt->second.second;
       }
 
       // Compute genotype likelihoods
@@ -1293,8 +1277,10 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
       if (readCountMapIt!=readCountMap.end()) rcCount = readCountMapIt->second.second;
       int drCount = 0;
       int dvCount = 0;
-      if (countMapIt!=normalCountMap.end()) drCount = countMapIt->second[0].size();
-      if (abCountMapIt!=abnormalCountMap.end()) dvCount = abCountMapIt->second[0].size();
+      if (spanLeftIt->second.first.size() <= spanRightIt->second.first.size()) drCount=spanLeftIt->second.first.size();
+      else drCount=spanRightIt->second.first.size();
+      if (spanLeftIt->second.second.size() <= spanRightIt->second.second.size()) dvCount=spanLeftIt->second.second.size();
+      else dvCount=spanRightIt->second.second.size();
       int rrCount = 0;
       int rvCount = 0;
       if (jctCountMapIt!=jctCountMap.end()) {
@@ -1753,18 +1739,7 @@ template<typename TConfig, typename TSampleLibrary, typename TSVs, typename TCou
 inline void
 _annotateCoverage(TConfig const& c, TSampleLibrary& sampleLib, TSVs& svs, TCountMap& countMap, SVType<TTag>) 
 {
-  typedef typename TSampleLibrary::mapped_type TLibraryMap;
   annotateCoverage(c.files, c.minGenoQual, false, true, sampleLib, svs, countMap, SingleHit<int32_t, void>(), CoverageType<RedundancyFilterTag>());
-  boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
-  std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Library statistics" << std::endl;
-  typename TSampleLibrary::const_iterator sampleIt=sampleLib.begin();
-  for(;sampleIt!=sampleLib.end();++sampleIt) {
-    std::cout << "Sample: " << sampleIt->first << std::endl;
-    typename TLibraryMap::const_iterator libIt=sampleIt->second.begin();
-    for(;libIt!=sampleIt->second.end();++libIt) {
-      std::cout << "RG: ID=" << libIt->first << ",Median=" << libIt->second.median << ",MAD=" << libIt->second.mad << ",Orientation=" << (int) libIt->second.defaultOrient << ",MappedReads=" << libIt->second.mappedReads << ",DuplicatePairs=" << libIt->second.non_unique_pairs << ",UniquePairs=" << libIt->second.unique_pairs << std::endl;
-    }
-  }
 }
 
 template<typename TConfig, typename TSampleLibrary, typename TSVs, typename TCountMap>
@@ -1776,23 +1751,9 @@ _annotateCoverage(TConfig const&, TSampleLibrary&, TSVs&, TCountMap&, SVType<Tra
 
 template<typename TConfig, typename TSampleLibrary, typename TSVs, typename TCountMap, typename TTag>
 inline void
-_annotateSpanningCoverage(TConfig const& c, TSampleLibrary& sampleLib, TSVs& svs, TCountMap& normalCountMap, TCountMap& abnormalCountMap, SVType<TTag> svType) 
+_annotateSpanningCoverage(TConfig const& c, TSampleLibrary& sampleLib, TSVs& svs, TCountMap& spanCountMap, SVType<TTag> svType) 
 {
-  typedef typename TSampleLibrary::mapped_type TLibraryMap;
-  annotateSpanningCoverage(c.files, 0, c.minGenoQual, sampleLib, svs, normalCountMap, abnormalCountMap, HitInterval<int32_t, uint16_t>(), svType);
-  boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
-  std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Library statistics" << std::endl;
-  typename TSampleLibrary::const_iterator sampleIt=sampleLib.begin();
-  for(;sampleIt!=sampleLib.end();++sampleIt) {
-    std::cout << "Sample: " << sampleIt->first << std::endl;
-    typename TLibraryMap::const_iterator libIt=sampleIt->second.begin();
-    for(;libIt!=sampleIt->second.end();++libIt) {
-      std::cout << "RG: ID=" << libIt->first << ",Median=" << libIt->second.median << ",MAD=" << libIt->second.mad << ",Orientation=" << (int) libIt->second.defaultOrient << ",MinInsertSize=" << libIt->second.minNormalISize << ",MaxInsertSize=" << libIt->second.maxNormalISize << ",DuplicatePairs=" << libIt->second.non_unique_pairs << ",UniquePairs=" << libIt->second.unique_pairs << std::endl;
-    }
-  }
-
-
-
+  annotateSpanningCoverage(c.files, c.minGenoQual, sampleLib, svs, spanCountMap, svType);
 }
 
 
@@ -1982,9 +1943,9 @@ inline int run(Config const& c, TSVType svType) {
 		{
 		  bamRecord.push_back(BamAlignRecord(al, pairQuality, libIt->second.median, libIt->second.mad, libIt->second.maxNormalISize, libIt->second.defaultOrient));
 		}
-		++libIt->second.unique_pairs;
+		++libIt->second.abnormal_pairs;
 	      } else {
-		++libIt->second.non_unique_pairs;
+		++libIt->second.non_unique_abnormal_pairs;
 	      }
 	    }
 	  }
@@ -2168,18 +2129,6 @@ inline int run(Config const& c, TSVType svType) {
     }
   }
 
-  // Output library statistics
-  now = boost::posix_time::second_clock::local_time();
-  std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Library statistics" << std::endl;
-  TSampleLibrary::const_iterator sampleIt=sampleLib.begin();
-  for(;sampleIt!=sampleLib.end();++sampleIt) {
-    std::cout << "Sample: " << sampleIt->first << std::endl;
-    TLibraryMap::const_iterator libIt=sampleIt->second.begin();
-    for(;libIt!=sampleIt->second.end();++libIt) {
-      std::cout << "RG: ID=" << libIt->first << ",Median=" << libIt->second.median << ",MAD=" << libIt->second.mad << ",Orientation=" << (int) libIt->second.defaultOrient << ",InsertSizeCutoff=" << libIt->second.maxNormalISize << ",DuplicateDiscordantPairs=" << libIt->second.non_unique_pairs << ",UniqueDiscordantPairs=" << libIt->second.unique_pairs << std::endl;
-    }
-  }
-
   // Split-read search
   if (peMapping) {
     if (boost::filesystem::exists(c.genome) && boost::filesystem::is_regular_file(c.genome) && boost::filesystem::file_size(c.genome)) 
@@ -2202,28 +2151,39 @@ inline int run(Config const& c, TSVType svType) {
 
   // Annotate junction reads
   typedef std::pair<std::string, int> TSampleSVPair;
-  typedef std::pair<std::vector<uint16_t>, std::vector<uint16_t> > TJunctionReadQual;
-  typedef boost::unordered_map<TSampleSVPair, TJunctionReadQual> TJunctionCountMap;
+  typedef std::pair<std::vector<uint16_t>, std::vector<uint16_t> > TReadQual;
+  typedef boost::unordered_map<TSampleSVPair, TReadQual> TJunctionCountMap;
   TJunctionCountMap junctionCountMap;
   if (boost::filesystem::exists(c.genome) && boost::filesystem::is_regular_file(c.genome) && boost::filesystem::file_size(c.genome))
     _annotateJunctionReads(c, sampleLib, svs, junctionCountMap, svType);
 
   // Annotate spanning coverage
-  typedef std::vector<std::vector<uint16_t> > TCountRange;
-  typedef boost::unordered_map<TSampleSVPair, TCountRange> TCountMap;
-  TCountMap normalCountMap;
-  TCountMap abnormalCountMap;
-  if (!c.junction) _annotateSpanningCoverage(c, sampleLib, svs, normalCountMap, abnormalCountMap, svType);
+  typedef boost::unordered_map<TSampleSVPair, TReadQual> TCountMap;
+  TCountMap spanCountMap;
+  _annotateSpanningCoverage(c, sampleLib, svs, spanCountMap, svType);
 
   // Annotate coverage
   typedef std::pair<int, int> TBpRead;
   typedef boost::unordered_map<TSampleSVPair, TBpRead> TReadCountMap;
   TReadCountMap readCountMap;
-  if (!c.junction) _annotateCoverage(c, sampleLib, svs, readCountMap, svType);
+  _annotateCoverage(c, sampleLib, svs, readCountMap, svType);
 
   // VCF output
   if (svs.size()) {
-    vcfOutput(c, svs, junctionCountMap, readCountMap, normalCountMap, abnormalCountMap, svType);
+    vcfOutput(c, svs, junctionCountMap, readCountMap, spanCountMap, svType);
+  }
+
+
+  // Output library statistics
+  now = boost::posix_time::second_clock::local_time();
+  std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Library statistics" << std::endl;
+  TSampleLibrary::const_iterator sampleIt=sampleLib.begin();
+  for(;sampleIt!=sampleLib.end();++sampleIt) {
+    std::cout << "Sample: " << sampleIt->first << std::endl;
+    TLibraryMap::const_iterator libIt=sampleIt->second.begin();
+    for(;libIt!=sampleIt->second.end();++libIt) {
+      std::cout << "RG: ID=" << libIt->first << ",Median=" << libIt->second.median << ",MAD=" << libIt->second.mad << ",Orientation=" << (int) libIt->second.defaultOrient << ",InsertSizeCutoff=" << libIt->second.maxNormalISize << ",DuplicateDiscordantPairs=" << libIt->second.non_unique_abnormal_pairs << ",UniqueDiscordantPairs=" << libIt->second.abnormal_pairs << ",MappedReads=" << libIt->second.mappedReads << ",DuplicatePairs=" << libIt->second.non_unique_pairs << ",UniquePairs=" << libIt->second.unique_pairs << std::endl;
+    }
   }
 
 #ifdef PROFILE
@@ -2276,7 +2236,6 @@ int main(int argc, char **argv) {
     ("num-split,n", boost::program_options::value<unsigned int>(&c.minimumSplitRead)->default_value(2), "minimum number of splitted reads")
     ("flanking,f", boost::program_options::value<unsigned int>(&c.flankQuality)->default_value(80), "quality of the aligned flanking region")
     ("pruning,j", boost::program_options::value<unsigned int>(&c.graphPruning)->default_value(100), "PE graph pruning cutoff")
-    ("junction-geno-only,p", "omit spanning coverage and read-depth genotyping")
     ("warranty,w", "show warranty")
     ("license,l", "show license")
     ;
@@ -2307,8 +2266,6 @@ int main(int argc, char **argv) {
     }
     return 1; 
   }
-  if (vm.count("junction-geno-only")) c.junction = true;
-  else c.junction = false;
 
   // Show cmd
   boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
