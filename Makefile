@@ -30,26 +30,17 @@ else
 endif
 
 # Targets
-TARGETS = src/delly src/iover src/cov src/spancov src/iMerge src/extract 
+TARGETS = src/delly src/extract src/cov src/stats
 
 all:   	$(TARGETS)
 
 src/delly:
 	$(CXX) $(CXXFLAGS) $@.cpp -o $@ $(LDFLAGS)
 
-src/iover:
-	$(CXX) $(CXXFLAGS) $@.cpp -o $@ $(LDFLAGS)
-
-src/iMerge:
-	$(CXX) $(CXXFLAGS) $@.cpp -o $@ $(LDFLAGS)
-
 src/extract:
 	$(CXX) $(CXXFLAGS) $@.cpp -o $@ $(LDFLAGS)
 
 src/cov:
-	$(CXX) $(CXXFLAGS) $@.cpp -o $@ $(LDFLAGS)
-
-src/spancov:
 	$(CXX) $(CXXFLAGS) $@.cpp -o $@ $(LDFLAGS)
 
 src/stats:
