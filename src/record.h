@@ -28,7 +28,6 @@ Contact: Tobias Rausch (rausch@embl.de)
 
 #include "api/BamReader.h"
 #include "memory_mapped_file.h"
-#include "tokenizer.h"
 
 namespace torali
 {
