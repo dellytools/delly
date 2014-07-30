@@ -95,9 +95,9 @@ namespace torali {
     for(typename TSampleLibrary::iterator sIt = sampleLib.begin(); sIt!=sampleLib.end();++sIt) {
       for(typename TSVs::const_iterator itSV = svs.begin(); itSV!=svs.end(); ++itSV) {
 	// Left breakpoint
-	spanCountMap.insert(std::make_pair(std::make_pair(sIt->first, itSV->id), TCountPair()));
-	// Right breakpoint
 	spanCountMap.insert(std::make_pair(std::make_pair(sIt->first, -itSV->id), TCountPair()));
+	// Right breakpoint
+	spanCountMap.insert(std::make_pair(std::make_pair(sIt->first, itSV->id), TCountPair()));
       }
     }
 
@@ -239,18 +239,18 @@ namespace torali {
 		  } else if ((getStrandIndependentOrientation(al) != libIt->second.defaultOrient) || (outerISize > libIt->second.maxNormalISize) || (al.RefID!=al.MateRefID)) {
 		    // Missing spanning coverage
 		    if (_mateIsUpstream(libIt->second.defaultOrient, (al.AlignmentFlag & 0x0040), (al.AlignmentFlag & 0x0010))) {
-		      if ((itSV->svStart>=al.Position) && (itSV->svStart<=(al.Position + libIt->second.maxNormalISize))) leftIt->second.second.push_back(pairQuality);
-		      if ((itSV->svEnd>=al.Position) && (itSV->svEnd<=(al.Position + libIt->second.maxNormalISize))) rightIt->second.second.push_back(pairQuality);
+		      if ((itSV->chr==al.RefID) && (itSV->svStart>=al.Position) && (itSV->svStart<=(al.Position + libIt->second.maxNormalISize))) leftIt->second.second.push_back(pairQuality);
+		      if ((itSV->chr2==al.RefID) && (itSV->svEnd>=al.Position) && (itSV->svEnd<=(al.Position + libIt->second.maxNormalISize))) rightIt->second.second.push_back(pairQuality);
 		    } else {
-		      if ((itSV->svStart>=std::max(0, al.Position + al.Length - libIt->second.maxNormalISize)) && (itSV->svStart<=(al.Position + al.Length))) leftIt->second.second.push_back(pairQuality);
-		      if ((itSV->svEnd>=std::max(0, al.Position + al.Length - libIt->second.maxNormalISize)) && (itSV->svEnd<=(al.Position + al.Length))) rightIt->second.second.push_back(pairQuality);
+		      if ((itSV->chr==al.RefID) && (itSV->svStart>=std::max(0, al.Position + al.Length - libIt->second.maxNormalISize)) && (itSV->svStart<=(al.Position + al.Length))) leftIt->second.second.push_back(pairQuality);
+		      if ((itSV->chr2==al.RefID) && (itSV->svEnd>=std::max(0, al.Position + al.Length - libIt->second.maxNormalISize)) && (itSV->svEnd<=(al.Position + al.Length))) rightIt->second.second.push_back(pairQuality);
 		    }
 		    if (_mateIsUpstream(libIt->second.defaultOrient, !(al.AlignmentFlag & 0x0040), (al.AlignmentFlag & 0x0020))) {
-		      if ((itSV->svStart>=al.MatePosition) && (itSV->svStart<=(al.MatePosition + libIt->second.maxNormalISize))) leftIt->second.second.push_back(pairQuality);
-		      if ((itSV->svEnd>=al.MatePosition) && (itSV->svEnd<=(al.MatePosition + libIt->second.maxNormalISize))) rightIt->second.second.push_back(pairQuality);
+		      if ((itSV->chr==al.MateRefID) && (itSV->svStart>=al.MatePosition) && (itSV->svStart<=(al.MatePosition + libIt->second.maxNormalISize))) leftIt->second.second.push_back(pairQuality);
+		      if ((itSV->chr2==al.MateRefID) && (itSV->svEnd>=al.MatePosition) && (itSV->svEnd<=(al.MatePosition + libIt->second.maxNormalISize))) rightIt->second.second.push_back(pairQuality);
 		    } else {
-		      if ((itSV->svStart>=std::max(0, al.MatePosition + al.Length - libIt->second.maxNormalISize)) && (itSV->svStart<=(al.MatePosition + al.Length))) leftIt->second.second.push_back(pairQuality);
-		      if ((itSV->svEnd>=std::max(0, al.MatePosition + al.Length - libIt->second.maxNormalISize)) && (itSV->svEnd<=(al.MatePosition + al.Length))) rightIt->second.second.push_back(pairQuality);
+		      if ((itSV->chr==al.MateRefID) && (itSV->svStart>=std::max(0, al.MatePosition + al.Length - libIt->second.maxNormalISize)) && (itSV->svStart<=(al.MatePosition + al.Length))) leftIt->second.second.push_back(pairQuality);
+		      if ((itSV->chr2==al.MateRefID) && (itSV->svEnd>=std::max(0, al.MatePosition + al.Length - libIt->second.maxNormalISize)) && (itSV->svEnd<=(al.MatePosition + al.Length))) rightIt->second.second.push_back(pairQuality);
 		    }
 		  }
 		}
