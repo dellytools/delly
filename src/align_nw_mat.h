@@ -29,7 +29,6 @@ Contact: Tobias Rausch (rausch@embl.de)
 
 
 #include "alphabet.h"
-#include "record.h"
 
 namespace torali
 {
