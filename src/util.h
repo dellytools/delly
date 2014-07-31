@@ -39,14 +39,11 @@ namespace torali
     int minNormalISize;
     int maxNormalISize;
     int defaultOrient;
-    unsigned int mappedReads;
     unsigned int non_unique_abnormal_pairs;
     unsigned int abnormal_pairs;
-    unsigned int non_unique_pairs;
-    unsigned int unique_pairs;
 
     
-  LibraryInfo() : median(0), mad(0), percentileCutoff(0), maxNormalISize(0), defaultOrient(0), mappedReads(0), non_unique_pairs(0), unique_pairs(0) {}
+  LibraryInfo() : median(0), mad(0), percentileCutoff(0), maxNormalISize(0), defaultOrient(0), non_unique_abnormal_pairs(0), abnormal_pairs(0) {}
   };
 
 

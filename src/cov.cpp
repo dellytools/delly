@@ -194,7 +194,7 @@ run(Config const& c, TSingleHit, TCoverageType covType)
     std::cout << "Sample: " << sampleIt->first << std::endl;
     TLibraryMap::const_iterator libIt=sampleIt->second.begin();
     for(;libIt!=sampleIt->second.end();++libIt) {
-      std::cout << "RG: ID=" << libIt->first << ",Median=" << libIt->second.median << ",MAD=" << libIt->second.mad << ",Orientation=" << (int) libIt->second.defaultOrient << ",MappedReads=" << libIt->second.mappedReads << ",DuplicatePairs=" << libIt->second.non_unique_pairs << ",UniquePairs=" << libIt->second.unique_pairs << std::endl;
+      std::cout << "RG: ID=" << libIt->first << ",Median=" << libIt->second.median << ",MAD=" << libIt->second.mad << ",Orientation=" << (int) libIt->second.defaultOrient << std::endl;
     }
   }
 

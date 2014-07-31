@@ -2182,7 +2182,7 @@ inline int run(Config const& c, TSVType svType) {
     std::cout << "Sample: " << sampleIt->first << std::endl;
     TLibraryMap::const_iterator libIt=sampleIt->second.begin();
     for(;libIt!=sampleIt->second.end();++libIt) {
-      std::cout << "RG: ID=" << libIt->first << ",Median=" << libIt->second.median << ",MAD=" << libIt->second.mad << ",Orientation=" << (int) libIt->second.defaultOrient << ",InsertSizeCutoff=" << libIt->second.maxNormalISize << ",DuplicateDiscordantPairs=" << libIt->second.non_unique_abnormal_pairs << ",UniqueDiscordantPairs=" << libIt->second.abnormal_pairs << ",MappedReads=" << libIt->second.mappedReads << ",DuplicatePairs=" << libIt->second.non_unique_pairs << ",UniquePairs=" << libIt->second.unique_pairs << std::endl;
+      std::cout << "RG: ID=" << libIt->first << ",Median=" << libIt->second.median << ",MAD=" << libIt->second.mad << ",Orientation=" << (int) libIt->second.defaultOrient << ",InsertSizeCutoff=" << libIt->second.maxNormalISize << ",DuplicateDiscordantPairs=" << libIt->second.non_unique_abnormal_pairs << ",UniqueDiscordantPairs=" << libIt->second.abnormal_pairs << std::endl;
     }
   }
 
