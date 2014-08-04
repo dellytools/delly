@@ -151,6 +151,7 @@ _redundancyFilter(TBamRecord const&, TUniquePairs&, TUniquePairs&, CoverageType<
 inline void
 annotateCoverage(TFiles const& files, uint16_t minMapQual, bool inclCigar, bool cov_norm, TSampleLibrary& sampleLib, TSVs& svs, TCountMap& countMap, TSingleHit, TCoverageType covType)
 {
+  typedef typename TSVs::value_type TSV;
   typedef typename TCountMap::key_type TSampleSVPair;
 
    // Get the references
@@ -159,7 +160,7 @@ annotateCoverage(TFiles const& files, uint16_t minMapQual, bool inclCigar, bool 
   BamTools::RefVector references = readerRef.GetReferenceData();
 
   // Sort Structural Variants
-  sort(svs.begin(), svs.end(), SortSVs<StructuralVariantRecord>());
+  sort(svs.begin(), svs.end(), SortSVs<TSV>());
 
   // Initialize count maps
   typedef boost::unordered_map<std::string, uint64_t> TMappedReads;
@@ -223,7 +224,7 @@ annotateCoverage(TFiles const& files, uint16_t minMapQual, bool inclCigar, bool 
       std::stable_sort(hit_vector.begin(), hit_vector.end(), SortSingleHits<TSingleHit>());
 
       // Store coverage for all input intervals
-      typename TSVs::const_iterator itSV = std::lower_bound(svs.begin(), svs.end(), StructuralVariantRecord(refIndex, 0, 0), SortSVs<StructuralVariantRecord>());
+      typename TSVs::const_iterator itSV = std::lower_bound(svs.begin(), svs.end(), TSV(refIndex, 0, 0), SortSVs<TSV>());
       for(;itSV!=svs.end();++itSV) {
 	if (itSV->chr != refIndex) break;
 	// Iterate all reads falling into that range

@@ -2168,7 +2168,7 @@ inline int run(Config const& c, TSVType svType) {
   typedef std::pair<int, int> TBpRead;
   typedef boost::unordered_map<TSampleSVPair, TBpRead> TReadCountMap;
   TReadCountMap readCountMap;
-  _annotateCoverage(c, sampleLib, svs, readCountMap, svType);
+  if (peMapping) _annotateCoverage(c, sampleLib, svs, readCountMap, svType);
 
   // VCF output
   if (svs.size()) {

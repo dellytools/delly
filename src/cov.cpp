@@ -111,7 +111,7 @@ run(Config const& c, TSingleHit, TCoverageType covType)
   BamTools::RefVector references = readerRef.GetReferenceData();
 
   // Read all SV intervals
-  typedef std::vector<StructuralVariantRecord> TSVs;
+  typedef std::vector<CovRecord> TSVs;
   TSVs svs;
   std::map<unsigned int, std::string> idToName;
   unsigned int intervalCount=1;
@@ -134,9 +134,8 @@ run(Config const& c, TSingleHit, TCoverageType covType)
 	  TMapChr::const_iterator mapChrIt = mapChr.find(chrName);
 	  if (mapChrIt != mapChr.end()) {
 	    if (tokIter!=tokens.end()) {
-	      StructuralVariantRecord sv;	  
+	      CovRecord sv;	  
 	      sv.chr = mapChrIt->second;
-	      sv.chr2 = mapChrIt->second;
 	      sv.svStart = boost::lexical_cast<int32_t>(*tokIter++);
 	      sv.svEnd = boost::lexical_cast<int32_t>(*tokIter++) + 1;
 	      std::string svName = *tokIter;
@@ -163,9 +162,8 @@ run(Config const& c, TSingleHit, TCoverageType covType)
       while (pos < references[refIndex].RefLength) {
 	int32_t window_len = pos+wSize;
 	if (window_len > references[refIndex].RefLength) window_len = references[refIndex].RefLength;
-	StructuralVariantRecord sv;
+	CovRecord sv;
 	sv.chr = refIndex;
-	sv.chr2 = refIndex;
 	sv.svStart = pos;
 	sv.svEnd = window_len;
 	std::stringstream s; 

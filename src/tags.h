@@ -221,6 +221,17 @@ namespace torali {
     }
   };
 
+  // Reduced structural variant record for cov
+  struct CovRecord {
+    int32_t chr;
+    int32_t svStart;
+    int32_t svEnd;
+    uint32_t id;
+
+    CovRecord() {}
+    CovRecord(int32_t const c, int32_t const s, int32_t const e) : chr(c), svStart(s), svEnd(e) {}
+  };
+
   // Structural variant record
   struct StructuralVariantRecord {
     int svStartBeg;
