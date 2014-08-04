@@ -967,6 +967,8 @@ template<typename TConfig, typename TReferences, typename TSize, typename TStruc
 inline void
 vcfParse(TConfig const& c, TReferences const references, TSize const overallMaxISize, std::vector<TStructuralVariantRecord>& svs, SVType<TTag> svType)
 {
+  bool refPresent=false;
+  if (boost::filesystem::exists(c.genome) && boost::filesystem::is_regular_file(c.genome) && boost::filesystem::file_size(c.genome)) refPresent=true;
   std::ifstream vcfFile(c.vcffile.string().c_str(), std::ifstream::in);
   if (vcfFile.is_open()) {
     typedef boost::unordered_map<std::string, unsigned int> TMapChr;
@@ -1016,7 +1018,7 @@ vcfParse(TConfig const& c, TReferences const references, TSize const overallMaxI
 	      std::string keyValue = *infoIter;
 	      std::size_t found = keyValue.find('=');
 	      if (found==std::string::npos) {
-		if (keyValue=="PRECISE") svRec.precise=true;
+		if ((keyValue=="PRECISE") && (refPresent)) svRec.precise=true;
 		continue;
 	      }
 	      std::string key = keyValue.substr(0, found);
