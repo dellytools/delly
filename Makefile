@@ -30,7 +30,7 @@ else
 endif
 
 # Targets
-TARGETS = src/delly src/extract src/cov src/stats
+TARGETS = src/delly src/extract src/cov src/iover src/stats
 
 all:   	$(TARGETS)
 
@@ -41,6 +41,9 @@ src/extract:
 	$(CXX) $(CXXFLAGS) $@.cpp -o $@ $(LDFLAGS)
 
 src/cov:
+	$(CXX) $(CXXFLAGS) $@.cpp -o $@ $(LDFLAGS)
+
+src/iover:
 	$(CXX) $(CXXFLAGS) $@.cpp -o $@ $(LDFLAGS)
 
 src/stats:
