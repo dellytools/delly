@@ -26,7 +26,7 @@ else ifeq (${DEBUG}, 2)
 	LDFLAGS += -lprofiler -ltcmalloc
 else
 	CXXFLAGS += -O9 -DNDEBUG
-	LDFLAGS += --static
+	#LDFLAGS += --static
 endif
 
 # Targets
