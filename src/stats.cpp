@@ -47,7 +47,7 @@ using namespace torali;
 
 // Config arguments
 struct Config {
-  bool iout;
+  uint32_t maxsize;
   boost::filesystem::path bam;
   boost::filesystem::path outfile;
   boost::filesystem::path insertfile;
@@ -97,16 +97,9 @@ inline int run(Config const& c) {
   // Open output file
   std::ofstream ofile(c.outfile.string().c_str());
 
-  // Open insert output file
-  boost::iostreams::filtering_ostream dataOut;
-  if (c.iout) {
-    dataOut.push(boost::iostreams::gzip_compressor());
-    dataOut.push(boost::iostreams::file_sink(c.insertfile.string().c_str(), std::ios_base::out | std::ios_base::binary));
-  }
-
   // Get references
   BamTools::RefVector references = reader.GetReferenceData();
-  uint64_t genomeLen = 0;
+  TCount genomeLen = 0;
   BamTools::RefVector::const_iterator itRef = references.begin();
   ofile << "SAM file: " << c.bam.string() << std::endl;
   ofile << std::endl;
@@ -115,7 +108,7 @@ inline int run(Config const& c) {
     ofile << itRef->RefName << " (" << itRef->RefLength << "bp); ";
     genomeLen += itRef->RefLength;
   }
-  uint64_t genomeDiploidLen = 2*genomeLen;
+  TCount genomeDiploidLen = 2*genomeLen;
   ofile << std::endl;
   ofile << "Haploid genome length: " << genomeLen << std::endl;
   ofile << "Diploid genome length: " << genomeDiploidLen << std::endl;
@@ -123,16 +116,14 @@ inline int run(Config const& c) {
 
 
   // Vector of all paired-reads
+  typedef std::vector<uint32_t> TVecSize;
   typedef std::vector<PairedMapping> TVecPaired;
   TVecPaired vecPairM;
 
-  // Vector of all read sizes
-  typedef std::vector<unsigned int> TVecRSize;
-  TVecRSize vecRSize;
-
-  // Vector of all insert size
-  typedef std::vector<unsigned int> TVecISize;
-  TVecISize vecISize;
+  // Read length statistics
+  TCount minReadLength=genomeDiploidLen;
+  TCount sumReadLength=0;
+  TCount maxReadLength=0;
 
   // Single-end statistics
   TCount totalReadCount = 0;
@@ -147,14 +138,56 @@ inline int run(Config const& c) {
   TCount pairedReadMappedCount = 0;
   TCount pairedReadSameChr = 0;
 
+  // Redundant paired read statistics
+  TCount redundantPairs = 0;
+  TCount chromRedundantPairs = 0;
+
+  // Orientations
+  TVecSize strandOrient(8);
+  TVecSize orient(4);
+  std::fill(strandOrient.begin(), strandOrient.end(), 0);
+  std::fill(orient.begin(), orient.end(), 0);
+
+  // Insert size counts by orientation
+  int maxInsertSize=c.maxsize;
+  TVecSize fPlus(maxInsertSize);
+  TVecSize fMinus(maxInsertSize);
+  TVecSize rPlus(maxInsertSize);
+  TVecSize rMinus(maxInsertSize);
+  std::fill(fPlus.begin(), fPlus.end(), 0);
+  std::fill(fMinus.begin(), fMinus.end(), 0);
+  std::fill(rPlus.begin(), rPlus.end(), 0);
+  std::fill(rMinus.begin(), rMinus.end(), 0);
+
   // Read alignments
   int32_t oldRefID=-1;
   boost::progress_display show_progress( (references.end() - references.begin()) + 1 );
   BamTools::BamAlignment al;
-  while( reader.GetNextAlignment(al) ) {
+  while( reader.GetNextAlignmentCore(al) ) {
     if (oldRefID != al.RefID) {
       ++show_progress;
       oldRefID = al.RefID;
+
+      // Get redundant pair counts for the old chromosome
+      sort(vecPairM.begin(), vecPairM.end(), SortPairedMapping());
+      TVecPaired::const_iterator pBeg = vecPairM.begin();
+      TVecPaired::const_iterator pPrevBeg = pBeg;
+      TVecPaired::const_iterator pEnd = vecPairM.end();
+      if (pBeg!=pEnd) ++pBeg;
+      for(;pBeg!=pEnd;++pBeg, ++pPrevBeg) {
+	if ((pBeg->Position == pPrevBeg->Position) && (pBeg->MatePosition == pPrevBeg->MatePosition) && (pBeg->RefID == pPrevBeg->RefID) && (pBeg->MateRefID == pPrevBeg->MateRefID)) {
+	  if ( pBeg->RefID == pBeg->MateRefID ) {
+	    ++chromRedundantPairs;
+	    ++redundantPairs;
+	  }
+	}
+      }
+      // Keep only the translocated pairs
+      TVecPaired vecPairC;
+      for(TVecPaired::const_iterator pIt=vecPairM.begin(); pIt!=vecPairM.end(); ++pIt) {
+	if (pIt->RefID!=pIt->MateRefID) vecPairC.push_back(*pIt);
+      }
+      vecPairM = vecPairC;
     }
     if (!(al.AlignmentFlag & 0x0100) && !(al.AlignmentFlag & 0x0200) && !(al.AlignmentFlag & 0x0400) && !(al.AlignmentFlag & 0x0800)) {
 
@@ -166,7 +199,9 @@ inline int run(Config const& c) {
 	++mappedReadCount;
 	if (al.AlignmentFlag & 0x0040) ++totalMappedRead1;
 	else ++totalMappedRead2;
-	vecRSize.push_back(al.QueryBases.size());
+	sumReadLength+=al.Length;
+	if ((TCount) al.Length < minReadLength) minReadLength=al.Length;
+	if ((TCount) al.Length > maxReadLength) maxReadLength=al.Length;
       }
       
       // Paired-end statistics
@@ -178,38 +213,71 @@ inline int run(Config const& c) {
 	  if (al.RefID == al.MateRefID) {
 	    ++pairedReadSameChr;
 	    if (al.AlignmentFlag & 0x0040) {
+	      int iSize = 0;
 	      switch(getStrandSpecificOrientation(al)) {
 	      case 0:
-		if (c.iout) dataOut << al.Name << "\tFF+\tF+\t" << references[al.RefID].RefName << "\t" << al.Position << "\t" <<  references[al.MateRefID].RefName << "\t" <<  al.MatePosition << "\t" << (al.InsertSize + al.QueryBases.size()) << std::endl;
-		vecISize.push_back(al.InsertSize + al.QueryBases.size());
+		++strandOrient[0];
+		++orient[0];
+		iSize = al.InsertSize + al.Length;
+		if (iSize < 0) iSize=0;
+		if (iSize > maxInsertSize) iSize = maxInsertSize - 1;
+		++fPlus[iSize];
 		break;
 	      case 1:
-		if (c.iout) dataOut << al.Name << "\tFF-\tF-\t" << references[al.RefID].RefName << "\t" << al.Position << "\t" <<  references[al.MateRefID].RefName << "\t" <<  al.MatePosition << "\t" << (-al.InsertSize + al.QueryBases.size()) << std::endl;
-		vecISize.push_back(-al.InsertSize + al.QueryBases.size());
+		++strandOrient[1];
+		++orient[1];
+		iSize = -al.InsertSize + al.Length;
+		if (iSize < 0) iSize=0;
+		if (iSize > maxInsertSize) iSize = maxInsertSize - 1;
+		++fMinus[iSize];
 		break;
 	      case 2:
-		if (c.iout) dataOut << al.Name << "\tFR+\tR+\t" << references[al.RefID].RefName << "\t" << al.Position << "\t" <<  references[al.MateRefID].RefName << "\t" <<  al.MatePosition << "\t" << al.InsertSize << std::endl;
-		vecISize.push_back(al.InsertSize);
+		++strandOrient[2];
+		++orient[2];
+		iSize = al.InsertSize;
+		if (iSize < 0) iSize=0;
+		if (iSize > maxInsertSize) iSize = maxInsertSize - 1;
+		++rPlus[iSize];
 		break;
 	      case 3:
-		if (c.iout) dataOut << al.Name << "\tFR-\tR-\t" << references[al.RefID].RefName << "\t" << al.Position << "\t" <<  references[al.MateRefID].RefName << "\t" <<  al.MatePosition << "\t" << (-al.InsertSize + (al.QueryBases.size() + al.QueryBases.size())) << std::endl;
-		vecISize.push_back(-al.InsertSize + (al.QueryBases.size() + al.QueryBases.size()));
+		++strandOrient[3];
+		++orient[3];
+		iSize = -al.InsertSize + al.Length + al.Length;
+		if (iSize < 0) iSize=0;
+		if (iSize > maxInsertSize) iSize = maxInsertSize - 1;
+		++rMinus[iSize];
 		break;
 	      case 4:
-		if (c.iout) dataOut << al.Name << "\tRF+\tR+\t" << references[al.RefID].RefName << "\t" << al.Position << "\t" <<  references[al.MateRefID].RefName << "\t" <<  al.MatePosition << "\t" << -al.InsertSize << std::endl;
-		vecISize.push_back(-al.InsertSize);
+		++strandOrient[4];
+		++orient[2];
+		iSize = -al.InsertSize;
+		if (iSize < 0) iSize=0;
+		if (iSize > maxInsertSize) iSize = maxInsertSize - 1;
+		++rPlus[iSize];
 		break;
 	      case 5:
-		if (c.iout) dataOut << al.Name << "\tRF-\tR-\t" << references[al.RefID].RefName << "\t" << al.Position << "\t" <<  references[al.MateRefID].RefName << "\t" <<  al.MatePosition << "\t" << (al.InsertSize + (al.QueryBases.size() + al.QueryBases.size())) << std::endl;
-		vecISize.push_back(al.InsertSize + (al.QueryBases.size() + al.QueryBases.size()));
+		++strandOrient[5];
+		++orient[3];
+		iSize = al.InsertSize + al.Length + al.Length;
+		if (iSize < 0) iSize=0;
+		if (iSize > maxInsertSize) iSize = maxInsertSize - 1;
+		++rMinus[iSize];
 		break;
 	      case 6:
-	        if (c.iout) dataOut << al.Name << "\tRR+\tF+\t" << references[al.RefID].RefName << "\t" << al.Position << "\t" <<  references[al.MateRefID].RefName << "\t" <<  al.MatePosition << "\t" << (-al.InsertSize + al.QueryBases.size()) << std::endl;
-		vecISize.push_back(-al.InsertSize + al.QueryBases.size());
+		++strandOrient[6];
+		++orient[0];
+		iSize = -al.InsertSize + al.Length;
+		if (iSize < 0) iSize=0;
+		if (iSize > maxInsertSize) iSize = maxInsertSize - 1;
+		++fPlus[iSize];
 		break;
 	      case 7:
-		if (c.iout) dataOut << al.Name << "\tRR-\tF-\t" << references[al.RefID].RefName << "\t" << al.Position << "\t" <<  references[al.MateRefID].RefName << "\t" <<  al.MatePosition << "\t" << (al.InsertSize + al.QueryBases.size()) << std::endl;
-		vecISize.push_back(al.InsertSize + al.QueryBases.size());
+		++strandOrient[7];
+		++orient[1];
+		iSize = al.InsertSize + al.Length;
+		if (iSize < 0) iSize=0;
+		if (iSize > maxInsertSize) iSize = maxInsertSize - 1;
+		++fMinus[iSize];
 		break;
 	      default:
 		std::cerr << "False orientation." << std::endl;
@@ -237,35 +305,21 @@ inline int run(Config const& c) {
       }
     }
   }
-
-  // Get redundant paired reads
-  TVecISize vecISizeBins; // 1kb windows
-  vecISizeBins.resize(10);
-  std::fill(vecISizeBins.begin(), vecISizeBins.end(), 0);
+  // Get translocated redundant pairs and counts for the last chromosome
   sort(vecPairM.begin(), vecPairM.end(), SortPairedMapping());
   TVecPaired::const_iterator pBeg = vecPairM.begin();
   TVecPaired::const_iterator pPrevBeg = pBeg;
   TVecPaired::const_iterator pEnd = vecPairM.end();
-  TCount redundantPairs = 0;
-  TCount chromRedundantPairs = 0;
-  if (pBeg!=pEnd) {
-    unsigned int bin = (unsigned int) (abs((int) pBeg->Position - (int) pBeg->MatePosition) / 1000);
-    if (bin >= vecISizeBins.size()) bin = vecISizeBins.size() - 1;
-    ++vecISizeBins[bin];
-    ++pBeg;
-  }
+  if (pBeg!=pEnd) ++pBeg;
   for(;pBeg!=pEnd;++pBeg, ++pPrevBeg) {
     if ((pBeg->Position == pPrevBeg->Position) && (pBeg->MatePosition == pPrevBeg->MatePosition) && (pBeg->RefID == pPrevBeg->RefID) && (pBeg->MateRefID == pPrevBeg->MateRefID)) {
       ++redundantPairs;
       if ( pBeg->RefID == pBeg->MateRefID ) ++chromRedundantPairs;
-    } else if ( pBeg->RefID == pBeg->MateRefID ) {
-      unsigned int bin = (unsigned int) (abs((int) pBeg->Position - (int) pBeg->MatePosition) / 1000);
-      if (bin >= vecISizeBins.size()) bin = vecISizeBins.size() - 1;
-      ++vecISizeBins[bin];
     }
   }
   TCount nonredundantCount = ((pairedReadMappedCount / 2) - redundantPairs) * 2; 
   TCount nonChromRedundantCount = ((pairedReadSameChr / 2) - chromRedundantPairs) * 2; 
+
   // Output statistics
   ofile << "Single-end statistics" << std::endl;
   ofile << "Total number of reads: " << totalReadCount << std::endl;  
@@ -285,13 +339,13 @@ inline int run(Config const& c) {
   ofile << "Number of unmapped reads 2 (percentage): " << ((totalRead2 - totalMappedRead2) * 100 / (double) totalRead2) << "%" << std::endl;  
   ofile << std::endl;
 
-  std::sort(vecRSize.begin(),vecRSize.end());
+  // Mapped read statistics
   ofile << "Mapped read statistics (" << mappedReadCount << " reads)" << std::endl;
-  ofile << "Minimum read length: " << vecRSize.at(0)  << std::endl;
-  ofile << "Median read length: " << vecRSize.at(vecRSize.size() / 2)  << std::endl;
-  ofile << "Maximum read length: " << vecRSize.at(vecRSize.size() - 1)  << std::endl;
-  ofile << "Haploid sequencing coverage: " << (vecRSize.at(vecRSize.size() - 1) * mappedReadCount) / (double) genomeLen << std::endl;
-  ofile << "Diploid sequencing coverage: " << (vecRSize.at(vecRSize.size() - 1) * mappedReadCount) / (double) genomeDiploidLen << std::endl;
+  ofile << "Minimum read length: " << minReadLength  << std::endl;
+  ofile << "Mean read length: " << (sumReadLength / mappedReadCount)  << std::endl;
+  ofile << "Maximum read length: " << maxReadLength  << std::endl;
+  ofile << "Haploid sequencing coverage: " << (sumReadLength) / (double) genomeLen << std::endl;
+  ofile << "Diploid sequencing coverage: " << (sumReadLength) / (double) genomeDiploidLen << std::endl;
   ofile << std::endl;
 
   ofile << "Paired-end statistics" << std::endl;
@@ -306,33 +360,122 @@ inline int run(Config const& c) {
   ofile << "Total number of non-redundant reads paired in sequencing and mapped to same chromosome (percentage): " << (nonChromRedundantCount * 100 / (double) pairedReadCount) << "%" << std::endl;
   ofile << std::endl;
 
-  // Get medium insert size
-  if (!vecISize.empty()) {
-    std::sort(vecISize.begin(),vecISize.end());
-    ofile << "Insert size statistics of all paired reads mapped onto the same chromosome (" << pairedReadSameChr << " reads, " << pairedReadSameChr / 2 << " pairs)" << std::endl;
-    ofile << "Insert size (lower quartile): " << vecISize.at(vecISize.size() / 4) << std::endl;
-    ofile << "Insert size (median): " << vecISize.at(vecISize.size() / 2) << std::endl;
-    ofile << "Insert size (upper quartile): " << vecISize.at(vecISize.size() - vecISize.size() / 4) << std::endl;
-    ofile << "Haploid insert coverage: " << (vecISize.at(vecISize.size() / 2) * (pairedReadSameChr / 2)) / (double) genomeLen << std::endl;
-    ofile << "Diploid insert coverage: " << (vecISize.at(vecISize.size() / 2) * (pairedReadSameChr / 2)) / (double) genomeDiploidLen << std::endl;
-    ofile << std::endl;
+  // Get insert size statistics
+  ofile << "Insert size statistics of all paired reads mapped onto the same chromosome (" << pairedReadSameChr << " reads, " << pairedReadSameChr / 2 << " pairs)" << std::endl;
+  TCount totalISizeCount = 0;
+  for (TVecSize::const_iterator itI = fPlus.begin(); itI != fPlus.end(); ++itI) totalISizeCount+=*itI;
+  for (TVecSize::const_iterator itI = fMinus.begin(); itI != fMinus.end(); ++itI) totalISizeCount+=*itI;
+  for (TVecSize::const_iterator itI = rPlus.begin(); itI != rPlus.end(); ++itI) totalISizeCount+=*itI;
+  for (TVecSize::const_iterator itI = rMinus.begin(); itI != rMinus.end(); ++itI) totalISizeCount+=*itI;
+  TCount low99QIndex = totalISizeCount / 200; // Ignore 0.5% of the insert sizes
+  TCount lowQIndex = totalISizeCount / 4;
+  TCount medianIndex = totalISizeCount / 2;
+  TCount upperQIndex = totalISizeCount - (totalISizeCount / 4);
+  TCount upper99QIndex = totalISizeCount - (totalISizeCount / 200);
+  totalISizeCount = 0;
+  uint32_t status = 0;
+  uint32_t iSize = 0;
+  uint32_t low99QISize = 0;
+  uint32_t lowQISize = 0;
+  uint32_t medianISize = 0;
+  uint32_t upperQISize = 0;
+  uint32_t upper99QISize = 0;
+  TVecSize::const_iterator itFP = fPlus.begin();
+  TVecSize::const_iterator itFM = fMinus.begin();
+  TVecSize::const_iterator itRP = rPlus.begin();
+  TVecSize::const_iterator itRM = rMinus.begin();
+  for(;itFP!=fPlus.end();++itFP, ++itFM, ++itRP, ++itRM, ++iSize) {
+    totalISizeCount += (*itFP + *itFM + *itRP + *itRM);
+    if ((status==0) && (totalISizeCount>=low99QIndex)) {
+      low99QISize = iSize;
+      ++status;
+    }
+    if ((status==1) && (totalISizeCount>=lowQIndex)) {
+      lowQISize = iSize;
+      ofile << "Insert size (lower quartile): " << lowQISize << std::endl;
+      ++status;
+    }
+    if ((status==2) && (totalISizeCount>=medianIndex)) {
+      medianISize = iSize;
+      ofile << "Insert size (median): " << medianISize << std::endl;
+      ++status;
+    }
+    if ((status==3) && (totalISizeCount>=upperQIndex)) {
+      upperQISize = iSize;
+      ofile << "Insert size (upper quartile): " << upperQISize << std::endl;
+      ++status;
+    }
+    if ((status==4) && (totalISizeCount>=upper99QIndex)) {
+      upper99QISize = iSize;
+      ++status;
+    }
+    if (status==5) break;
   }
+  ofile << "Haploid insert coverage: " << (medianISize * (pairedReadSameChr / 2)) / (double) genomeLen << std::endl;
+  ofile << "Diploid insert coverage: " << (medianISize * (pairedReadSameChr / 2)) / (double) genomeDiploidLen << std::endl;
+  ofile << std::endl;
 
-  // Print insert size bins
-  TVecISize::const_iterator binIt = vecISizeBins.begin();
-  TVecISize::const_iterator binItEnd = vecISizeBins.end();
-  unsigned int sumBin = 0;
-  for(;binIt!=binItEnd; ++binIt) sumBin += *binIt;
-  ofile << "Insert size counts for all non-redundant read pairs mapped to the same chromosome" << std::endl;
-  binIt = vecISizeBins.begin();
-  unsigned int incSumBin = 0;
-  for(unsigned int binPos = 0;binIt!=binItEnd; ++binIt, ++binPos) {
-    ofile << ">=" << binPos << "kb: " << (sumBin - incSumBin) << std::endl;
-    incSumBin += *binIt;
-  }
+  // Print orientations
+  ofile << "Strand specific orientations" << std::endl;
+  ofile << "FF+ (0): " << strandOrient[0] << std::endl; 
+  ofile << "FF- (1): " << strandOrient[1] << std::endl; 
+  ofile << "FR+ (2): " << strandOrient[2] << std::endl; 
+  ofile << "FR- (3): " << strandOrient[3] << std::endl; 
+  ofile << "RF+ (4): " << strandOrient[4] << std::endl; 
+  ofile << "RF- (5): " << strandOrient[5] << std::endl; 
+  ofile << "RR+ (6): " << strandOrient[6] << std::endl; 
+  ofile << "RR- (7): " << strandOrient[7] << std::endl; 
+  ofile << std::endl;
+  ofile << "Strand independent orientations" << std::endl;
+  ofile << "F+ (0): " << orient[0] << std::endl; 
+  ofile << "F- (1): " << orient[1] << std::endl; 
+  ofile << "R+ (2): " << orient[2] << std::endl; 
+  ofile << "R- (3): " << orient[3] << std::endl; 
+  ofile << std::endl;
 
   // Close statistics file
   ofile.close();
+
+  // Insert histogram
+  uint32_t binwidth=((upper99QISize-low99QISize)/200)+1;
+  uint32_t binFP=0;
+  uint32_t binFM=0;
+  uint32_t binRP=0;
+  uint32_t binRM=0;
+  std::ofstream insfile(c.insertfile.string().c_str());
+  iSize = 0;
+  uint32_t lastBound = 0;
+  if (low99QISize > 1000) {
+    iSize = low99QISize;
+    lastBound = low99QISize;
+  }
+  itFP = fPlus.begin() + iSize;
+  itFM = fMinus.begin() + iSize;
+  itRP = rPlus.begin() + iSize;
+  itRM = rMinus.begin() + iSize;
+  insfile << "Size\tCount\tOrientation" << std::endl;
+  for(;((itFP!=fPlus.end()) && (iSize<=upper99QISize));++itFP, ++itFM, ++itRP, ++itRM, ++iSize) {
+    if ((iSize % binwidth == 0) && (iSize != lastBound)) {
+      insfile << lastBound << "\t" << binFP << "\tF+" << std::endl;
+      insfile << lastBound << "\t" << binFM << "\tF-" << std::endl;
+      insfile << lastBound << "\t" << binRP << "\tR+" << std::endl;
+      insfile << lastBound << "\t" << binRM << "\tR-" << std::endl;      
+      binFP=0;
+      binFM=0;
+      binRP=0;
+      binRM=0;
+      lastBound=iSize;
+    }
+    binFP+=*itFP;
+    binFM+=*itFM;
+    binRP+=*itRP;
+    binRM+=*itRM;
+  }
+  insfile << lastBound << "\t" << binFP << "\tF+" << std::endl;
+  insfile << lastBound << "\t" << binFM << "\tF-" << std::endl;
+  insfile << lastBound << "\t" << binRP << "\tR+" << std::endl;
+  insfile << lastBound << "\t" << binRM << "\tR-" << std::endl;      
+  insfile.close();
 
 #ifdef PROFILE
   ProfilerStop();
@@ -356,7 +499,8 @@ int main(int argc, char **argv) {
   generic.add_options()
     ("help,?", "show help message")
     ("outfile,o", boost::program_options::value<boost::filesystem::path>(&c.outfile)->default_value("stat.txt"), "statistics output file")
-    ("insert,i", boost::program_options::value<boost::filesystem::path>(&c.insertfile)->default_value(""), "gzipped insert size output file")
+    ("max-insert,m", boost::program_options::value<unsigned int>(&c.maxsize)->default_value(15000), "max. plotting insert size")
+    ("ifile,i", boost::program_options::value<boost::filesystem::path>(&c.insertfile)->default_value("ins.txt"), "insert size histogram")
     ;
 
   // Define hidden options
@@ -394,10 +538,6 @@ int main(int argc, char **argv) {
     return 1; 
   }
   
-  // Output insert sizes
-  if (c.insertfile.string().size()) c.iout = true;
-  else c.iout = false;
-
   // Show cmd
   boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
   std::cout << '[' << boost::posix_time::to_simple_string(now) << "] ";
