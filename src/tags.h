@@ -523,6 +523,129 @@ namespace torali {
   }
 
 
+
+
+// Deletions
+template<typename TSeq, typename TSVRecord, typename TRef>
+inline std::string
+_getSVRef(TSeq const* const ref, TSVRecord const& svRec, TRef const, SVType<DeletionTag>) {
+  return boost::to_upper_copy(std::string(ref + svRec.svStartBeg, ref + svRec.svStartEnd)) + boost::to_upper_copy(std::string(ref + svRec.svEndBeg, ref + svRec.svEndEnd));
+}
+
+// Duplications
+template<typename TSeq, typename TSVRecord, typename TRef>
+inline std::string
+_getSVRef(TSeq const* const ref, TSVRecord const& svRec, TRef const, SVType<DuplicationTag>) {
+  return boost::to_upper_copy(std::string(ref + svRec.svEndBeg, ref + svRec.svEndEnd)) + boost::to_upper_copy(std::string(ref + svRec.svStartBeg, ref + svRec.svStartEnd));
+}
+
+// Inversions
+template<typename TSeq, typename TSVRecord, typename TRef>
+inline std::string
+_getSVRef(TSeq const* const ref, TSVRecord const& svRec, TRef const, SVType<InversionTag>) {
+  if (svRec.ct==1) {
+    std::string strEnd=boost::to_upper_copy(std::string(ref + svRec.svEndBeg, ref + svRec.svEndEnd));
+    std::string strRevComp=strEnd;
+    std::string::reverse_iterator itR = strEnd.rbegin();
+    std::string::reverse_iterator itREnd = strEnd.rend();
+    for(unsigned int i = 0; itR!=itREnd; ++itR, ++i) {
+      switch (*itR) {
+      case 'A': strRevComp[i]='T'; break;
+      case 'C': strRevComp[i]='G'; break;
+      case 'G': strRevComp[i]='C'; break;
+      case 'T': strRevComp[i]='A'; break;
+      case 'N': strRevComp[i]='N'; break;
+      default: break;
+      }
+    }
+    return boost::to_upper_copy(std::string(ref + svRec.svStartBeg, ref + svRec.svStartEnd)) + strRevComp;
+  } else {
+    std::string strStart=boost::to_upper_copy(std::string(ref + svRec.svStartBeg, ref + svRec.svStartEnd));
+    std::string strRevComp=strStart;
+    std::string::reverse_iterator itR = strStart.rbegin();
+    std::string::reverse_iterator itREnd = strStart.rend();
+    for(unsigned int i = 0; itR!=itREnd; ++itR, ++i) {
+      switch (*itR) {
+      case 'A': strRevComp[i]='T'; break;
+      case 'C': strRevComp[i]='G'; break;
+      case 'G': strRevComp[i]='C'; break;
+      case 'T': strRevComp[i]='A'; break;
+      case 'N': strRevComp[i]='N'; break;
+      default: break;
+      }
+    }
+    return strRevComp + boost::to_upper_copy(std::string(ref + svRec.svEndBeg, ref + svRec.svEndEnd));
+  }
+}
+
+// Translocations
+template<typename TSeq, typename TSVRecord, typename TRef>
+inline std::string
+_getSVRef(TSeq const* const ref, TSVRecord const& svRec, TRef const refIndex, SVType<TranslocationTag>) {
+  if (svRec.ct%2==0) {
+    if (svRec.chr==refIndex) return boost::to_upper_copy(std::string(ref + svRec.svStartBeg, ref + svRec.svStartEnd)) + svRec.consensus;
+    if (svRec.ct>=2) {
+      if (svRec.chr2==refIndex) return boost::to_upper_copy(std::string(ref + svRec.svEndBeg, ref + svRec.svEndEnd));
+    } else {
+      // Reverse complement
+      if (svRec.chr2==refIndex) {
+	std::string strEnd=boost::to_upper_copy(std::string(ref + svRec.svEndBeg, ref + svRec.svEndEnd));
+	std::string refPart=strEnd;
+	std::string::reverse_iterator itR = strEnd.rbegin();
+	std::string::reverse_iterator itREnd = strEnd.rend();
+	for(unsigned int i = 0; itR!=itREnd; ++itR, ++i) {
+	  switch (*itR) {
+	  case 'A': refPart[i]='T'; break;
+	  case 'C': refPart[i]='G'; break;
+	  case 'G': refPart[i]='C'; break;
+	  case 'T': refPart[i]='A'; break;
+	  case 'N': refPart[i]='N'; break;
+	  default: break;
+	  }
+	}
+	return refPart;
+      }
+    }
+  } else {
+    if (svRec.ct>=2) {
+      if (svRec.chr2==refIndex) return boost::to_upper_copy(std::string(ref + svRec.svEndBeg, ref + svRec.svEndEnd));
+    } else {
+      // Reverse complement
+      if (svRec.chr2==refIndex) {
+	std::string strEnd=boost::to_upper_copy(std::string(ref + svRec.svEndBeg, ref + svRec.svEndEnd));
+	std::string refPart=strEnd;
+	std::string::reverse_iterator itR = strEnd.rbegin();
+	std::string::reverse_iterator itREnd = strEnd.rend();
+	for(unsigned int i = 0; itR!=itREnd; ++itR, ++i) {
+	  switch (*itR) {
+	  case 'A': refPart[i]='T'; break;
+	  case 'C': refPart[i]='G'; break;
+	  case 'G': refPart[i]='C'; break;
+	  case 'T': refPart[i]='A'; break;
+	  case 'N': refPart[i]='N'; break;
+	  default: break;
+	  }
+	}
+	return refPart;
+      }
+    }
+    if (svRec.chr==refIndex) return svRec.consensus + boost::to_upper_copy(std::string(ref + svRec.svStartBeg, ref + svRec.svStartEnd));
+  }
+  return "";
+}
+
+// Insertions
+template<typename TSeq, typename TSVRecord, typename TRef>
+inline std::string
+_getSVRef(TSeq const* const ref, TSVRecord const& svRec, TRef const, SVType<InsertionTag>) {
+  return boost::to_upper_copy(std::string(ref + svRec.svStartBeg, ref + svRec.svStartEnd)) + boost::to_upper_copy(std::string(ref + svRec.svEndBeg, ref + svRec.svEndEnd));
+}
+
+
+
+
+
+
 }
 
 #endif
