@@ -63,6 +63,7 @@ Contact: Tobias Rausch (rausch@embl.de)
 #include "spanning.h"
 #include "coverage.h"
 #include "junction.h"
+#include "fasta_reader.h"
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -88,6 +89,7 @@ struct Config {
   boost::filesystem::path vcffile;
   boost::filesystem::path genome;
   boost::filesystem::path exclude;
+  boost::filesystem::path peDump;
   std::vector<boost::filesystem::path> files;
 };
 
@@ -300,12 +302,12 @@ _translateSVCoordinates(TUSize refSize, TUSize, TUSize refSizeLeft, TSize diagBe
   if (finalGapEnd < refSizeLeft) return true;
   if (sv.ct%2==0) {
     finalGapStart += sv.svStartBeg;
-    if (sv.ct>=2) finalGapEnd = sv.svEndBeg + (finalGapEnd - refSizeLeft) - 1;
+    if (sv.ct==2) finalGapEnd = sv.svEndBeg + (finalGapEnd - refSizeLeft) - 1;
     else finalGapEnd = sv.svEndBeg + (refSize - finalGapEnd) + 1;
   } else {
-    if (sv.ct>=2) finalGapStart += sv.svEndBeg;
-    else finalGapStart = sv.svEndBeg + (refSizeLeft - finalGapStart);
-    finalGapEnd = sv.svStartBeg + (finalGapEnd - refSizeLeft) - 1;
+    finalGapStart = sv.svEndBeg + (refSizeLeft - finalGapStart);
+    if (sv.ct==1) finalGapEnd = sv.svStartBeg + (finalGapEnd - refSizeLeft) - 1;
+    else finalGapEnd = sv.svStartBeg + (refSize - finalGapEnd) + 1;
   }
   if (sv.ct%2!=0) {
     TUSize tmpStart = finalGapStart;
@@ -378,8 +380,7 @@ void searchSplit(TConfig const& c, TStructuralVariantRecord& sv, std::string con
   typename TReadSet::const_iterator splitIter = splitReadSet.begin();
   for(;splitIter!=splitReadSet.end();++splitIter) {
     TSequence read;
-    std::string::const_iterator readIt=splitIter->begin();
-    for(;readIt!=splitIter->end();++readIt) read.push_back(dna5_encode[int(*readIt)]);
+    for(std::string::const_iterator readIt=splitIter->begin(); readIt!=splitIter->end(); ++readIt) read.push_back(dna5_encode[int(*readIt)]);
     unsigned int readLen = read.size();
 
     // Count kmer's 
@@ -421,7 +422,7 @@ void searchSplit(TConfig const& c, TStructuralVariantRecord& sv, std::string con
 	    sC.read = read;
 	    sC.forwardRead = alignDir;
 	    readVec.push_back(sC);
-	    //std::cout << seqIt->chrName << ',' << sC.offset << ',' << sC.lastKmer << ',' << sC.diag << ',' << sC.forwardRead << std::endl;
+	    //std::cout << sC.offset << ',' << sC.lastKmer << ',' << sC.diag << ',' << sC.forwardRead << ',' << *splitIter << ',' << readLen << std::endl;
 	  }
 	}
       }
@@ -445,6 +446,7 @@ void searchSplit(TConfig const& c, TStructuralVariantRecord& sv, std::string con
     unsigned int bestBoundE = 0;
     unsigned int bound = 1;
     unsigned int boundS = 0;
+    int readLenInit = readVecIt->read.size();
     ++readVecIt;
     for(;readVecIt!=readVecItEnd;++readVecIt, ++bound) {
       // Read pairs should support the same offset and the last kmer should be sufficiently close (allow one mismatch in the last kmer)
@@ -463,7 +465,7 @@ void searchSplit(TConfig const& c, TStructuralVariantRecord& sv, std::string con
 	support = 1;
       }
     }
-    if (_betterSplit(refSize, refSizeRight, refSizeLeft, oldDiag, oldOffset, skippedLength, initialLength, c.epsilon, support, bestSupport, sv.ct, readVecIt->read.size(), svType)) {
+    if (_betterSplit(refSize, refSizeRight, refSizeLeft, oldDiag, oldOffset, skippedLength, initialLength, c.epsilon, support, bestSupport, sv.ct, readLenInit, svType)) {
       bestSupport = support;
       bestBoundS = boundS;
       bestBoundE = bound;
@@ -644,15 +646,12 @@ void searchSplit(TConfig const& c, TStructuralVariantRecord& sv, std::string con
 	}
 
 	// Debug output
-	//typename TConsSeq::const_iterator csSeqIt = ref1.begin();
-	//typename TConsSeq::const_iterator csSeqItEnd = ref1.end();
-	//for(;csSeqIt != csSeqItEnd; ++csSeqIt) std::cout << dna5_decode[(unsigned int) *csSeqIt];
-	//std::cout << std::endl;
-	//csSeqIt = ref2.begin();
-	//csSeqItEnd = ref2.end();
-	//for(;csSeqIt != csSeqItEnd; ++csSeqIt) std::cout << dna5_decode[(unsigned int) *csSeqIt];
-	//std::cout << std::endl;
-
+	//if (sv.id==2) {
+	//  for(typename TConsSeq::const_iterator csSeqIt = ref1.begin();csSeqIt != ref1.end(); ++csSeqIt) std::cout << dna5_decode[(unsigned int) *csSeqIt];
+	//  std::cout << std::endl;
+	//  for(typename TConsSeq::const_iterator csSeqIt = ref2.begin();csSeqIt != ref2.end(); ++csSeqIt) std::cout << dna5_decode[(unsigned int) *csSeqIt];
+	//  std::cout << std::endl;
+	//}
 
 	// Calculate forward and reverse dynamic programming matrix
 	int matchScore = 2;
@@ -678,23 +677,16 @@ void searchSplit(TConfig const& c, TStructuralVariantRecord& sv, std::string con
 	}
 
 	// Debug code
-	//typedef std::vector<char> TSequence;
-	//typedef FastaRecord<std::string, unsigned int, Dna5GapAlphabet, TSequence> TFastaRecord;
-	//std::vector<TFastaRecord> align;
-	//globalNwAlignment(align, ref1, consSeq, sc, alConf);
-	//TSequence::iterator alItTmp = align[0].seq.begin();
-	//TSequence::iterator alItTmpEnd = align[0].seq.end();
-	//std::cout << std::endl;
-	//for(unsigned int i = 0; i<100; ++i) std::cout << (i % 10);
-	//std::cout << std::endl;
-	//for(;alItTmp != alItTmpEnd; ++alItTmp) std::cout << dna5gap_decode[(int) *alItTmp];
-	//std::cout << std::endl;
-	//alItTmp = align[1].seq.begin();
-	//alItTmpEnd = align[1].seq.end();
-	//for(;alItTmp != alItTmpEnd; ++alItTmp) std::cout << dna5gap_decode[(int) *alItTmp];
-	//std::cout << std::endl;
-
-
+	//if (sv.id==2) {
+	//  typedef FastaRecord<std::string, unsigned int, Dna5GapAlphabet, TSequence, void> TFastaRecord;
+	//  std::vector<TFastaRecord> align;
+	//  globalNwAlignment(align, ref1, consSeq, sc, alConf);
+	//  std::cout << std::endl;
+	//  for(TSequence::iterator alItTmp = align[0].seq.begin();alItTmp != align[0].seq.end(); ++alItTmp) std::cout << dna5gap_decode[(int) *alItTmp];
+	//  std::cout << std::endl;
+	//  for(TSequence::iterator alItTmp = align[1].seq.begin();alItTmp != align[1].seq.end(); ++alItTmp) std::cout << dna5gap_decode[(int) *alItTmp];
+	//  std::cout << std::endl;
+	//}
 
 	reverseComplement(ref2);
 	reverseComplement(consSeq);
@@ -715,18 +707,16 @@ void searchSplit(TConfig const& c, TStructuralVariantRecord& sv, std::string con
 	}
 
 	// Debug code
-	//align.clear();
-	//globalNwAlignment(align, ref2, consSeq, sc, alConf);
-	//alItTmp = align[0].seq.begin();
-	//alItTmpEnd = align[0].seq.end();
-	//std::cout << std::endl;
-	//for(;alItTmp != alItTmpEnd; ++alItTmp) std::cout << dna5gap_decode[(int) *alItTmp];
-	//std::cout << std::endl;
-	//alItTmp = align[1].seq.begin();
-	//alItTmpEnd = align[1].seq.end();
-	//for(;alItTmp != alItTmpEnd; ++alItTmp) std::cout << dna5gap_decode[(int) *alItTmp];
-	//std::cout << std::endl;
-
+	//if (sv.id==2) {
+	//  typedef FastaRecord<std::string, unsigned int, Dna5GapAlphabet, TSequence, void> TFastaRecord;
+	//  std::vector<TFastaRecord> align;
+	//  globalNwAlignment(align, ref2, consSeq, sc, alConf);
+	//  std::cout << std::endl;
+	//  for(TSequence::iterator alItTmp = align[0].seq.begin();alItTmp != align[0].seq.end(); ++alItTmp) std::cout << dna5gap_decode[(int) *alItTmp];
+	//  std::cout << std::endl;
+	//  for(TSequence::iterator alItTmp = align[1].seq.begin();alItTmp != align[1].seq.end(); ++alItTmp) std::cout << dna5gap_decode[(int) *alItTmp];
+	//  std::cout << std::endl;
+	//}
 
 	// Get back to the true orientation
 	reverseComplement(consSeq);
@@ -1374,7 +1364,7 @@ findPutativeSplitReads(TConfig const& c, std::vector<TStructuralVariantRecord>& 
 			  
 			// Minimum clip size length fulfilled?
 			int minClipSize = (int) (log10(al.QueryBases.size()) * 10);
-                        #pragma omp critical
+#pragma omp critical
 			{
 			  if (clipSizes[0]>=minClipSize) splitReadSet.insert(al.QueryBases);
 			}
@@ -1613,9 +1603,9 @@ _updateClique(TBamRecordIterator const& el, TSize& svStart, TSize& svEnd, TSize&
 
 template<typename TConfig, typename TSampleLibrary, typename TSVs, typename TCountMap, typename TTag>
 inline void
-_annotateJunctionReads(TConfig const& c, TSampleLibrary& sampleLib, TSVs& svs, TCountMap& junctionCountMap, SVType<TTag>) 
+_annotateJunctionReads(TConfig const& c, TSampleLibrary& sampleLib, TSVs& svs, TCountMap& junctionCountMap, SVType<TTag> svType) 
 {
-  annotateJunctionReads(c.files, c.genome, c.minGenoQual, sampleLib, svs, junctionCountMap);
+  annotateJunctionReads(c.files, c.genome, c.minGenoQual, sampleLib, svs, junctionCountMap, svType);
 }
 
 
@@ -1682,7 +1672,7 @@ inline int run(Config const& c, TSVType svType) {
   }
 
   // Get library parameters
-  #pragma omp parallel for default(shared)
+#pragma omp parallel for default(shared)
   for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
     // Get a sample name
     std::string sampleName(c.files[file_c].stem().string());
@@ -1690,13 +1680,22 @@ inline int run(Config const& c, TSVType svType) {
     // Get library parameters and overall maximum insert size
     TLibraryMap libInfo;
     getLibraryParams(c.files[file_c], libInfo, c.percentAbnormal, c.madCutoff);
-    #pragma omp critical
+#pragma omp critical
     {
       TLibraryMap::const_iterator libIter=libInfo.begin();
       for(;libIter!=libInfo.end();++libIter) 
 	if (libIter->second.maxNormalISize > overallMaxISize) overallMaxISize = libIter->second.maxNormalISize;
       sampleLib.insert(std::make_pair(sampleName, libInfo));
     }
+  }
+
+  // Dump PE
+  bool dumpPe=false;
+  std::ofstream dumpPeFile;
+  if (c.peDump.string().size()) {
+    dumpPe=true;
+    dumpPeFile.open(c.peDump.string().c_str());
+    dumpPeFile << "#id\tchr\tpos\tmatechr\tmatepos\tmapq" << std::endl;
   }
 
   // Parse exclude interval list
@@ -1922,7 +1921,7 @@ inline int run(Config const& c, TSVType svType) {
     //for(TCompSize::const_iterator compIt = compSize.begin(); compIt!=compSize.end(); ++compIt) std::cerr << *compIt << std::endl;
 
     // Iterate each component
-    #pragma omp parallel for default(shared)
+#pragma omp parallel for default(shared)
     for(int compIt = 0; compIt < numComp; ++compIt) {
       if (compSize[compIt]<2) continue;
       typedef boost::graph_traits<Graph>::vertex_descriptor TVertexDescriptor;
@@ -1991,8 +1990,7 @@ inline int run(Config const& c, TSVType svType) {
 	svRec.peSupport = clique.size();
 	svRec.wiggle = abs(wiggle);
 	std::vector<uint16_t> mapQV;
-	typename TCliqueMembers::const_iterator itC = clique.begin();
-	for(;itC!=clique.end();++itC) mapQV.push_back(g[*itC]->MapQuality);
+	for(typename TCliqueMembers::const_iterator itC = clique.begin(); itC!=clique.end(); ++itC) mapQV.push_back(g[*itC]->MapQuality);
 	std::sort(mapQV.begin(), mapQV.end());
 	svRec.peMapQuality = mapQV[mapQV.size()/2];
 	if ((refIndex==clusterMateRefID) && (svRec.svStartEnd > svRec.svEndBeg)) {
@@ -2004,14 +2002,27 @@ inline int run(Config const& c, TSVType svType) {
 	svRec.srAlignQuality=0;
 	svRec.precise=false;
 	svRec.ct=connectionType;
-        #pragma omp critical
+#pragma omp critical
 	{
 	  svRec.id = clique_count++;
 	  svs.push_back(svRec);
 	}
+	
+	// Dump PEs
+#pragma omp critical
+	if (dumpPe) {
+	  for(typename TCliqueMembers::const_iterator itC=clique.begin(); itC!=clique.end(); ++itC) {
+	    std::stringstream id;
+	    id << _addID(svType) << std::setw(8) << std::setfill('0') << svRec.id;
+	    dumpPeFile << id.str() << "\t" << references[g[*itC]->RefID].RefName << "\t" << g[*itC]->Position << "\t" <<  references[g[*itC]->MateRefID].RefName << "\t" << g[*itC]->MatePosition << "\t" << g[*itC]->MapQuality << std::endl;
+	  }
+	}
       }
     }
   }
+
+  // Close dump PE file
+  if (dumpPe) dumpPeFile.close();
 
   // Split-read search
   if (peMapping) {
@@ -2115,6 +2126,7 @@ int main(int argc, char **argv) {
   boost::program_options::options_description hidden("Hidden options");
   hidden.add_options()
     ("input-file", boost::program_options::value< std::vector<boost::filesystem::path> >(&c.files), "input file")
+    ("pe-dump,p", boost::program_options::value<boost::filesystem::path>(&c.peDump)->default_value(""), "outfile to dump PE info")
     ("epsilon,e", boost::program_options::value<float>(&c.epsilon)->default_value(0.1), "allowed epsilon deviation of PE vs. SR deletion")
     ("pe-fraction,c", boost::program_options::value<float>(&c.percentAbnormal)->default_value(0.0), "fixed fraction c of discordant PEs, for c=0 MAD cutoff is used")
     ("num-split,n", boost::program_options::value<unsigned int>(&c.minimumSplitRead)->default_value(2), "minimum number of splitted reads")
