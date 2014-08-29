@@ -36,6 +36,7 @@ Contact: Tobias Rausch (rausch@embl.de)
 #include <zlib.h>
 #include <stdio.h>
 #include "kseq.h"
+#include "fasta_reader.h"
 KSEQ_INIT(gzFile, gzread)
 
 namespace torali {
@@ -117,14 +118,15 @@ inline void
 inline void
     _getUniqueKmers(TReference const& ref, TKmerSet const& kmerSet, TUniqueKmer& uniqueKmer, unsigned int kmerLength, unsigned int alphsize) {
     typedef typename TKmerSet::key_type TUSize;
-
+    
     char currentk[MAXKMERLENGTH];
     for(unsigned int i = 0; i<MAXKMERLENGTH; ++i) currentk[i] = 0;
     unsigned int kmerlen=0;
     TUSize bucket = 0;
     std::string::const_iterator sIt= ref.begin();
     std::string::const_iterator sItEnd= ref.end();
-    for(unsigned int seqIndex=0;sIt!=sItEnd;++sIt,++seqIndex) {
+    unsigned int seqIndex=0;
+    for(;sIt!=sItEnd;++sIt,++seqIndex) {
       if (*sIt!='N') {
 	if (kmerlen==kmerLength) {
 	  if (kmerSet.find(bucket)==kmerSet.end()) uniqueKmer.insert(ref.substr(seqIndex-kmerlen, kmerlen));
@@ -142,10 +144,109 @@ inline void
     if ((kmerlen == kmerLength) && (kmerSet.find(bucket)==kmerSet.end())) uniqueKmer.insert(ref.substr(ref.size()-kmerlen, kmerlen));
   }
 
-
-  template<typename TFiles, typename TGenome, typename TSampleLibrary, typename TSVs, typename TCountMap>
+template<typename TSequence, typename TBreaks>
 inline void
-    annotateJunctionReads(TFiles const& files, TGenome const& genome, uint16_t const minMapQual, TSampleLibrary& sampleLib, TSVs& svs, TCountMap& countMap)
+  _getReferenceBreakpoint(TSequence const& ref, TSequence const& var, TSequence& outVar, TBreaks& bpcoord) 
+  {
+    typedef std::vector<char> TAlignSeq;
+    typedef FastaRecord<std::string, unsigned int, Dna5GapAlphabet, TAlignSeq, void> TFastaRecord;
+    std::vector<TFastaRecord> alignFwd;
+    std::vector<TFastaRecord> alignRev;
+    std::vector<TFastaRecord> align;
+
+    // Convert to alignment data structure
+    TAlignSeq r;
+    for(typename TSequence::const_iterator itS = ref.begin(); itS!=ref.end(); ++itS) r.push_back(dna5_encode[(int) *itS]);
+    TAlignSeq v;
+    for(typename TSequence::const_iterator itS = var.begin(); itS!=var.end(); ++itS) v.push_back(dna5_encode[(int) *itS]);
+
+    // Decide forward or reverse alignment
+    DnaScore<int> scr(1, -2, -5, 0);
+    AlignConfig<true, false, false, true> alc;
+    int fwdScore=globalGotohAlignment(alignFwd, r, v, scr, alc);
+    reverseComplement(v);
+    int revScore=globalGotohAlignment(alignRev, r, v, scr, alc);
+    if (fwdScore > revScore) reverseComplement(v);
+
+    // Compute final alignment
+    globalGotohAlignment(align, r, v, scr, alc);
+      
+    // Find longest internal gap
+    int refIndex=-1;
+    int varIndex=-1;
+    int gapStartRefIndex=0;
+    int gapEndRefIndex=0;
+    int gapStartVarIndex=0;
+    int gapEndVarIndex=0;
+    int longestGap=0;
+    TAlignSeq::const_iterator alRef = align[0].seq.begin();
+    TAlignSeq::const_iterator alVar = align[1].seq.begin();
+    bool inGap=false;
+    for (; (alRef != align[0].seq.end()) && (alVar != align[1].seq.end()); ++alRef, ++alVar) {
+      if (*alRef != dna5gap_encode[(int) '-']) ++refIndex;
+      if (*alVar != dna5gap_encode[(int) '-']) ++varIndex;
+      // Internal gap?
+      if (((*alVar == dna5gap_encode[(int) '-']) || (*alRef == dna5gap_encode[(int) '-'])) && (refIndex>0) && (varIndex>0)) {
+	if (!inGap) {
+	  gapStartRefIndex=refIndex;
+	  gapEndRefIndex=refIndex;
+	  gapStartVarIndex=varIndex;
+	  gapEndVarIndex=varIndex;
+	} else {
+	  gapEndRefIndex=refIndex;
+	  gapEndVarIndex=varIndex;
+	}
+	inGap=true;
+      } else {
+	if ((inGap) && ((gapEndRefIndex - gapStartRefIndex) > longestGap)) {
+	  longestGap=gapEndRefIndex - gapStartRefIndex;
+	  bpcoord[0]=gapStartRefIndex;
+	  bpcoord[1]=gapEndRefIndex;
+	  bpcoord[2]=gapStartVarIndex;
+	  bpcoord[3]=gapEndVarIndex;
+	}
+	inGap=false;
+      }
+    }
+
+    // Output sequence might be reverse complemented
+    outVar.clear();
+    for(TAlignSeq::const_iterator itA = v.begin(); itA!=v.end(); ++itA) outVar.push_back(dna5_decode[(int) *itA]);
+
+    // Debug code
+    /*
+    std::cout << "FwdScore: " << fwdScore << ", RevScore: " << revScore << std::endl;
+    std::cout << "Alignment: " << fwd << std::endl;
+    std::cout << "Ref: ";
+    int ind=0;
+    for(TAlignSeq::iterator alItTmp = r.begin(); alItTmp != r.end(); ++alItTmp, ++ind) {
+      std::cout << dna5_decode[(int) *alItTmp];
+      if ((ind==bpcoord[0]) || (ind==bpcoord[1])) std::cout << " | ";
+    }
+    std::cout << std::endl;
+    std::cout << "Var: ";
+    ind=0;
+    for(TAlignSeq::iterator alItTmp = v.begin(); alItTmp != v.end(); ++alItTmp, ++ind) {
+      std::cout << dna5_decode[(int) *alItTmp];
+      if ((ind==bpcoord[2]) || (ind==bpcoord[3])) std::cout << " | ";
+    }
+    std::cout << std::endl;
+    std::cout << ">Ref" << std::endl;
+    for(TAlignSeq::iterator alItTmp = align[0].seq.begin(); alItTmp != align[0].seq.end(); ++alItTmp) std::cout << dna5gap_decode[(int) *alItTmp];
+    std::cout << std::endl;
+    std::cout << ">Contig" << std::endl;
+    for(TAlignSeq::iterator alItTmp = align[1].seq.begin(); alItTmp != align[1].seq.end(); ++alItTmp) std::cout << dna5gap_decode[(int) *alItTmp];
+    std::cout << std::endl;
+    std::cout << std::endl;
+    std::cout << std::endl;
+    */
+  }
+
+
+
+  template<typename TFiles, typename TGenome, typename TSampleLibrary, typename TSVs, typename TCountMap, typename TTag>
+inline void
+    annotateJunctionReads(TFiles const& files, TGenome const& genome, uint16_t const minMapQual, TSampleLibrary& sampleLib, TSVs& svs, TCountMap& countMap, SVType<TTag> svType)
 {
   typedef typename TCountMap::key_type TSampleSVPair;
   typedef typename TCountMap::mapped_type TCountPair;
@@ -190,34 +291,48 @@ inline void
 	typename TSVs::const_iterator itSVEnd = svs.end();
 	for(;itSV!=itSVEnd;++itSV) {
 	  if (itSV->consensus.empty()) continue;
-	  if (itSV->chr2 == refIndex) {
-	    int consLen = itSV->consensus.size();
-            // For translocations temporarily store the first reference part in the probe strings
-	    refProbes[itSV->id]=boost::to_upper_copy(std::string(seq->seq.s + std::max(itSV->svEnd - consLen, 0), seq->seq.s + itSV->svEnd + consLen));
-	  }
+	  int consLen = itSV->consensus.size();
+
+	  // Create a pseudo structural variant record
+	  StructuralVariantRecord svRec;
+	  svRec.chr = itSV->chr;
+	  svRec.chr2 = itSV->chr2;
+	  svRec.svStartBeg = std::max(itSV->svStart - consLen, 0);
+	  svRec.svStart = itSV->svStart;
+	  svRec.svStartEnd = std::min(itSV->svStart + consLen, references[itSV->chr].RefLength);
+	  svRec.svEndBeg = std::max(itSV->svEnd - consLen, 0);
+	  svRec.svEnd = itSV->svEnd;
+	  svRec.svEndEnd = std::min(itSV->svEnd + consLen, references[itSV->chr2].RefLength);
+	  if ((itSV->chr != itSV->chr2) && (itSV->chr2 == refIndex)) {
+            refProbes[itSV->id] = _getSVRef(seq->seq.s, svRec, refIndex, svType);
+          }
           if (itSV->chr == refIndex) {
-	    int consLen = itSV->consensus.size();
-	    std::string sourceRight=refProbes[itSV->id];
+	    // Get the reference string
+	    if (itSV->chr != itSV->chr2) svRec.consensus=refProbes[itSV->id];
 	    refProbes[itSV->id]="";
-	    std::string sourceLeft=boost::to_upper_copy(std::string(seq->seq.s + std::max(itSV->svStart - consLen, 0), seq->seq.s + itSV->svStart + consLen));
-	    std::string cons=boost::to_upper_copy(itSV->consensus);
+	    std::string svRefStr = _getSVRef(seq->seq.s, svRec, refIndex, svType);
+	    std::string consensus;
+	    std::vector<int> bpcoord(4);
+	    std::fill(bpcoord.begin(), bpcoord.end(), 0);
+	    _getReferenceBreakpoint(svRefStr, itSV->consensus, consensus, bpcoord);
+	    // Has a breakpoint been found
+	    if ((bpcoord[2]==0) || (bpcoord[3]==0)) continue;
+	    // Find tagging kmers
 	    for (unsigned int kmerLength=11; kmerLength<MAXKMERLENGTH; kmerLength+=2) {
 	      unsigned int minReqHammingDist = (unsigned int) ((std::log(kmerLength) * std::log(kmerLength)) / std::log(4));
 	      typedef std::set<boost::multiprecision::uint128_t> TKmerSet;
 	      TKmerSet refKmerSet;
-	      std::string refLeft=sourceLeft;
-	      std::string refRight=sourceRight;
-	      _getKmers(refLeft, refKmerSet, kmerLength, 4);
-	      _getKmers(refRight, refKmerSet, kmerLength, 4);
+	      _getKmers(svRefStr, refKmerSet, kmerLength, 4);
 	      typedef boost::unordered_set<std::string> TUniqueKmers;
 	      TUniqueKmers uniqueKmers;
-	      _getUniqueKmers(cons, refKmerSet, uniqueKmers, kmerLength, 4);
+	      std::string consPiece=consensus.substr(std::max(bpcoord[2] - (int) kmerLength, 0), 2 * kmerLength);
+	      _getUniqueKmers(consPiece, refKmerSet, uniqueKmers, kmerLength, 4);
 	      unsigned int maxHammingDistance=0;
 	      std::string maxHammingKmer="";
 	      if (uniqueKmers.size()) {
 		TUniqueKmers::iterator itK = uniqueKmers.begin();
 		for(;itK!=uniqueKmers.end();++itK) {
-		  unsigned int hammingDist = std::min(_getMinHammingDistance(refLeft, *itK, minReqHammingDist), _getMinHammingDistance(refRight, *itK, minReqHammingDist));
+		  unsigned int hammingDist = _getMinHammingDistance(svRefStr, *itK, minReqHammingDist);
 		  if ((hammingDist>minReqHammingDist) && (hammingDist>maxHammingDistance)) {
 		    maxHammingDistance=hammingDist;
 		    maxHammingKmer=*itK;
@@ -225,12 +340,12 @@ inline void
 		}
 	      }
 	      if (maxHammingDistance) {
-		// Found suitable kmer
+		// Found suitable kmer, find reference tagging kmer
 		TKmerSet consKmerSet;
-		_getKmers(cons, consKmerSet, kmerLength, 4);
+		_getKmers(consensus, consKmerSet, kmerLength, 4);
 		TUniqueKmers uniqueRefKmers;
-		refLeft=refLeft.substr(std::max((int) refLeft.size()/2 - (int) kmerLength, 0), 2 * kmerLength);
-		refRight=refRight.substr(std::max((int) refRight.size()/2 - (int) kmerLength, 0), 2 * kmerLength);
+		std::string refLeft=svRefStr.substr(std::max(bpcoord[0] - (int) kmerLength, 0), 2 * kmerLength);
+		std::string refRight=svRefStr.substr(std::max(bpcoord[1] - (int) kmerLength, 0), 2 * kmerLength);
 		_getUniqueKmers(refLeft, consKmerSet, uniqueRefKmers, kmerLength, 4);
 		_getUniqueKmers(refRight, consKmerSet, uniqueRefKmers, kmerLength, 4);
 		unsigned int maxRefHammingDistance=0;
@@ -238,7 +353,7 @@ inline void
 		if (uniqueRefKmers.size()) {
 		  TUniqueKmers::iterator itK = uniqueRefKmers.begin();
 		  for(;itK!=uniqueRefKmers.end();++itK) {
-		    unsigned int hammingDist = _getMinHammingDistance(cons, *itK, minReqHammingDist);
+		    unsigned int hammingDist = _getMinHammingDistance(consensus, *itK, minReqHammingDist);
 		    if ((hammingDist>minReqHammingDist) && (hammingDist>maxRefHammingDistance)) {
 		      maxRefHammingDistance=hammingDist;
 		      maxRefHammingKmer=*itK;
