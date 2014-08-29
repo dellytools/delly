@@ -143,8 +143,9 @@ namespace torali
 
   template<typename TLibraryMap>
   inline void getLibraryParams(boost::filesystem::path const& path, TLibraryMap& libInfo, double const percentile, unsigned short const madCutoff) {
-    // Maximum number of pairs used to estimate library parameters for each RG library
+    // Minimum and maximum number of pairs used to estimate library parameters for each RG library
     unsigned int maxNumPairs=5000000;
+    unsigned int minNumPairs=1000;
 
     // Store the counts in an object for each RG librar
     typedef std::map<std::string, _LibraryParams> TParams;
@@ -190,7 +191,7 @@ namespace torali
 	++paramIt->second.processedNumPairs;
 	if (paramIt->second.processedNumPairs>=maxNumPairs) {
 	  // Check every now and then if we have a good estimate of the library complexity
-	  if (paramIt->second.processedNumPairs % 10000 == 0) {
+	  if (paramIt->second.processedNumPairs % minNumPairs == 0) {
 	    TParams::const_iterator paramIter = params.begin();
 	    missingPairs=false;
 	    for(;paramIter!=params.end();++paramIter) {
@@ -233,8 +234,8 @@ namespace torali
 	paramIt->second.vecISize = vecISizeTmp;
       }
       
-      // Check that this is a proper paired-end library and require that there are at least 1000 pairs to estimate the insert size
-      if (paramIt->second.vecISize.size()>=10000) {
+      // Check that this is a proper paired-end library
+      if (paramIt->second.vecISize.size()>=minNumPairs) {
 	// Get library stats
 	double median;
 	double mad;
