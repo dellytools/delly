@@ -27,7 +27,7 @@ Contact: Tobias Rausch (rausch@embl.de)
 namespace torali
 {
 
-  std::string dellyVersionNumber = "0.5.8";
+  std::string dellyVersionNumber = "0.5.9";
 
   inline 
     void printTitle(std::string const& title) 

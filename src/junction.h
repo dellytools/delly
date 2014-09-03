@@ -303,6 +303,7 @@ inline void
 	  svRec.svEndBeg = std::max(itSV->svEnd - consLen, 0);
 	  svRec.svEnd = itSV->svEnd;
 	  svRec.svEndEnd = std::min(itSV->svEnd + consLen, references[itSV->chr2].RefLength);
+	  svRec.ct = itSV->ct;
 	  if ((itSV->chr != itSV->chr2) && (itSV->chr2 == refIndex)) {
             refProbes[itSV->id] = _getSVRef(seq->seq.s, svRec, refIndex, svType);
           }
