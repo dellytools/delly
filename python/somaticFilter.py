@@ -3,23 +3,22 @@
 from __future__ import print_function
 import argparse
 import vcf
-import numpy
 import re
 import banyan
 import collections
-import copy
+import numpy
 
 #Functions
-def overlapValid(s1, e1, s2, e2, reciprocalOverlap=0.8, maxOffset=250):
+def overlapValid((s1, e1), (s2, e2), reciprocalOverlap=0.8, maxOffset=250):
     bpOffset = max(abs(s2-s1), abs(e2-e1))
     overlapLen = float(min(e1, e2) - max(s1, s2))
-    lenA=float(e1-s1)
-    lenB=float(e2-s2)
+    lenA = float(e1-s1)
+    lenB = float(e2-s2)
     # Check for any overlap
-    if (e1 < s2) or (s1 > e2) or (lenA<=0) or (lenB<=0) or (overlapLen<=0):
+    if (e1 < s2) or (s1 > e2) or (lenA <= 0) or (lenB <= 0) or (overlapLen <= 0):
         return False
     # Check reciprocal overlap and offset
-    if ((overlapLen/max(lenA,lenB))<reciprocalOverlap) or (bpOffset>maxOffset):
+    if ((overlapLen/max(lenA, lenB)) < reciprocalOverlap) or (bpOffset > maxOffset):
         return False
     return True
 
@@ -55,17 +54,17 @@ if args.vcfFile:
     for record in vcf_reader:
         if (record.INFO['SVLEN'] >= minSize) and (record.INFO['SVLEN'] <= maxSize) and ((not args.siteFilter) or (len(record.FILTER) == 0)):
             precise = False
-            if ('PRECISE' in record.INFO.keys()):
+            if 'PRECISE' in record.INFO.keys():
                 precise = record.INFO['PRECISE']
             rcRef = []
             rcAlt = []
             for call in record.samples:
-                if (call.called):
+                if call.called:
                     if (re.search(r"[Nn]ormal", call.sample) != None) and (call.gt_type == 0):
-                        if ((not precise) and (call['DV'] == 0)) or ((precise) and (call['RV']==0)):
+                        if ((not precise) and (call['DV'] == 0)) or ((precise) and (call['RV'] == 0)):
                             rcRef.append(call['RC'])
                     if (re.search(r"[Tt]umo[ur]", call.sample) != None) and (call.gt_type != 0):
-                        if ((not precise) and (call['DV'] >= 2) and (float(call['DV'])/float(call['DV']+call['DR'])>=altAF)) or ((precise) and (call['RV'] >= 2) and (float(call['RV'])/float(call['RR'] + call['RV'])>=altAF)):
+                        if ((not precise) and (call['DV'] >= 2) and (float(call['DV'])/float(call['DV']+call['DR']) >= altAF)) or ((precise) and (call['RV'] >= 2) and (float(call['RV'])/float(call['RR'] + call['RV']) >= altAF)):
                             rcAlt.append(call['RC'])
             if (len(rcRef) > 0) and (len(rcAlt) > 0):
                 rdRatio = 1
@@ -76,8 +75,8 @@ if args.vcfFile:
                     sv[record.CHROM] = banyan.SortedDict(key_type=(int, int), alg=banyan.RED_BLACK_TREE, updator=banyan.OverlappingIntervalsUpdator)
                 if not sv.has_key(record.INFO['CHR2']):
                     sv[record.INFO['CHR2']] = banyan.SortedDict(key_type=(int, int), alg=banyan.RED_BLACK_TREE, updator=banyan.OverlappingIntervalsUpdator)
-                if (args.svType=='TRA'):
-                    traWindow=5000  # 5kb translocation window
+                if args.svType == 'TRA':
+                    traWindow = 5000  # 5kb translocation window
                     if (record.POS - traWindow, record.POS + traWindow) in sv[record.CHROM]:
                         svDups[(record.CHROM, record.POS - traWindow, record.POS + traWindow)].append((record.ID, record.INFO['PE']))
                     else:
@@ -91,7 +90,9 @@ if args.vcfFile:
                         svDups[(record.CHROM, record.POS, record.INFO['END'])].append((record.ID, record.INFO['PE']))
                     else:
                         sv[record.CHROM][(record.POS, record.INFO['END'])] = (record.ID, record.INFO['PE'])
-                        
+
+
+
 # Output vcf records
 if args.vcfFile:
     vcf_reader = vcf.Reader(open(args.vcfFile), 'r')
@@ -99,28 +100,28 @@ if args.vcfFile:
     vcf_writer = vcf.Writer(open(args.outFile, 'w'), vcf_reader, lineterminator='\n')
     for record in vcf_reader:
         # Is it a valid SV?
-        if (record.ID not in validRecordID):
+        if record.ID not in validRecordID:
             continue
         # Judge wether overlapping calls are better
         foundBetterHit = False
-        if (args.svType=='TRA'):
-            for (chrName, start, end) in [ (record.CHROM, record.POS - traWindow, record.POS + traWindow), (record.INFO['CHR2'], record.INFO['END'] - traWindow, record.INFO['END'] + traWindow) ]:
+        if args.svType == 'TRA':
+            for (chrName, start, end) in [(record.CHROM, record.POS - traWindow, record.POS + traWindow), (record.INFO['CHR2'], record.INFO['END'] - traWindow, record.INFO['END'] + traWindow)]:
                 for cStart, cEnd in sv[chrName].overlap((start, end)):
                     for cSvID, cScore in svDups[(chrName, cStart, cEnd)] + [sv[chrName][(cStart, cEnd)]]:
-                        if (record.ID != cSvID):
+                        if record.ID != cSvID:
                             if (cScore > record.INFO['PE']) or ((cScore == record.INFO['PE']) and (cSvID < record.ID)):
                                 foundBetterHit = True
                                 break
-                    if (foundBetterHit):
+                    if foundBetterHit:
                         break
         else:
             for cStart, cEnd in sv[record.CHROM].overlap((record.POS, record.INFO['END'])):
                 for cSvID, cScore in svDups[(record.CHROM, cStart, cEnd)] + [sv[record.CHROM][(cStart, cEnd)]]:
-                    if (record.ID != cSvID) and (overlapValid(record.POS, record.INFO['END'], cStart, cEnd)):
+                    if (record.ID != cSvID) and (overlapValid((record.POS, record.INFO['END']), (cStart, cEnd))):
                         if (cScore > record.INFO['PE']) or ((cScore == record.INFO['PE']) and (cSvID < record.ID)):
                             foundBetterHit = True
                             break
-                if (foundBetterHit):
+                if foundBetterHit:
                     break
         if not foundBetterHit:
             record.INFO['SOMATIC'] = True
