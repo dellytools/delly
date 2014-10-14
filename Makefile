@@ -3,7 +3,7 @@ PARALLEL ?= 0
 
 # External libraries
 
-#BOOST_ROOT ?= /g/solexa/bin/software/boost_1_53_0
+BOOST_ROOT ?= /g/solexa/bin/software/boost_1_53_0
 BAMTOOLS_ROOT = src/bamtools
 SEQTK_ROOT    = src/htslib/htslib
 
