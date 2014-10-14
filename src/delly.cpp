@@ -294,12 +294,12 @@ _translateSVCoordinates(TUSize refSize, TUSize refSizeRight, TUSize refSizeLeft,
 // Translocations
 template<typename TUSize, typename TSize, typename TBamRecord>
 inline bool
-_translateSVCoordinates(TUSize refSize, TUSize, TUSize refSizeLeft, TSize diagBeg, TSize diagEnd, TUSize leftRefWalky, TUSize rightRefWalky, TUSize consLen, TBamRecord const& sv, TUSize& finalGapStart, TUSize& finalGapEnd, TUSize& predictedLength, SVType<TranslocationTag>) {
-  finalGapStart = diagBeg + leftRefWalky + 1;
-  finalGapEnd = diagEnd + consLen - (consLen - rightRefWalky) + 1;
+_translateSVCoordinates(TUSize refSize, TUSize, TUSize refSizeLeft, TSize diagBeg, TSize diagEnd, TUSize leftRefWalky, TUSize rightRefWalky, TUSize consLen, TBamRecord const& sv, TUSize& fGS, TUSize& fGE, TUSize& predictedLength, SVType<TranslocationTag>) {
+  TSize finalGapStart = diagBeg + leftRefWalky + 1;
+  TSize finalGapEnd = diagEnd + consLen - (consLen - rightRefWalky) + 1;
   predictedLength = sv.svEnd - sv.svStart + 1;  // Useless for translocations
-  if (finalGapStart > refSizeLeft) return true;
-  if (finalGapEnd < refSizeLeft) return true;
+  if (finalGapStart > (TSize) refSizeLeft) return true;
+  if (finalGapEnd < (TSize) refSizeLeft) return true;
   if (sv.ct%2==0) {
     finalGapStart += sv.svStartBeg;
     if (sv.ct==2) finalGapEnd = sv.svEndBeg + (finalGapEnd - refSizeLeft) - 1;
@@ -314,6 +314,9 @@ _translateSVCoordinates(TUSize refSize, TUSize, TUSize refSizeLeft, TSize diagBe
     finalGapStart = finalGapEnd;
     finalGapEnd = tmpStart;
   }
+  if ((finalGapStart < 0) || (finalGapEnd<0)) return true;
+  fGS=finalGapStart;
+  fGE=finalGapEnd;
   return false;
 }
 
@@ -2009,12 +2012,14 @@ inline int run(Config const& c, TSVType svType) {
 	}
 	
 	// Dump PEs
-#pragma omp critical
 	if (dumpPe) {
-	  for(typename TCliqueMembers::const_iterator itC=clique.begin(); itC!=clique.end(); ++itC) {
-	    std::stringstream id;
-	    id << _addID(svType) << std::setw(8) << std::setfill('0') << svRec.id;
-	    dumpPeFile << id.str() << "\t" << references[g[*itC]->RefID].RefName << "\t" << g[*itC]->Position << "\t" <<  references[g[*itC]->MateRefID].RefName << "\t" << g[*itC]->MatePosition << "\t" << g[*itC]->MapQuality << std::endl;
+#pragma omp critical
+	  {
+	    for(typename TCliqueMembers::const_iterator itC=clique.begin(); itC!=clique.end(); ++itC) {
+	      std::stringstream id;
+	      id << _addID(svType) << std::setw(8) << std::setfill('0') << svRec.id;
+	      dumpPeFile << id.str() << "\t" << references[g[*itC]->RefID].RefName << "\t" << g[*itC]->Position << "\t" <<  references[g[*itC]->MateRefID].RefName << "\t" << g[*itC]->MatePosition << "\t" << g[*itC]->MapQuality << std::endl;
+	    }
 	  }
 	}
       }
