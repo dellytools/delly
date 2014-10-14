@@ -2,9 +2,10 @@ DEBUG ?= 0
 PARALLEL ?= 0
 
 # External libraries
-BOOST_ROOT ?= /g/solexa/bin/software/boost_1_53_0
-BAMTOOLS_ROOT ?= /g/solexa/bin/software/bamtools-2.3.0/
-SEQTK_ROOT ?= /g/solexa/bin/software/kseq/
+
+#BOOST_ROOT ?= /g/solexa/bin/software/boost_1_53_0
+BAMTOOLS_ROOT = src/bamtools
+SEQTK_ROOT    = src/htslib/htslib
 
 # Flags
 CXX=g++
@@ -30,9 +31,17 @@ else
 endif
 
 # Targets
-TARGETS = src/delly src/extract src/cov src/iover src/stats
+TARGETS = htslib bamtools libbamtools.a src/delly src/extract src/cov src/iover src/stats
 
 all:   	$(TARGETS)
+
+htslib:
+	cd src/htslib && make
+bamtools:
+	cd src/bamtools && mkdir -p build && cd build && cmake .. && make
+
+libbamtools.a: bamtools
+	cp src/bamtools/lib/libbamtools.a .
 
 src/delly:
 	$(CXX) $(CXXFLAGS) $@.cpp -o $@ $(LDFLAGS)
