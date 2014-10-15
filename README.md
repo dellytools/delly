@@ -79,7 +79,7 @@ DELLY expects two alignment records in the bam file for every paired-end, one fo
 * Usage/discussion mailing list?         
 There is a delly discussion group [delly-users](http://groups.google.com/d/forum/delly-users).
 
-* Docker support?
+* Docker support?            
 There is a dockerized delly available [here](https://registry.hub.docker.com/u/trausch/delly/).
 
 
