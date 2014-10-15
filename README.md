@@ -10,7 +10,7 @@ Installing DELLY
 ----------------
 
 The easiest way to get DELLY is to download a statically linked binary from the [DELLY github release page](https://github.com/tobiasrausch/delly/releases/).
-Alternatively, you can build DELLY from source. Once you have installed [Boost](www.boost.org), update the Boost library path in the Makefile. 
+Alternatively, you can build DELLY from source. Once you have installed [Boost](http://www.boost.org), update the Boost library path in the Makefile. 
 Building DELLY just requires
 
 `git clone --recursive https://github.com/tobiasrausch/delly.git`
