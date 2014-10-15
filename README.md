@@ -14,7 +14,9 @@ Alternatively, you can build DELLY from source. Once you have installed [Boost](
 Building DELLY just requires
 
 `git clone --recursive https://github.com/tobiasrausch/delly.git`
+
 `cd delly/`
+
 `make all`
 
 There is a DELLY discussion group [delly-users](http://groups.google.com/d/forum/delly-users) for questions and a few wiki pages on some additional [tools](https://github.com/tobiasrausch/delly/wiki). There is also a [dockerized delly](https://registry.hub.docker.com/u/trausch/delly/).
