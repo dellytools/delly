@@ -6,26 +6,18 @@ at single-nucleotide resolution in short-read massively parallel sequencing data
 delineate genomic rearrangements throughout the genome.
 
 
-DELLY dependencies
-------------------
-
-* BamTools (https://github.com/pezmaster31/bamtools)
-* Boost C++ Libraries (www.boost.org)
-* OpenMP (www.openmp.org)
-* zlib compression library (www.zlib.net)
-* kseq library to parse FASTA/FASTQ (https://github.com/lh3/seqtk)
-
-
 Installing DELLY
 ----------------
 
-The easiest way to get DELLY is to download the source code from the [DELLY github release page](https://github.com/tobiasrausch/delly/releases/).
-Then you need to install Boost, BamTools and KSEQ and update the paths in the Makefile.
+The easiest way to get DELLY is to download a statically linked binary from the [DELLY github release page](https://github.com/tobiasrausch/delly/releases/).
+Alternatively, you can build DELLY from source. Once you have installed [Boost](www.boost.org), update the Boost library path in the Makefile. 
 Building DELLY just requires
 
-`make -B src/delly`
+`git clone --recursive https://github.com/tobiasrausch/delly.git`
+`cd delly/`
+`make all`
 
-Statically linked binaries for Linux 64-bit are available [here](https://github.com/tobiasrausch/delly/releases/). There is a DELLY discussion group [delly-users](http://groups.google.com/d/forum/delly-users) for questions and a few wiki pages on some additional [tools](https://github.com/tobiasrausch/delly/wiki). There is also a [dockerized delly](https://registry.hub.docker.com/u/trausch/delly/).
+There is a DELLY discussion group [delly-users](http://groups.google.com/d/forum/delly-users) for questions and a few wiki pages on some additional [tools](https://github.com/tobiasrausch/delly/wiki). There is also a [dockerized delly](https://registry.hub.docker.com/u/trausch/delly/).
 
 
 DELLY multi-threading mode
@@ -42,9 +34,6 @@ You can set the number of threads using the environment variable OMP_NUM_THREADS
 `export OMP_NUM_THREADS=10`
 
 DELLY primarily parallelizes on the sample level. Hence, OMP_NUM_THREADS should be always smaller or equal to the number of input samples. 
-As a rule of thumb you should consider an additional memory demand of about 1G per thread for human samples, about 100MB per thread for drosophila 
-and less than 50MB per thread for yeast. 
-
 
 Running DELLY
 -------------
@@ -62,7 +51,7 @@ If you omit the reference sequence DELLY skips the split-read analysis. The vcf 
 
 `grep "^#" del.vcf`
 
-Delly ships with two small python scripts, one to filter somatic variants for tumor/normal comparisons and one to filter confident SV sites in population sequencing.
+DELLY ships with two small python scripts, one to filter somatic variants for tumor/normal comparisons and one to filter confident SV sites in population sequencing.
 
 `python python/somaticFilter.py -v del.vcf -o del.somatic.vcf -t DEL -s 500 -f`
 
