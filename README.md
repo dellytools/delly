@@ -33,7 +33,7 @@ There is also a statically linked, multi-threaded binary for Linux 64-bit availa
 
 You can set the number of threads using the environment variable OMP_NUM_THREADS in your shell.
 
-`export OMP_NUM_THREADS=10`
+`export OMP_NUM_THREADS=3`
 
 DELLY primarily parallelizes on the sample level. Hence, OMP_NUM_THREADS should be always smaller or equal to the number of input samples. 
 
