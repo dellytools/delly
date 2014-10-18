@@ -189,7 +189,6 @@ annotateCoverage(TFiles const& files, uint16_t minMapQual, bool inclCigar, bool 
 
       // Get a sample name
       std::string sampleName(files[file_c].stem().string());
-      typename TSampleLibrary::iterator sampleIt=sampleLib.find(sampleName);
 
       // Initialize bam file
       BamTools::BamReader reader;

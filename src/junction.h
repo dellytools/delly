@@ -381,7 +381,6 @@ inline void
 	for(unsigned int file_c = 0; file_c < files.size(); ++file_c) {
 	  // Get a sample name
 	  std::string sampleName(files[file_c].stem().string());
-	  typename TSampleLibrary::iterator sampleIt=sampleLib.find(sampleName);
 
 	  // Initialize bam file
 	  BamTools::BamReader reader;

@@ -146,7 +146,7 @@ namespace torali {
 	  int32_t regionChr;
 	  int regionStart;
 	  int regionEnd;
-	  if (bpPoint==int(itSV->chr==itSV->chr2)) {
+	  if (bpPoint==(unsigned int)(itSV->chr==itSV->chr2)) {
 	    regionChr = itSV->chr2;
 	    regionStart = std::max(0, (int) itSV->svEnd - (int) maxInsertSize);
 	    regionEnd = itSV->svEnd + maxInsertSize;
