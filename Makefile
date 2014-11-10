@@ -66,4 +66,4 @@ src/stats: .htslib .bamtools $(DELLYSOURCES)
 clean:
 	cd src/bamtools/build && make clean
 	cd src/htslib && make clean
-	rm -f $(TARGETS) $(TARGETS:=.o)
+	rm -f $(TARGETS) $(TARGETS:=.o) .htslib .bamtools
