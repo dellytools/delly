@@ -32,30 +32,35 @@ else
 	#LDFLAGS += --static
 endif
 
+# External sources
+HTSLIBSOURCES = $(wildcard src/htslib/*.c) $(wildcard src/htslib/*.h)
+BAMTOOLSSOURCES = $(wildcard src/bamtools/src/api/*.h) $(wildcard src/bamtools/src/api/*.cpp)
+DELLYSOURCES = $(wildcard src/*.h) $(wildcard src/*.cpp)
+
 # Targets
-TARGETS = htslib bamtools src/delly src/extract src/cov src/iover src/stats
+TARGETS = .htslib .bamtools src/delly src/extract src/cov src/iover src/stats
 
 all:   	$(TARGETS)
 
-htslib:
-	cd src/htslib && make
+.htslib: $(HTSLIBSOURCES)
+	cd src/htslib && make && cd ../../ && touch .htslib
 
-bamtools:
-	cd src/bamtools && mkdir -p build && cd build && cmake .. && make
+.bamtools: $(BAMTOOLSSOURCES)
+	cd src/bamtools && mkdir -p build && cd build && cmake .. && make && cd ../../../ && touch .bamtools
 
-src/delly:
+src/delly: .htslib .bamtools $(DELLYSOURCES)
 	$(CXX) $(CXXFLAGS) $@.cpp -o $@ $(LDFLAGS)
 
-src/extract:
+src/extract: .htslib .bamtools $(DELLYSOURCES)
 	$(CXX) $(CXXFLAGS) $@.cpp -o $@ $(LDFLAGS)
 
-src/cov:
+src/cov: .htslib .bamtools $(DELLYSOURCES)
 	$(CXX) $(CXXFLAGS) $@.cpp -o $@ $(LDFLAGS)
 
-src/iover:
+src/iover: .htslib .bamtools $(DELLYSOURCES)
 	$(CXX) $(CXXFLAGS) $@.cpp -o $@ $(LDFLAGS)
 
-src/stats:
+src/stats: .htslib .bamtools $(DELLYSOURCES)
 	$(CXX) $(CXXFLAGS) $@.cpp -o $@ $(LDFLAGS)
 
 clean:
