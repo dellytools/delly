@@ -2112,7 +2112,7 @@ int main(int argc, char **argv) {
   boost::program_options::options_description pem("PE options");
   pem.add_options()
     ("map-qual,q", boost::program_options::value<unsigned short>(&c.minMapQual)->default_value(0), "min. paired-end mapping quality")
-    ("mad-cutoff,s", boost::program_options::value<unsigned short>(&c.madCutoff)->default_value(5), "insert size cutoff, median+s*MAD (deletions only)")
+    ("mad-cutoff,s", boost::program_options::value<unsigned short>(&c.madCutoff)->default_value(9), "insert size cutoff, median+s*MAD (deletions only)")
     ;
 
   boost::program_options::options_description breaks("SR options");
