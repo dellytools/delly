@@ -28,12 +28,15 @@ Contact: Tobias Rausch (rausch@embl.de)
 #include <boost/program_options/options_description.hpp>
 #include <boost/program_options/parsers.hpp>
 #include <boost/program_options/variables_map.hpp>
+#include <boost/date_time/posix_time/posix_time.hpp>
+#include <boost/date_time/gregorian/gregorian.hpp>
 #include <boost/filesystem.hpp>
+#include <boost/tokenizer.hpp>
+#include <boost/progress.hpp>
+#include "api/BamReader.h"
+#include "api/BamIndex.h"
 
-#include "memory_mapped_file.h"
 #include "version.h"
-#include "record.h"
-#include "fasta_reader.h"
 #include "intervaltree.h"
 #include "util.h"
 
@@ -235,113 +238,108 @@ run(TConfig const& c, TMethod const&) {
   TIntervalTreeCollection iTreeColl;
   
   // Scan all annotation intervals
-  std::cout << "Scanning annotation intervals..." << std::endl;
+  boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
+  std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Building annotation interval trees" << std::endl;
+  boost::progress_display show_progress(c.anno_int.size());
   for(unsigned int anno_c = 0; anno_c<c.anno_int.size(); ++anno_c) {
-    std::cout << c.anno_int[anno_c] << std::endl;
+    ++show_progress;
     TChrIntervalTrees chrIntervals;
 
     if (boost::filesystem::exists(c.anno_int[anno_c]) && boost::filesystem::is_regular_file(c.anno_int[anno_c]) && boost::filesystem::file_size(c.anno_int[anno_c])) {
-      typedef Record<std::string, unsigned int, unsigned int, void, void, void, void, void, void, void, void, void> TRecord;
+      std::ifstream annoFile(c.anno_int[anno_c].c_str());
       unsigned int line_counter = 1;
-      Memory_mapped_file map_file(c.anno_int[anno_c].c_str());
-      char buffer[Memory_mapped_file::MAX_LINE_LENGTH];
-      while (map_file.left_bytes() > 0) {
-	map_file.read_line(buffer);
-	Tokenizer token(buffer, Memory_mapped_file::MAX_LINE_LENGTH);
-	TRecord line;
-	addF0(token, line);
-	addF1(token, line);
-	std::string key;
-	if (c.noIntervals[anno_c]) {
-	  token.getString(key);
-	} else {
-	  addF2(token, line);
-	  std::stringstream out;
-	  out << line.f2;
-	  key = out.str();
-	}
-	if (c.fd[anno_c] != 0) {
-	  if (c.fd[anno_c] == 1) key = line.f0;
-	  else if (c.fd[anno_c] == 2) {
-	    std::stringstream out;
-	    out << line.f1;
-	    key = out.str();
-	  } else if (c.fd[anno_c] > 3) {
-	    unsigned int k = 4;
-	    for (;k < c.fd[anno_c];++k) token.skipNextChunk();
-	    token.getString(key);
+      while (annoFile.good()) {
+	std::string annoLine;
+	getline(annoFile, annoLine);
+	if (annoLine[0]=='#') continue;
+	typedef boost::tokenizer< boost::char_separator<char> > Tokenizer;
+	boost::char_separator<char> sep("\t,;");
+	Tokenizer tokens(annoLine, sep);
+	Tokenizer::iterator tokIter = tokens.begin();
+	if (tokIter!=tokens.end()) {
+	  std::string chrName=*tokIter++;
+	  int32_t intStart = boost::lexical_cast<int32_t>(*tokIter++);
+	  int32_t intEnd = intStart;
+	  std::string key=*tokIter++;
+	  if (!c.noIntervals[anno_c]) intEnd = boost::lexical_cast<int32_t>(key);
+	  if (c.fd[anno_c] != 0) {
+	    if (c.fd[anno_c] == 1) key = chrName;
+	    else if (c.fd[anno_c] == 2) { 
+	      std::stringstream out;
+	      out << intStart;
+	      key = out.str();
+	    } else if (c.fd[anno_c] > 3) {
+	      unsigned int k = 4;
+	      for (;k < c.fd[anno_c];++k) tokIter++;
+	      key=*tokIter++;
+	    }
+	  } else {
+	    std::stringstream s; 
+	    s << line_counter++;
+	    key = s.str();
 	  }
-	} else {
-	  std::stringstream s; 
-	  s << line_counter++;
-	  key = s.str();
+	  TChrIntervalTrees::iterator findTree = chrIntervals.find( chrName );
+	  if (findTree == chrIntervals.end()) findTree = chrIntervals.insert(std::make_pair(chrName, new TIntervalTree())).first;
+	  TIntervalTree* iTree = findTree->second;
+	  TInterval newInt;
+	  newInt.low = intStart;
+	  newInt.high = intEnd;
+	  newInt.cargo = key;
+	  iTree->insertInterval(newInt);
 	}
-
-	TChrIntervalTrees::iterator findTree = chrIntervals.find( line.f0 );
-	if (findTree == chrIntervals.end()) findTree = chrIntervals.insert(std::make_pair(line.f0, new TIntervalTree())).first;
-	TIntervalTree* iTree = findTree->second;
-	TInterval newInt;
-	if (c.noIntervals[anno_c]) {
-	  newInt.low = line.f1;
-	  newInt.high = line.f1;
-	} else {
-	  newInt.low = line.f1;
-	  newInt.high = line.f2;
-	}
-	newInt.cargo = key;
-	iTree->insertInterval(newInt);
       }
+      annoFile.close();
+      iTreeColl.push_back(chrIntervals);
     }
-    iTreeColl.push_back(chrIntervals);
   }
 
-
   // Scan all query intervals
-  std::cout << "Scanning query intervals..." << std::endl;
+  now = boost::posix_time::second_clock::local_time();
+  std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Searching query intervals" << std::endl;
+  boost::progress_display show_progress2(c.files.size());
   for(unsigned int files_c = 0; files_c<c.files.size(); ++files_c) {
-    std::cout << c.files[files_c] << std::endl;
-
+    ++show_progress2;
 
     if (!boost::filesystem::exists(c.files[files_c]) || !boost::filesystem::is_regular_file(c.files[files_c]) || !boost::filesystem::file_size(c.files[files_c])) continue;
     std::string outfile = c.files[files_c].string() + c.fileSuffix;
     std::ofstream anno(outfile.c_str());
 
-    typedef Record<std::string, unsigned int, unsigned int, std::string, void, void, void, void, void, void, void, void> TRecord;
-    Memory_mapped_file map_file(c.files[files_c].string().c_str());
-    char buffer[8192];
-    while (map_file.left_bytes() > 0) {
-      map_file.read_line(buffer);
-      Tokenizer token(buffer, Memory_mapped_file::MAX_LINE_LENGTH);
-      TRecord line;
-      addF0(token, line);
-      addF1(token, line);
-      TInterval searchInt;
-      if (c.queryNoIntervals[files_c]) {
-	searchInt.low = line.f1;
-	searchInt.high = line.f1;
-      } else {
-	addF2(token, line);
-	searchInt.low = line.f1;
-	searchInt.high = line.f2;
-      }
-      anno << buffer;
-      if (c.cutoff != -1) anno << "\t";
+    std::ifstream queryFile(c.files[files_c].string().c_str());
+    while (queryFile.good()) {
+      std::string queryLine;
+      getline(queryFile, queryLine);
+      if (queryLine[0]=='#') continue;
+      typedef boost::tokenizer< boost::char_separator<char> > Tokenizer;
+      boost::char_separator<char> sep("\t,;");
+      Tokenizer tokens(queryLine, sep);
+      Tokenizer::iterator tokIter = tokens.begin();
+      if (tokIter!=tokens.end()) {
+	std::string chrName=*tokIter++;
+	int32_t intStart = boost::lexical_cast<int32_t>(*tokIter++);
+	int32_t intEnd = intStart;
+	if (!c.queryNoIntervals[files_c]) intEnd = boost::lexical_cast<int32_t>(*tokIter++);
+	TInterval searchInt;
+	searchInt.low = intStart;
+	searchInt.high = intEnd;
+	anno << queryLine;
+	if (c.cutoff != -1) anno << "\t";
 
-      // Find overlapping intervals
-      for(unsigned int anno_c = 0; anno_c<c.anno_int.size(); ++anno_c) {
-	typedef std::vector<TInterval> TResultVec;
-	TResultVec results;
-	TChrIntervalTrees& chrIntervals = iTreeColl[anno_c];	
-	TChrIntervalTrees::iterator findTree = chrIntervals.find( line.f0 );
-	if (findTree != chrIntervals.end()) {
-	  TIntervalTree* iTree = findTree->second;
-	  iTree->enumOverlapInterval(searchInt, results);
+	// Find overlapping intervals
+	for(unsigned int anno_c = 0; anno_c<c.anno_int.size(); ++anno_c) {
+	  typedef std::vector<TInterval> TResultVec;
+	  TResultVec results;
+	  TChrIntervalTrees& chrIntervals = iTreeColl[anno_c];	
+	  TChrIntervalTrees::iterator findTree = chrIntervals.find( chrName );
+	  if (findTree != chrIntervals.end()) {
+	    TIntervalTree* iTree = findTree->second;
+	    iTree->enumOverlapInterval(searchInt, results);
+	  }
+	
+	  // Sort results
+	  sortResults(anno, c, searchInt, results, TMethod());
 	}
-
-	// Sort results
-	sortResults(anno, c, searchInt, results, TMethod());
+	anno << std::endl;
       }
-      anno << std::endl;
     }
     anno.close();
   }
@@ -356,10 +354,11 @@ run(TConfig const& c, TMethod const&) {
     }
   }
 
+  // End
+  now = boost::posix_time::second_clock::local_time();
+  std::cout << '[' << boost::posix_time::to_simple_string(now) << "] Done." << std::endl;;
   return 0;
 }
-
-
 
 
 int main(int argc, char **argv) {
@@ -389,13 +388,15 @@ int main(int argc, char **argv) {
   generic.add_options()
     ("help,?", "show help message")
     ("max-overlaps,m", boost::program_options::value<unsigned int>(&c.maxOverlaps)->default_value(10), "max. overlaps to print, 0 means print all")
-    ("output-file-suffix,o", boost::program_options::value<std::string>(&c.fileSuffix)->default_value(".anno.out"), "output file suffix")
+    ("output-suffix,o", boost::program_options::value<std::string>(&c.fileSuffix)->default_value(".aout"), "output file suffix")
     ;
 
   // Define hidden options
   boost::program_options::options_description hidden("Hidden options");
   hidden.add_options()
     ("input-file", boost::program_options::value< std::vector<boost::filesystem::path> >(&c.files), "input file")
+    ("license,l", "show license")
+    ("warranty,w", "show warranty")
     ;
   boost::program_options::positional_options_description pos_args;
   pos_args.add("input-file", -1);
@@ -413,8 +414,14 @@ int main(int argc, char **argv) {
   // Check command line arguments
   if ((vm.count("help")) || (!vm.count("annotation-intervals")) || (!vm.count("input-file"))) {
     printTitle("Interval overlap");
-    std::cout << "Usage: " << argv[0] << " [OPTIONS] <query_intervals1.txt> <query_intervals2.txt> ..." << std::endl;
-    std::cout << visible_options << "\n"; 
+    if (vm.count("warranty")) {
+      displayWarranty();
+    } else if (vm.count("license")) {
+      gplV3();
+    } else {
+      std::cout << "Usage: " << argv[0] << " [OPTIONS] <query_intervals1.txt> <query_intervals2.txt> ..." << std::endl;
+      std::cout << visible_options << "\n"; 
+    }
     return 1; 
   }
 
@@ -423,28 +430,11 @@ int main(int argc, char **argv) {
   if (c.anno_int.size() != c.noIntervals.size()) c.noIntervals.resize(c.anno_int.size());
   if (c.files.size() != c.queryNoIntervals.size()) c.queryNoIntervals.resize(c.files.size());
 
-  // Show command line arguments
-  std::cout << "Intervals overlap calculation" << std::endl;
-  std::cout << "annotation-intervals: ";
-  for(unsigned int i = 0; i<c.anno_int.size(); ++i) std::cout << c.anno_int[i] << ',';
+  // Show cmd
+  boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
+  std::cout << '[' << boost::posix_time::to_simple_string(now) << "] ";
+  for(int i=0; i<argc; ++i) { std::cout << argv[i] << ' '; }
   std::cout << std::endl;
-  std::cout << "field-identifier: ";
-  for(unsigned int i = 0; i<c.fd.size(); ++i) std::cout << c.fd[i] << ',';
-  std::cout << std::endl;
-  std::cout << "interval-or-point: ";
-  for(unsigned int i = 0; i<c.noIntervals.size(); ++i) std::cout << c.noIntervals[i] << ',';
-  std::cout << std::endl;
-  std::cout << "input-file: ";
-  for(unsigned int i = 0; i<c.files.size(); ++i) std::cout << c.files[i] << ',';
-  std::cout << std::endl;
-  std::cout << "query-interval-or-point: ";
-  for(unsigned int i = 0; i<c.queryNoIntervals.size(); ++i) std::cout << c.queryNoIntervals[i] << ',';
-  std::cout << std::endl;
-  std::cout << "max-overlaps: " << c.maxOverlaps << std::endl;
-  std::cout << "threshold: " << c.threshold << std::endl;
-  std::cout << "cutoff: " << c.cutoff << std::endl;
-  std::cout << "mode: " << c.mode << std::endl;
-  std::cout << "method: " << c.method << std::endl;
 
   // Which method
   if (!c.method.compare("overhang")) {

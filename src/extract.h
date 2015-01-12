@@ -97,7 +97,7 @@ namespace torali {
 		  boost::char_separator<char> split(",");
 		  Tokenizer bTok(*tokIter++, split);
 		  Tokenizer::iterator bTokIter = bTok.begin();
-		  for(;bTokIter!=bTok.end(); ++bTokIter) br.push_back(boost::lexical_cast<unsigned int>(*bTokIter) - 1);
+		  for(;bTokIter!=bTok.end(); ++bTokIter) br.push_back(boost::lexical_cast<unsigned int>(*bTokIter));
 		}
 	      }
 	      rec.push_back(GenomicInterval(chr, id, br));

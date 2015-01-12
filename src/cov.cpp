@@ -37,6 +37,7 @@ Contact: Tobias Rausch (rausch@embl.de)
 #include <boost/iostreams/filtering_stream.hpp>
 #include <boost/iostreams/filter/zlib.hpp>
 #include <boost/iostreams/filter/gzip.hpp>
+#include <boost/filesystem.hpp>
 #include <boost/tokenizer.hpp>
 #include <boost/progress.hpp>
 #include "api/BamReader.h"
@@ -56,10 +57,12 @@ using namespace torali;
 struct Config {
   unsigned int window_size;
   unsigned int window_offset;
+  unsigned int window_num;
   uint16_t minMapQual;
   bool bp_flag;
   bool avg_flag;
   bool inclCigar;
+  bool cov_norm;
   boost::filesystem::path outfile;
   boost::filesystem::path int_file;
   std::vector<boost::filesystem::path> files;
@@ -108,7 +111,7 @@ run(Config const& c, TSingleHit, TCoverageType covType)
   BamTools::RefVector references = readerRef.GetReferenceData();
 
   // Read all SV intervals
-  typedef std::vector<StructuralVariantRecord> TSVs;
+  typedef std::vector<CovRecord> TSVs;
   TSVs svs;
   std::map<unsigned int, std::string> idToName;
   unsigned int intervalCount=1;
@@ -131,9 +134,8 @@ run(Config const& c, TSingleHit, TCoverageType covType)
 	  TMapChr::const_iterator mapChrIt = mapChr.find(chrName);
 	  if (mapChrIt != mapChr.end()) {
 	    if (tokIter!=tokens.end()) {
-	      StructuralVariantRecord sv;	  
+	      CovRecord sv;	  
 	      sv.chr = mapChrIt->second;
-	      sv.chr2 = mapChrIt->second;
 	      sv.svStart = boost::lexical_cast<int32_t>(*tokIter++);
 	      sv.svEnd = boost::lexical_cast<int32_t>(*tokIter++) + 1;
 	      std::string svName = *tokIter;
@@ -151,12 +153,17 @@ run(Config const& c, TSingleHit, TCoverageType covType)
     typename BamTools::RefVector::const_iterator itRef = references.begin();
     for(int refIndex=0;itRef!=references.end();++itRef, ++refIndex) {
       int32_t pos = 0;
+      unsigned int wSize = c.window_size;
+      unsigned int wOffset = c.window_offset;
+      if (c.window_num>0) {
+	wSize=(itRef->RefLength / c.window_num) + 1;
+	wOffset=wSize;
+      }
       while (pos < references[refIndex].RefLength) {
-	int32_t window_len = pos+c.window_size;
+	int32_t window_len = pos+wSize;
 	if (window_len > references[refIndex].RefLength) window_len = references[refIndex].RefLength;
-	StructuralVariantRecord sv;
+	CovRecord sv;
 	sv.chr = refIndex;
-	sv.chr2 = refIndex;
 	sv.svStart = pos;
 	sv.svEnd = window_len;
 	std::stringstream s; 
@@ -164,7 +171,7 @@ run(Config const& c, TSingleHit, TCoverageType covType)
 	idToName.insert(std::make_pair(intervalCount, s.str()));
 	sv.id = intervalCount++;
 	svs.push_back(sv);
-	pos += c.window_offset;
+	pos += wOffset;
       }
     }
   }
@@ -176,7 +183,7 @@ run(Config const& c, TSingleHit, TCoverageType covType)
   TCountMap countMap;
 
   // Annotate coverage
-  annotateCoverage(c.files, c.minMapQual, c.inclCigar, sampleLib, svs, countMap, TSingleHit(), covType);
+  annotateCoverage(c.files, c.minMapQual, c.inclCigar, c.cov_norm, sampleLib, svs, countMap, TSingleHit(), covType);
 
   // Output library statistics
   std::cout << "Library statistics" << std::endl;
@@ -185,7 +192,7 @@ run(Config const& c, TSingleHit, TCoverageType covType)
     std::cout << "Sample: " << sampleIt->first << std::endl;
     TLibraryMap::const_iterator libIt=sampleIt->second.begin();
     for(;libIt!=sampleIt->second.end();++libIt) {
-      std::cout << "RG: ID=" << libIt->first << ",Median=" << libIt->second.median << ",MAD=" << libIt->second.mad << ",Orientation=" << (int) libIt->second.defaultOrient << ",MappedReads=" << libIt->second.mappedReads << ",DuplicatePairs=" << libIt->second.non_unique_pairs << ",UniquePairs=" << libIt->second.unique_pairs << std::endl;
+      std::cout << "RG: ID=" << libIt->first << ",Median=" << libIt->second.median << ",MAD=" << libIt->second.mad << ",Orientation=" << (int) libIt->second.defaultOrient << std::endl;
     }
   }
 
@@ -201,7 +208,8 @@ run(Config const& c, TSingleHit, TCoverageType covType)
     dataOut << "\t";
     if (c.avg_flag) dataOut << sampleName << "_avgcov" << "\t";
     if (c.bp_flag) dataOut << sampleName << "_bpcount" << "\t";
-    dataOut << sampleName << "_readcount";
+    if ((c.bp_flag) || (c.avg_flag)) dataOut << sampleName << "_readcount";
+    else dataOut << sampleName;
   }
   dataOut << std::endl;
 
@@ -238,8 +246,9 @@ int main(int argc, char **argv) {
   boost::program_options::options_description generic("Generic options");
   generic.add_options()
     ("help,?", "show help message")
-    ("bp-count,b", "show base pair count")
     ("avg-cov,a", "show average coverage")
+    ("bp-count,b", "show base pair count")
+    ("disable-covnorm,c", "disable coverage normalization")
     ("disable-redundancy,d", "disable redundancy filtering")
     ("quality-cut,q", boost::program_options::value<uint16_t>(&c.minMapQual)->default_value(0), "exclude all alignments with quality < q")
     ("outfile,f", boost::program_options::value<boost::filesystem::path>(&c.outfile)->default_value("cov.gz"), "coverage output file")
@@ -250,6 +259,7 @@ int main(int argc, char **argv) {
   window.add_options()
     ("window-size,s", boost::program_options::value<unsigned int>(&c.window_size)->default_value(10000), "window size")
     ("window-offset,o", boost::program_options::value<unsigned int>(&c.window_offset)->default_value(10000), "window offset")
+    ("window-num,n", boost::program_options::value<unsigned int>(&c.window_num)->default_value(0), "#windows per chr, used if #n>0")
     ;
 
   // Define interval options
@@ -293,6 +303,8 @@ int main(int argc, char **argv) {
   }
   bool disableRedFilter=false;
   if (vm.count("disable-redundancy")) disableRedFilter=true;
+  if (vm.count("disable-covnorm")) c.cov_norm = false;
+  else c.cov_norm = true;
   if (vm.count("bp-count")) c.bp_flag = true;
   else c.bp_flag = false;
   if (vm.count("avg-cov")) c.avg_flag = true;

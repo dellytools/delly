@@ -63,6 +63,7 @@ Contact: Tobias Rausch (rausch@embl.de)
 #include "spanning.h"
 #include "coverage.h"
 #include "junction.h"
+#include "fasta_reader.h"
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -74,7 +75,6 @@ using namespace torali;
 
 // Config arguments
 struct Config {
-  bool junction;
   unsigned short minMapQual;
   unsigned short minGenoQual;
   unsigned short madCutoff;
@@ -89,6 +89,7 @@ struct Config {
   boost::filesystem::path vcffile;
   boost::filesystem::path genome;
   boost::filesystem::path exclude;
+  boost::filesystem::path peDump;
   std::vector<boost::filesystem::path> files;
 };
 
@@ -293,26 +294,29 @@ _translateSVCoordinates(TUSize refSize, TUSize refSizeRight, TUSize refSizeLeft,
 // Translocations
 template<typename TUSize, typename TSize, typename TBamRecord>
 inline bool
-_translateSVCoordinates(TUSize refSize, TUSize, TUSize refSizeLeft, TSize diagBeg, TSize diagEnd, TUSize leftRefWalky, TUSize rightRefWalky, TUSize consLen, TBamRecord const& sv, TUSize& finalGapStart, TUSize& finalGapEnd, TUSize& predictedLength, SVType<TranslocationTag>) {
-  finalGapStart = diagBeg + leftRefWalky + 1;
-  finalGapEnd = diagEnd + consLen - (consLen - rightRefWalky) + 1;
+_translateSVCoordinates(TUSize refSize, TUSize, TUSize refSizeLeft, TSize diagBeg, TSize diagEnd, TUSize leftRefWalky, TUSize rightRefWalky, TUSize consLen, TBamRecord const& sv, TUSize& fGS, TUSize& fGE, TUSize& predictedLength, SVType<TranslocationTag>) {
+  TSize finalGapStart = diagBeg + leftRefWalky + 1;
+  TSize finalGapEnd = diagEnd + consLen - (consLen - rightRefWalky) + 1;
   predictedLength = sv.svEnd - sv.svStart + 1;  // Useless for translocations
-  if (finalGapStart > refSizeLeft) return true;
-  if (finalGapEnd < refSizeLeft) return true;
+  if (finalGapStart > (TSize) refSizeLeft) return true;
+  if (finalGapEnd < (TSize) refSizeLeft) return true;
   if (sv.ct%2==0) {
     finalGapStart += sv.svStartBeg;
-    if (sv.ct>=2) finalGapEnd = sv.svEndBeg + (finalGapEnd - refSizeLeft) - 1;
+    if (sv.ct==2) finalGapEnd = sv.svEndBeg + (finalGapEnd - refSizeLeft) - 1;
     else finalGapEnd = sv.svEndBeg + (refSize - finalGapEnd) + 1;
   } else {
-    if (sv.ct>=2) finalGapStart += sv.svEndBeg;
-    else finalGapStart = sv.svEndBeg + (refSizeLeft - finalGapStart);
-    finalGapEnd = sv.svStartBeg + (finalGapEnd - refSizeLeft) - 1;
+    finalGapStart = sv.svEndBeg + (refSizeLeft - finalGapStart);
+    if (sv.ct==1) finalGapEnd = sv.svStartBeg + (finalGapEnd - refSizeLeft) - 1;
+    else finalGapEnd = sv.svStartBeg + (refSize - finalGapEnd) + 1;
   }
   if (sv.ct%2!=0) {
     TUSize tmpStart = finalGapStart;
     finalGapStart = finalGapEnd;
     finalGapEnd = tmpStart;
   }
+  if ((finalGapStart < 0) || (finalGapEnd<0)) return true;
+  fGS=finalGapStart;
+  fGE=finalGapEnd;
   return false;
 }
 
@@ -379,8 +383,7 @@ void searchSplit(TConfig const& c, TStructuralVariantRecord& sv, std::string con
   typename TReadSet::const_iterator splitIter = splitReadSet.begin();
   for(;splitIter!=splitReadSet.end();++splitIter) {
     TSequence read;
-    std::string::const_iterator readIt=splitIter->begin();
-    for(;readIt!=splitIter->end();++readIt) read.push_back(dna5_encode[int(*readIt)]);
+    for(std::string::const_iterator readIt=splitIter->begin(); readIt!=splitIter->end(); ++readIt) read.push_back(dna5_encode[int(*readIt)]);
     unsigned int readLen = read.size();
 
     // Count kmer's 
@@ -422,7 +425,7 @@ void searchSplit(TConfig const& c, TStructuralVariantRecord& sv, std::string con
 	    sC.read = read;
 	    sC.forwardRead = alignDir;
 	    readVec.push_back(sC);
-	    //std::cout << seqIt->chrName << ',' << sC.offset << ',' << sC.lastKmer << ',' << sC.diag << ',' << sC.forwardRead << std::endl;
+	    //std::cout << sC.offset << ',' << sC.lastKmer << ',' << sC.diag << ',' << sC.forwardRead << ',' << *splitIter << ',' << readLen << std::endl;
 	  }
 	}
       }
@@ -446,6 +449,7 @@ void searchSplit(TConfig const& c, TStructuralVariantRecord& sv, std::string con
     unsigned int bestBoundE = 0;
     unsigned int bound = 1;
     unsigned int boundS = 0;
+    int readLenInit = readVecIt->read.size();
     ++readVecIt;
     for(;readVecIt!=readVecItEnd;++readVecIt, ++bound) {
       // Read pairs should support the same offset and the last kmer should be sufficiently close (allow one mismatch in the last kmer)
@@ -464,7 +468,7 @@ void searchSplit(TConfig const& c, TStructuralVariantRecord& sv, std::string con
 	support = 1;
       }
     }
-    if (_betterSplit(refSize, refSizeRight, refSizeLeft, oldDiag, oldOffset, skippedLength, initialLength, c.epsilon, support, bestSupport, sv.ct, readVecIt->read.size(), svType)) {
+    if (_betterSplit(refSize, refSizeRight, refSizeLeft, oldDiag, oldOffset, skippedLength, initialLength, c.epsilon, support, bestSupport, sv.ct, readLenInit, svType)) {
       bestSupport = support;
       bestBoundS = boundS;
       bestBoundE = bound;
@@ -645,15 +649,12 @@ void searchSplit(TConfig const& c, TStructuralVariantRecord& sv, std::string con
 	}
 
 	// Debug output
-	//typename TConsSeq::const_iterator csSeqIt = ref1.begin();
-	//typename TConsSeq::const_iterator csSeqItEnd = ref1.end();
-	//for(;csSeqIt != csSeqItEnd; ++csSeqIt) std::cout << dna5_decode[(unsigned int) *csSeqIt];
-	//std::cout << std::endl;
-	//csSeqIt = ref2.begin();
-	//csSeqItEnd = ref2.end();
-	//for(;csSeqIt != csSeqItEnd; ++csSeqIt) std::cout << dna5_decode[(unsigned int) *csSeqIt];
-	//std::cout << std::endl;
-
+	//if (sv.id==2) {
+	//  for(typename TConsSeq::const_iterator csSeqIt = ref1.begin();csSeqIt != ref1.end(); ++csSeqIt) std::cout << dna5_decode[(unsigned int) *csSeqIt];
+	//  std::cout << std::endl;
+	//  for(typename TConsSeq::const_iterator csSeqIt = ref2.begin();csSeqIt != ref2.end(); ++csSeqIt) std::cout << dna5_decode[(unsigned int) *csSeqIt];
+	//  std::cout << std::endl;
+	//}
 
 	// Calculate forward and reverse dynamic programming matrix
 	int matchScore = 2;
@@ -679,23 +680,16 @@ void searchSplit(TConfig const& c, TStructuralVariantRecord& sv, std::string con
 	}
 
 	// Debug code
-	//typedef std::vector<char> TSequence;
-	//typedef FastaRecord<std::string, unsigned int, Dna5GapAlphabet, TSequence> TFastaRecord;
-	//std::vector<TFastaRecord> align;
-	//globalNwAlignment(align, ref1, consSeq, sc, alConf);
-	//TSequence::iterator alItTmp = align[0].seq.begin();
-	//TSequence::iterator alItTmpEnd = align[0].seq.end();
-	//std::cout << std::endl;
-	//for(unsigned int i = 0; i<100; ++i) std::cout << (i % 10);
-	//std::cout << std::endl;
-	//for(;alItTmp != alItTmpEnd; ++alItTmp) std::cout << dna5gap_decode[(int) *alItTmp];
-	//std::cout << std::endl;
-	//alItTmp = align[1].seq.begin();
-	//alItTmpEnd = align[1].seq.end();
-	//for(;alItTmp != alItTmpEnd; ++alItTmp) std::cout << dna5gap_decode[(int) *alItTmp];
-	//std::cout << std::endl;
-
-
+	//if (sv.id==2) {
+	//  typedef FastaRecord<std::string, unsigned int, Dna5GapAlphabet, TSequence, void> TFastaRecord;
+	//  std::vector<TFastaRecord> align;
+	//  globalNwAlignment(align, ref1, consSeq, sc, alConf);
+	//  std::cout << std::endl;
+	//  for(TSequence::iterator alItTmp = align[0].seq.begin();alItTmp != align[0].seq.end(); ++alItTmp) std::cout << dna5gap_decode[(int) *alItTmp];
+	//  std::cout << std::endl;
+	//  for(TSequence::iterator alItTmp = align[1].seq.begin();alItTmp != align[1].seq.end(); ++alItTmp) std::cout << dna5gap_decode[(int) *alItTmp];
+	//  std::cout << std::endl;
+	//}
 
 	reverseComplement(ref2);
 	reverseComplement(consSeq);
@@ -716,18 +710,16 @@ void searchSplit(TConfig const& c, TStructuralVariantRecord& sv, std::string con
 	}
 
 	// Debug code
-	//align.clear();
-	//globalNwAlignment(align, ref2, consSeq, sc, alConf);
-	//alItTmp = align[0].seq.begin();
-	//alItTmpEnd = align[0].seq.end();
-	//std::cout << std::endl;
-	//for(;alItTmp != alItTmpEnd; ++alItTmp) std::cout << dna5gap_decode[(int) *alItTmp];
-	//std::cout << std::endl;
-	//alItTmp = align[1].seq.begin();
-	//alItTmpEnd = align[1].seq.end();
-	//for(;alItTmp != alItTmpEnd; ++alItTmp) std::cout << dna5gap_decode[(int) *alItTmp];
-	//std::cout << std::endl;
-
+	//if (sv.id==2) {
+	//  typedef FastaRecord<std::string, unsigned int, Dna5GapAlphabet, TSequence, void> TFastaRecord;
+	//  std::vector<TFastaRecord> align;
+	//  globalNwAlignment(align, ref2, consSeq, sc, alConf);
+	//  std::cout << std::endl;
+	//  for(TSequence::iterator alItTmp = align[0].seq.begin();alItTmp != align[0].seq.end(); ++alItTmp) std::cout << dna5gap_decode[(int) *alItTmp];
+	//  std::cout << std::endl;
+	//  for(TSequence::iterator alItTmp = align[1].seq.begin();alItTmp != align[1].seq.end(); ++alItTmp) std::cout << dna5gap_decode[(int) *alItTmp];
+	//  std::cout << std::endl;
+	//}
 
 	// Get back to the true orientation
 	reverseComplement(consSeq);
@@ -968,6 +960,8 @@ template<typename TConfig, typename TReferences, typename TSize, typename TStruc
 inline void
 vcfParse(TConfig const& c, TReferences const references, TSize const overallMaxISize, std::vector<TStructuralVariantRecord>& svs, SVType<TTag> svType)
 {
+  bool refPresent=false;
+  if (boost::filesystem::exists(c.genome) && boost::filesystem::is_regular_file(c.genome) && boost::filesystem::file_size(c.genome)) refPresent=true;
   std::ifstream vcfFile(c.vcffile.string().c_str(), std::ifstream::in);
   if (vcfFile.is_open()) {
     typedef boost::unordered_map<std::string, unsigned int> TMapChr;
@@ -1017,7 +1011,7 @@ vcfParse(TConfig const& c, TReferences const references, TSize const overallMaxI
 	      std::string keyValue = *infoIter;
 	      std::size_t found = keyValue.find('=');
 	      if (found==std::string::npos) {
-		if (keyValue=="PRECISE") svRec.precise=true;
+		if ((keyValue=="PRECISE") && (refPresent)) svRec.precise=true;
 		continue;
 	      }
 	      std::string key = keyValue.substr(0, found);
@@ -1050,9 +1044,9 @@ vcfParse(TConfig const& c, TReferences const references, TSize const overallMaxI
 	      else continue;
 	    }
 	    svRec.svStartBeg = std::max(svRec.svStart - 1 - overallMaxISize, 0);
-	    svRec.svStartEnd = svRec.svStart - 1 + overallMaxISize;
+	    svRec.svStartEnd = std::min(svRec.svStart - 1 + overallMaxISize, references[svRec.chr].RefLength);
 	    svRec.svEndBeg = std::max(svRec.svEnd - 1 - overallMaxISize, 0);
-	    svRec.svEndEnd = svRec.svEnd - 1 + overallMaxISize;
+	    svRec.svEndEnd = std::min(svRec.svEnd - 1 + overallMaxISize, references[svRec.chr2].RefLength);
 	    if ((svRec.chr==svRec.chr2) && (svRec.svStartEnd > svRec.svEndBeg)) {
 	      unsigned int midPointDel = ((svRec.svEnd - svRec.svStart) / 2) + svRec.svStart;
 	      svRec.svStartEnd = midPointDel -1;
@@ -1105,12 +1099,12 @@ _addOrientation(int, SVType<InsertionTag>) {
 
 template<typename TConfig, typename TStructuralVariantRecord, typename TJunctionCountMap, typename TReadCountMap, typename TCountMap, typename TTag>
 inline void
-vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJunctionCountMap const& jctCountMap, TReadCountMap const& readCountMap, TCountMap const& normalCountMap, TCountMap const& abnormalCountMap, SVType<TTag> svType) 
+vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJunctionCountMap const& jctCountMap, TReadCountMap const& readCountMap, TCountMap const& spanCountMap, SVType<TTag> svType) 
 {
   // Typedefs
   typedef typename TCountMap::key_type TSampleSVPair;
-  typedef typename TCountMap::mapped_type TCountRange;
-  typedef typename TCountRange::value_type TMapqVector;
+  typedef typename TCountMap::mapped_type TCountPair;
+  typedef typename TCountPair::first_type TMapqVector;
 
   // Get the references
   BamTools::BamReader reader;
@@ -1210,37 +1204,22 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
       TSampleSVPair sampleSVPairLeft = std::make_pair(sampleName, svIter->id);
       TSampleSVPair sampleSVPairRight = std::make_pair(sampleName, -svIter->id);
       typename TJunctionCountMap::const_iterator jctCountMapIt=jctCountMap.find(sampleSVPairLeft);
-      typename TCountMap::const_iterator countMapItLeft=normalCountMap.find(sampleSVPairLeft);
-      typename TCountMap::const_iterator countMapItRight=normalCountMap.find(sampleSVPairRight);
-      typename TCountMap::const_iterator abCountMapItLeft=abnormalCountMap.find(sampleSVPairLeft);
-      typename TCountMap::const_iterator abCountMapItRight=abnormalCountMap.find(sampleSVPairRight);
-      typename TCountMap::const_iterator countMapIt = normalCountMap.end(); 
-      typename TCountMap::const_iterator abCountMapIt = abnormalCountMap.end();
+      typename TCountMap::const_iterator spanLeftIt=spanCountMap.find(sampleSVPairLeft);
+      typename TCountMap::const_iterator spanRightIt=spanCountMap.find(sampleSVPairRight);
 
-      // Always take the minimum to be conservative (and to flag unclear samples as LowQual)
-      if ((countMapItLeft!=normalCountMap.end()) && (countMapItRight!=normalCountMap.end())) {
-	if ((!countMapItLeft->second.empty()) && (!countMapItRight->second.empty())) {
-	  if (countMapItLeft->second[0].size() <= countMapItRight->second[0].size()) countMapIt=countMapItLeft;
-	  else countMapIt=countMapItRight;
-	}
-      }
-      if ((abCountMapItLeft!=abnormalCountMap.end()) && (abCountMapItRight!=abnormalCountMap.end())) {
-	if ((!abCountMapItLeft->second.empty()) && (!abCountMapItRight->second.empty())) {
-	  if ((svIter->chr != svIter->chr2) || (abCountMapItLeft->second[0].size() > abCountMapItRight->second[0].size())) abCountMapIt=abCountMapItRight;
-	  else abCountMapIt=abCountMapItLeft;
-	}
-      }
-
+      // Junction counts
       TMapqVector mapqRef = TMapqVector();
       TMapqVector mapqAlt = TMapqVector();
-      if ((svIter->precise) || (c.junction)) {
+      if (svIter->precise) {
 	// Genotyping for precise events uses junction read qualities
 	mapqRef = jctCountMapIt->second.first;
 	mapqAlt = jctCountMapIt->second.second;
       } else {
-	// Genotyping for imprecise events uses paired-end qualities
-	if ((countMapIt!=normalCountMap.end()) && (!countMapIt->second.empty())) mapqRef = countMapIt->second[0];
-	if ((abCountMapIt!=abnormalCountMap.end()) && (!abCountMapIt->second.empty())) mapqAlt = abCountMapIt->second[0];
+	// Genotyping for imprecise events uses spanning pair qualities, always use the minimum of left and right breakpoint
+	if (spanLeftIt->second.first.size() <= spanRightIt->second.first.size()) mapqRef=spanLeftIt->second.first;
+	else mapqRef=spanRightIt->second.first;
+	if (spanLeftIt->second.second.size() <= spanRightIt->second.second.size()) mapqAlt=spanLeftIt->second.second;
+	else mapqAlt=spanRightIt->second.second;
       }
 
       // Compute genotype likelihoods
@@ -1293,8 +1272,10 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
       if (readCountMapIt!=readCountMap.end()) rcCount = readCountMapIt->second.second;
       int drCount = 0;
       int dvCount = 0;
-      if (countMapIt!=normalCountMap.end()) drCount = countMapIt->second[0].size();
-      if (abCountMapIt!=abnormalCountMap.end()) dvCount = abCountMapIt->second[0].size();
+      if (spanLeftIt->second.first.size() <= spanRightIt->second.first.size()) drCount=spanLeftIt->second.first.size();
+      else drCount=spanRightIt->second.first.size();
+      if (spanLeftIt->second.second.size() <= spanRightIt->second.second.size()) dvCount=spanLeftIt->second.second.size();
+      else dvCount=spanRightIt->second.second.size();
       int rrCount = 0;
       int rvCount = 0;
       if (jctCountMapIt!=jctCountMap.end()) {
@@ -1308,124 +1289,6 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
 
   ofile.close();
 }
-
-
-// Deletions
-template<typename TSeq, typename TSVRecord, typename TRef>
-inline std::string
-_getSVRef(TSeq const* const ref, TSVRecord const& svRec, TRef const, SVType<DeletionTag>) {
-  return boost::to_upper_copy(std::string(ref + svRec.svStartBeg, ref + svRec.svStartEnd)) + boost::to_upper_copy(std::string(ref + svRec.svEndBeg, ref + svRec.svEndEnd));
-}
-
-// Duplications
-template<typename TSeq, typename TSVRecord, typename TRef>
-inline std::string
-_getSVRef(TSeq const* const ref, TSVRecord const& svRec, TRef const, SVType<DuplicationTag>) {
-  return boost::to_upper_copy(std::string(ref + svRec.svEndBeg, ref + svRec.svEndEnd)) + boost::to_upper_copy(std::string(ref + svRec.svStartBeg, ref + svRec.svStartEnd));
-}
-
-// Inversions
-template<typename TSeq, typename TSVRecord, typename TRef>
-inline std::string
-_getSVRef(TSeq const* const ref, TSVRecord const& svRec, TRef const, SVType<InversionTag>) {
-  if (svRec.ct==1) {
-    std::string strEnd=boost::to_upper_copy(std::string(ref + svRec.svEndBeg, ref + svRec.svEndEnd));
-    std::string strRevComp=strEnd;
-    std::string::reverse_iterator itR = strEnd.rbegin();
-    std::string::reverse_iterator itREnd = strEnd.rend();
-    for(unsigned int i = 0; itR!=itREnd; ++itR, ++i) {
-      switch (*itR) {
-      case 'A': strRevComp[i]='T'; break;
-      case 'C': strRevComp[i]='G'; break;
-      case 'G': strRevComp[i]='C'; break;
-      case 'T': strRevComp[i]='A'; break;
-      case 'N': strRevComp[i]='N'; break;
-      default: break;
-      }
-    }
-    return boost::to_upper_copy(std::string(ref + svRec.svStartBeg, ref + svRec.svStartEnd)) + strRevComp;
-  } else {
-    std::string strStart=boost::to_upper_copy(std::string(ref + svRec.svStartBeg, ref + svRec.svStartEnd));
-    std::string strRevComp=strStart;
-    std::string::reverse_iterator itR = strStart.rbegin();
-    std::string::reverse_iterator itREnd = strStart.rend();
-    for(unsigned int i = 0; itR!=itREnd; ++itR, ++i) {
-      switch (*itR) {
-      case 'A': strRevComp[i]='T'; break;
-      case 'C': strRevComp[i]='G'; break;
-      case 'G': strRevComp[i]='C'; break;
-      case 'T': strRevComp[i]='A'; break;
-      case 'N': strRevComp[i]='N'; break;
-      default: break;
-      }
-    }
-    return strRevComp + boost::to_upper_copy(std::string(ref + svRec.svEndBeg, ref + svRec.svEndEnd));
-  }
-}
-
-// Translocations
-template<typename TSeq, typename TSVRecord, typename TRef>
-inline std::string
-_getSVRef(TSeq const* const ref, TSVRecord const& svRec, TRef const refIndex, SVType<TranslocationTag>) {
-  if (svRec.ct%2==0) {
-    if (svRec.chr==refIndex) return boost::to_upper_copy(std::string(ref + svRec.svStartBeg, ref + svRec.svStartEnd)) + svRec.consensus;
-    if (svRec.ct>=2) {
-      if (svRec.chr2==refIndex) return boost::to_upper_copy(std::string(ref + svRec.svEndBeg, ref + svRec.svEndEnd));
-    } else {
-      // Reverse complement
-      if (svRec.chr2==refIndex) {
-	std::string strEnd=boost::to_upper_copy(std::string(ref + svRec.svEndBeg, ref + svRec.svEndEnd));
-	std::string refPart=strEnd;
-	std::string::reverse_iterator itR = strEnd.rbegin();
-	std::string::reverse_iterator itREnd = strEnd.rend();
-	for(unsigned int i = 0; itR!=itREnd; ++itR, ++i) {
-	  switch (*itR) {
-	  case 'A': refPart[i]='T'; break;
-	  case 'C': refPart[i]='G'; break;
-	  case 'G': refPart[i]='C'; break;
-	  case 'T': refPart[i]='A'; break;
-	  case 'N': refPart[i]='N'; break;
-	  default: break;
-	  }
-	}
-	return refPart;
-      }
-    }
-  } else {
-    if (svRec.ct>=2) {
-      if (svRec.chr2==refIndex) return boost::to_upper_copy(std::string(ref + svRec.svEndBeg, ref + svRec.svEndEnd));
-    } else {
-      // Reverse complement
-      if (svRec.chr2==refIndex) {
-	std::string strEnd=boost::to_upper_copy(std::string(ref + svRec.svEndBeg, ref + svRec.svEndEnd));
-	std::string refPart=strEnd;
-	std::string::reverse_iterator itR = strEnd.rbegin();
-	std::string::reverse_iterator itREnd = strEnd.rend();
-	for(unsigned int i = 0; itR!=itREnd; ++itR, ++i) {
-	  switch (*itR) {
-	  case 'A': refPart[i]='T'; break;
-	  case 'C': refPart[i]='G'; break;
-	  case 'G': refPart[i]='C'; break;
-	  case 'T': refPart[i]='A'; break;
-	  case 'N': refPart[i]='N'; break;
-	  default: break;
-	  }
-	}
-	return refPart;
-      }
-    }
-    if (svRec.chr==refIndex) return svRec.consensus + boost::to_upper_copy(std::string(ref + svRec.svStartBeg, ref + svRec.svStartEnd));
-  }
-  return "";
-}
-
-// Insertions
-template<typename TSeq, typename TSVRecord, typename TRef>
-inline std::string
-_getSVRef(TSeq const* const ref, TSVRecord const& svRec, TRef const, SVType<InsertionTag>) {
-  return boost::to_upper_copy(std::string(ref + svRec.svStartBeg, ref + svRec.svStartEnd)) + boost::to_upper_copy(std::string(ref + svRec.svEndBeg, ref + svRec.svEndEnd));
-}
-
 
 template<typename TConfig, typename TStructuralVariantRecord, typename TTag>
 inline bool
@@ -1504,7 +1367,7 @@ findPutativeSplitReads(TConfig const& c, std::vector<TStructuralVariantRecord>& 
 			  
 			// Minimum clip size length fulfilled?
 			int minClipSize = (int) (log10(al.QueryBases.size()) * 10);
-                        #pragma omp critical
+#pragma omp critical
 			{
 			  if (clipSizes[0]>=minClipSize) splitReadSet.insert(al.QueryBases);
 			}
@@ -1743,9 +1606,9 @@ _updateClique(TBamRecordIterator const& el, TSize& svStart, TSize& svEnd, TSize&
 
 template<typename TConfig, typename TSampleLibrary, typename TSVs, typename TCountMap, typename TTag>
 inline void
-_annotateJunctionReads(TConfig const& c, TSampleLibrary& sampleLib, TSVs& svs, TCountMap& junctionCountMap, SVType<TTag>) 
+_annotateJunctionReads(TConfig const& c, TSampleLibrary& sampleLib, TSVs& svs, TCountMap& junctionCountMap, SVType<TTag> svType) 
 {
-  annotateJunctionReads(c.files, c.genome, c.minGenoQual, sampleLib, svs, junctionCountMap);
+  annotateJunctionReads(c.files, c.genome, c.minGenoQual, sampleLib, svs, junctionCountMap, svType);
 }
 
 
@@ -1753,18 +1616,7 @@ template<typename TConfig, typename TSampleLibrary, typename TSVs, typename TCou
 inline void
 _annotateCoverage(TConfig const& c, TSampleLibrary& sampleLib, TSVs& svs, TCountMap& countMap, SVType<TTag>) 
 {
-  typedef typename TSampleLibrary::mapped_type TLibraryMap;
-  annotateCoverage(c.files, c.minGenoQual, false, sampleLib, svs, countMap, SingleHit<int32_t, void>(), CoverageType<RedundancyFilterTag>());
-  boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
-  std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Library statistics" << std::endl;
-  typename TSampleLibrary::const_iterator sampleIt=sampleLib.begin();
-  for(;sampleIt!=sampleLib.end();++sampleIt) {
-    std::cout << "Sample: " << sampleIt->first << std::endl;
-    typename TLibraryMap::const_iterator libIt=sampleIt->second.begin();
-    for(;libIt!=sampleIt->second.end();++libIt) {
-      std::cout << "RG: ID=" << libIt->first << ",Median=" << libIt->second.median << ",MAD=" << libIt->second.mad << ",Orientation=" << (int) libIt->second.defaultOrient << ",MappedReads=" << libIt->second.mappedReads << ",DuplicatePairs=" << libIt->second.non_unique_pairs << ",UniquePairs=" << libIt->second.unique_pairs << std::endl;
-    }
-  }
+  annotateCoverage(c.files, c.minGenoQual, false, true, sampleLib, svs, countMap, SingleHit<int32_t, void>(), CoverageType<RedundancyFilterTag>());
 }
 
 template<typename TConfig, typename TSampleLibrary, typename TSVs, typename TCountMap>
@@ -1776,23 +1628,9 @@ _annotateCoverage(TConfig const&, TSampleLibrary&, TSVs&, TCountMap&, SVType<Tra
 
 template<typename TConfig, typename TSampleLibrary, typename TSVs, typename TCountMap, typename TTag>
 inline void
-_annotateSpanningCoverage(TConfig const& c, TSampleLibrary& sampleLib, TSVs& svs, TCountMap& normalCountMap, TCountMap& abnormalCountMap, SVType<TTag> svType) 
+_annotateSpanningCoverage(TConfig const& c, TSampleLibrary& sampleLib, TSVs& svs, TCountMap& spanCountMap, SVType<TTag> svType) 
 {
-  typedef typename TSampleLibrary::mapped_type TLibraryMap;
-  annotateSpanningCoverage(c.files, 0, c.minGenoQual, sampleLib, svs, normalCountMap, abnormalCountMap, HitInterval<int32_t, uint16_t>(), svType);
-  boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
-  std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Library statistics" << std::endl;
-  typename TSampleLibrary::const_iterator sampleIt=sampleLib.begin();
-  for(;sampleIt!=sampleLib.end();++sampleIt) {
-    std::cout << "Sample: " << sampleIt->first << std::endl;
-    typename TLibraryMap::const_iterator libIt=sampleIt->second.begin();
-    for(;libIt!=sampleIt->second.end();++libIt) {
-      std::cout << "RG: ID=" << libIt->first << ",Median=" << libIt->second.median << ",MAD=" << libIt->second.mad << ",Orientation=" << (int) libIt->second.defaultOrient << ",MinInsertSize=" << libIt->second.minNormalISize << ",MaxInsertSize=" << libIt->second.maxNormalISize << ",DuplicatePairs=" << libIt->second.non_unique_pairs << ",UniquePairs=" << libIt->second.unique_pairs << std::endl;
-    }
-  }
-
-
-
+  annotateSpanningCoverage(c.files, c.minGenoQual, sampleLib, svs, spanCountMap, svType);
 }
 
 
@@ -1837,7 +1675,7 @@ inline int run(Config const& c, TSVType svType) {
   }
 
   // Get library parameters
-  #pragma omp parallel for default(shared)
+#pragma omp parallel for default(shared)
   for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
     // Get a sample name
     std::string sampleName(c.files[file_c].stem().string());
@@ -1845,13 +1683,22 @@ inline int run(Config const& c, TSVType svType) {
     // Get library parameters and overall maximum insert size
     TLibraryMap libInfo;
     getLibraryParams(c.files[file_c], libInfo, c.percentAbnormal, c.madCutoff);
-    #pragma omp critical
+#pragma omp critical
     {
       TLibraryMap::const_iterator libIter=libInfo.begin();
       for(;libIter!=libInfo.end();++libIter) 
 	if (libIter->second.maxNormalISize > overallMaxISize) overallMaxISize = libIter->second.maxNormalISize;
       sampleLib.insert(std::make_pair(sampleName, libInfo));
     }
+  }
+
+  // Dump PE
+  bool dumpPe=false;
+  std::ofstream dumpPeFile;
+  if (c.peDump.string().size()) {
+    dumpPe=true;
+    dumpPeFile.open(c.peDump.string().c_str());
+    dumpPeFile << "#id\tchr\tpos\tmatechr\tmatepos\tmapq" << std::endl;
   }
 
   // Parse exclude interval list
@@ -1934,7 +1781,7 @@ inline int run(Config const& c, TSVType svType) {
       if ( reader.Jump(refIndex, 0) ) {
 	while( reader.GetNextAlignmentCore(al) ) {
 	  if (al.RefID!=refIndex) break; // Stop when we hit the next chromosome
-	  if ((al.AlignmentFlag & 0x0001) && !(al.AlignmentFlag & 0x0004) && !(al.AlignmentFlag & 0x0008) && !(al.AlignmentFlag & 0x0100) && !(al.AlignmentFlag & 0x0200) && !(al.AlignmentFlag & 0x0400) && !(al.AlignmentFlag & 0x0800) && (al.MapQuality >= c.minMapQual)) {
+	  if ((al.AlignmentFlag & 0x0001) && !(al.AlignmentFlag & 0x0004) && !(al.AlignmentFlag & 0x0008) && !(al.AlignmentFlag & 0x0100) && !(al.AlignmentFlag & 0x0200) && !(al.AlignmentFlag & 0x0400) && !(al.AlignmentFlag & 0x0800) && (al.MapQuality >= c.minMapQual) && (al.RefID>=0) && (al.MateRefID>=0)) {
 	    // Mapping positions valid?
 	    if (_mappingPos(al.RefID, al.MateRefID, al.Position, al.MatePosition, svType)) continue;
 
@@ -1982,9 +1829,9 @@ inline int run(Config const& c, TSVType svType) {
 		{
 		  bamRecord.push_back(BamAlignRecord(al, pairQuality, libIt->second.median, libIt->second.mad, libIt->second.maxNormalISize, libIt->second.defaultOrient));
 		}
-		++libIt->second.unique_pairs;
+		++libIt->second.abnormal_pairs;
 	      } else {
-		++libIt->second.non_unique_pairs;
+		++libIt->second.non_unique_abnormal_pairs;
 	      }
 	    }
 	  }
@@ -2077,7 +1924,7 @@ inline int run(Config const& c, TSVType svType) {
     //for(TCompSize::const_iterator compIt = compSize.begin(); compIt!=compSize.end(); ++compIt) std::cerr << *compIt << std::endl;
 
     // Iterate each component
-    #pragma omp parallel for default(shared)
+#pragma omp parallel for default(shared)
     for(int compIt = 0; compIt < numComp; ++compIt) {
       if (compSize[compIt]<2) continue;
       typedef boost::graph_traits<Graph>::vertex_descriptor TVertexDescriptor;
@@ -2138,16 +1985,15 @@ inline int run(Config const& c, TSVType svType) {
 	svRec.chr = refIndex;
 	svRec.chr2 = clusterMateRefID;
 	svRec.svStartBeg = std::max((int) svStart - overallMaxISize, 0);
-	svRec.svStart = svStart +1;
-	svRec.svStartEnd = svStart + overallMaxISize;
+	svRec.svStart = std::min(svStart + 1, references[refIndex].RefLength);
+	svRec.svStartEnd = std::min(svStart + overallMaxISize, references[refIndex].RefLength);
 	svRec.svEndBeg = std::max((int) svEnd - overallMaxISize, 0);
-	svRec.svEnd = svEnd+1;
-	svRec.svEndEnd = svEnd + overallMaxISize;
+	svRec.svEnd = std::min(svEnd+1, references[clusterMateRefID].RefLength);
+	svRec.svEndEnd = std::min(svEnd + overallMaxISize, references[clusterMateRefID].RefLength);
 	svRec.peSupport = clique.size();
 	svRec.wiggle = abs(wiggle);
 	std::vector<uint16_t> mapQV;
-	typename TCliqueMembers::const_iterator itC = clique.begin();
-	for(;itC!=clique.end();++itC) mapQV.push_back(g[*itC]->MapQuality);
+	for(typename TCliqueMembers::const_iterator itC = clique.begin(); itC!=clique.end(); ++itC) mapQV.push_back(g[*itC]->MapQuality);
 	std::sort(mapQV.begin(), mapQV.end());
 	svRec.peMapQuality = mapQV[mapQV.size()/2];
 	if ((refIndex==clusterMateRefID) && (svRec.svStartEnd > svRec.svEndBeg)) {
@@ -2159,26 +2005,29 @@ inline int run(Config const& c, TSVType svType) {
 	svRec.srAlignQuality=0;
 	svRec.precise=false;
 	svRec.ct=connectionType;
-        #pragma omp critical
+#pragma omp critical
 	{
 	  svRec.id = clique_count++;
 	  svs.push_back(svRec);
+	}
+	
+	// Dump PEs
+	if (dumpPe) {
+#pragma omp critical
+	  {
+	    for(typename TCliqueMembers::const_iterator itC=clique.begin(); itC!=clique.end(); ++itC) {
+	      std::stringstream id;
+	      id << _addID(svType) << std::setw(8) << std::setfill('0') << svRec.id;
+	      dumpPeFile << id.str() << "\t" << references[g[*itC]->RefID].RefName << "\t" << g[*itC]->Position << "\t" <<  references[g[*itC]->MateRefID].RefName << "\t" << g[*itC]->MatePosition << "\t" << g[*itC]->MapQuality << std::endl;
+	    }
+	  }
 	}
       }
     }
   }
 
-  // Output library statistics
-  now = boost::posix_time::second_clock::local_time();
-  std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Library statistics" << std::endl;
-  TSampleLibrary::const_iterator sampleIt=sampleLib.begin();
-  for(;sampleIt!=sampleLib.end();++sampleIt) {
-    std::cout << "Sample: " << sampleIt->first << std::endl;
-    TLibraryMap::const_iterator libIt=sampleIt->second.begin();
-    for(;libIt!=sampleIt->second.end();++libIt) {
-      std::cout << "RG: ID=" << libIt->first << ",Median=" << libIt->second.median << ",MAD=" << libIt->second.mad << ",Orientation=" << (int) libIt->second.defaultOrient << ",InsertSizeCutoff=" << libIt->second.maxNormalISize << ",DuplicateDiscordantPairs=" << libIt->second.non_unique_pairs << ",UniqueDiscordantPairs=" << libIt->second.unique_pairs << std::endl;
-    }
-  }
+  // Close dump PE file
+  if (dumpPe) dumpPeFile.close();
 
   // Split-read search
   if (peMapping) {
@@ -2202,28 +2051,39 @@ inline int run(Config const& c, TSVType svType) {
 
   // Annotate junction reads
   typedef std::pair<std::string, int> TSampleSVPair;
-  typedef std::pair<std::vector<uint16_t>, std::vector<uint16_t> > TJunctionReadQual;
-  typedef boost::unordered_map<TSampleSVPair, TJunctionReadQual> TJunctionCountMap;
+  typedef std::pair<std::vector<uint16_t>, std::vector<uint16_t> > TReadQual;
+  typedef boost::unordered_map<TSampleSVPair, TReadQual> TJunctionCountMap;
   TJunctionCountMap junctionCountMap;
   if (boost::filesystem::exists(c.genome) && boost::filesystem::is_regular_file(c.genome) && boost::filesystem::file_size(c.genome))
     _annotateJunctionReads(c, sampleLib, svs, junctionCountMap, svType);
 
   // Annotate spanning coverage
-  typedef std::vector<std::vector<uint16_t> > TCountRange;
-  typedef boost::unordered_map<TSampleSVPair, TCountRange> TCountMap;
-  TCountMap normalCountMap;
-  TCountMap abnormalCountMap;
-  if (!c.junction) _annotateSpanningCoverage(c, sampleLib, svs, normalCountMap, abnormalCountMap, svType);
+  typedef boost::unordered_map<TSampleSVPair, TReadQual> TCountMap;
+  TCountMap spanCountMap;
+  _annotateSpanningCoverage(c, sampleLib, svs, spanCountMap, svType);
 
   // Annotate coverage
   typedef std::pair<int, int> TBpRead;
   typedef boost::unordered_map<TSampleSVPair, TBpRead> TReadCountMap;
   TReadCountMap readCountMap;
-  if (!c.junction) _annotateCoverage(c, sampleLib, svs, readCountMap, svType);
+  if (peMapping) _annotateCoverage(c, sampleLib, svs, readCountMap, svType);
 
   // VCF output
   if (svs.size()) {
-    vcfOutput(c, svs, junctionCountMap, readCountMap, normalCountMap, abnormalCountMap, svType);
+    vcfOutput(c, svs, junctionCountMap, readCountMap, spanCountMap, svType);
+  }
+
+
+  // Output library statistics
+  now = boost::posix_time::second_clock::local_time();
+  std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Library statistics" << std::endl;
+  TSampleLibrary::const_iterator sampleIt=sampleLib.begin();
+  for(;sampleIt!=sampleLib.end();++sampleIt) {
+    std::cout << "Sample: " << sampleIt->first << std::endl;
+    TLibraryMap::const_iterator libIt=sampleIt->second.begin();
+    for(;libIt!=sampleIt->second.end();++libIt) {
+      std::cout << "RG: ID=" << libIt->first << ",Median=" << libIt->second.median << ",MAD=" << libIt->second.mad << ",Orientation=" << (int) libIt->second.defaultOrient << ",InsertSizeCutoff=" << libIt->second.maxNormalISize << ",DuplicateDiscordantPairs=" << libIt->second.non_unique_abnormal_pairs << ",UniqueDiscordantPairs=" << libIt->second.abnormal_pairs << std::endl;
+    }
   }
 
 #ifdef PROFILE
@@ -2252,7 +2112,7 @@ int main(int argc, char **argv) {
   boost::program_options::options_description pem("PE options");
   pem.add_options()
     ("map-qual,q", boost::program_options::value<unsigned short>(&c.minMapQual)->default_value(0), "min. paired-end mapping quality")
-    ("mad-cutoff,s", boost::program_options::value<unsigned short>(&c.madCutoff)->default_value(5), "insert size cutoff, median+s*MAD (deletions only)")
+    ("mad-cutoff,s", boost::program_options::value<unsigned short>(&c.madCutoff)->default_value(9), "insert size cutoff, median+s*MAD (deletions only)")
     ;
 
   boost::program_options::options_description breaks("SR options");
@@ -2271,12 +2131,12 @@ int main(int argc, char **argv) {
   boost::program_options::options_description hidden("Hidden options");
   hidden.add_options()
     ("input-file", boost::program_options::value< std::vector<boost::filesystem::path> >(&c.files), "input file")
+    ("pe-dump,p", boost::program_options::value<boost::filesystem::path>(&c.peDump)->default_value(""), "outfile to dump PE info")
     ("epsilon,e", boost::program_options::value<float>(&c.epsilon)->default_value(0.1), "allowed epsilon deviation of PE vs. SR deletion")
     ("pe-fraction,c", boost::program_options::value<float>(&c.percentAbnormal)->default_value(0.0), "fixed fraction c of discordant PEs, for c=0 MAD cutoff is used")
     ("num-split,n", boost::program_options::value<unsigned int>(&c.minimumSplitRead)->default_value(2), "minimum number of splitted reads")
     ("flanking,f", boost::program_options::value<unsigned int>(&c.flankQuality)->default_value(80), "quality of the aligned flanking region")
     ("pruning,j", boost::program_options::value<unsigned int>(&c.graphPruning)->default_value(100), "PE graph pruning cutoff")
-    ("junction-geno-only,p", "omit spanning coverage and read-depth genotyping")
     ("warranty,w", "show warranty")
     ("license,l", "show license")
     ;
@@ -2307,8 +2167,6 @@ int main(int argc, char **argv) {
     }
     return 1; 
   }
-  if (vm.count("junction-geno-only")) c.junction = true;
-  else c.junction = false;
 
   // Show cmd
   boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
