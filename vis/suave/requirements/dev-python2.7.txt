@@ -1,0 +1,8 @@
+numpy==1.9.1
+Cython==0.21.2
+click==3.3
+h5py==2.4.0
+ipython==2.3.1
+pep8==1.5.7
+pysam==0.8.1
+wsgiref==0.1.2
