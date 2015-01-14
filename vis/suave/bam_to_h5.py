@@ -1,5 +1,7 @@
 #! /usr/bin/env python
 
+# Copyright (c) 2014 Markus Hsi-Yang Fritz
+
 import pysam
 import numpy as np
 import h5py
