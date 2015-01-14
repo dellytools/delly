@@ -66,8 +66,9 @@ def bam_to_h5(bamfile,
             kwargs['compression'] = compression
 
         for nbins in NUM_BINS_LIST:
-            medians = median_vec(np.array_split(cnts, nbins))
-            medians = np.array(medians, dtype=np.uint16)
+            nbins_final = min(chrom_len, nbins)
+            medians = np.array(median_vec(np.array_split(cnts, nbins_final)),
+                               dtype=np.uint16)
             kwargs['data'] = medians
             f_h5.create_dataset('{}/{}'.format(chrom, nbins), **kwargs)
             set_dset_attrs(f_h5['{}/{}'.format(chrom, nbins)], medians)
