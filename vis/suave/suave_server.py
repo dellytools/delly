@@ -44,13 +44,14 @@ def data(s1, s2, c):
         'chrom': c,
         'chrom_len': -1,
     }
-    with h5py.File(cfg['smpl_to_file'][s1]) as f1, \
-            h5py.File(cfg['smpl_to_file'][s2]) as f2:
+    with h5py.File(cfg['smpl_to_file'][s1], 'r') as f1, \
+            h5py.File(cfg['smpl_to_file'][s2], 'r') as f2:
         assert c in f1 and c in f2
         d['chrom_len'] = int(f1[c].attrs['length'])
         x = f1['/{}/read_counts'.format(c)][:]
         y = f2['/{}/read_counts'.format(c)][:]
-        d['ratios'] = np.log2(x/y).tolist()
+        d['ratios'] = [r if np.isfinite(r) else None
+                       for r in np.log2(x/y).tolist()]
 
     return json.dumps(d)
 
