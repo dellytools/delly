@@ -3,8 +3,61 @@
 <head>
   <meta charset="UTF-8">
   <title>suave: structual variant explorer</title>
+  <link href="{{ url_for('static', filename='bootstrap/css/bootstrap.min.css') }}" rel="stylesheet">
+  <link href="{{ url_for('static', filename='suave.css') }}" rel="stylesheet">
 </head>
-<body>
-  hello, suave!
+ <body>
+
+  <nav class="navbar navbar-inverse navbar-fixed-top">
+    <div class="container">
+      <div class="navbar-header">
+        <button type="button" class="navbar-toggle collapsed" data-toggle="collapse" data-target="#navbar" aria-expanded="false" aria-controls="navbar">
+          <span class="sr-only">Toggle navigation</span>
+          <span class="icon-bar"></span>
+          <span class="icon-bar"></span>
+          <span class="icon-bar"></span>
+        </button>
+        <a class="navbar-brand" href="#">suave</a>
+      </div>
+      <div id="navbar" class="navbar-collapse collapse">
+        <ul class="nav navbar-nav">
+          <li class="dropdown">
+            <a href="#" class="dropdown-toggle" data-toggle="dropdown" role="button" aria-expanded="false">Sample 1 <span class="caret"></span></a>
+            <ul class="dropdown-menu" role="menu">
+            {% for s in samples %}
+              <li><a href="#" class="sample_select" data-sample="sample1">{{ s }}</a></li>
+            {% endfor %}
+            </ul> 
+          </li>
+          <li class="dropdown">
+            <a href="#" class="dropdown-toggle" data-toggle="dropdown" role="button" aria-expanded="false">Sample2 <span class="caret"></span></a>
+            <ul class="dropdown-menu" role="menu">
+            {% for s in samples %}
+              <li><a href="#" class="sample_select" data-sample="sample2">{{ s }}</a></li>
+            {% endfor %}
+            </ul> 
+          </li>
+          <li class="dropdown" id="chromosome_dropdown">
+            <a href="#" class="dropdown-toggle" data-toggle="dropdown" role="button" aria-expanded="false">Chromosome <span class="caret"></span></a>
+            <ul class="dropdown-menu" role="menu">
+            </ul> 
+          </li>
+          <li><a href="#" id="runButton">Visualize it!</a></li>
+        </ul>
+      </div>
+    </div>
+  </nav> 
+
+  <div class="container" id="selectedArea">
+    <b>Sample 1:</b> <span id="sample1_selected">-select-</span>
+    <b>Sample 2:</b> <span id="sample2_selected">-select-</span>
+    <b>Chromosome:</b> <span id="chromosome_selected">-select-</span>
+  </div>
+
+  <div id="vis"></div>
+
+  <script src="{{ url_for('static', filename='jquery.min.js') }}"></script>
+  <script src="{{ url_for('static', filename='bootstrap/js/bootstrap.min.js') }}"></script>
+  <script src="{{ url_for('static', filename='suave.js') }}"></script>
 </body>
 </html>
