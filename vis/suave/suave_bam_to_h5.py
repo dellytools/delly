@@ -70,14 +70,19 @@ def bam_to_h5(bamfile,
 
     for chrom, chrom_len in mpi_rank_chroms_chunk:
         chrom = str(chrom)
+
+        # FIXME temp
+        if chrom != 'chr2':
+            continue
+
         chrom_len = int(chrom_len)
-        click.echo('[{}] processing {}'.format(mpi_rank, chrom), err=True)
+        click.echo('[t{}] processing {}'.format(mpi_rank, chrom), err=True)
 
         f_h5.create_group(chrom)
         f_h5[chrom].attrs['length'] = np.uint32(chrom_len)
 
-        # make 1kb bins
-        chunk_size = 1000
+
+        chunk_size = 100
         nbins = int(math.ceil(chrom_len/chunk_size))
         cnts = np.zeros(nbins, dtype='uint32')
 

@@ -4,12 +4,13 @@
 
 from __future__ import division
 import click
-from flask import Flask, render_template
+from flask import Flask, render_template, request
 import h5py
 import os
 import json
 from collections import defaultdict
 import numpy as np
+import math
 
 app = Flask(__name__)
 cfg = dict()
@@ -48,10 +49,30 @@ def data(s1, s2, c):
             h5py.File(cfg['smpl_to_file'][s2], 'r') as f2:
         assert c in f1 and c in f2
         d['chrom_len'] = int(f1[c].attrs['length'])
-        x = f1['/{}/read_counts'.format(c)][:]
-        y = f2['/{}/read_counts'.format(c)][:]
+        # TODO this all needs some more thought...
+        s = request.args.get('start', 1, type=int)
+        e = request.args.get('end', d['chrom_len'], type=int)
+        l = e - s + 1
+        n_100bp = int(math.ceil(l / 100))
+        n = min(request.args.get('n', 25000, type=int), n_100bp)
+
+        binStart = (s-1) // 100
+        binEnd = (e-1) // 100
+
+        print(s, e, n, binStart, binEnd)
+
+        x = f1['/{}/read_counts'.format(c)][binStart:binEnd+1]
+        print(x)
+        pad = -len(x) % n
+        x = np.pad(x, (0, pad), mode='constant')
+        x_sum = np.sum(np.split(x, n), axis=1)
+
+        y = f2['/{}/read_counts'.format(c)][binStart:binEnd+1]
+        y = np.pad(y, (0, pad), mode='constant')
+        y_sum = np.sum(np.split(y, n), axis=1)
+
         d['ratios'] = [r if np.isfinite(r) else None
-                       for r in np.log2(x/y).tolist()]
+                       for r in np.log2(x_sum/y_sum).tolist()]
 
     return json.dumps(d)
 
