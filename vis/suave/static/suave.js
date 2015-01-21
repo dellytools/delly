@@ -144,6 +144,8 @@ var suave = function () {
       .call(yAxisDepth);
 
     var binSize = Math.ceil(my.data.chrom_len / my.data.ratios.length);
+    var viewStart = 1;
+    var viewEnd = my.data.chrom_len;
 
     $.each(my.data.ratios, function (idx, val) {
       canvasPoint(depthCtx, xDepth(idx*binSize), yDepth(val));
@@ -181,16 +183,17 @@ var suave = function () {
                   {start: sliceStart, end: sliceEnd, n: nBinsMax},
                   function (res) {
           my.data = res;
+          binSize = Math.ceil((sliceEnd-sliceStart+1)  / my.data.ratios.length);
           depthG.select(".x.axis").call(xAxisDepth);
-          redrawCanvas(depthCtx, binStart, binEnd);
+          redrawCanvas(depthCtx, 0, my.data.ratios.length-1);
         });
       }
     }
 
-    function redrawCanvas(ctx, binStart, binEnd) {
+    function redrawCanvas(ctx, start, end) {
       var i;
       ctx.clearRect(0, 0, my.depth.width, my.depth.height);
-      for (i = binStart; i <= binEnd; i += 1) {
+      for (i = start; i <= end; i += 1) {
         canvasPoint(ctx, xDepth(i*binSize), yDepth(my.data.ratios[i]));
       }
     }
