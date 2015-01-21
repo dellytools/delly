@@ -15,3 +15,27 @@ body {
   max-height: 400px;
   overflow-x: hidden;
 }
+
+#vis {
+  position: relative;
+}
+
+canvas {
+  position: absolute;
+}
+
+svg {
+  z-index: -1;
+}
+
+.axis text {
+  font: 10px sans-serif;
+}
+
+.axis path,
+.axis line {
+  fill: none;
+  stroke: #bbb;
+  shape-rendering: crispEdges;
+}
+
