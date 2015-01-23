@@ -11,6 +11,9 @@ import json
 from collections import defaultdict
 import numpy as np
 import math
+import re
+import pysam
+import csv
 
 app = Flask(__name__)
 cfg = dict()
@@ -38,9 +41,38 @@ def get_common_chroms(s1, s2):
 def chroms(s1, s2):
     return json.dumps(get_common_chroms(s1, s2))
 
+chr2_re = re.compile(r'CHR2=([^;\s]+)')
+end_re = re.compile(r'\bEND=(\d+)')
+ct_re = re.compile(r'\bCT=([^;\s]+)')
 
-@app.route('/data/<s1>/<s2>/<c>')
-def data(s1, s2, c):
+@app.route('/calls/<chrom>')
+def calls(chrom):
+    dataset = []
+    if cfg['vcf']:
+        f = pysam.Tabixfile(cfg['vcf'])
+        for row in csv.reader(f.fetch(str(chrom)), delimiter='\t'):
+            chrom2 = chr2_re.search(row[7]).group(1)
+            if chrom2 != chrom:
+                continue
+            start_call = int(row[1])
+            end_call = int(end_re.search(row[7]).group(1))
+            m = ct_re.search(row[7])
+            if m:
+                ct = m.group(1)
+            else:
+                ct = 'none'
+            sv_type = row[4].lstrip('<').rstrip('>')
+            dataset.append({
+                'start': start_call,
+                'end': end_call,
+                'type': sv_type,
+                'ct': ct
+            })
+
+    return json.dumps(dataset)
+
+@app.route('/depth/<s1>/<s2>/<c>')
+def depth(s1, s2, c):
     d = {
         'chrom': c,
         'chrom_len': -1,
@@ -49,27 +81,35 @@ def data(s1, s2, c):
             h5py.File(cfg['smpl_to_file'][s2], 'r') as f2:
         assert c in f1 and c in f2
         d['chrom_len'] = int(f1[c].attrs['length'])
-        # TODO this all needs some more thought...
+        # TODO: this needs some more thought...
         s = request.args.get('start', 1, type=int)
         e = request.args.get('end', d['chrom_len'], type=int)
-        l = e - s + 1
-        n_100bp = int(math.ceil(l / 100))
-        n = min(request.args.get('n', 25000, type=int), n_100bp)
+        n_req = request.args.get('n', 10000, type=int)
 
-        binStart = (s-1) // 100
-        binEnd = (e-1) // 100
+        bin_start = (s-1) // 100
+        bin_end = (e-1) // 100
+        n_bins = bin_end - bin_start + 1
 
-        print(s, e, n, binStart, binEnd)
+        print s, e, n_req, bin_start, bin_end
 
-        x = f1['/{}/read_counts'.format(c)][binStart:binEnd+1]
-        print(x)
-        pad = -len(x) % n
-        x = np.pad(x, (0, pad), mode='constant')
-        x_sum = np.sum(np.split(x, n), axis=1)
+        # TODO:
+        # * benchmark compressed files
+        # * what about holding everything in memory?
+        x = f1['/{}/read_counts'.format(c)][bin_start:bin_end+1]
+        y = f2['/{}/read_counts'.format(c)][bin_start:bin_end+1]
 
-        y = f2['/{}/read_counts'.format(c)][binStart:binEnd+1]
-        y = np.pad(y, (0, pad), mode='constant')
-        y_sum = np.sum(np.split(y, n), axis=1)
+        if n_bins <= n_req:
+            x_sum = x
+            y_sum = y
+        else:
+            chunk_size = int(round(n_bins/n_req))
+            n_chunks = int(math.ceil(n_bins / chunk_size))
+            pad = -n_bins % chunk_size
+            print 'x_len', n_bins, len(x), 'chunk_size', chunk_size, 'n_chunks', n_chunks, 'pad', pad
+            x = np.pad(x, (0, pad), mode='constant')
+            x_sum = np.sum(np.split(x, n_chunks), axis=1)
+            y = np.pad(y, (0, pad), mode='constant')
+            y_sum = np.sum(np.split(y, n_chunks), axis=1)
 
         d['ratios'] = [r if np.isfinite(r) else None
                        for r in np.log2(x_sum/y_sum).tolist()]
@@ -97,10 +137,12 @@ def index():
               type=click.Path(exists=True), help='HDF5 coverage file')
 @click.option('--usefilenames/--no-usefilenames', default=False,
               help='use file names as sample names')
-def cli(port, debug, h5s, usefilenames):
+@click.option('-v', '--vcf', help='VCF file')
+def cli(port, debug, h5s, usefilenames, vcf):
     global cfg
     cfg['h5_fns'] = list(h5s)
     cfg['use_fns'] = usefilenames
+    cfg['vcf'] = vcf
     app.run(port=port, debug=debug)
 
 if __name__ == '__main__':

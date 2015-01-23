@@ -1,7 +1,7 @@
 // Copyright (c) 2014 Markus Hsi-Yang Fritz
 
-var nBinsMax = 20000;
-var nBinsMin = Math.ceil(nBinsMax / 10);
+var nBinsMax = 10000;
+var nBinsMin = 2000;
 
 var suave = function () {
   var my = {};
@@ -79,11 +79,14 @@ var suave = function () {
       my.sample1 = s1;
       my.sample2 = s2;
       my.chrom = c;
-      $.getJSON('/data/' + s1 + '/' + s2 + '/' + c,
+      $.getJSON('/depth/' + s1 + '/' + s2 + '/' + c,
                 {n: nBinsMax},
                 function (res) {
         my.data = res;
-        my.vis(selector);
+        $.getJSON('/calls/' + c, function (res) {
+          my.data.calls = res;
+          my.vis(selector);
+        });
       });
     });
   };
@@ -107,6 +110,8 @@ var suave = function () {
     var brushG = frameSvg.append('g')
       .attr('transform', 'translate(' + my.brush.offX
             + ', ' + my.brush.offY + ')');
+
+    // ------------ Read Depth ---------------------
 
     var depthCanvas = d3.select(selector).append('canvas')
       .attr('width', my.depth.width)
@@ -144,8 +149,8 @@ var suave = function () {
       .call(yAxisDepth);
 
     var binSize = Math.ceil(my.data.chrom_len / my.data.ratios.length);
-    var viewStart = 1;
-    var viewEnd = my.data.chrom_len;
+    var dataSeqStart = 1;
+    var dataSeqEnd = my.data.chrom_len;
 
     $.each(my.data.ratios, function (idx, val) {
       canvasPoint(depthCtx, xDepth(idx*binSize), yDepth(val));
@@ -164,28 +169,92 @@ var suave = function () {
       c.fill();
     };
 
+    // ------------ Arcs ---------------------
+  
+    var arc = d3.svg.line()
+      .x(function(d) { return xDepth(d.x); })
+      .y(function(d) { return d.y; })
+      .interpolate('cardinal');
+    var colors = {'INV': 'orange', 'DUP': 'DodgerBlue', 'DEL': '#333'};
+    var arcWidthDefault = 2;
+    var arcWidthBold = 4;
+    var posFormat = d3.format(',d');
+
+    drawArcs();
+
+    function drawArcs() {
+      console.log('arcs', xDepth.invert(0), xDepth.invert(my.arc.width));
+      arcG.selectAll('path')
+        .data(my.data.calls)
+        .enter()
+        .append('path')
+        .filter(function (d) {
+          return d['start'] >= xDepth.invert(0)
+              && d['end'] <= xDepth.invert(my.arc.width);
+        })
+        .attr('d', function (d) {
+          return arc([
+            {x: d['start'], y: my.arc.height},
+            {x: (d['start'] + d['end']) / 2, y: 2},
+            {x: d['end'], y: my.arc.height}
+         ]);
+       })
+       .style('fill', 'none')
+       .style('stroke', function (d) {return colors[d['type']];})
+       .style('stroke-width', arcWidthDefault)
+       .on('mouseover', function () {
+        arcG.selectAll('path')
+          .style('opacity', '0.1');
+        d3.select(this)
+         .style('opacity', '1')
+         .style('stroke-width', arcWidthBold);
+      })
+      .on('mouseout', function () {
+        arcG.selectAll('path')
+          .style('opacity', '1');
+        d3.select(this)
+          .style('stroke-width', arcWidthDefault);
+      })
+      .append('title').text(function (d) {
+        return d['type']
+          + ' ('
+          + d['ct']
+          + ') '
+          + 'start: '
+          + posFormat(d['start'])
+          + ' end: '
+          + posFormat(d['end']);
+      });
+    }
     function zoomed() {
       var sliceStart = Math.max(Math.floor(xDepth.invert(0)), 0);
-      var binStart = Math.floor(sliceStart / binSize);
       var sliceEnd = Math.min(Math.ceil(xDepth.invert(my.depth.width)),
                               my.data.chrom_len);
-      var binEnd = Math.floor(sliceEnd / binSize);
-      var i;
 
-      console.log(sliceStart, sliceEnd);
-      console.log(binStart, binEnd, binEnd - binStart + 1);
+      // these are only valid/used if
+      // sliceStart >= dataSeqStart && sliceEnd <= dataSeqEnd
+      var binStart = Math.floor((sliceStart - dataSeqStart) / binSize);
+      var binEnd = Math.floor((sliceEnd - dataSeqStart) / binSize);
+      var nBins = binEnd - binStart + 1;
 
-      if (binEnd - binStart + 1 > nBinsMin) {
+      console.log(sliceStart, sliceEnd, dataSeqStart, dataSeqEnd);
+      console.log(binStart, binEnd, nBins);
+
+      if (sliceStart >= dataSeqStart && sliceEnd <= dataSeqEnd
+          && nBins >= nBinsMin && nBins >= nBinsMin) {
         depthG.select(".x.axis").call(xAxisDepth);
-        redrawCanvas(depthCtx, binStart, binEnd);
+        redraw(depthCtx, binStart, binEnd);
       } else {
-        $.getJSON('/data/' + my.sample1 + '/' + my.sample2 + '/' + my.chrom,
+        console.log('GET new data');
+        $.getJSON('/depth/' + my.sample1 + '/' + my.sample2 + '/' + my.chrom,
                   {start: sliceStart, end: sliceEnd, n: nBinsMax},
                   function (res) {
-          my.data = res;
+          my.data.ratios = res.ratios;
           binSize = Math.ceil((sliceEnd-sliceStart+1)  / my.data.ratios.length);
+          dataSeqStart = sliceStart;
+          dataSeqEnd = sliceEnd;
           depthG.select(".x.axis").call(xAxisDepth);
-          redrawCanvas(depthCtx, 0, my.data.ratios.length-1);
+          redraw(depthCtx, 0, my.data.ratios.length-1);
         });
       }
     }
@@ -194,8 +263,14 @@ var suave = function () {
       var i;
       ctx.clearRect(0, 0, my.depth.width, my.depth.height);
       for (i = start; i <= end; i += 1) {
-        canvasPoint(ctx, xDepth(i*binSize), yDepth(my.data.ratios[i]));
+        canvasPoint(ctx, xDepth(i*binSize+dataSeqStart), yDepth(my.data.ratios[i]));
       }
+    }
+
+    function redraw(ctx, start, end) {
+      redrawCanvas(ctx, start, end);
+      arcG.selectAll('path').remove();
+      drawArcs();
     }
   };
 
