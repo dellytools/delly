@@ -39,3 +39,9 @@ svg {
   shape-rendering: crispEdges;
 }
 
+.brush {
+  /*stroke: #fff;*/
+  fill: blue;
+  fill-opacity: 0.12;
+  shape-rendering: crispEdges;
+}

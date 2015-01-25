@@ -159,7 +159,9 @@ var suave = function () {
     var zoom = d3.behavior.zoom()
       .x(xDepth)
       .scaleExtent([1, Infinity])
-      .on("zoom", zoomed);
+      .on("zoom", rescale.bind(null, 'zoom'));
+
+    var zoomLocked = false;
 
     depthCanvas.call(zoom);
 
@@ -226,7 +228,69 @@ var suave = function () {
           + posFormat(d['end']);
       });
     }
-    function zoomed() {
+
+    // ------------ Brush ---------------------
+
+    var brushCanvas = d3.select(selector).append('canvas')
+      .attr('width', my.brush.width)
+      .attr('height', my.brush.height)
+      .style('left', String(my.brush.offX) + 'px')
+      .style('top', String(my.brush.offY) + 'px')
+      .style('z-index', '-10');
+    var brushCtx = brushCanvas.node().getContext('2d');
+
+    var xBrush = d3.scale.linear()
+      .domain([1, my.data.chrom_len])
+      .range([0, my.brush.width]);
+
+    var xAxisBrush = d3.svg.axis()
+      .scale(xBrush)
+      .orient('bottom');
+
+    // FIXME: hack to avoid overflowing depth <g>
+    var yBrush = d3.scale.linear()
+      .domain(d3.extent(my.data.ratios))
+      .range([my.brush.height, 20]);
+      //.range([my.brush.height, 0]);
+
+    brushG.append('g')
+      .attr('class', 'x axis')
+      .attr('transform', 'translate(0, ' + my.brush.height + ')')
+      .call(xAxisBrush);
+
+    var brush = d3.svg.brush()
+      .x(xBrush)
+      .on('brush', rescale.bind(null, 'brush'));
+
+    // FIXME: hack to avoid overflowing depth <g>
+    var brusher = brushG.append('g')
+      .attr('class', 'x brush')
+      .call(brush);
+
+    brusher.selectAll('rect')
+      //.attr('y', -6)
+      .attr('y', -6 + 20)
+      //.attr('height', my.brush.height + 7);
+      .attr('height', my.brush.height + 7 - 20);
+
+    $.each(my.data.ratios, function (idx, val) {
+      canvasPoint(brushCtx, xBrush(idx*binSize), yBrush(val));
+    });
+
+    function rescale(control) {
+      if (zoomLocked) {
+        return;
+      }
+
+      zoomLocked = true;
+
+      if (control === 'zoom') {
+        brusher.call(brush.extent(xDepth.domain()))
+          .call(brush.event);
+      } else if (control === 'brush') {
+        xDepth.domain(brush.empty() ? xBrush.domain() : brush.extent()); 
+      }
+
       var sliceStart = Math.max(Math.floor(xDepth.invert(0)), 0);
       var sliceEnd = Math.min(Math.ceil(xDepth.invert(my.depth.width)),
                               my.data.chrom_len);
@@ -241,7 +305,7 @@ var suave = function () {
       console.log(binStart, binEnd, nBins);
 
       if (sliceStart >= dataSeqStart && sliceEnd <= dataSeqEnd
-          && nBins >= nBinsMin && nBins >= nBinsMin) {
+          && nBins >= nBinsMin && nBins >= nBinsMin && false) {
         depthG.select(".x.axis").call(xAxisDepth);
         redraw(depthCtx, binStart, binEnd);
       } else {
@@ -271,6 +335,7 @@ var suave = function () {
       redrawCanvas(ctx, start, end);
       arcG.selectAll('path').remove();
       drawArcs();
+      zoomLocked = false;
     }
   };
 
