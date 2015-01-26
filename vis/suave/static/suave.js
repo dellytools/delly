@@ -1,7 +1,9 @@
 // Copyright (c) 2014 Markus Hsi-Yang Fritz
 
-var nBinsMax = 10000;
-var nBinsMin = 2000;
+// TODO: we need to benchmark this
+// also: at some point we could dynamically set this based on 
+//       screen properties
+var N_BINS_DESIRED = 10000;
 
 var suave = function () {
   var my = {};
@@ -31,6 +33,8 @@ var suave = function () {
   var innerHeight = arc.height + depth.height + brush.height;
   var outerHeight = innerHeight + margin.top + margin.bottom;
 
+  // TODO this needs to be dynamic based on the actual VCF
+  // also: use colorbrewer palette
   var svColors = {'INV': 'orange', 'DUP': '#666', 'DEL': 'DodgerBlue'};
 
   var main = function (selector) {
@@ -82,7 +86,7 @@ var suave = function () {
       my.sample2 = s2;
       my.chrom = c;
       $.getJSON('/depth/' + s1 + '/' + s2 + '/' + c,
-                {n: nBinsMax},
+                {n: N_BINS_DESIRED},
                 function (res) {
         my.data = res;
         $.getJSON('/calls/' + c, function (res) {
@@ -154,7 +158,7 @@ var suave = function () {
       .scale(yDepth)
       .orient('left')
       .tickSize(-my.depth.width)
-      .tickFormat(d3.format('.0f'));
+      .tickFormat(d3.format('.1f'));
 
     depthG.append('g')
       .attr('class', 'y axis')
@@ -319,7 +323,7 @@ var suave = function () {
 
       console.log('GET new data');
       $.getJSON('/depth/' + my.sample1 + '/' + my.sample2 + '/' + my.chrom,
-                {start: sliceStart, end: sliceEnd, n: nBinsMax},
+                {start: sliceStart, end: sliceEnd, n: N_BINS_DESIRED},
                 function (res) {
         my.data.ratios = res.ratios;
         binSize = Math.ceil((sliceEnd-sliceStart+1)  / my.data.ratios.length);
