@@ -8,7 +8,7 @@ var suave = function () {
 
   var data = null;
   var outerWidth = 960;
-  var margin = { top: 50, bottom: 20, left: 50, right: 50 };
+  var margin = { top: 10, bottom: 20, left: 50, right: 50 };
   var innerWidth = outerWidth - margin.left - margin.right;
   var arc = {
     width: innerWidth,
@@ -30,6 +30,8 @@ var suave = function () {
   };
   var innerHeight = arc.height + depth.height + brush.height;
   var outerHeight = innerHeight + margin.top + margin.bottom;
+
+  var svColors = {'INV': 'orange', 'DUP': '#666', 'DEL': 'DodgerBlue'};
 
   var main = function (selector) {
     $('.sample_select').click(function () {
@@ -85,6 +87,16 @@ var suave = function () {
         my.data = res;
         $.getJSON('/calls/' + c, function (res) {
           my.data.calls = res;
+          var svTypes = d3.set(_.pluck(suave.data.calls, 'type'))
+                          .values()
+                          .sort();
+          $('#vis-wrap').prepend('<div id="svTypes"></div>');
+          $.each(svTypes, function (idx, val) {
+            var html = '<input type="checkbox" checked value="'
+                       + val + '"> <span style="color:' 
+                       + svColors[val] + '">' + val + ' </span>';
+            $('#svTypes').append(html);
+          });
           my.vis(selector);
         });
       });
@@ -177,21 +189,28 @@ var suave = function () {
       .x(function(d) { return xDepth(d.x); })
       .y(function(d) { return d.y; })
       .interpolate('cardinal');
-    var colors = {'INV': 'orange', 'DUP': 'DodgerBlue', 'DEL': '#333'};
     var arcWidthDefault = 2;
     var arcWidthBold = 4;
     var posFormat = d3.format(',d');
 
+    $('input').on('click', drawArcs);
     drawArcs();
 
     function drawArcs() {
-      console.log('arcs', xDepth.invert(0), xDepth.invert(my.arc.width));
+      arcG.selectAll('path').remove();
+
+      var checked = d3.map();
+      $.each($('input'), function (idx, val) {
+        checked.set(val.value, val.checked);
+      });
+
       arcG.selectAll('path')
         .data(my.data.calls)
         .enter()
         .append('path')
         .filter(function (d) {
-          return d['start'] >= xDepth.invert(0)
+          return checked.get(d['type'])
+              && d['start'] >= xDepth.invert(0)
               && d['end'] <= xDepth.invert(my.arc.width);
         })
         .attr('d', function (d) {
@@ -202,7 +221,7 @@ var suave = function () {
          ]);
        })
        .style('fill', 'none')
-       .style('stroke', function (d) {return colors[d['type']];})
+       .style('stroke', function (d) {return svColors[d['type']];})
        .style('stroke-width', arcWidthDefault)
        .on('mouseover', function () {
         arcG.selectAll('path')
@@ -289,6 +308,7 @@ var suave = function () {
           .call(brush.event);
       } else if (control === 'brush') {
         xDepth.domain(brush.empty() ? xBrush.domain() : brush.extent()); 
+        zoom.x(xDepth);
       }
 
       var sliceStart = Math.max(Math.floor(xDepth.invert(0)), 0);
@@ -304,6 +324,8 @@ var suave = function () {
       console.log(sliceStart, sliceEnd, dataSeqStart, dataSeqEnd);
       console.log(binStart, binEnd, nBins);
 
+      // at the moment I reload *every time* hence the hacky `&& false`
+      // need to decide whether to keep that logic and if so clean up
       if (sliceStart >= dataSeqStart && sliceEnd <= dataSeqEnd
           && nBins >= nBinsMin && nBins >= nBinsMin && false) {
         depthG.select(".x.axis").call(xAxisDepth);
@@ -333,7 +355,6 @@ var suave = function () {
 
     function redraw(ctx, start, end) {
       redrawCanvas(ctx, start, end);
-      arcG.selectAll('path').remove();
       drawArcs();
       zoomLocked = false;
     }
@@ -348,6 +369,7 @@ var suave = function () {
   my.brush = brush;
   my.innerHeight = innerHeight;
   my.outerHeight = outerHeight;
+  my.svColors = svColors;
   my.main = main;
   my.vis = vis;
 
