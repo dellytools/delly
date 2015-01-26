@@ -311,38 +311,23 @@ var suave = function () {
         zoom.x(xDepth);
       }
 
-      var sliceStart = Math.max(Math.floor(xDepth.invert(0)), 0);
+      var sliceStart = Math.max(Math.floor(xDepth.invert(0)), 1);
       var sliceEnd = Math.min(Math.ceil(xDepth.invert(my.depth.width)),
                               my.data.chrom_len);
 
-      // these are only valid/used if
-      // sliceStart >= dataSeqStart && sliceEnd <= dataSeqEnd
-      var binStart = Math.floor((sliceStart - dataSeqStart) / binSize);
-      var binEnd = Math.floor((sliceEnd - dataSeqStart) / binSize);
-      var nBins = binEnd - binStart + 1;
-
       console.log(sliceStart, sliceEnd, dataSeqStart, dataSeqEnd);
-      console.log(binStart, binEnd, nBins);
 
-      // at the moment I reload *every time* hence the hacky `&& false`
-      // need to decide whether to keep that logic and if so clean up
-      if (sliceStart >= dataSeqStart && sliceEnd <= dataSeqEnd
-          && nBins >= nBinsMin && nBins >= nBinsMin && false) {
+      console.log('GET new data');
+      $.getJSON('/depth/' + my.sample1 + '/' + my.sample2 + '/' + my.chrom,
+                {start: sliceStart, end: sliceEnd, n: nBinsMax},
+                function (res) {
+        my.data.ratios = res.ratios;
+        binSize = Math.ceil((sliceEnd-sliceStart+1)  / my.data.ratios.length);
+        dataSeqStart = sliceStart;
+        dataSeqEnd = sliceEnd;
         depthG.select(".x.axis").call(xAxisDepth);
-        redraw(depthCtx, binStart, binEnd);
-      } else {
-        console.log('GET new data');
-        $.getJSON('/depth/' + my.sample1 + '/' + my.sample2 + '/' + my.chrom,
-                  {start: sliceStart, end: sliceEnd, n: nBinsMax},
-                  function (res) {
-          my.data.ratios = res.ratios;
-          binSize = Math.ceil((sliceEnd-sliceStart+1)  / my.data.ratios.length);
-          dataSeqStart = sliceStart;
-          dataSeqEnd = sliceEnd;
-          depthG.select(".x.axis").call(xAxisDepth);
-          redraw(depthCtx, 0, my.data.ratios.length-1);
-        });
-      }
+        redraw(depthCtx, 0, my.data.ratios.length-1);
+      });
     }
 
     function redrawCanvas(ctx, start, end) {
