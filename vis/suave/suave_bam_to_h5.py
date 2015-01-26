@@ -22,6 +22,9 @@ except ImportError:
     mpi_rank = 0
     mpi_size = 1
 
+CHUNK_SIZE = 100
+
+
 def gen_outfile_name(out, bam):
     if out:
         return out
@@ -71,10 +74,6 @@ def bam_to_h5(bamfile,
     for chrom, chrom_len in mpi_rank_chroms_chunk:
         chrom = str(chrom)
 
-        # FIXME temp
-        if chrom != 'chr2':
-            continue
-
         chrom_len = int(chrom_len)
         click.echo('[t{}] processing {}'.format(mpi_rank, chrom), err=True)
 
@@ -82,14 +81,13 @@ def bam_to_h5(bamfile,
         f_h5[chrom].attrs['length'] = np.uint32(chrom_len)
 
 
-        chunk_size = 100
-        nbins = int(math.ceil(chrom_len/chunk_size))
+        nbins = int(math.ceil(chrom_len/CHUNK_SIZE))
         cnts = np.zeros(nbins, dtype='uint32')
 
         for read in f_bam.fetch(chrom):
             if read.is_secondary or read.is_duplicate or read.is_qcfail:
                 continue
-            cnts[read.pos // chunk_size] += 1
+            cnts[read.pos // CHUNK_SIZE] += 1
 
         kwargs['data'] = cnts
         f_h5.create_dataset('{}/read_counts'.format(chrom), **kwargs)
@@ -100,6 +98,7 @@ def bam_to_h5(bamfile,
         dset.attrs['median'] = np.median(cnts)
         dset.attrs['sum'] = np.sum(cnts)
 
+    # TODO actually, don't store this as it's easy/fast to compute on the fly
     # store genome-wide read count for normalization
     read_cnt_tot = 0
     for chrom in f_h5:
