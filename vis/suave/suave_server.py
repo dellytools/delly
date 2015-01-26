@@ -83,7 +83,11 @@ def depth(s1, s2, c):
         d['chrom_len'] = int(f1[c].attrs['length'])
         # TODO: this needs some more thought...
         s = request.args.get('start', 1, type=int)
+        if s < 1:
+            s = 1
         e = request.args.get('end', d['chrom_len'], type=int)
+        if e > d['chrom_len']:
+            e = d['chrom_len']
         n_req = request.args.get('n', 10000, type=int)
 
         bin_start = (s-1) // 100
