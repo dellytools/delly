@@ -110,7 +110,7 @@ def bam_to_h5(bamfile,
 
 @click.command()
 @click.option('-s', '--sample', help='sample name')
-@click.option('-d', '--compression', type=click.Choice(['gzip', 'lzf']),
+@click.option('-c', '--compression', type=click.Choice(['gzip', 'lzf']),
               help='HDF5 file compression')
 @click.option('-o', '--outfile', help='output HDF5 file name')
 @click.option('-f', '--force/--no-force', default=False,
