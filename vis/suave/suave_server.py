@@ -77,6 +77,7 @@ def depth(s1, s2, c):
         'chrom': c,
         'chrom_len': -1,
     }
+    global cfg
     with h5py.File(cfg['smpl_to_file'][s1], 'r') as f1, \
             h5py.File(cfg['smpl_to_file'][s2], 'r') as f2:
         assert c in f1 and c in f2
@@ -96,23 +97,21 @@ def depth(s1, s2, c):
 
         print s, e, n_req, bin_start, bin_end
 
-        # TODO:
-        # * benchmark compressed files
-        # * what about holding everything in memory?
-        x = f1['/{}/read_counts'.format(c)][bin_start:bin_end+1]
-        y = f2['/{}/read_counts'.format(c)][bin_start:bin_end+1]
+        # TODO: need to track chromosome and include in conditional
+        if 'x' not in cfg or 'y' not in cfg:
+            cfg['x'] = f1['/{}/read_counts'.format(c)][:]
+            cfg['y'] = f2['/{}/read_counts'.format(c)][:]
 
         if n_bins <= n_req:
-            x_sum = x
-            y_sum = y
+            x_sum = cfg['x'][bin_start:bin_end+1]
+            y_sum = cfg['y'][bin_start:bin_end+1]
         else:
             chunk_size = int(round(n_bins/n_req))
             n_chunks = int(math.ceil(n_bins / chunk_size))
             pad = -n_bins % chunk_size
-            print 'x_len', n_bins, len(x), 'chunk_size', chunk_size, 'n_chunks', n_chunks, 'pad', pad
-            x = np.pad(x, (0, pad), mode='constant')
+            x = np.pad(cfg['x'][bin_start:bin_end+1], (0, pad), mode='constant')
             x_sum = np.sum(np.split(x, n_chunks), axis=1)
-            y = np.pad(y, (0, pad), mode='constant')
+            y = np.pad(cfg['y'][bin_start:bin_end+1], (0, pad), mode='constant')
             y_sum = np.sum(np.split(y, n_chunks), axis=1)
 
         d['ratios'] = [r if np.isfinite(r) else None
