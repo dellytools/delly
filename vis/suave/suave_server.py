@@ -97,10 +97,11 @@ def depth(s1, s2, c):
 
         print s, e, n_req, bin_start, bin_end
 
-        # TODO: need to track chromosome and include in conditional
-        if 'x' not in cfg or 'y' not in cfg:
+        if 'chrom' not in cfg or c != cfg['chrom'] \
+                or 'x' not in cfg or 'y' not in cfg:
             cfg['x'] = f1['/{}/read_counts'.format(c)][:]
             cfg['y'] = f2['/{}/read_counts'.format(c)][:]
+            cfg['chrom'] = c
 
         if n_bins <= n_req:
             x_sum = cfg['x'][bin_start:bin_end+1]
