@@ -94,6 +94,7 @@ var suave = function () {
           var svTypes = d3.set(_.pluck(suave.data.calls, 'type'))
                           .values()
                           .sort();
+          $('#svTypes').remove();
           $('#vis-wrap').prepend('<div id="svTypes"></div>');
           $.each(svTypes, function (idx, val) {
             var html = '<input type="checkbox" checked value="'
