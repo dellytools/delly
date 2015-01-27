@@ -1,18 +1,16 @@
 DEBUG ?= 0
 PARALLEL ?= 0
 
-# Boost library
-BOOST_ROOT ?= /g/solexa/bin/software/boost_1_53_0
-
 # Submodules
 PWD = $(shell pwd)
 BAMTOOLS_ROOT = ${PWD}/src/bamtools
 SEQTK_ROOT    = ${PWD}/src/htslib/htslib
+BOOST_ROOT    = ${PWD}/src/modular-boost
 
 # Flags
 CXX=g++
-CXXFLAGS += -isystem ${BOOST_ROOT}/include -isystem ${BAMTOOLS_ROOT}/include -isystem ${SEQTK_ROOT} -pedantic -W -Wall -Wno-unknown-pragmas
-LDFLAGS += -L${BOOST_ROOT}/lib -lboost_iostreams -lboost_filesystem -lboost_system -lboost_program_options -lboost_date_time -L${BAMTOOLS_ROOT}/lib -lbamtools -lz -Wl,-rpath,${BAMTOOLS_ROOT}/lib,-rpath,${BOOST_ROOT}/lib
+CXXFLAGS += -isystem ${BOOST_ROOT} -isystem ${BAMTOOLS_ROOT}/include -isystem ${SEQTK_ROOT} -pedantic -W -Wall -Wno-unknown-pragmas
+LDFLAGS += -L${BOOST_ROOT}/stage/lib -lboost_iostreams -lboost_filesystem -lboost_system -lboost_program_options -lboost_date_time -L${BAMTOOLS_ROOT}/lib -lbamtools -lz -Wl,-rpath,${BAMTOOLS_ROOT}/lib,-rpath,${BOOST_ROOT}/stage/lib
 
 # Additional flags for release/debug
 ifeq (${PARALLEL}, 1)
@@ -35,10 +33,11 @@ endif
 # External sources
 HTSLIBSOURCES = $(wildcard src/htslib/*.c) $(wildcard src/htslib/*.h)
 BAMTOOLSSOURCES = $(wildcard src/bamtools/src/api/*.h) $(wildcard src/bamtools/src/api/*.cpp)
+BOOSTSOURCES = $(wildcard src/modular-boost/libs/iostreams/include/boost/iostreams/*.hpp)
 DELLYSOURCES = $(wildcard src/*.h) $(wildcard src/*.cpp)
 
 # Targets
-TARGETS = .htslib .bamtools src/delly src/extract src/cov src/iover src/stats
+TARGETS = .htslib .bamtools .boost src/delly src/extract src/cov src/iover src/stats
 
 all:   	$(TARGETS)
 
@@ -48,22 +47,26 @@ all:   	$(TARGETS)
 .bamtools: $(BAMTOOLSSOURCES)
 	cd src/bamtools && mkdir -p build && cd build && cmake .. && make && cd ../../../ && touch .bamtools
 
-src/delly: .htslib .bamtools $(DELLYSOURCES)
+.boost: $(BOOSTSOURCES)
+	cd src/modular-boost && ./bootstrap.sh --prefix=${PWD}/src/modular-boost --without-icu --with-libraries=iostreams,filesystem,system,program_options,date_time && ./b2 && cd ../../ && touch .boost
+
+src/delly: .htslib .bamtools .boost $(DELLYSOURCES)
 	$(CXX) $(CXXFLAGS) $@.cpp -o $@ $(LDFLAGS)
 
-src/extract: .htslib .bamtools $(DELLYSOURCES)
+src/extract: .htslib .bamtools .boost $(DELLYSOURCES)
 	$(CXX) $(CXXFLAGS) $@.cpp -o $@ $(LDFLAGS)
 
-src/cov: .htslib .bamtools $(DELLYSOURCES)
+src/cov: .htslib .bamtools .boost $(DELLYSOURCES)
 	$(CXX) $(CXXFLAGS) $@.cpp -o $@ $(LDFLAGS)
 
-src/iover: .htslib .bamtools $(DELLYSOURCES)
+src/iover: .htslib .bamtools .boost $(DELLYSOURCES)
 	$(CXX) $(CXXFLAGS) $@.cpp -o $@ $(LDFLAGS)
 
-src/stats: .htslib .bamtools $(DELLYSOURCES)
+src/stats: .htslib .bamtools .boost $(DELLYSOURCES)
 	$(CXX) $(CXXFLAGS) $@.cpp -o $@ $(LDFLAGS)
 
 clean:
 	cd src/bamtools/build && make clean
 	cd src/htslib && make clean
-	rm -f $(TARGETS) $(TARGETS:=.o) .htslib .bamtools
+	cd src/modular-boost && ./b2 --clean-all
+	rm -f $(TARGETS) $(TARGETS:=.o) .htslib .bamtools .boost
