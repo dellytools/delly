@@ -48,7 +48,7 @@ all:   	$(TARGETS)
 	cd src/bamtools && mkdir -p build && cd build && cmake .. && make && cd ../../../ && touch .bamtools
 
 .boost: $(BOOSTSOURCES)
-	cd src/modular-boost && ./bootstrap.sh --prefix=${PWD}/src/modular-boost --without-icu --with-libraries=iostreams,filesystem,system,program_options,date_time && ./b2 && cd ../../ && touch .boost
+	cd src/modular-boost && ./bootstrap.sh --prefix=${PWD}/src/modular-boost --without-icu --with-libraries=iostreams,filesystem,system,program_options,date_time && ./b2 && ./b2 headers && cd ../../ && touch .boost
 
 src/delly: .htslib .bamtools .boost $(DELLYSOURCES)
 	$(CXX) $(CXXFLAGS) $@.cpp -o $@ $(LDFLAGS)
