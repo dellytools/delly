@@ -245,7 +245,7 @@ var suave = function () {
         return d['type']
           + ' ('
           + d['ct']
-          + ') '
+          + ')\x0A'
           + 'start: '
           + posFormat(d['start'])
           + ' end: '
