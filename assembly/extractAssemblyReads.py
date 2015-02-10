@@ -8,6 +8,7 @@ import os
 import collections
 import errno
 import numpy
+import random
 
 def rev_compl(s): 
     basecomplement = {'A': 'T', 'C': 'G', 'G': 'C', 'T': 'A', 'N': 'N'} 
@@ -110,12 +111,29 @@ if args.vcfFile:
             if (record.INFO['SVTYPE']=="TRA"):
                 continue
             carrier=set()
+            dupBounds = set()
             for call in record.samples:
                 if (call.sample in sampleToBam.keys()) and (call.called) and (call.gt_type!=0):
                     carrier.add(call.sample)
                     observedSamples.add(call.sample)
             if (len(carrier)):
-                sv[record.CHROM].append((record.POS, record.INFO['END'], record.ID, record.INFO['SVTYPE'], carrier))
+                if (record.INFO['SVTYPE']=="DUP") or (record.INFO['SVTYPE']=="INVDUP"):
+                    dupBounds.add(record.POS)
+                    dupBounds.add(record.INFO['END'])
+                try:
+                    sv2=record.INFO['SV2INFO']
+                except KeyError:
+                    sv2=None
+                if sv2 is not None:
+                    svStart=min(record.POS, int(sv2[1]))
+                    svEnd=max(record.INFO['END'], int(sv2[2]))
+                    if (sv2[3]=="DUP") or (sv2[3]=="INVDUP"):
+                        dupBounds.add(int(sv2[1]))
+                        dupBounds.add(int(sv2[2]))
+                else:
+                    svStart=record.POS
+                    svEnd=record.INFO['END']
+                sv[record.CHROM].append((svStart, svEnd, record.ID, record.INFO['SVTYPE'], carrier, dupBounds))
 
 # Parse only bams for carriers
 sampleToBam={k: sampleToBam[k] for k in set(sampleToBam.keys()).intersection(observedSamples)}
@@ -124,7 +142,7 @@ sampleToBam={k: sampleToBam[k] for k in set(sampleToBam.keys()).intersection(obs
 sampleProps=dict()
 if (len(sv.keys())):
     for chrom in sv.keys():
-        for (start, end, svID, svt, carrier) in sv[chrom]:
+        for (start, end, svID, svt, carrier, dupBounds) in sv[chrom]:
             print("Processing: " + svID + " " + chrom + ":" + str(start) + "-" + str(end))
             
             # Collect clip positions
@@ -185,6 +203,10 @@ if (len(sv.keys())):
                                     for clipPos in clips:
                                         if (clipPos>min(read.pos, read.mpos)) and (clipPos<max(read.aend, read.mpos + read.alen)) and (abs(read.tlen)<isizeCut) and (rp(read.is_read1, read.is_reverse, read.mate_is_reverse, read.pos, read.mpos)==rpDef):
                                             normalPair=True
+                                            # Normal pair that should be removed, except for DUPs
+                                            for dB in dupBounds:
+                                                if (dB>min(read.pos, read.mpos)) and (dB<max(read.aend, read.mpos + read.alen)) and (random.random()<=0.5):
+                                                    normalPair=False
                                             break
                                     if not normalPair:
                                         read12[int(read.is_read2)][read.qname]=(read.seq, read.qual, read.is_reverse)
