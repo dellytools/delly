@@ -63,8 +63,7 @@ if args.ratioGeno:
 # Collect high-quality SVs
 sv = dict()
 if args.vcfFile:
-    vcfIn = gzip.open(args.vcfFile) if args.vcfFile.endswith('.gz') else open(args.vcfFile)
-    vcf_reader = vcf.Reader(vcfIn)
+    vcf_reader = vcf.Reader(open(args.vcfFile), 'r', compressed=True) if args.vcfFile.endswith('.gz') else vcf.Reader(open(args.vcfFile), 'r', compressed=False)
     for record in vcf_reader:
         if (record.INFO['SVLEN'] >= minSize) and (record.INFO['SVLEN'] <= maxSize) and ((not args.siteFilter) or (len(record.FILTER) == 0)):
             precise = False
@@ -123,7 +122,7 @@ if args.pairedFilter:
 
 # Output vcf records
 if args.vcfFile:
-    vcf_reader = vcf.Reader(open(args.vcfFile), 'r')
+    vcf_reader = vcf.Reader(open(args.vcfFile), 'r', compressed=True) if args.vcfFile.endswith('.gz') else vcf.Reader(open(args.vcfFile), 'r', compressed=False)
     vcf_writer = vcf.Writer(open(args.outFile, 'w'), vcf_reader, lineterminator='\n')
     for record in vcf_reader:
         if (record.CHROM not in sv.keys()) or ((record.POS, record.INFO['END']) not in sv[record.CHROM].keys()):
