@@ -32,15 +32,11 @@ parser.add_argument('-m', '--minsize', metavar='500', required=False, dest='minS
 parser.add_argument('-n', '--maxsize', metavar='5000000', required=False, dest='maxSize', help='max. size (optional)')
 parser.add_argument('-a', '--altaf', metavar='0.4', required=False, dest='altAF', help='min. alt. AF (optional)')
 parser.add_argument('-r', '--ratioGeno', metavar='0.4', required=False, dest='ratioGeno', help='min. fraction of genotyped samples (optional)')
-parser.add_argument('-s', '--sample', metavar='NA12878', required=False, dest='sampleID', help='required carrier sample (optional)')
 parser.add_argument('-k', '--keepOverlap', dest='keepOverlap', action='store_true', help='keep overlapping PE calls')
 parser.add_argument('-f', '--filter', dest='siteFilter', action='store_true', help='Filter sites for PASS')
 args = parser.parse_args()
 
 # Command-line args
-sampleID = ""
-if args.sampleID:
-    sampleID = args.sampleID
 gqAltCut = 15
 if args.gqAlt:
     gqAltCut = int(args.gqAlt)
@@ -74,9 +70,6 @@ if args.vcfFile:
             gqAlt = []
             ratioRef = [0]
             ratioAlt = []
-            carrierSample = False
-            if sampleID == "":
-                carrierSample = True
             for call in record.samples:
                 if call.called:
                     if call.gt_type == 0:
@@ -91,12 +84,10 @@ if args.vcfFile:
                             ratioAlt.append(float(call['RV'])/float(call['RR'] + call['RV']))
                         else:
                             ratioAlt.append(float(call['DV'])/float(call['DR'] + call['DV']))
-                        if (not carrierSample) and (call.sample == sampleID):
-                            carrierSample = True
                         if ((precise) and (call['RV'] >= 2)) or ((not precise) and (call['DV'] >= 2)):
                             gqAlt.append(call['GQ'])
             genotypeRatio = float(len(gqAlt)+len(gqRef)) /  float(len(record.samples))
-            if (carrierSample) and (genotypeRatio > ratioGeno):
+            if genotypeRatio > ratioGeno:
                 if (len(gqRef)) and (len(gqAlt)) and (numpy.median(gqRef) >= gqRefCut) and (numpy.median(gqAlt) >= gqAltCut):
                     if (numpy.percentile(ratioRef, 99) == 0) and (numpy.median(ratioAlt) >= altAF):
                         #print(record.INFO['END']-record.POS, len(gqRef), len(gqAlt), numpy.median(gqRef), numpy.median(gqAlt), numpy.percentile(ratioRef, 95), numpy.median(ratioAlt), genotypeRatio, sep="\t")
