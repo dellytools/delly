@@ -33,6 +33,7 @@ parser.add_argument('-n', '--maxsize', metavar='5000000', required=False, dest='
 parser.add_argument('-a', '--altaf', metavar='0.4', required=False, dest='altAF', help='min. alt. AF (optional)')
 parser.add_argument('-r', '--ratioGeno', metavar='0.4', required=False, dest='ratioGeno', help='min. fraction of genotyped samples (optional)')
 parser.add_argument('-s', '--sample', metavar='NA12878', required=False, dest='sampleID', help='required carrier sample (optional)')
+parser.add_argument('-k', '--keepOverlap', dest='keepOverlap', action='store_true', help='keep overlapping PE calls')
 parser.add_argument('-f', '--filter', dest='siteFilter', action='store_true', help='Filter sites for PASS')
 args = parser.parse_args()
 
@@ -115,15 +116,16 @@ if args.vcfFile:
             continue
         overlapList = sv[record.CHROM].overlap((record.POS, record.INFO['END']))
         foundBetterHit = False
-        for cStart, cEnd in sv[record.CHROM].overlap((record.POS, record.INFO['END'])):
-            if foundBetterHit:
-                break
-            for cSvID, cScore, cCt in svDups[(record.CHROM, cStart, cEnd)] + [sv[record.CHROM][(cStart, cEnd)]]:
-                if record.ID != cSvID:
-                    if (cScore > record.INFO['PE']) or ((cScore == record.INFO['PE']) and (cSvID < record.ID)):
-                        if overlapValid((record.POS, record.INFO['END']), (cStart, cEnd), 0.1, 10000000):
-                            foundBetterHit = True
-                            break
+        if not args.keepOverlap:
+            for cStart, cEnd in sv[record.CHROM].overlap((record.POS, record.INFO['END'])):
+                if foundBetterHit:
+                    break
+                for cSvID, cScore, cCt in svDups[(record.CHROM, cStart, cEnd)] + [sv[record.CHROM][(cStart, cEnd)]]:
+                    if record.ID != cSvID:
+                        if (cScore > record.INFO['PE']) or ((cScore == record.INFO['PE']) and (cSvID < record.ID)):
+                            if overlapValid((record.POS, record.INFO['END']), (cStart, cEnd), 0.1, 10000000):
+                                foundBetterHit = True
+                                break
 
         # Output VCF record
         if not foundBetterHit:
