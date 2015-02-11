@@ -5,19 +5,19 @@ import vcf
 import argparse
 import numpy
 import banyan
-import gzip
+import collections
 
 
 #Functions
 def overlapValid((s1, e1), (s2, e2), reciprocalOverlap=0.5, maxOffset=500):
-    if (e1 < s2) or (s1 > e2):
+    if (e1 < s2) or (s1 > e2) or ((e1-s1) <= 0) or ((e2-s2) <= 0):
         return False
     overlapLen = float(min(e1, e2) - max(s1, s2))
     # Check reciprocal overlap
-    if (overlapLen < 1) or (float(e1-s1)/overlapLen < reciprocalOverlap) or (float(e2-s2)/overlapLen < reciprocalOverlap):
+    if (overlapLen < 1) or (overlapLen/float(e1-s1) < reciprocalOverlap) or (overlapLen/float(e2-s2) < reciprocalOverlap):
         return False
     # Check offset
-    if (abs(s2-s1) > maxOffset) or (abs(e2-e1) > maxOffset):
+    if max(abs(s2-s1), abs(e2-e1)) > maxOffset:
         return False
     return True
 
@@ -34,7 +34,6 @@ parser.add_argument('-a', '--altaf', metavar='0.4', required=False, dest='altAF'
 parser.add_argument('-r', '--ratioGeno', metavar='0.4', required=False, dest='ratioGeno', help='min. fraction of genotyped samples (optional)')
 parser.add_argument('-s', '--sample', metavar='NA12878', required=False, dest='sampleID', help='required carrier sample (optional)')
 parser.add_argument('-f', '--filter', dest='siteFilter', action='store_true', help='Filter sites for PASS')
-parser.add_argument('-p', '--paired', dest='pairedFilter', action='store_true', help='Require 3to3 and 5to5 inversion support')
 args = parser.parse_args()
 
 # Command-line args
@@ -62,6 +61,7 @@ if args.ratioGeno:
 
 # Collect high-quality SVs
 sv = dict()
+svDups = collections.defaultdict(list)
 if args.vcfFile:
     vcf_reader = vcf.Reader(open(args.vcfFile), 'r', compressed=True) if args.vcfFile.endswith('.gz') else vcf.Reader(open(args.vcfFile), 'r', compressed=False)
     for record in vcf_reader:
@@ -101,24 +101,10 @@ if args.vcfFile:
                         #print(record.INFO['END']-record.POS, len(gqRef), len(gqAlt), numpy.median(gqRef), numpy.median(gqAlt), numpy.percentile(ratioRef, 95), numpy.median(ratioAlt), genotypeRatio, sep="\t")
                         if not sv.has_key(record.CHROM):
                             sv[record.CHROM] = banyan.SortedDict(key_type=(int, int), alg=banyan.RED_BLACK_TREE, updator=banyan.OverlappingIntervalsUpdator)
-                        sv[record.CHROM][(record.POS, record.INFO['END'])] = (record.ID, record.INFO['PE'], record.INFO['CT'])
-
-
-# Kick-out the unpaired SVs
-if args.pairedFilter:
-    filteredSVs = dict()
-    for chrName in sv.keys():
-        for start, end in sv[chrName].keys():
-            overlapList = sv[chrName].overlap((start, end))
-            svID, score, ct = sv[chrName][(start, end)]
-            for cStart, cEnd in overlapList:
-                cSvID, cScore, cCt = sv[chrName][(cStart, cEnd)]
-                if (svID != cSvID) and (ct != cCt) and (overlapValid((start, end), (cStart, cEnd), 0.9, 100)):
-                    if not filteredSVs.has_key(chrName):
-                        filteredSVs[chrName] = banyan.SortedDict(key_type=(int, int), alg=banyan.RED_BLACK_TREE, updator=banyan.OverlappingIntervalsUpdator)
-                    filteredSVs[chrName][(start, end)] = sv[chrName][(start, end)]
-                    break
-    sv = filteredSVs
+                        if (record.POS, record.INFO['END']) not in sv[record.CHROM]:
+                            sv[record.CHROM][(record.POS, record.INFO['END'])] = (record.ID, record.INFO['PE'], record.INFO['CT'])
+                        else:
+                            svDups[(record.CHROM, record.POS, record.INFO['END'])].append((record.ID, record.INFO['PE'], record.INFO['CT']))
 
 # Output vcf records
 if args.vcfFile:
@@ -128,17 +114,17 @@ if args.vcfFile:
         if (record.CHROM not in sv.keys()) or ((record.POS, record.INFO['END']) not in sv[record.CHROM].keys()):
             continue
         overlapList = sv[record.CHROM].overlap((record.POS, record.INFO['END']))
-        svID, score, ct = sv[record.CHROM][(record.POS, record.INFO['END'])]
         foundBetterHit = False
-        for cStart, cEnd in overlapList:
-            cSvID, cScore, cCt = sv[record.CHROM][(cStart, cEnd)]
-            if svID == cSvID:
-                continue
-            # There should be at least 10% overlap otherwise ignore it
-            if not overlapValid((record.POS, record.INFO['END']), (cStart, cEnd), 0.1, 10000000):
-                continue
-            if (cScore > score) or ((cScore == score) and (cSvID < svID)):
-                foundBetterHit = True
+        for cStart, cEnd in sv[record.CHROM].overlap((record.POS, record.INFO['END'])):
+            if foundBetterHit:
                 break
+            for cSvID, cScore, cCt in svDups[(record.CHROM, cStart, cEnd)] + [sv[record.CHROM][(cStart, cEnd)]]:
+                if record.ID != cSvID:
+                    if (cScore > record.INFO['PE']) or ((cScore == record.INFO['PE']) and (cSvID < record.ID)):
+                        if overlapValid((record.POS, record.INFO['END']), (cStart, cEnd), 0.1, 10000000):
+                            foundBetterHit = True
+                            break
+
+        # Output VCF record
         if not foundBetterHit:
             vcf_writer.write_record(record)
