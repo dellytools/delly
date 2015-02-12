@@ -181,8 +181,8 @@ if len(sv.keys()):
                 continue
 
             # Collect reads for assembly
-            fq1 = svID + ".1.fastq"
-            fq2 = svID + ".2.fastq"
+            fq1 = args.vcfFile.strip().split('.')[0] + "." + svID + ".1.fastq"
+            fq2 = args.vcfFile.strip().split('.')[0] + "." + svID + ".2.fastq"
             silentremove(fq1)
             silentremove(fq2)
             for sample in carrier:
@@ -205,7 +205,7 @@ if len(sv.keys()):
                                             normalPair = True
                                             # Normal pair that should be removed, except for DUPs
                                             for dB in dupBounds:
-                                                if (dB > min(read.pos, read.mpos)) and (dB < max(read.aend, read.mpos + read.alen)) and (random.random() <= 0.5):
+                                                if (dB > min(read.pos, read.mpos)) and (dB < max(read.aend, read.mpos + read.alen)) and (random.random() <= 0.25):
                                                     normalPair = False
                                             break
                                     if not normalPair:

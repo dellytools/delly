@@ -36,12 +36,15 @@ SID=`echo ${VARIANTS} | sed 's/^.*\///' | sed 's/\..*$//'`
 python ${BASEDIR}/extractAssemblyReads.py -v ${VARIANTS} -s ${BAMLIST} ${UMAPPED}
 
 # Run the assembly
-for FQ1 in *.1.fastq
+for FQ1 in ${SID}.*.1.fastq
 do
     FQ2=`echo ${FQ1} | sed 's/.1.fastq/.2.fastq/'`
-    SVID=`echo ${FQ1} | sed 's/.[12].fastq$//'`
+    SVID=`echo ${FQ1} | sed 's/.[12].fastq$//' | sed 's/^.*\.//'`
     mkdir assembly.${SID}.${SVID}
     python ${SPADES} --pe1-1 ${FQ1} --pe1-2 ${FQ2} -o assembly.${SID}.${SVID}
-    cat assembly.${SID}.${SVID}/contigs.fasta | gzip -c > contigs.${SID}.${SVID}.fasta.gz
+    if [ -f assembly.${SID}.${SVID}/contigs.fasta ]
+    then
+	cat assembly.${SID}.${SVID}/contigs.fasta | gzip -c > contigs.${SID}.${SVID}.fasta.gz
+    fi
     rm -rf assembly.${SID}.${SVID} ${FQ1} ${FQ2}
 done
