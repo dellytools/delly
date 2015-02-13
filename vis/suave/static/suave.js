@@ -245,7 +245,9 @@ var suave = function () {
           .style('stroke-width', arcWidthDefault);
       })
       .append('title').text(function (d) {
-        return d['type']
+        return d['id']
+          + '\x0A'
+          + d['type']
           + ' ('
           + d['ct']
           + ')\x0A'

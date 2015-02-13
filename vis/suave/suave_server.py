@@ -56,6 +56,7 @@ def calls(chrom):
                 continue
             start_call = int(row[1])
             end_call = int(end_re.search(row[7]).group(1))
+            id_call = row[2]
             m = ct_re.search(row[7])
             if m:
                 ct = m.group(1)
@@ -63,6 +64,7 @@ def calls(chrom):
                 ct = 'none'
             sv_type = row[4].lstrip('<').rstrip('>')
             dataset.append({
+                'id': id_call,
                 'start': start_call,
                 'end': end_call,
                 'type': sv_type,
