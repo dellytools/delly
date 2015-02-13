@@ -104,6 +104,24 @@ var suave = function () {
           });
 
           $('#jumpToSlice').removeClass('hide');
+          $('#jumpToPad').val('0');
+
+          $('#jumpToFeature').removeClass('hide');
+
+          var bloodhound = new Bloodhound({
+            datumTokenizer: Bloodhound.tokenizers.obj.whitespace('value'),
+            queryTokenizer: Bloodhound.tokenizers.whitespace,
+            limit: 100,
+            local: $.map(my.data.calls, function(call) { return { value: call.id }; })
+          });
+
+          bloodhound.initialize();
+
+          $('#bloodhound .typeahead').typeahead(null, {
+            name: 'bloodhound',
+            displayKey: 'value',
+            source: bloodhound.ttAdapter()
+          });
 
           my.vis(selector);
         });
@@ -326,6 +344,18 @@ var suave = function () {
       }
 
       rescale('jump', s, e);
+    });
+
+    $('#jumpToFeatureSubmit').click(function () {
+      var featID = $('#jumpToFeatureInput').val();
+      // FIXME should index this...
+      $.each(my.data.calls, function (idx, val) {
+        if (val.id === featID) {
+          console.log(val);
+          rescale('jump', val.start, val.end);
+          return false;
+        }
+      });
     });
 
     function rescale(control, start, end) {

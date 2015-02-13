@@ -60,7 +60,7 @@
     <b>chromosome:</b> <span id="chromosome_selected">-select-</span>
   </div>
 
-  <div class="container hide" id="jumpToSlice">
+  <div class="container hide jump" id="jumpToSlice">
     <form class="form-inline">
       <div class="form-group">
         <label for="jumpToStart">start:</label>
@@ -74,7 +74,16 @@
         <label for="jumpToPad">pad:</label>
         <input type="number" class="form-control" id="jumpToPad" placeholder="pad">
       </div>
-      <button class="btn btn-primary" id="jumpToSliceSubmit">Submit</button>
+      <button class="btn btn-primary" id="jumpToSliceSubmit">Jump to slice</button>
+    </form>
+  </div>
+
+  <div class="container hide jump" id="jumpToFeature">
+    <form class="form-inline">
+      <div class="form-group" id="bloodhound">
+        <input type="text" class="form-control typeahead" id="jumpToFeatureInput" placeholder="feature">
+      </div>
+      <button class="btn btn-primary" id="jumpToFeatureSubmit">Jump to feature</button>
     </form>
   </div>
 
@@ -84,6 +93,7 @@
   <script src="{{ url_for('static', filename='bootstrap/js/bootstrap.min.js') }}"></script>
   <script src="{{ url_for('static', filename='d3.min.js') }}"></script>
   <script src="{{ url_for('static', filename='underscore-min.js') }}"></script>
+  <script src="{{ url_for('static', filename='typeahead.js/typeahead.bundle.min.js') }}"></script>
   <script src="{{ url_for('static', filename='suave.js') }}"></script>
 </body>
 </html>

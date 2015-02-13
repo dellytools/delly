@@ -16,6 +16,11 @@ body {
   overflow-x: hidden;
 }
 
+.jump {
+  margin-top: 5px;
+  margin-bottom: 5px;
+}
+
 #vis {
   position: relative;
 }
@@ -44,4 +49,15 @@ svg {
   fill: blue;
   fill-opacity: 0.12;
   shape-rendering: crispEdges;
+}
+
+#bloodhound .tt-dropdown-menu {
+  max-height: 350px;
+  overflow-y: auto;
+  width: 250px;
+  margin-top: 5px;
+  padding: 8px 0;
+  background-color: #fff;
+  border: 1px solid #ccc;
+  border: 1px solid rgba(0, 0, 0, 0.2);
 }
