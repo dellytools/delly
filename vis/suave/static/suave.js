@@ -102,6 +102,9 @@ var suave = function () {
                        + svColors[val] + '">' + val + ' </span>';
             $('#svTypes').append(html);
           });
+
+          $('#jumpToSlice').removeClass('hide');
+
           my.vis(selector);
         });
       });
@@ -301,7 +304,29 @@ var suave = function () {
       canvasPoint(brushCtx, xBrush(idx*binSize), yBrush(val));
     });
 
-    function rescale(control) {
+    $('#jumpToSliceSubmit').click(function () {
+      var s = parseInt($('#jumpToStart').val());
+      var e = parseInt($('#jumpToEnd').val());
+      var p = parseInt($('#jumpToPad').val());
+
+      if (isNaN(s) || isNaN(e) || isNaN(p)) {
+        console.log('error: jumpToSlice Nan', s, e, p);
+        return;
+      }
+
+      s -= p;
+      e += p;
+
+      if (s < 1 || s > my.data.chrom_len || e < 1 || e > my.data.chrom_len 
+          || e < s) {
+        console.log('error: jumpToSlice coords', s, e, p);
+        return;
+      }
+
+      rescale('jump', s, e);
+    });
+
+    function rescale(control, start, end) {
       if (zoomLocked) {
         return;
       }
@@ -314,6 +339,11 @@ var suave = function () {
       } else if (control === 'brush') {
         xDepth.domain(brush.empty() ? xBrush.domain() : brush.extent()); 
         zoom.x(xDepth);
+      } else if (control === 'jump') {
+        xDepth.domain([start, end]);
+        zoom.x(xDepth);
+        brusher.call(brush.extent(xDepth.domain()))
+          .call(brush.event);
       }
 
       var sliceStart = Math.max(Math.floor(xDepth.invert(0)), 1);

@@ -60,6 +60,24 @@
     <b>chromosome:</b> <span id="chromosome_selected">-select-</span>
   </div>
 
+  <div class="container hide" id="jumpToSlice">
+    <form class="form-inline">
+      <div class="form-group">
+        <label for="jumpToStart">start:</label>
+        <input type="number" class="form-control" id="jumpToStart" placeholder="start">
+      </div>
+      <div class="form-group">
+        <label for="jumpToEnd">end:</label>
+        <input type="number" class="form-control" id="jumpToEnd" placeholder="end">
+      </div>
+      <div class="form-group">
+        <label for="jumpToPad">pad:</label>
+        <input type="number" class="form-control" id="jumpToPad" placeholder="pad">
+      </div>
+      <button class="btn btn-success" id="jumpToSliceSubmit">Submit</button>
+    </form>
+  </div>
+
   <div class="container" id="vis-wrap"><div id="vis"></div></div>
 
   <script src="{{ url_for('static', filename='jquery.min.js') }}"></script>
