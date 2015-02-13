@@ -82,7 +82,6 @@ def depth(s1, s2, c):
             h5py.File(cfg['smpl_to_file'][s2], 'r') as f2:
         assert c in f1 and c in f2
         d['chrom_len'] = int(f1[c].attrs['length'])
-        # TODO: this needs some more thought...
         s = request.args.get('start', 1, type=int)
         if s < 1:
             s = 1
