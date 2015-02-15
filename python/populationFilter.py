@@ -79,7 +79,7 @@ if args.vcfFile:
                             ratioRef.append(float(call['DV'])/float(call['DR'] + call['DV']))
                         if ((precise) and (call['RV'] == 0)) or ((not precise) and (call['DV'] == 0)):
                             gqRef.append(call['GQ'])
-                    if call.gt_type != 0:
+                    if (call.gt_type != 0) and (call['FT']=="PASS"):
                         if precise:
                             ratioAlt.append(float(call['RV'])/float(call['RR'] + call['RV']))
                         else:
@@ -90,7 +90,7 @@ if args.vcfFile:
             if genotypeRatio > ratioGeno:
                 if (len(gqRef)) and (len(gqAlt)) and (numpy.median(gqRef) >= gqRefCut) and (numpy.median(gqAlt) >= gqAltCut):
                     if (numpy.percentile(ratioRef, 99) == 0) and (numpy.median(ratioAlt) >= altAF):
-                        #print(record.INFO['END']-record.POS, len(gqRef), len(gqAlt), numpy.median(gqRef), numpy.median(gqAlt), numpy.percentile(ratioRef, 95), numpy.median(ratioAlt), genotypeRatio, sep="\t")
+                        #print(record.INFO['END']-record.POS, len(gqRef), len(gqAlt), numpy.median(gqRef), numpy.median(gqAlt), numpy.percentile(ratioRef, 99), numpy.median(ratioAlt), genotypeRatio, sep="\t")
                         if not sv.has_key(record.CHROM):
                             sv[record.CHROM] = banyan.SortedDict(key_type=(int, int), alg=banyan.RED_BLACK_TREE, updator=banyan.OverlappingIntervalsUpdator)
                         if (record.POS, record.INFO['END']) not in sv[record.CHROM]:
