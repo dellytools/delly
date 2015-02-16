@@ -107,7 +107,7 @@ var suave = function () {
           $('#jumpToPad').val('0');
 
           $('#jumpToFeature').removeClass('hide');
-          $('#jumpToPadFeature').val('100');
+          $('#jumpToPadFeature').val('1000');
 
           var bloodhound = new Bloodhound({
             datumTokenizer: Bloodhound.tokenizers.obj.whitespace('value'),
@@ -231,7 +231,7 @@ var suave = function () {
         checked.set(val.value, val.checked);
       });
 
-      arcG.selectAll('path')
+      arcG.selectAll('path.arc')
         .data(my.data.calls)
         .enter()
         .append('path')
@@ -275,6 +275,66 @@ var suave = function () {
           + ' end: '
           + posFormat(d['end']);
       });
+
+      // single breakpoints
+      // FIXME code dup
+      arcG.selectAll('path.line')
+        .data(my.data.calls)
+        .enter()
+        .append('path')
+        .filter(function (d) {
+          return checked.get(d['type'])
+            && inRange(d['start'],
+                       xDepth.invert(0),
+                       xDepth.invert(my.arc.width))
+              != inRange(d['end'],
+                         xDepth.invert(0),
+                         xDepth.invert(my.arc.width));
+        })
+        .attr('d', function (d) {
+          var point = inRange(d['start'],
+                              xDepth.invert(0), 
+                              xDepth.invert(my.arc.width))
+            ? d['start'] 
+            : d['end'];
+          return arc([
+            {x: point, y: my.arc.height},
+            {x: point, y: my.arc.height / 2}
+          ]);
+        })
+       .style('fill', 'none')
+       .style('stroke', function (d) {return svColors[d['type']];})
+       .style('stroke-width', arcWidthDefault)
+       .on('mouseover', function () {
+        arcG.selectAll('path')
+          .style('opacity', '0.1');
+        d3.select(this)
+         .style('opacity', '1')
+         .style('stroke-width', arcWidthBold);
+      })
+      .on('mouseout', function () {
+        arcG.selectAll('path')
+          .style('opacity', '1');
+        d3.select(this)
+          .style('stroke-width', arcWidthDefault);
+      })
+      .append('title').text(function (d) {
+        return d['id']
+          + '\x0A'
+          + d['type']
+          + ' ('
+          + d['ct']
+          + ')\x0A'
+          + 'start: '
+          + posFormat(d['start'])
+          + ' end: '
+          + posFormat(d['end']);
+      });
+
+    }
+
+    function inRange(x, s, e) {
+      return x >= s && x <= e ? true : false;
     }
 
     // ------------ Brush ---------------------

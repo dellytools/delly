@@ -112,6 +112,7 @@ def depth(s1, s2, c):
             n_chunks = int(math.ceil(n_bins / chunk_size))
             pad = -n_bins % chunk_size
             x = np.pad(cfg['x'][bin_start:bin_end+1], (0, pad), mode='constant')
+            # FIXME normalize by genomewide counts!
             x_sum = np.sum(np.split(x, n_chunks), axis=1)
             y = np.pad(cfg['y'][bin_start:bin_end+1], (0, pad), mode='constant')
             y_sum = np.sum(np.split(y, n_chunks), axis=1)
