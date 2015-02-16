@@ -107,6 +107,7 @@ var suave = function () {
           $('#jumpToPad').val('0');
 
           $('#jumpToFeature').removeClass('hide');
+          $('#jumpToPadFeature').val('100');
 
           var bloodhound = new Bloodhound({
             datumTokenizer: Bloodhound.tokenizers.obj.whitespace('value'),
@@ -330,15 +331,17 @@ var suave = function () {
       var p = parseInt($('#jumpToPad').val());
 
       if (isNaN(s) || isNaN(e) || isNaN(p)) {
-        console.log('error: jumpToSlice Nan', s, e, p);
+        console.log('error: jumpToSlice NaN', s, e, p);
         return;
       }
 
       s -= p;
       e += p;
 
-      if (s < 1 || s > my.data.chrom_len || e < 1 || e > my.data.chrom_len 
-          || e < s) {
+      s = s < 1 ? 1 : s;
+      e = e > my.data.chrom_len ? my.data.chrom_len : e;
+
+      if (s > my.data.chrom_len || e < 1 || s > e) {
         console.log('error: jumpToSlice coords', s, e, p);
         return;
       }
@@ -348,11 +351,22 @@ var suave = function () {
 
     $('#jumpToFeatureSubmit').click(function () {
       var featID = $('#jumpToFeatureInput').val();
+      var p = parseInt($('#jumpToPadFeature').val());
+
+      if (isNaN(p)) {
+        console.log('error: jumpToFeature NaN', p);
+        return;
+      }
+
       // FIXME should index this...
       $.each(my.data.calls, function (idx, val) {
         if (val.id === featID) {
           console.log(val);
-          rescale('jump', val.start, val.end);
+          var s = val.start - p;
+          var e = val.end + p;
+          s = s < 1 ? 1 : s;
+          e = e > my.data.chrom_len ? my.data.chrom_len : e;
+          rescale('jump', s, e);
           return false;
         }
       });
