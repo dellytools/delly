@@ -418,19 +418,24 @@ var suave = function () {
         return;
       }
 
+      jumpToFeature(featID, p);
+    });
+
+    function jumpToFeature(featID, padding) {
+      padding = padding || 0;
       // FIXME should index this...
       $.each(my.data.calls, function (idx, val) {
         if (val.id === featID) {
           console.log(val);
-          var s = val.start - p;
-          var e = val.end + p;
+          var s = val.start - padding;
+          var e = val.end + padding;
           s = s < 1 ? 1 : s;
           e = e > my.data.chrom_len ? my.data.chrom_len : e;
           rescale('jump', s, e);
           return false;
         }
       });
-    });
+    }
 
     function rescale(control, start, end) {
       if (zoomLocked) {
