@@ -112,14 +112,17 @@ if args.vcfFile:
                 continue
             carrier = set()
             dupBounds = set()
+            delBounds = set()
             for call in record.samples:
                 if (call.sample in sampleToBam.keys()) and (call.called) and (call.gt_type != 0):
                     carrier.add(call.sample)
                     observedSamples.add(call.sample)
             if len(carrier):
-                if (record.INFO['SVTYPE'] == "DUP") or (record.INFO['SVTYPE'] == "INVDUP"):
+                if (record.INFO['SVTYPE'] == "DUP"):
                     dupBounds.add(record.POS)
                     dupBounds.add(record.INFO['END'])
+                elif (record.INFO['SVTYPE'] == "DEL"):
+                    delBounds.add((record.POS, record.INFO['END']))
                 try:
                     sv2 = record.INFO['SV2INFO']
                 except KeyError:
@@ -127,13 +130,15 @@ if args.vcfFile:
                 if sv2 is not None:
                     svStart = min(record.POS, int(sv2[1]))
                     svEnd = max(record.INFO['END'], int(sv2[2]))
-                    if (sv2[3] == "DUP") or (sv2[3] == "INVDUP"):
+                    if (sv2[3] == "DUP"):
                         dupBounds.add(int(sv2[1]))
                         dupBounds.add(int(sv2[2]))
+                    elif (sv2[3] == "DEL"):
+                        delBounds.add((int(sv2[1]), int(sv2[2])))
                 else:
                     svStart = record.POS
                     svEnd = record.INFO['END']
-                sv[record.CHROM].append((svStart, svEnd, record.ID, record.INFO['SVTYPE'], carrier, dupBounds))
+                sv[record.CHROM].append((svStart, svEnd, record.ID, record.INFO['SVTYPE'], carrier, dupBounds, delBounds))
 
 # Parse only bams for carriers
 sampleToBam = {k: sampleToBam[k] for k in set(sampleToBam.keys()).intersection(observedSamples)}
@@ -142,7 +147,7 @@ sampleToBam = {k: sampleToBam[k] for k in set(sampleToBam.keys()).intersection(o
 sampleProps = dict()
 if len(sv.keys()):
     for chrom in sv.keys():
-        for (start, end, svID, svt, carrier, dupBounds) in sv[chrom]:
+        for (start, end, svID, svt, carrier, dupBounds, delBounds) in sv[chrom]:
             print("Processing: " + svID + " " + chrom + ":" + str(start) + "-" + str(end))
 
             # Collect clip positions
@@ -199,16 +204,24 @@ if len(sv.keys()):
                                 read12[int(read.is_read2)][read.qname] = (read.seq, read.qual, read.is_reverse)
                             else:
                                 if (not read.mate_is_unmapped) and (read.mpos > windowStart) and (read.mpos < windowEnd):
-                                    normalPair = False
+                                    normalPairRemove = False
                                     for clipPos in clips:
                                         if (clipPos > min(read.pos, read.mpos)) and (clipPos < max(read.aend, read.mpos + read.alen)) and (abs(read.tlen) < isizeCut) and (rp(read.is_read1, read.is_reverse, read.mate_is_reverse, read.pos, read.mpos) == rpDef):
-                                            normalPair = True
-                                            # Normal pair that should be removed, except for DUPs
-                                            for dB in dupBounds:
-                                                if (dB > min(read.pos, read.mpos)) and (dB < max(read.aend, read.mpos + read.alen)) and (random.random() <= 0.25):
-                                                    normalPair = False
+                                            normalPairRemove = True
                                             break
-                                    if not normalPair:
+                                    if not normalPairRemove:
+                                        # Remove pairs inside a deletion
+                                        for (delS, delE) in delBounds:
+                                            if (delS<min(read.pos, read.mpos)) and (max(read.aend, read.mpos + read.alen)<delE):
+                                                normalPairRemove = True
+                                                break
+                                    if normalPairRemove:
+                                        # For DUPs, we need to keep some REF pairs overlapping the boundaries
+                                        for dB in dupBounds:
+                                            if (dB > min(read.pos, read.mpos)) and (dB < max(read.aend, read.mpos + read.alen)) and (random.random() <= 0.25):
+                                                normalPairRemove = False
+                                                break
+                                    if not normalPairRemove:
                                         read12[int(read.is_read2)][read.qname] = (read.seq, read.qual, read.is_reverse)
                     # Fetch skipped mapped reads
                     missingReads = set(read12[0].keys()).union(set(read12[1].keys())).difference(set(read12[0].keys()).intersection(set(read12[1].keys())))
