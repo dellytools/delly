@@ -331,6 +331,12 @@ var suave = function () {
           + posFormat(d['end']);
       });
 
+      $('path').click(function () {
+        var title = $(this).find('title').html();
+        var svID = /\S+/.exec(title)[0];
+        jumpToFeature(svID);
+      });
+
     }
 
     function inRange(x, s, e) {
