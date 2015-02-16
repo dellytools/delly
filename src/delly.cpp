@@ -1229,7 +1229,7 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
       unsigned int glBest=0;
       unsigned int peDepth=mapqRef.size() + mapqAlt.size();
       FLP glBestVal=-std::numeric_limits<FLP>::infinity();
-      FLP scaling = -FLP(1) * boost::multiprecision::log10( boost::multiprecision::pow(FLP(2),  FLP(peDepth) ) );
+      FLP scaling = -FLP(peDepth) * boost::multiprecision::log10(FLP(2));
       for(unsigned int geno=0; geno<=2; ++geno) {
 	FLP refLike=0;
 	FLP altLike=0;
@@ -2173,6 +2173,9 @@ int main(int argc, char **argv) {
   std::cout << '[' << boost::posix_time::to_simple_string(now) << "] ";
   for(int i=0; i<argc; ++i) { std::cout << argv[i] << ' '; }
   std::cout << std::endl;
+
+  // Always ignore reads of mapping quality 0 for genotyping
+  if (c.minGenoQual<1) c.minGenoQual=1;
 
   // Run main program
   if (c.svType == "DEL") return run(c, SVType<DeletionTag>());
