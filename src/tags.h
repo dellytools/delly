@@ -49,6 +49,13 @@ namespace torali {
     struct CoverageType {
     };
 
+  struct BpLevelCount;
+  struct NoBpLevelCount;
+  
+  template<typename BpLevelTag>
+    struct BpLevelType {
+    };
+
   // F+ 0
   // F- 1
   // R+ 2
