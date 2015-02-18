@@ -58,20 +58,19 @@ struct Config {
   unsigned int window_size;
   unsigned int window_offset;
   unsigned int window_num;
-  uint16_t minMapQual;
+  uint16_t minGenoQual;
   bool bp_flag;
   bool avg_flag;
   bool inclCigar;
-  bool cov_norm;
   boost::filesystem::path outfile;
   boost::filesystem::path int_file;
   std::vector<boost::filesystem::path> files;
 };
 
 
-template<typename TSingleHit, typename TCoverageType>
+template<typename TCoverageType>
 inline int
-run(Config const& c, TSingleHit, TCoverageType covType)
+run(Config const& c, TCoverageType covType)
 {
   // Create library objects
   typedef std::map<std::string, LibraryInfo> TLibraryMap;
@@ -183,7 +182,8 @@ run(Config const& c, TSingleHit, TCoverageType covType)
   TCountMap countMap;
 
   // Annotate coverage
-  annotateCoverage(c.files, c.minMapQual, c.inclCigar, c.cov_norm, sampleLib, svs, countMap, TSingleHit(), covType);
+  if (c.inclCigar) annotateCoverage(c.files, c.minGenoQual, sampleLib, svs, countMap, BpLevelType<BpLevelCount>(), covType);
+  else annotateCoverage(c.files, c.minGenoQual, sampleLib, svs, countMap, BpLevelType<NoBpLevelCount>(), covType);
 
   // Output library statistics
   std::cout << "Library statistics" << std::endl;
@@ -248,9 +248,8 @@ int main(int argc, char **argv) {
     ("help,?", "show help message")
     ("avg-cov,a", "show average coverage")
     ("bp-count,b", "show base pair count")
-    ("disable-covnorm,c", "disable coverage normalization")
     ("disable-redundancy,d", "disable redundancy filtering")
-    ("quality-cut,q", boost::program_options::value<uint16_t>(&c.minMapQual)->default_value(0), "exclude all alignments with quality < q")
+    ("quality-cut,q", boost::program_options::value<uint16_t>(&c.minGenoQual)->default_value(0), "exclude all alignments with quality < q")
     ("outfile,f", boost::program_options::value<boost::filesystem::path>(&c.outfile)->default_value("cov.gz"), "coverage output file")
     ;
 
@@ -303,8 +302,6 @@ int main(int argc, char **argv) {
   }
   bool disableRedFilter=false;
   if (vm.count("disable-redundancy")) disableRedFilter=true;
-  if (vm.count("disable-covnorm")) c.cov_norm = false;
-  else c.cov_norm = true;
   if (vm.count("bp-count")) c.bp_flag = true;
   else c.bp_flag = false;
   if (vm.count("avg-cov")) c.avg_flag = true;
@@ -319,11 +316,6 @@ int main(int argc, char **argv) {
   std::cout << std::endl;
  
   // Run coverage annotation
-  if (c.inclCigar) {
-    if (disableRedFilter) return run(c, SingleHit<int32_t, std::string>(), CoverageType<NoRedundancyFilterTag>());
-    else return run(c, SingleHit<int32_t, std::string>(), CoverageType<RedundancyFilterTag>());
-  } else {
-    if (disableRedFilter) run(c, SingleHit<int32_t, void>(), CoverageType<NoRedundancyFilterTag>());
-    else return run(c, SingleHit<int32_t, void>(), CoverageType<RedundancyFilterTag>());
-  }
+  if (disableRedFilter) return run(c, CoverageType<NoRedundancyFilterTag>());
+  else return run(c, CoverageType<RedundancyFilterTag>());
 }
