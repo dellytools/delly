@@ -107,7 +107,8 @@ observedSamples = set()
 if args.vcfFile:
     vcf_reader = vcf.Reader(open(args.vcfFile), 'r', compressed=True) if args.vcfFile.endswith('.gz') else vcf.Reader(open(args.vcfFile), 'r', compressed=False)
     for record in vcf_reader:
-        if (record.INFO['SVLEN'] <= maxSize) and ((not args.siteFilter) or (len(record.FILTER) == 0)):
+        svlen=record.INFO['END'] - record.POS
+        if (svlen <= maxSize) and ((not args.siteFilter) or (len(record.FILTER) == 0)):
             if record.INFO['SVTYPE'] == "TRA":
                 continue
             carrier = set()
