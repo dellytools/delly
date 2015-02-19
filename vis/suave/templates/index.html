@@ -1,5 +1,9 @@
 <!DOCTYPE html>
 <html lang="en">
+<!--
+suave: structural variant explorer
+(c) 2014-2015 Markus Hsi-Yang Fritz
+-->
 <head>
   <meta charset="UTF-8">
   <title>suave</title>
@@ -7,91 +11,123 @@
   <link href="{{ url_for('static', filename='font-awesome/css/font-awesome.min.css') }}" rel="stylesheet">
   <link href="{{ url_for('static', filename='suave.css') }}" rel="stylesheet">
 </head>
- <body>
+<body>
 
-  <nav class="navbar navbar-inverse navbar-fixed-top">
-    <div class="container">
-      <div class="navbar-header">
-        <button type="button" class="navbar-toggle collapsed" data-toggle="collapse" data-target="#navbar" aria-expanded="false" aria-controls="navbar">
-          <span class="sr-only">Toggle navigation</span>
-          <span class="icon-bar"></span>
-          <span class="icon-bar"></span>
-          <span class="icon-bar"></span>
-        </button>
-        <a class="navbar-brand" href="#">suave</a>
-      </div>
-      <div id="navbar" class="navbar-collapse collapse">
-        <ul class="nav navbar-nav">
-          <li class="dropdown">
-            <a href="#" class="dropdown-toggle" data-toggle="dropdown">Case Sample <span class="caret"></span></a>
-            <ul class="dropdown-menu" role="menu">
-            {% for s in samples %}
-              <li><a href="#" class="sample_select" data-sample="sample1">{{ s }}</a></li>
-            {% endfor %}
-            </ul> 
-          </li>
-          <li class="dropdown">
-            <a href="#" class="dropdown-toggle" data-toggle="dropdown">Control Sample <span class="caret"></span></a>
-            <ul class="dropdown-menu" role="menu">
-            {% for s in samples %}
-              <li><a href="#" class="sample_select" data-sample="sample2">{{ s }}</a></li>
-            {% endfor %}
-            </ul> 
-          </li>
-          <li class="dropdown" id="chromosome_dropdown">
-            <a href="#" class="dropdown-toggle" data-toggle="dropdown">Chromosome <span class="caret"></span></a>
-            <ul class="dropdown-menu" role="menu">
-            </ul> 
-          </li>
-          <li><a href="#" id="runButton">Visualize!</a></li>
-        </ul>
-        <ul class="nav navbar-nav navbar-right">
-          <li><a href="https://github.com/tobiasrausch/delly" target="_blank">
-            <span class="fa fa-github fa-lg"></span>
-          </a></li>
-        </ul>
+  <header>
+    <div class="container-fluid">
+      <button type="button" class="pull-left button-header" data-toggle="modal" data-target="#configModal">
+        <span class="glyphicon glyphicon-menu-hamburger"></span>
+      </button>
+      <div class="pull-left">setup</div>
+      <button type="button" class="pull-right button-header" data-toggle="modal" data-target="#controlModal">
+        <span class="glyphicon glyphicon-menu-hamburger"></span>
+      </button>
+      <div class="pull-right">controls</div>
+      <div class="header-title">suave</div>
+    </div>
+  </header>
+
+  <!-- Config modal -->
+  <div class="modal fade" id="configModal" tabindex="-1" role="dialog" aria-labelledby="myModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+          <h4 class="modal-title" id="myModalLabel">Setup</h4>
+        </div>
+        <div class="modal-body">
+
+          <div class="btn-group">
+            <button class="btn btn-default dropdown-toggle" type="button" data-toggle="dropdown" aria-expanded="false">
+              Case sample <span class="caret"></span>
+            </button>
+            <ul class="dropdown-menu config" id="config-case">
+              <li><a href="#">MB_828</a></li>
+              <li><a href="#">Germ_829</a></li>
+            </ul>
+          </div>
+          <span id="selectedCase"></span>
+          <br>
+
+          <div class="btn-group">
+            <button class="btn btn-default dropdown-toggle" type="button" data-toggle="dropdown" aria-expanded="false">
+              Control sample <span class="caret"></span>
+            </button>
+            <ul class="dropdown-menu config" id="config-control">
+              <li><a href="#">MB_828</a></li>
+              <li><a href="#">Germ_829</a></li>
+            </ul>
+          </div>
+          <span id="selectedControl"></span>
+          <br>
+          
+
+          <div class="btn-group">
+            <button class="btn btn-default dropdown-toggle" type="button" data-toggle="dropdown" aria-expanded="false">
+              Chromosome <span class="caret"></span>
+            </button>
+            <ul class="dropdown-menu config" id="config-chrom">
+              <li><a href="#">chr1</a></li>
+              <li><a href="#">chr2</a></li>
+              <li><a href="#">chr3</a></li>
+              <li><a href="#">chr4</a></li>
+              <li><a href="#">chr5</a></li>
+              <li><a href="#">chr6</a></li>
+              <li><a href="#">chr7</a></li>
+              <li><a href="#">chr8</a></li>
+              <li><a href="#">chr9</a></li>
+              <li><a href="#">chr10</a></li>
+              <li><a href="#">chr11</a></li>
+              <li><a href="#">chr12</a></li>
+              <li><a href="#">chr13</a></li>
+              <li><a href="#">chr14</a></li>
+              <li><a href="#">chr15</a></li>
+              <li><a href="#">chr16</a></li>
+              <li><a href="#">chr17</a></li>
+              <li><a href="#">chr18</a></li>
+              <li><a href="#">chr19</a></li>
+              <li><a href="#">chr20</a></li>
+              <li><a href="#">chr21</a></li>
+              <li><a href="#">chr22</a></li>
+              <li><a href="#">chrX</a></li>
+              <li><a href="#">chrY</a></li>
+              <li><a href="#">chrM</a></li>
+            </ul>
+          </div>
+          <span id="selectedChrom"></span>
+
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-primary" id="visualize">Visualize!</button>
+        </div>
+
+        <div class="alert alert-danger hide" id="configAlert">
+          <a href="#" class="alert-link">Please specify samples and chromosome!</a>
+        </div>
       </div>
     </div>
-  </nav> 
+  </div>  <!-- end config modal -->
 
-  <div class="container" id="selectedArea">
-    <b>case:</b> <span id="sample1_selected">-select-</span>
-    <b>control:</b> <span id="sample2_selected">-select-</span>
-    <b>chromosome:</b> <span id="chromosome_selected">-select-</span>
-  </div>
-
-  <div class="container hide jump" id="jumpToSlice">
-    <form class="form-inline">
-      <div class="form-group">
-        <label for="jumpToStart">start:</label>
-        <input type="number" class="form-control" id="jumpToStart" placeholder="start">
-      </div>
-      <div class="form-group">
-        <label for="jumpToEnd">end:</label>
-        <input type="number" class="form-control" id="jumpToEnd" placeholder="end">
-      </div>
-      <div class="form-group">
-        <label for="jumpToPad">pad:</label>
-        <input type="number" class="form-control" id="jumpToPad" placeholder="pad">
-      </div>
-      <button class="btn btn-primary" id="jumpToSliceSubmit">Jump to slice</button>
-    </form>
-  </div>
-
-  <div class="container hide jump" id="jumpToFeature">
-    <form class="form-inline">
-      <div class="form-group" id="bloodhound">
-        <input type="text" class="form-control typeahead" id="jumpToFeatureInput" placeholder="feature">
-      </div>
-      <div class="form-group">
-        <label for="jumpToPadFeature">pad:</label>
-          <input type="number" class="form-control" id="jumpToPadFeature" placeholder="pad">
+  <!-- Control modal -->
+  <div class="modal fade" id="controlModal" tabindex="-1">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+          <h4 class="modal-title" id="myModalLabel">Controls</h4>
         </div>
-      <button class="btn btn-primary" id="jumpToFeatureSubmit">Jump to feature</button>
-    </form>
-  </div>
+        <div class="modal-body">
+          controls will go here...
+        </div>
+        <div class="modal-footer">
+        </div>
+      </div>
+    </div>
+  </div> 
 
-  <div class="container" id="vis-wrap"><div id="vis"></div></div>
+  <div class="container" id="vis-wrap">
+    <div id="vis"></div>
+  </div>
 
   <script src="{{ url_for('static', filename='jquery.min.js') }}"></script>
   <script src="{{ url_for('static', filename='bootstrap/js/bootstrap.min.js') }}"></script>
