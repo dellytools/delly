@@ -62,7 +62,8 @@ svDups = collections.defaultdict(list)
 if args.vcfFile:
     vcf_reader = vcf.Reader(open(args.vcfFile), 'r', compressed=True) if args.vcfFile.endswith('.gz') else vcf.Reader(open(args.vcfFile), 'r', compressed=False)
     for record in vcf_reader:
-        if (record.INFO['SVLEN'] >= minSize) and (record.INFO['SVLEN'] <= maxSize) and ((not args.siteFilter) or (len(record.FILTER) == 0)):
+        svlen=record.INFO['END'] - record.POS
+        if (svlen >= minSize) and (svlen <= maxSize) and ((not args.siteFilter) or (len(record.FILTER) == 0)):
             precise = False
             if 'PRECISE' in record.INFO.keys():
                 precise = record.INFO['PRECISE']
