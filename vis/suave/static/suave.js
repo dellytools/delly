@@ -1,8 +1,5 @@
-// Copyright (c) 2014 Markus Hsi-Yang Fritz
+// 2014-2015 Markus Hsi-Yang Fritz
 
-// TODO: we need to benchmark this
-// also: at some point we could dynamically set this based on 
-//       screen properties
 var N_BINS_DESIRED = 10000;
 
 var suave = function () {
@@ -37,96 +34,106 @@ var suave = function () {
   // also: use colorbrewer palette
   var svColors = {'INV': 'orange', 'DUP': '#666', 'DEL': 'DodgerBlue'};
 
+  function populateChroms(s1, s2) {
+    $.getJSON('/chroms/' + s1 + '/' + s2, function (res) {
+      var html = '';
+      $.each(res, function (i, v) {
+        html += '<li><a href="#">' + v + '</a></li>';
+      });
+      $('#config-chrom').html(html);
+      $('#config-chrom li > a').click(function () {
+        echoChoice(this);
+      });
+    });
+  }
+
+  function echoChoice(elem) {
+    var value = $(elem).text();
+    var context = $(elem).closest('.dropdown-menu').attr('id');
+    var target = {
+      'config-case': '#selectedCase',
+      'config-control': '#selectedControl',
+      'config-chrom': '#selectedChrom'
+    }[context];
+    $(target).html(value);
+  }
+
   var main = function (selector) {
-    $('.sample_select').click(function () {
-      var s = {
-        'sample1': $('#sample1_selected'),
-        'sample2': $('#sample2_selected')
-      };
-      var selected = $(this).data("sample");
-      var other = selected === 'sample1' ? 'sample2' : 'sample1';
-      var s1, s2;
+    $('.dropdown-menu.config li > a').click(function () {
+      var context = $(this).closest('.dropdown-menu').attr('id');
 
-      s[selected].html($(this).html());
-
-      // FIXME
-      if (s[other].html() !== '-select-') {
-        s1 = $('#sample1_selected').html();
-        s2 = $('#sample2_selected').html();
-        $.getJSON('/chroms/' + s1 + '/' + s2, function (res) {
-          var select_html = '';
-          $.each(res, function (i, v) {
-            select_html += '<li><a href="#" class="chromosome_select">' +
-                             v + '</a>' + '</li>';
-          });
-          $('#chromosome_dropdown>ul').html(select_html);
-          $('.chromosome_select').click(function () {
-            $('#chromosome_selected').html($(this).html());
-          });
-        });
+      echoChoice(this);
+        
+      // both samples have been specified, get chroms
+      if (context === 'config-case' || context === 'config-control') {
+        var smplCase = $('#selectedCase').text();
+        var smplControl = $('#selectedControl').text();
+        if (smplCase && smplControl) {
+          populateChroms(smplCase, smplControl);
+        }
       }
     });
 
-    $('#runButton').click(function () {
-      var s1, s2, c;
-      s1 = $('#sample1_selected').html();
-      s2 = $('#sample2_selected').html();
-      c = $('#chromosome_selected').html();
-      // FIXME
-      if (s1 === '-select-' || s2 === '-select-' || c === '-select-') {
-        if ($('.alert-danger').length === 0) {
-          $('#selectedArea').after('<div class="alert alert-danger">' +
-                                     'Please specify samples and chromosome!' +
-                                   '</div>');
-        }
-        return;
-      }
-      $('.alert-danger').remove();
-      my.sample1 = s1;
-      my.sample2 = s2;
-      my.chrom = c;
-      $.getJSON('/depth/' + s1 + '/' + s2 + '/' + c,
-                {n: N_BINS_DESIRED},
-                function (res) {
-        my.data = res;
-        $.getJSON('/calls/' + c, function (res) {
-          my.data.calls = res;
-          var svTypes = d3.set(_.pluck(suave.data.calls, 'type'))
-                          .values()
-                          .sort();
-          $('#svTypes').remove();
-          $('#vis-wrap').prepend('<div id="svTypes"></div>');
-          $.each(svTypes, function (idx, val) {
-            var html = '<input type="checkbox" checked value="'
-                       + val + '"> <span style="color:' 
-                       + svColors[val] + '">' + val + ' </span>';
-            $('#svTypes').append(html);
+    // remove focus after being clicked
+    $('.button-header').focus(function () {
+      this.blur();
+    });
+
+    $('#visualize').click(function () {
+      var smplCase = $('#selectedCase').text();
+      var smplControl = $('#selectedControl').text();
+      var chrom = $('#selectedChrom').text();
+
+      if (!smplCase || !smplControl || ! chrom) {
+        $('#configAlert').removeClass('hide');
+      } else {
+        $('#configAlert').addClass('hide');
+        $('#configModal').modal('hide');
+        my.sample1 = smplCase;
+        my.sample2 = smplControl;
+        my.chrom = chrom;
+
+        $.getJSON('/depth/' + smplCase + '/' + smplControl + '/' + chrom,
+                  {n: N_BINS_DESIRED},
+                  function (res) {
+          my.data = res;
+          $.getJSON('/calls/' + chrom, function (res) {
+            my.data.calls = res;
+            var svTypes = d3.set(_.pluck(suave.data.calls, 'type'))
+                            .values()
+                            .sort();
+            $('#svTypes').remove();
+            $('#vis-wrap').prepend('<div id="svTypes"></div>');
+            $.each(svTypes, function (idx, val) {
+              var html = '<input type="checkbox" checked value="'
+                         + val + '"> <span style="color:' 
+                         + svColors[val] + '">' + val + ' </span>';
+              $('#svTypes').append(html);
+            });
+
+            $('#jumpToSlicePad').val('0');
+
+            $('#jumpToFeaturePad').val('1000');
+
+            var bloodhound = new Bloodhound({
+              datumTokenizer: Bloodhound.tokenizers.obj.whitespace('value'),
+              queryTokenizer: Bloodhound.tokenizers.whitespace,
+              limit: 100,
+              local: $.map(my.data.calls, function(call) { return { value: call.id }; })
+            });
+
+            bloodhound.initialize();
+
+            $('#bloodhound .typeahead').typeahead(null, {
+              name: 'bloodhound',
+              displayKey: 'value',
+              source: bloodhound.ttAdapter()
+            });
+
+            my.vis(selector);
           });
-
-          $('#jumpToSlice').removeClass('hide');
-          $('#jumpToPad').val('0');
-
-          $('#jumpToFeature').removeClass('hide');
-          $('#jumpToPadFeature').val('1000');
-
-          var bloodhound = new Bloodhound({
-            datumTokenizer: Bloodhound.tokenizers.obj.whitespace('value'),
-            queryTokenizer: Bloodhound.tokenizers.whitespace,
-            limit: 100,
-            local: $.map(my.data.calls, function(call) { return { value: call.id }; })
-          });
-
-          bloodhound.initialize();
-
-          $('#bloodhound .typeahead').typeahead(null, {
-            name: 'bloodhound',
-            displayKey: 'value',
-            source: bloodhound.ttAdapter()
-          });
-
-          my.vis(selector);
         });
-      });
+      }
     });
   };
 
@@ -392,10 +399,11 @@ var suave = function () {
     });
 
     $('#jumpToSliceSubmit').click(function () {
-      var s = parseInt($('#jumpToStart').val());
-      var e = parseInt($('#jumpToEnd').val());
-      var p = parseInt($('#jumpToPad').val());
+      var s = parseInt($('#jumpToSliceStart').val());
+      var e = parseInt($('#jumpToSliceEnd').val());
+      var p = parseInt($('#jumpToSlicePad').val());
 
+      // TODO error msg in modal
       if (isNaN(s) || isNaN(e) || isNaN(p)) {
         console.log('error: jumpToSlice NaN', s, e, p);
         return;
@@ -412,18 +420,22 @@ var suave = function () {
         return;
       }
 
+      
+      $('#controlModal').modal('hide');
       rescale('jump', s, e);
     });
 
     $('#jumpToFeatureSubmit').click(function () {
-      var featID = $('#jumpToFeatureInput').val();
-      var p = parseInt($('#jumpToPadFeature').val());
+      var featID = $('#jumpToFeatureID').val();
+      var p = parseInt($('#jumpToFeaturePad').val());
 
+      // TODO error msg in modal
       if (isNaN(p)) {
         console.log('error: jumpToFeature NaN', p);
         return;
       }
 
+      $('#controlModal').modal('hide');
       jumpToFeature(featID, p);
     });
 
@@ -469,7 +481,6 @@ var suave = function () {
 
       console.log(sliceStart, sliceEnd, dataSeqStart, dataSeqEnd);
 
-      console.log('GET new data');
       $.getJSON('/depth/' + my.sample1 + '/' + my.sample2 + '/' + my.chrom,
                 {start: sliceStart, end: sliceEnd, n: N_BINS_DESIRED},
                 function (res) {

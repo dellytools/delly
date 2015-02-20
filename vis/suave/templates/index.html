@@ -2,7 +2,7 @@
 <html lang="en">
 <!--
 suave: structural variant explorer
-(c) 2014-2015 Markus Hsi-Yang Fritz
+2014-2015 Markus Hsi-Yang Fritz
 -->
 <head>
   <meta charset="UTF-8">
@@ -42,8 +42,9 @@ suave: structural variant explorer
               Case sample <span class="caret"></span>
             </button>
             <ul class="dropdown-menu config" id="config-case">
-              <li><a href="#">MB_828</a></li>
-              <li><a href="#">Germ_829</a></li>
+            {% for s in samples %}
+              <li><a href="#">{{ s }}</a></li>
+            {% endfor %}
             </ul>
           </div>
           <span id="selectedCase"></span>
@@ -54,44 +55,19 @@ suave: structural variant explorer
               Control sample <span class="caret"></span>
             </button>
             <ul class="dropdown-menu config" id="config-control">
-              <li><a href="#">MB_828</a></li>
-              <li><a href="#">Germ_829</a></li>
+            {% for s in samples %}
+              <li><a href="#">{{ s }}</a></li>
+            {% endfor %}
             </ul>
           </div>
           <span id="selectedControl"></span>
           <br>
           
-
           <div class="btn-group">
             <button class="btn btn-default dropdown-toggle" type="button" data-toggle="dropdown" aria-expanded="false">
               Chromosome <span class="caret"></span>
             </button>
             <ul class="dropdown-menu config" id="config-chrom">
-              <li><a href="#">chr1</a></li>
-              <li><a href="#">chr2</a></li>
-              <li><a href="#">chr3</a></li>
-              <li><a href="#">chr4</a></li>
-              <li><a href="#">chr5</a></li>
-              <li><a href="#">chr6</a></li>
-              <li><a href="#">chr7</a></li>
-              <li><a href="#">chr8</a></li>
-              <li><a href="#">chr9</a></li>
-              <li><a href="#">chr10</a></li>
-              <li><a href="#">chr11</a></li>
-              <li><a href="#">chr12</a></li>
-              <li><a href="#">chr13</a></li>
-              <li><a href="#">chr14</a></li>
-              <li><a href="#">chr15</a></li>
-              <li><a href="#">chr16</a></li>
-              <li><a href="#">chr17</a></li>
-              <li><a href="#">chr18</a></li>
-              <li><a href="#">chr19</a></li>
-              <li><a href="#">chr20</a></li>
-              <li><a href="#">chr21</a></li>
-              <li><a href="#">chr22</a></li>
-              <li><a href="#">chrX</a></li>
-              <li><a href="#">chrY</a></li>
-              <li><a href="#">chrM</a></li>
             </ul>
           </div>
           <span id="selectedChrom"></span>
@@ -117,9 +93,54 @@ suave: structural variant explorer
           <h4 class="modal-title" id="myModalLabel">Controls</h4>
         </div>
         <div class="modal-body">
-          controls will go here...
-        </div>
-        <div class="modal-footer">
+
+          <form class="form-horizontal">
+            <div class="form-group">
+              <label for="jumpToSliceStart" class="col-sm-2 control-label">start</label>
+              <div class="col-sm-10">
+                <input type="number" class="form-control" id="jumpToSliceStart" placeholder="start">
+              </div> 
+            </div>
+            <div class="form-group">
+              <label for="jumpToSliceEnd" class="col-sm-2 control-label">end</label>
+              <div class="col-sm-10">
+                <input type="number" class="form-control" id="jumpToSliceEnd" placeholder="end">
+              </div> 
+            </div>
+            <div class="form-group">
+              <label for="jumpToSlicePad" class="col-sm-2 control-label">padding</label>
+              <div class="col-sm-10">
+                <input type="number" class="form-control" id="jumpToSlicePad" placeholder="padding">
+              </div> 
+            </div>
+            <div class="form-group">
+              <div class="col-sm-offset-2 col-sm-10">
+                <button class="btn btn-primary" id="jumpToSliceSubmit">Jump to slice</button>
+              </div>
+            </div> 
+          </form>
+          <hr>    
+
+          <form class="form-horizontal">
+            <div class="form-group" id="bloodhound">
+              <label for="jumpToFeatureID" class="col-sm-2 control-label">ID</label>
+              <div class="col-sm-10">
+                <input type="text" class="form-control typeahead" id="jumpToFeatureID" placeholder="ID">
+              </div>
+            </div>
+            <div class="form-group">
+              <label for="jumpToFeaturePad" class="col-sm-2 control-label">padding</label>
+              <div class="col-sm-10">
+                <input type="number" class="form-control" id="jumpToFeaturePad" placeholder="padding">
+              </div> 
+            </div>
+            <div class="form-group">
+              <div class="col-sm-offset-2 col-sm-10">
+                <button class="btn btn-primary" id="jumpToFeatureSubmit">Jump to feature</button>
+              </div>
+            </div> 
+          </form>
+
         </div>
       </div>
     </div>

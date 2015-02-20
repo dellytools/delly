@@ -1,6 +1,6 @@
 #! /usr/bin/env python
 
-# Copyright (c) 2014 Markus Hsi-Yang Fritz
+# 2014-2015 Markus Hsi-Yang Fritz
 
 from __future__ import division
 import click
