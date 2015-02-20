@@ -50,26 +50,30 @@ def calls(chrom):
     dataset = []
     if cfg['vcf']:
         f = pysam.Tabixfile(cfg['vcf'])
-        for row in csv.reader(f.fetch(str(chrom)), delimiter='\t'):
-            chrom2 = chr2_re.search(row[7]).group(1)
-            if chrom2 != chrom:
-                continue
-            start_call = int(row[1])
-            end_call = int(end_re.search(row[7]).group(1))
-            id_call = row[2]
-            m = ct_re.search(row[7])
-            if m:
-                ct = m.group(1)
-            else:
-                ct = 'none'
-            sv_type = row[4].lstrip('<').rstrip('>')
-            dataset.append({
-                'id': id_call,
-                'start': start_call,
-                'end': end_call,
-                'type': sv_type,
-                'ct': ct
-            })
+        try:
+            for row in csv.reader(f.fetch(str(chrom)), delimiter='\t'):
+                chrom2 = chr2_re.search(row[7]).group(1)
+                if chrom2 != chrom:
+                    continue
+                start_call = int(row[1])
+                end_call = int(end_re.search(row[7]).group(1))
+                id_call = row[2]
+                m = ct_re.search(row[7])
+                if m:
+                    ct = m.group(1)
+                else:
+                    ct = 'none'
+                sv_type = row[4].lstrip('<').rstrip('>')
+                dataset.append({
+                    'id': id_call,
+                    'start': start_call,
+                    'end': end_call,
+                    'type': sv_type,
+                    'ct': ct
+                })
+        # no calls for this chrom...
+        except ValueError:
+            pass
 
     return json.dumps(dataset)
 
