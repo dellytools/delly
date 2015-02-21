@@ -9,7 +9,8 @@ body {
 header {
   height: 60px;
   line-height: 60px;
-  background-color: #222;
+  background-color: black;
+  opacity: 0.85;
   color: white;
   font-size: 20px;
   text-align: center;
@@ -23,7 +24,8 @@ header {
 
 .button-header {
   height: 60px;
-  background: #222;
+  background-color: black;
+  opacity: 0.85;
   font-size: 20px;
   border: none;
 }
@@ -35,6 +37,46 @@ header {
 .button-header:focus {
   color: white;
   outline: none;
+}
+
+footer {
+  position: fixed;
+  bottom: -160px;
+  width: 100%;
+  height: 160px;
+  background: black;
+  opacity: 0.85;
+  color: white;
+  text-align: center;
+  font-size: 18px;
+  line-height: 22px;
+  padding-top: 47px;
+  font-family: 'Nothing You Could Do', cursive;
+  z-index: 100;
+}
+
+footer a {
+  color: white;
+}
+
+footer a:hover {
+  color: DodgerBlue !important;
+}
+
+footer a:active, footer a:focus {
+  color: white;
+}
+
+#footer-trigger-wrap {
+  z-index: 101;
+  width: 100%;
+  text-align: center;
+  position: fixed;
+  bottom: 0px;
+}
+
+#footer-trigger-wrap a {
+  color: #999;
 }
 
 .dropdown-menu {

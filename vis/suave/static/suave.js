@@ -59,6 +59,23 @@ var suave = function () {
   }
 
   var main = function (selector) {
+    $('#footer-trigger').click(function () {
+      var showing = parseInt($('footer').css('bottom')) < 0;
+      $('footer').animate({
+        bottom: showing
+                ? 0
+                : -1 * parseInt($('footer').css('height'))
+      }, 800, function () {
+        if (showing) {
+          $('#clickMe').removeClass('fa-chevron-circle-up');
+          $('#clickMe').addClass('fa-chevron-circle-down');
+        } else {
+          $('#clickMe').removeClass('fa-chevron-circle-down');
+          $('#clickMe').addClass('fa-chevron-circle-up');
+        }
+      });
+    }); 
+
     $('.dropdown-menu.config li > a').click(function () {
       var context = $(this).closest('.dropdown-menu').attr('id');
 
