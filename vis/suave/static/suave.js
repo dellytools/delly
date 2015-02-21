@@ -38,7 +38,7 @@ var suave = function () {
     $.getJSON('/chroms/' + s1 + '/' + s2, function (res) {
       var html = '';
       $.each(res, function (i, v) {
-        html += '<li><a href="#">' + v + '</a></li>';
+        html += '<li><a href="javascript:undefined">' + v + '</a></li>';
       });
       $('#config-chrom').html(html);
       $('#config-chrom li > a').click(function () {
