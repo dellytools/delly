@@ -73,10 +73,11 @@ footer a:active, footer a:focus {
   text-align: center;
   position: fixed;
   bottom: 0px;
+  color: #999;
 }
 
-#footer-trigger-wrap a {
-  color: #999;
+#footer-trigger {
+  cursor: pointer;
 }
 
 .dropdown-menu {
