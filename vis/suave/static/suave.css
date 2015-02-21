@@ -67,7 +67,7 @@ footer a:active, footer a:focus {
   color: white;
 }
 
-#footer-trigger-wrap {
+#footer-icon-wrap {
   z-index: 101;
   width: 100%;
   text-align: center;
@@ -76,7 +76,7 @@ footer a:active, footer a:focus {
   color: #999;
 }
 
-#footer-trigger {
+#footer-icon {
   cursor: pointer;
 }
 
