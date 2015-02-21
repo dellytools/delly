@@ -44,16 +44,14 @@ inline std::string cigarString(TCigarVec const& cigarOperations) {
 }
 
 template<typename TCigarVec>
-inline unsigned int alignmentLength(TCigarVec const& cigarOperations) {
+inline unsigned int halfAlignmentLength(TCigarVec const& cigarOperations) {
   typename TCigarVec::const_iterator coIter = cigarOperations.begin();
   if (coIter == cigarOperations.end()) return 0;
   unsigned int alen = 0;
-  unsigned int offset = 0;
-  if (coIter->Type == 'S') offset+=coIter->Length;
   for(; coIter != cigarOperations.end(); ++coIter) {
     if (coIter->Type == 'M') alen+=coIter->Length;
   }
-  return (offset + alen/2);
+  return (alen/2);
 }
 
 
@@ -204,7 +202,7 @@ annotateCoverage(TFiles const& files, uint16_t minMapQual, TSampleLibrary& sampl
 		unique_pairs_read.clear();
 	      }
 	      if (_redundancyFilter(al.MatePosition, unique_pairs_read, covType)) {
-		int32_t midPoint = al.Position + alignmentLength(al.CigarData);
+		int32_t midPoint = al.Position + halfAlignmentLength(al.CigarData);
 		if ((midPoint >= itInt->first) && (midPoint < itInt->second)) ++read_sum;
 		_addBpCounts(al.Position, cigarString(al.CigarData), itInt->first, itInt->second, bp_sum, bpLevel);
 	      }
