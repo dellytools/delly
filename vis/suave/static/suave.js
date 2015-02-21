@@ -60,18 +60,18 @@ var suave = function () {
 
   var main = function (selector) {
     $('#footer-trigger').click(function () {
-      var showing = parseInt($('footer').css('bottom')) < 0;
+      var revealing = parseInt($('footer').css('bottom')) < 0;
       $('footer').animate({
-        bottom: showing
+        bottom: revealing
                 ? 0
                 : -1 * parseInt($('footer').css('height'))
       }, 800, function () {
-        if (showing) {
-          $('#clickMe').removeClass('fa-chevron-circle-up');
-          $('#clickMe').addClass('fa-chevron-circle-down');
+        if (revealing) {
+          $('#footer-trigger').removeClass('fa-chevron-circle-up');
+          $('#footer-trigger').addClass('fa-chevron-circle-down');
         } else {
-          $('#clickMe').removeClass('fa-chevron-circle-down');
-          $('#clickMe').addClass('fa-chevron-circle-up');
+          $('#footer-trigger').removeClass('fa-chevron-circle-down');
+          $('#footer-trigger').addClass('fa-chevron-circle-up');
         }
       });
     }); 
