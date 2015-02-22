@@ -437,7 +437,6 @@ var suave = function () {
         return;
       }
 
-      
       $('#controlModal').modal('hide');
       rescale('jump', s, e);
     });
