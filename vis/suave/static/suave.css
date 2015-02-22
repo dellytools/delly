@@ -119,8 +119,8 @@ svg {
 }
 
 .brush {
-  fill: blue;
-  fill-opacity: 0.12;
+  fill: DodgerBlue;
+  fill-opacity: 0.3;
   shape-rendering: crispEdges;
 }
 
