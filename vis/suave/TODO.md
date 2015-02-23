@@ -6,6 +6,7 @@ urgent
 - [ ] fix typeahead when switching chroms
 - [ ] parse / display translocations as well
     - need to adjust tooltip too
+    - new color palette (colorbrewer?)
 - [ ] normalize cov ratios with genomewide counts
 
 other
