@@ -13,7 +13,6 @@ other
 - [ ] minimal y-axis range
 - [ ] y-axis needs to update dynamically (min/max can change)
 - [ ] cli screenshot tool
-    - probably with PhantomJS
 - [ ] center vis
 - [ ] responsive vis
 - [ ] favicon
