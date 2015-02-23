@@ -104,19 +104,15 @@ inline void
 annotateCoverage(TFiles const& files, uint16_t minMapQual, TSampleLibrary& sampleLib, TSVs& svs, TCountMap& countMap, TBpLevelType bpLevel, TCoverageType covType)
 {
   typedef typename TSVs::value_type TSV;
-  typedef typename TCountMap::key_type TSampleSVPair;
 
-   // Get the references
-  BamTools::BamReader readerRef;
-  if ( ! readerRef.Open(files[0].string()) ) return;
-  BamTools::RefVector references = readerRef.GetReferenceData();
+  // For alignment midpoint, maximum read-length
+  int32_t maxReadLen = 1000;
 
   // Sort Structural Variants
   sort(svs.begin(), svs.end(), SortSVs<TSV>());
 
   // Initialize count maps
-  int32_t maxReadLen = 1000;
-  for(typename TSampleLibrary::iterator sIt = sampleLib.begin(); sIt!=sampleLib.end();++sIt) {
+  for(typename TSampleLibrary::iterator sIt = sampleLib.begin(); sIt!=sampleLib.end(); ++sIt) {
     for(typename TSVs::const_iterator itSV = svs.begin(); itSV!=svs.end(); ++itSV) {
       countMap.insert(std::make_pair(std::make_pair(sIt->first, itSV->id), std::make_pair(0,0)));
     }
@@ -231,6 +227,7 @@ annotateCoverage(TFiles const& files, uint16_t minMapQual, TSampleLibrary& sampl
       // Store counts
 #pragma omp critical
       {
+	typedef typename TCountMap::key_type TSampleSVPair;
 	TSampleSVPair svSample = std::make_pair(sampleName, itSV->id);
 	typename TCountMap::iterator countMapIt=countMap.find(svSample);
 	//std::cerr << itSV->id << ':' << cumBpSum << ',' << cumReadSum << std::endl;
