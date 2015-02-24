@@ -1,6 +1,6 @@
 urgent
 ------
-- [ ] fix zoom out on brushing
+- [x] fix zoom out on brushing
     - get rid of padding then?
 - [ ] prevent panning past boundaries
 - [ ] fix typeahead when switching chroms
