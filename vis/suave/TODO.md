@@ -13,6 +13,7 @@ other
 -----
 - [ ] minimal y-axis range
 - [ ] y-axis needs to update dynamically (min/max can change)
+    - as quick fix maybe always use some amount of axis padding?
 - [ ] cli screenshot tool
 - [ ] center vis
 - [ ] responsive vis
