@@ -128,10 +128,6 @@ var suave = function () {
               $('#svTypes').append(html);
             });
 
-            $('#jumpToSlicePad').val('0');
-
-            $('#jumpToFeaturePad').val('1000');
-
             var bloodhound = new Bloodhound({
               datumTokenizer: Bloodhound.tokenizers.obj.whitespace('value'),
               queryTokenizer: Bloodhound.tokenizers.whitespace,
@@ -418,22 +414,18 @@ var suave = function () {
     $('#jumpToSliceSubmit').click(function () {
       var s = parseInt($('#jumpToSliceStart').val());
       var e = parseInt($('#jumpToSliceEnd').val());
-      var p = parseInt($('#jumpToSlicePad').val());
 
       // TODO error msg in modal
-      if (isNaN(s) || isNaN(e) || isNaN(p)) {
-        console.log('error: jumpToSlice NaN', s, e, p);
+      if (isNaN(s) || isNaN(e)) {
+        console.log('error: jumpToSlice NaN', s, e);
         return;
       }
-
-      s -= p;
-      e += p;
 
       s = s < 1 ? 1 : s;
       e = e > my.data.chrom_len ? my.data.chrom_len : e;
 
       if (s > my.data.chrom_len || e < 1 || s > e) {
-        console.log('error: jumpToSlice coords', s, e, p);
+        console.log('error: jumpToSlice coords', s, e);
         return;
       }
 
@@ -443,26 +435,18 @@ var suave = function () {
 
     $('#jumpToFeatureSubmit').click(function () {
       var featID = $('#jumpToFeatureID').val();
-      var p = parseInt($('#jumpToFeaturePad').val());
-
-      // TODO error msg in modal
-      if (isNaN(p)) {
-        console.log('error: jumpToFeature NaN', p);
-        return;
-      }
 
       $('#controlModal').modal('hide');
-      jumpToFeature(featID, p);
+      jumpToFeature(featID);
     });
 
-    function jumpToFeature(featID, padding) {
-      padding = padding || 0;
+    function jumpToFeature(featID) {
       // FIXME should index this...
       $.each(my.data.calls, function (idx, val) {
         if (val.id === featID) {
           console.log(val);
-          var s = val.start - padding;
-          var e = val.end + padding;
+          var s = val.start;
+          var e = val.end;
           s = s < 1 ? 1 : s;
           e = e > my.data.chrom_len ? my.data.chrom_len : e;
           rescale('jump', s, e);
