@@ -221,7 +221,7 @@ var suave = function () {
 
     var zoom = d3.behavior.zoom()
       .x(xDepth)
-      .scaleExtent([1, Infinity])
+      //.scaleExtent([1, Infinity])
       .on("zoom", rescale.bind(null, 'zoom'));
 
     var zoomLocked = false;
@@ -479,7 +479,10 @@ var suave = function () {
       zoomLocked = true;
 
       if (control === 'zoom') {
-        brusher.call(brush.extent(xDepth.domain()))
+        var domain = xDepth.domain();
+        var brushStart = Math.max(0, domain[0]);
+        var brushEnd = Math.min(my.data.chrom_len, domain[1]);
+        brusher.call(brush.extent([brushStart, brushEnd]))
           .call(brush.event);
       } else if (control === 'brush') {
         xDepth.domain(brush.empty() ? xBrush.domain() : brush.extent()); 
