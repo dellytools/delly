@@ -215,19 +215,6 @@ namespace torali {
     return 1;
   }
 
-  // Unique paired-end data structure for single chromosome only
-  struct Hit {
-    int32_t minPos;
-    int32_t maxPos;
-  
-    template<typename TBamRecord>
-  Hit(TBamRecord const& al) : minPos(std::min(al.Position, al.MatePosition)), maxPos(std::max(al.Position, al.MatePosition)) {}
-
-    bool operator <(Hit const& other) const {
-      return ((minPos<other.minPos) || ((minPos==other.minPos) && (maxPos<other.maxPos)));
-    }
-  };
-
   // Reduced structural variant record for cov
   struct CovRecord {
     int32_t chr;

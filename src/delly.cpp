@@ -27,6 +27,7 @@ Contact: Tobias Rausch (rausch@embl.de)
 #include <boost/graph/adjacency_list.hpp>
 #include <boost/graph/graphviz.hpp>
 #include <boost/graph/connected_components.hpp>
+#include <boost/container/flat_set.hpp>
 #include <boost/unordered_map.hpp>
 #include <boost/program_options/cmdline.hpp>
 #include <boost/program_options/options_description.hpp>
@@ -1770,10 +1771,11 @@ inline int run(Config const& c, TSVType svType) {
       reader.LocateIndex();
 
       // Unique pairs for the given sample
-      typedef std::set<Hit> TUniquePairs;
+      typedef boost::container::flat_set<int32_t> TUniquePairs;
       TUniquePairs unique_pairs;
 
       // Read alignments
+      int32_t oldAlignPos=-1;
       BamTools::BamAlignment al;
       if ( reader.Jump(refIndex, 0) ) {
 	while( reader.GetNextAlignmentCore(al) ) {
@@ -1817,12 +1819,12 @@ inline int run(Config const& c, TSVType svType) {
 	      if (pairQuality < c.minMapQual) continue;
 
 	      // Store the paired-end
-	      Hit hitPos(al);
-	      TUniquePairs::const_iterator pos = unique_pairs.begin();
-	      bool inserted;
-	      boost::tie(pos, inserted) = unique_pairs.insert(hitPos);
-	      if (inserted) {
-		#pragma omp critical
+	      if (al.Position!=oldAlignPos) {
+		oldAlignPos=al.Position;
+		unique_pairs.clear();
+	      }
+	      if (unique_pairs.insert(al.MatePosition).second) {
+#pragma omp critical
 		{
 		  bamRecord.push_back(BamAlignRecord(al, pairQuality, libIt->second.median, libIt->second.mad, libIt->second.maxNormalISize, libIt->second.defaultOrient));
 		}

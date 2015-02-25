@@ -24,6 +24,7 @@ Contact: Tobias Rausch (rausch@embl.de)
 #ifndef SPANNING_H
 #define SPANNING_H
 
+#include <boost/container/flat_set.hpp>
 #include <boost/unordered_map.hpp>
 #include "tags.h"
 
@@ -137,7 +138,7 @@ namespace torali {
 	TQualities qualities;
 
 	// Unique pairs for the given sample
-	typedef std::set<Hit> TUniquePairs;
+	typedef boost::container::flat_set<int32_t> TUniquePairs;
 	TUniquePairs unique_pairs;
 
 	// Scan left and right breakpoint
@@ -155,6 +156,7 @@ namespace torali {
 	    regionStart = std::max(0, (int) itSV->svStart - (int) maxInsertSize);
 	    regionEnd = itSV->svStart + maxInsertSize;
 	  }
+	  int32_t oldAlignPos=-1;
 	  if (reader.SetRegion(regionChr, regionStart, regionChr, regionEnd)) {
 	    while( reader.GetNextAlignmentCore(al) ) {
 	      if (!(al.AlignmentFlag & 0x0001) || (al.AlignmentFlag & 0x0004) || (al.AlignmentFlag & 0x0008) || (al.AlignmentFlag & 0x0100) || (al.AlignmentFlag & 0x0200) || (al.AlignmentFlag & 0x0400) || (al.AlignmentFlag & 0x0800) || (al.MapQuality < minMapQual)) continue;
@@ -214,14 +216,14 @@ namespace torali {
 		if (pairQuality < minMapQual) continue;
 
 		// Is it a unique pair
-		Hit hitPos(al);
-		typename TUniquePairs::const_iterator pos = unique_pairs.begin();
-		boost::tie(pos, inserted) = unique_pairs.insert(hitPos);
-		if (inserted) {
+		if (al.Position!=oldAlignPos) {
+		  oldAlignPos=al.Position;
+		  unique_pairs.clear();
+		}
+		if (unique_pairs.insert(al.MatePosition).second) {
 		  // Insert the interval
 		  if ((getStrandIndependentOrientation(al) == libIt->second.defaultOrient) && (outerISize >= libIt->second.minNormalISize) && (outerISize <= libIt->second.maxNormalISize) && (al.RefID==al.MateRefID)) {
 		    // Normal spanning coverage
-		    //normalSpan.push_back(THitInterval(std::min(al.Position, al.MatePosition), std::max(al.Position, al.MatePosition) + al.Length, pairQuality));
 		    int32_t sPos = std::min(al.Position, al.MatePosition);
 		    int32_t ePos = std::max(al.Position, al.MatePosition) + al.Length;
 		    int32_t midPoint = sPos+(ePos-sPos)/2;
