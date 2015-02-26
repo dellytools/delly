@@ -24,6 +24,7 @@ Contact: Tobias Rausch (rausch@embl.de)
 #ifndef UTIL_H
 #define UTIL_H
 
+#include <boost/unordered_map.hpp>
 #include <math.h>
 #include "tags.h"
 
@@ -50,7 +51,7 @@ namespace torali
   struct _LibraryParams {
     unsigned int processedNumPairs;
     unsigned int orient[4];
-    std::vector<unsigned int> vecISize;
+    std::vector<int32_t> vecISize;
   };
 
   
@@ -148,7 +149,7 @@ namespace torali
     unsigned int minNumPairs=1000;
 
     // Store the counts in an object for each RG librar
-    typedef std::map<std::string, _LibraryParams> TParams;
+    typedef boost::unordered_map<std::string, _LibraryParams> TParams;
     TParams params;
 
     // Create SAM Object
@@ -225,7 +226,7 @@ namespace torali
       
       // Mate-pair library (If yes, trim off the chimera peak < 1000bp)
       if (libInfoIt->second.defaultOrient==3) {
-	typedef std::vector<unsigned int> TVecISize;
+	typedef std::vector<int32_t> TVecISize;
 	TVecISize vecISizeTmp;
 	typename TVecISize::const_iterator iSizeBeg = paramIt->second.vecISize.begin();
 	typename TVecISize::const_iterator iSizeEnd = paramIt->second.vecISize.end();

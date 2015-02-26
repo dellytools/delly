@@ -23,6 +23,7 @@ Contact: Tobias Rausch (rausch@embl.de)
 
 #include <iostream>
 #include <fstream>
+#include <boost/unordered_map.hpp>
 #include <boost/graph/adjacency_list.hpp>
 #include <boost/graph/connected_components.hpp>
 #include <boost/program_options/cmdline.hpp>
@@ -73,8 +74,8 @@ inline int
 run(Config const& c, TCoverageType covType)
 {
   // Create library objects
-  typedef std::map<std::string, LibraryInfo> TLibraryMap;
-  typedef std::map<std::string, TLibraryMap> TSampleLibrary;
+  typedef boost::unordered_map<std::string, LibraryInfo> TLibraryMap;
+  typedef boost::unordered_map<std::string, TLibraryMap> TSampleLibrary;
   TSampleLibrary sampleLib;
 
   // Scan libraries
