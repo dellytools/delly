@@ -363,8 +363,8 @@ namespace torali {
   // Translocations
   template<typename TRef, typename TPos>
     inline bool
-    _firstPairObs(TRef const refID, TRef const mateRefID, TPos const, TPos const, SVType<TranslocationTag>) {
-    return (refID<mateRefID);
+    _firstPairObs(TRef const refID, TRef const mateRefID, TPos const position, TPos const matePosition, SVType<TranslocationTag>) {
+    return ((refID<mateRefID) || ((refID==mateRefID) && (position<matePosition)));
   }
 
   // Deletions
