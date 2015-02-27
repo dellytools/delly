@@ -54,9 +54,9 @@ If you omit the reference sequence Delly skips the split-read analysis. The vcf 
 
 Delly ships with two small python scripts, one to filter somatic variants for tumor/normal comparisons and one to filter confident SV sites in population sequencing.
 
-`python python/somaticFilter.py -v del.vcf -o del.somatic.vcf -t DEL -f`
+`python somaticFilter.py -v del.vcf -o del.somatic.vcf -t DEL -f`
 
-`python python/populationFilter.py -v del.vcf -o del.sites.vcf`
+`python populationFilter.py -v del.vcf -o del.sites.vcf`
 
 These python scripts are primarily meant as an example of how you can filter and annotate the final Delly vcf file further. They may require some fine-tuning depending on your application.
 
