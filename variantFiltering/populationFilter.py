@@ -62,7 +62,7 @@ svDups = collections.defaultdict(list)
 if args.vcfFile:
     vcf_reader = vcf.Reader(open(args.vcfFile), 'r', compressed=True) if args.vcfFile.endswith('.gz') else vcf.Reader(open(args.vcfFile), 'r', compressed=False)
     for record in vcf_reader:
-        svlen=record.INFO['END'] - record.POS
+        svlen = record.INFO['END'] - record.POS
         if (svlen >= minSize) and (svlen <= maxSize) and ((not args.siteFilter) or (len(record.FILTER) == 0)):
             precise = False
             if 'PRECISE' in record.INFO.keys():
@@ -80,7 +80,7 @@ if args.vcfFile:
                             ratioRef.append(float(call['DV'])/float(call['DR'] + call['DV']))
                         if ((precise) and (call['RV'] == 0)) or ((not precise) and (call['DV'] == 0)):
                             gqRef.append(call['GQ'])
-                    if (call.gt_type != 0) and (call['FT']=="PASS"):
+                    if (call.gt_type != 0) and (call['FT'] == "PASS"):
                         if precise:
                             ratioAlt.append(float(call['RV'])/float(call['RR'] + call['RV']))
                         else:
