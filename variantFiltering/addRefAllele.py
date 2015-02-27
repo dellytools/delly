@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 
 from __future__ import print_function
-from readfq import readfq
+from varpkg.readfq import readfq
 import vcf
 import argparse
 import collections
