@@ -59,7 +59,7 @@ validRecordID = set()
 if args.vcfFile:
     vcf_reader = vcf.Reader(open(args.vcfFile), 'r', compressed=True) if args.vcfFile.endswith('.gz') else vcf.Reader(open(args.vcfFile), 'r', compressed=False)
     for record in vcf_reader:
-        svlen=record.INFO['END'] - record.POS
+        svlen = record.INFO['END'] - record.POS
         if (svlen >= minSize) and (svlen <= maxSize) and ((not args.siteFilter) or (len(record.FILTER) == 0)):
             precise = False
             if 'PRECISE' in record.INFO.keys():
@@ -81,7 +81,7 @@ if args.vcfFile:
                             if ((not precise) and (call['DV'] >= 2) and (float(call['DV'])/float(call['DV']+call['DR']) >= altAF)) or ((precise) and (call['RV'] >= 2) and (float(call['RV'])/float(call['RR'] + call['RV']) >= altAF)):
                                 rcAlt.append(call['RC'])
             genotypeRatio = float(nCount + tCount) /  float(len(record.samples))
-            if (nCount>0) and (tCount>0) and (len(rcRef) == nCount) and (len(rcAlt) == tCount) and (genotypeRatio >= ratioGeno):
+            if (nCount > 0) and (tCount > 0) and (len(rcRef) == nCount) and (len(rcAlt) == tCount) and (genotypeRatio >= ratioGeno):
                 rdRatio = 1
                 if numpy.median(rcRef):
                     rdRatio = round(numpy.median(rcAlt)/numpy.median(rcRef), 4)
@@ -128,7 +128,7 @@ if args.vcfFile:
                         if record.ID != cSvID:
                             if (cScore > record.INFO['PE']) or ((cScore == record.INFO['PE']) and (cSvID < record.ID)):
                                 countBetterHits += 1
-            if countBetterHits>2:
+            if countBetterHits > 2:
                 foundBetterHit = True
         else:
             for cStart, cEnd in sv[record.CHROM].overlap((record.POS, record.INFO['END'])):
