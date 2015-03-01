@@ -18,5 +18,5 @@ other
 - [ ] center vis
 - [ ] responsive vis
 - [ ] favicon
-- [ ] make fonts local
+- [x] make fonts local
 - [ ] better tooltip
