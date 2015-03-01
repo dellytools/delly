@@ -2,7 +2,7 @@ urgent
 ------
 - [x] fix zoom out on brushing
     - get rid of padding then?
-- [ ] prevent panning past boundaries
+- [ ] prevent zooming/panning past boundaries
 - [x] fix typeahead when switching chroms
 - [ ] parse / display translocations as well
     - need to adjust tooltip too
