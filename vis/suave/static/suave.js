@@ -128,6 +128,8 @@ var suave = function () {
               $('#svTypes').append(html);
             });
 
+            $('#bloodhound .typeahead').typeahead('destroy');
+
             var bloodhound = new Bloodhound({
               datumTokenizer: Bloodhound.tokenizers.obj.whitespace('value'),
               queryTokenizer: Bloodhound.tokenizers.whitespace,
