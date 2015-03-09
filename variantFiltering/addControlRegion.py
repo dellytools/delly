@@ -30,22 +30,52 @@ for seqName, seqNuc, seqQuals in readfq(f_in):
 # Add read-depth control region to VCF file
 if args.vcfFile:
     vcf_reader = vcf.Reader(open(args.vcfFile), 'r', compressed=True) if args.vcfFile.endswith('.gz') else vcf.Reader(open(args.vcfFile), 'r', compressed=False)
-    vcf_reader.infos['CONTROL'] = vcf.parser._Info('CONTROL', 0, 'Flag', 'Control variant.')
+    if 'CONTROL' not in vcf_reader.infos.keys():
+        vcf_reader.infos['CONTROL'] = vcf.parser._Info('CONTROL', 1, 'Integer', 'Control variant.')
     vcf_writer = vcf.Writer(open(args.outVCF, 'w'), vcf_reader, lineterminator='\n')
     for record in vcf_reader:
         svSize = record.INFO['END']-record.POS
-        svControlStart = max(record.POS - svSize/2, 0)
-        svControlEnd = min(record.INFO['END'] + svSize/2, refLen[record.CHROM])
-        if len(nRun[record.CHROM].overlap((svControlStart, svControlEnd))):
-            svControlStart = max(record.POS - svSize, 0)
-            svControlEnd = record.INFO['END']
-            if len(nRun[record.CHROM].overlap((svControlStart, svControlEnd))):
-                svControlStart = record.POS
-                svControlEnd = min(record.INFO['END'] + svSize, refLen[record.CHROM])
-        record.INFO['CONTROL'] = False
-        vcf_writer.write_record(record)
-        record.ID = record.ID.replace('0', '9', 1)
-        record.POS = svControlStart
-        record.INFO['END'] = svControlEnd
-        record.INFO['CONTROL'] = True
-        vcf_writer.write_record(record)
+        svControlID = re.sub(r"^[A-Z0]*","", record.ID)
+
+        # Left control region
+        svLeftID = record.ID.replace('0', '8', 1)
+        svControlLeftStart = max(record.POS - svSize/2, 0)
+        svControlLeftEnd = record.POS
+        while len(nRun[record.CHROM].overlap((svControlLeftStart, svControlLeftEnd))):
+            minN=refLen[record.CHROM]
+            for (nStart, nEnd) in nRun[record.CHROM].overlap((svControlLeftStart, svControlLeftEnd)):
+                if (nStart<minN):
+                    minN=nStart
+            minN=minN-1
+            svControlLeftStart = max(minN - svSize/2, 0)
+            svControlLeftEnd = minN
+
+        # Right control region
+        svRightID = record.ID.replace('0', '9', 1)
+        svControlRightStart = record.INFO['END']
+        svControlRightEnd = min(record.INFO['END'] + svSize/2, refLen[record.CHROM])
+        while len(nRun[record.CHROM].overlap((svControlRightStart, svControlRightEnd))):
+            maxN=0
+            for (nStart, nEnd) in nRun[record.CHROM].overlap((svControlRightStart, svControlRightEnd)):
+                if (nEnd>maxN):
+                    maxN=nEnd
+            maxN=maxN+1
+            svControlRightStart = maxN
+            svControlRightEnd = min(maxN + svSize/2, refLen[record.CHROM])
+
+        # Output control regions
+        if (svControlLeftStart>0) and (svControlRightEnd<refLen[record.CHROM]):
+            record.INFO['CONTROL'] = 0
+            vcf_writer.write_record(record)
+            record.ID = svLeftID
+            record.POS = svControlLeftStart
+            record.INFO['END'] = svControlLeftEnd
+            record.INFO['CONTROL'] = svControlID
+            vcf_writer.write_record(record)
+
+            record.ID = svRightID
+            record.POS = svControlRightStart
+            record.INFO['END'] = svControlRightEnd
+            record.INFO['CONTROL'] = svControlID
+            vcf_writer.write_record(record)
+

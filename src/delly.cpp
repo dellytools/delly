@@ -988,18 +988,13 @@ vcfParse(TConfig const& c, TReferences const references, TSize const overallMaxI
 	    svRec.svStart = boost::lexical_cast<int32_t>(*tokIter++);
 	    std::string id = *tokIter++;
 	    if (id.substr(0,3)!=_addID(svType)) continue;
-	    for(unsigned int i=3; i<id.size();++i) {
-	      if (id[i]!='0') {
-		id=id.substr(i);
-		break;
-	      }
-	    }
-	    svRec.id = boost::lexical_cast<unsigned int>(id);
+	    svRec.id = parseSVid(id);
 	    svRec.peSupport=0;
 	    svRec.peMapQuality=0;
 	    svRec.srSupport=0;
 	    svRec.srAlignQuality=0;
 	    svRec.wiggle = 0;
+	    svRec.controlID = 0;
 	    svRec.precise = false;
 	    // Ignore ref, alt, qual and filter
 	    tokIter++; tokIter++; tokIter++; tokIter++;
@@ -1042,6 +1037,7 @@ vcfParse(TConfig const& c, TReferences const references, TSize const overallMaxI
 		if (abs(endOff2)>svRec.wiggle) svRec.wiggle=abs(endOff2);
 	      }
 	      else if (key == "CT") svRec.ct = _decodeOrientation(value, svType);
+	      else if (key == "CONTROL") svRec.controlID = boost::lexical_cast<unsigned int>(value);
 	      else continue;
 	    }
 	    svRec.svStartBeg = std::max(svRec.svStart - 1 - overallMaxISize, 0);
@@ -1140,6 +1136,7 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
   ofile << "##INFO=<ID=PRECISE,Number=0,Type=Flag,Description=\"Precise structural variation\">" << std::endl;
   ofile << "##INFO=<ID=SVTYPE,Number=1,Type=String,Description=\"Type of structural variant\">" << std::endl;
   ofile << "##INFO=<ID=SVMETHOD,Number=1,Type=String,Description=\"Type of approach used to detect SV\">" << std::endl;
+  ofile << "##INFO=<ID=CONTROL,Number=1,Type=Integer,Description=\"Control variant\">" << std::endl;
   ofile << "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">" << std::endl;
   ofile << "##FORMAT=<ID=GL,Number=G,Type=Float,Description=\"Log10-scaled genotype likelihoods for RR,RA,AA genotypes\">" << std::endl;
   ofile << "##FORMAT=<ID=GQ,Number=1,Type=Integer,Description=\"Genotype Quality\">" << std::endl;
@@ -1192,7 +1189,9 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
       ofile << ";SRQ=" << svIter->srAlignQuality;
       ofile << ";CONSENSUS=" << svIter->consensus;
     }
-
+    if (svIter->controlID > 0) {
+      ofile << ";CONTROL=" << svIter->controlID;
+    }
 
     // Add genotype columns (right bp only across all samples)
     ofile << "\tGT:GL:GQ:FT:RC:DR:DV:RR:RV";
@@ -1991,6 +1990,7 @@ inline int run(Config const& c, TSVType svType) {
 	svRec.svEndEnd = std::min(svEnd + overallMaxISize, references[clusterMateRefID].RefLength);
 	svRec.peSupport = clique.size();
 	svRec.wiggle = abs(wiggle);
+	svRec.controlID = 0;
 	std::vector<uint16_t> mapQV;
 	for(typename TCliqueMembers::const_iterator itC = clique.begin(); itC!=clique.end(); ++itC) mapQV.push_back(g[*itC]->MapQuality);
 	std::sort(mapQV.begin(), mapQV.end());

@@ -239,6 +239,7 @@ namespace torali {
     int wiggle;
     double srAlignQuality;
     unsigned int id;
+    unsigned int controlID;
     bool precise;
     int ct;
     uint16_t peMapQuality;

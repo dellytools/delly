@@ -82,6 +82,21 @@ namespace torali
       }
     }
 
+
+  template<typename TSVId>
+    inline unsigned int
+    parseSVid(TSVId id) 
+    {
+      for(unsigned int i=3; i<id.size();++i) {
+	if (id[i]!='0') {
+	  id=id.substr(i);
+	  break;
+	}
+      }
+      return boost::lexical_cast<unsigned int>(id);
+    }
+
+
   template<typename TIterator, typename TValue>
   inline
     void getMedian(TIterator begin, TIterator end, TValue& median) 
