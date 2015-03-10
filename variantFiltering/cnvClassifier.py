@@ -7,7 +7,8 @@ import argparse
 import numpy
 import banyan
 import networkx
-
+import collections
+import re
 
 def carrierConcordance(sv1hap, sv2hap):
     sv1samples = set(sv1hap.keys())
@@ -45,13 +46,13 @@ sv = dict()
 if args.cnvVCF:
     vcf_reader = vcf.Reader(open(args.cnvVCF), 'r', compressed=True) if args.cnvVCF.endswith('.gz') else vcf.Reader(open(args.cnvVCF), 'r', compressed=False)
     for record in vcf_reader:
-        if (not record.ID.startswith("DEL9")) and (not record.ID.startswith("DUP9")):
+        if ('CONTROL' not in record.INFO.keys()) or (record.INFO['CONTROL'] == 0):
             continue
-        rc = dict()
+        if record.INFO['CONTROL'] not in sv.keys():
+            sv[record.INFO['CONTROL']] = collections.defaultdict(int)
         for call in record.samples:
             if call.called:
-                rc[call.sample] = call['RC']
-        sv[record.ID] = {'start': record.POS, 'end': record.INFO['END'], 'rc': rc}
+                sv[record.INFO['CONTROL']][call.sample] += call['RC']
 
 # Parse deletions/duplications
 cnvRegion = dict()
@@ -59,11 +60,11 @@ G = networkx.Graph()
 if args.cnvVCF:
     vcf_reader = vcf.Reader(open(args.cnvVCF), 'r', compressed=True) if args.cnvVCF.endswith('.gz') else vcf.Reader(open(args.cnvVCF), 'r', compressed=False)
     for record in vcf_reader:
-        if (record.ID.startswith("DEL9")) or (record.ID.startswith("DUP9")):
+        if ('CONTROL' in record.INFO.keys()) and (record.INFO['CONTROL'] != 0):
             continue
         if (not args.siteFilter) or (len(record.FILTER) == 0):
             hap = dict()
-            rc = dict()
+            rc = collections.defaultdict(int)
             peCount = 0
             for call in record.samples:
                 if call.called:
@@ -74,8 +75,8 @@ if args.cnvVCF:
             if len(hap):
                 svStart = record.POS
                 svEnd = record.INFO['END']
-                controlID = record.ID.replace('0', '9', 1)
-                rdRatio = rdAltRefRatio(rc, sv[controlID]['rc'], hap)
+                svControlID = re.sub(r"^[A-Z0]*","", record.ID)
+                rdRatio = rdAltRefRatio(rc, sv[int(svControlID)], hap)
                 #print(record.CHROM, svStart, svEnd, record.ID, rdRatio, sep="\t")
                 if rdRatio is not None:
                     if ((record.INFO['SVTYPE'] == "DEL") and (rdRatio < 0.8)) or ((record.INFO['SVTYPE'] == "DUP") and (rdRatio > 1.15)):
