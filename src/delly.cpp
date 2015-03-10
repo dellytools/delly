@@ -2123,7 +2123,7 @@ int main(int argc, char **argv) {
   boost::program_options::options_description geno("Genotyping options");
   geno.add_options()
     ("vcfgeno,v", boost::program_options::value<boost::filesystem::path>(&c.vcffile)->default_value("site.vcf"), "input vcf file for genotyping only")
-    ("geno-qual,u", boost::program_options::value<unsigned short>(&c.minGenoQual)->default_value(20), "min. mapping quality for genotyping")
+    ("geno-qual,u", boost::program_options::value<unsigned short>(&c.minGenoQual)->default_value(1), "min. mapping quality for genotyping")
     ;
 
   // Define hidden options

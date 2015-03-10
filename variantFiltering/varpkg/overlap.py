@@ -5,7 +5,7 @@ from __future__ import print_function
 # Returns intersect(A,B)/max(A,B), intersect(A,B)/min(A,B), intersect(A,B)/union(A,B), max. breakpoint offset, overlap length
 def overlapMetrics((s1, e1), (s2, e2)):
     bpOffset = max(abs(s2-s1), abs(e2-e1))
-    overlapLen = min(e1, e2) - max(s1, s2)
+    overlapLen = float(min(e1, e2) - max(s1, s2))
     lenA = float(e1-s1)
     lenB = float(e2-s2)
     if (e1 < s2) or (s1 > e2) or (lenA <= 0) or (lenB <= 0) or (overlapLen <= 0):
