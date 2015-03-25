@@ -45,6 +45,7 @@ chr2_re = re.compile(r'CHR2=([^;\s]+)')
 end_re = re.compile(r'\bEND=(\d+)')
 ct_re = re.compile(r'\bCT=([^;\s]+)')
 
+
 @app.route('/calls/<chrom>')
 def calls(chrom):
     dataset = []
@@ -53,8 +54,6 @@ def calls(chrom):
         try:
             for row in csv.reader(f.fetch(str(chrom)), delimiter='\t'):
                 chrom2 = chr2_re.search(row[7]).group(1)
-                if chrom2 != chrom:
-                    continue
                 start_call = int(row[1])
                 end_call = int(end_re.search(row[7]).group(1))
                 id_call = row[2]
@@ -69,13 +68,26 @@ def calls(chrom):
                     'start': start_call,
                     'end': end_call,
                     'type': sv_type,
-                    'ct': ct
+                    'ct': ct,
+                    'chr2': chrom2
                 })
         # no calls for this chrom...
         except ValueError:
             pass
 
     return json.dumps(dataset)
+
+
+def calc_norm_factor(s1, s2):
+    with h5py.File(cfg['smpl_to_file'][s1], 'r') as f1, \
+            h5py.File(cfg['smpl_to_file'][s2], 'r') as f2:
+        cnts1, cnts2 = 0, 0
+        for chrom in f1:
+            if chrom in f2:
+                cnts1 += f1['{}/read_counts'.format(chrom)].attrs['sum']
+                cnts2 += f2['{}/read_counts'.format(chrom)].attrs['sum']
+        return cnts1 / cnts2
+
 
 @app.route('/depth/<s1>/<s2>/<c>')
 def depth(s1, s2, c):
@@ -107,6 +119,9 @@ def depth(s1, s2, c):
             cfg['x'] = f1['/{}/read_counts'.format(c)][:]
             cfg['y'] = f2['/{}/read_counts'.format(c)][:]
             cfg['chrom'] = c
+            # FIXME
+            cfg['norm'] = calc_norm_factor(s1, s2)
+            cfg['norm'] = 1
 
         if n_bins <= n_req:
             x_sum = cfg['x'][bin_start:bin_end+1]
@@ -115,14 +130,18 @@ def depth(s1, s2, c):
             chunk_size = int(round(n_bins/n_req))
             n_chunks = int(math.ceil(n_bins / chunk_size))
             pad = -n_bins % chunk_size
-            x = np.pad(cfg['x'][bin_start:bin_end+1], (0, pad), mode='constant')
-            # FIXME normalize by genomewide counts!
+            x = np.pad(cfg['x'][bin_start:bin_end+1],
+                       (0, pad),
+                       mode='constant')
             x_sum = np.sum(np.split(x, n_chunks), axis=1)
-            y = np.pad(cfg['y'][bin_start:bin_end+1], (0, pad), mode='constant')
+            y = np.pad(cfg['y'][bin_start:bin_end+1],
+                       (0, pad),
+                       mode='constant')
             y_sum = np.sum(np.split(y, n_chunks), axis=1)
 
         d['ratios'] = [r if np.isfinite(r) else None
-                       for r in np.log2(x_sum/y_sum).tolist()]
+                       for r in np.log2(x_sum / y_sum / cfg['norm'])
+                       .tolist()]
 
     return json.dumps(d)
 
