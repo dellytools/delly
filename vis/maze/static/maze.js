@@ -37,7 +37,7 @@ var maze = function () {
       var matches =$('#config-matches label.active').text().trim();
       var length = $('#config-length').val();
 
-      $.getJSON('/data',
+      $.getJSON('/matches',
         {'matches': matches, 'length': length},
         function (data) {
           $('.spinner').toggleClass('hide');

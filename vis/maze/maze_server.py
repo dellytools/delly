@@ -24,7 +24,7 @@ def opener(fn):
         return gzip.open
     return open
 
-@app.route('/data')
+@app.route('/matches')
 def data():
     length = request.args.get('length', type=int)
     matches = request.args.get('matches')
