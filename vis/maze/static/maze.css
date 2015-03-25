@@ -96,14 +96,22 @@ footer a:active, footer a:focus {
 }
 
 #configModal .modal-body .btn {
-  min-width: 75px;
-  max-width: 75px;
+  min-width: 100px;
+  max-width: 100px;
 }
 
 #configModal .modal-body input {
   display: inline;
-  min-width: 150px;
-  max-width: 150px;
+  min-width: 300px;
+  max-width: 300px;
   margin-right: 10px;
   text-align: center;
+}
+
+#configModal .modal-body .fa {
+  cursor: pointer;
+}
+
+#configModal .modal-body .alert {
+  margin: 0;
 }

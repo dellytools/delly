@@ -4,9 +4,8 @@ from subprocess import check_output
 
 m_pat = re.compile(r'\s*(\d+)\s+(\d+)\s+(\d+)')
 
-def mummer_matches(fn1, fn2, l, m, verbose=False):
-    mode = ' -maxmatch' if m == 'mem' else ''
-    cmd = 'mummer{} -l {} -b -c {} {} 2>/dev/null'.format(mode, l, fn1, fn2)
+def mummer_matches(fn1, fn2, l, m='mumreference', verbose=False):
+    cmd = 'mummer -{} -l {} -b -c {} {} 2>/dev/null'.format(m, l, fn1, fn2)
     if verbose:
         print('#', cmd)
     mummer_out = check_output(cmd, shell=True)

@@ -40,15 +40,23 @@ maze: match visualizer
 
           <div id="config-matches" class="btn-group" data-toggle="buttons">
             <label class="btn btn-default active">
-              <input type="radio" name="options" id="mem" autocomplete="off" checked> MEMs
+              <input type="radio" name="options" autocomplete="off" checked> mumreference
             </label>
             <label class="btn btn-default">
-              <input type="radio" name="options" id="mum" autocomplete="off" title="Maximal Unique Matches"> MUMs
+              <input type="radio" name="options" autocomplete="off" title="Maximal Unique Matches"> mum
+            </label>
+            <label class="btn btn-default">
+              <input type="radio" name="options" autocomplete="off" title="Maximal Unique Matches"> maxmatch
             </label>
           </div>match type <span class="fa fa-info-circle"></span>
+          <div class="alert alert-info hide" id="matches-info">
+            <p><b>mumreference:</b> matches that are unique in the reference but not necessarily in the query</p>
+            <p><b>mum:</b> matches that are unique in both the reference and query</p>
+            <p><b>maxmatch:</b> maximal matches regardless of their uniqueness</p>
+          </div>
           <br>
 
-          <input id="config-length" type="number" class="form-control" value="12">minimal match length
+          <input id="config-length" type="number" class="form-control" value="15">minimal match length
 
         </div> <!-- end modal-body -->
 

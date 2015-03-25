@@ -26,11 +26,15 @@ var maze = function () {
       this.blur();
     }); 
 
+    $('#configModal .modal-body .fa').click(function () {
+      $('#matches-info').toggleClass('hide');
+    });
+
     $('#visualize').click(function () {
       $('#configModal').modal('hide');
       $('.spinner').toggleClass('hide');
 
-      var matches = $('#config-matches input:radio:checked').attr('id');
+      var matches =$('#config-matches label.active').text().trim();
       var length = $('#config-length').val();
 
       $.getJSON('/data',
