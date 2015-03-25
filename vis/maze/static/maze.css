@@ -20,21 +20,10 @@ header {
   font-size: 40px;
 }
 
-.button-header {
-  height: 60px;
-  background-color: black;
+.spinner {
+  text-align: center;
+  color: black;
   opacity: 0.85;
-  font-size: 20px;
-  border: none;
-}
-
-.button-header:hover {
-  color: DodgerBlue;
-}
-
-.button-header:focus {
-  color: white;
-  outline: none;
 }
 
 footer {
