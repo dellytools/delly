@@ -21,9 +21,10 @@ var maze = function () {
       });
     }); 
 
-    // remove focus after being clicked
-    $('.button-header').focus(function () {
-      this.blur();
+    // request data
+    $.getJSON('/data', function (data) {
+      $('.spinner').remove();
+      console.log(data);
     });
   };
 
