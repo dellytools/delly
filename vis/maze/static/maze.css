@@ -20,6 +20,23 @@ header {
   font-size: 40px;
 }
 
+.button-header {
+  height: 60px;
+  background-color: black;
+  opacity: 0.85;
+  font-size: 20px;
+  border: none;
+}
+
+.button-header:hover {
+  color: DodgerBlue;
+}
+
+.button-header:focus {
+  color: white;
+  outline: none;
+}
+
 .spinner {
   text-align: center;
   color: black;
@@ -65,4 +82,28 @@ footer a:active, footer a:focus {
 
 #footer-icon {
   cursor: pointer;
+}
+
+.dropdown-menu {
+  height: auto;
+  max-height: 300px;
+  overflow-x: hidden;
+}
+
+#configModal .modal-body .btn-group {
+  margin-bottom: 5px;
+  margin-right: 10px;
+}
+
+#configModal .modal-body .btn {
+  min-width: 75px;
+  max-width: 75px;
+}
+
+#configModal .modal-body input {
+  display: inline;
+  min-width: 150px;
+  max-width: 150px;
+  margin-right: 10px;
+  text-align: center;
 }

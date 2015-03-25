@@ -4,7 +4,7 @@
 
 from __future__ import print_function, division
 import click
-from flask import Flask, render_template
+from flask import Flask, render_template, request
 from tempfile import NamedTemporaryFile
 import os
 import gzip
@@ -26,6 +26,8 @@ def opener(fn):
 
 @app.route('/data')
 def data():
+    length = request.args.get('length', type=int)
+    matches = request.args.get('matches')
     d = []
     with opener(cfg['reference'])(cfg['reference']) as f:
         rname, rseq, _ = next(readfq(f))
@@ -41,8 +43,8 @@ def data():
                 print(qseq, file=f_query)
             matches = maze.mummer_matches(fn_ref,
                                           fn_query,
-                                          cfg['length'],
-                                          cfg['matches'],
+                                          length,
+                                          matches,
                                           cfg['debug'])
             d.append({
                 'rname': rname,
@@ -53,9 +55,10 @@ def data():
             })
             os.remove(fn_query)
     os.remove(fn_ref)
+    # FIXME just testing spinner...
+    import time
+    time.sleep(3)
     return json.dumps(d)
-
-# FIXME remove -l/-m and add to GUI
 
 @click.command()
 @click.option('-p', '--port', default=5000, help='port number')
@@ -66,18 +69,11 @@ def data():
 @click.option('-q', '--query', required=True,
               help='query (multi) FASTA file')
 @click.option('-c', '--coords', help='reference coordinates BED file')
-@click.option('-l', '--length', default=12,
-              help='match length (default: 12)')
-@click.option('-m', '--matches', default='mem',
-              type=click.Choice(['mem', 'mum']),
-              help='match type ["mem", "mum"], default=mem')
-def cli(port, debug, reference, query, coords, length, matches):
+def cli(port, debug, reference, query, coords):
     global cfg
     cfg = {
         'reference': reference,
         'query': query,
-        'length': length,
-        'matches': matches,
         'debug': debug
     }
     app.run(port=port, debug=debug)

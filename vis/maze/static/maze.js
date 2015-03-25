@@ -21,10 +21,25 @@ var maze = function () {
       });
     }); 
 
-    // request data
-    $.getJSON('/data', function (data) {
-      $('.spinner').remove();
-      console.log(data);
+    // remove focus after being clicked
+    $('.button-header').focus(function () {
+      this.blur();
+    }); 
+
+    $('#visualize').click(function () {
+      $('#configModal').modal('hide');
+      $('.spinner').toggleClass('hide');
+
+      var matches = $('#config-matches input:radio:checked').attr('id');
+      var length = $('#config-length').val();
+
+      $.getJSON('/data',
+        {'matches': matches, 'length': length},
+        function (data) {
+          $('.spinner').toggleClass('hide');
+          console.log(data);
+        }
+      );
     });
   };
 

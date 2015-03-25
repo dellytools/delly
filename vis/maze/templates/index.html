@@ -16,11 +16,67 @@ maze: match visualizer
 
   <header>
     <div class="container-fluid">
+      <button type="button" class="pull-left button-header" data-toggle="modal" data-target="#configModal">
+        <span class="glyphicon glyphicon-menu-hamburger"></span>
+      </button>
+      <div class="pull-left">setup</div>
+      <button type="button" class="pull-right button-header" data-toggle="modal" data-target="#controlModal">
+        <span class="glyphicon glyphicon-menu-hamburger"></span>
+      </button>
+      <div class="pull-right">tools</div>
       <div class="header-title">maze</div>
     </div>
   </header>
 
-  <div class="spinner">
+ <!-- Config modal -->
+  <div class="modal fade" id="configModal" tabindex="-1">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <button type="button" class="close" data-dismiss="modal"><span>&times;</span></button>
+          <h4 class="modal-title" id="myModalLabel">Setup</h4>
+        </div>
+        <div class="modal-body">
+
+          <div id="config-matches" class="btn-group" data-toggle="buttons">
+            <label class="btn btn-default active">
+              <input type="radio" name="options" id="mem" autocomplete="off" checked> MEMs
+            </label>
+            <label class="btn btn-default">
+              <input type="radio" name="options" id="mum" autocomplete="off" title="Maximal Unique Matches"> MUMs
+            </label>
+          </div>Match type
+          <br>
+
+          <input id="config-length" type="number" class="form-control" value="12">Match length
+
+        </div> <!-- end modal-body -->
+
+        <div class="modal-footer">
+          <button type="button" class="btn btn-primary" id="visualize">Visualize!</button>
+        </div> <!-- end modal-footer -->
+
+      </div> <!-- end modal-content -->
+    </div> <!-- end modal-dialog -->
+  </div> <!-- end config modal -->
+
+  <!-- Control modal -->
+  <div class="modal fade" id="controlModal" tabindex="-1">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <button type="button" class="close" data-dismiss="modal"><span>&times;</span></button>
+          <h4 class="modal-title" id="myModalLabel">Tools</h4>
+        </div>
+        <div class="modal-body">
+
+          ...coming soon...
+        </div> <!-- end modal-body -->
+      </div> <!-- end modal-content -->
+    </div> <!-- end modal-dialog -->
+  </div> <!-- end control modal -->
+
+  <div class="spinner hide">
     <span class="fa fa-spinner fa-pulse fa-5x"></span>
   </div>
 
