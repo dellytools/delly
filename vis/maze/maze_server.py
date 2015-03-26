@@ -55,9 +55,6 @@ def data():
             })
             os.remove(fn_query)
     os.remove(fn_ref)
-    # FIXME just testing spinner...
-    import time
-    time.sleep(3)
     return json.dumps(d)
 
 @click.command()
