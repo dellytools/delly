@@ -27,7 +27,7 @@ def opener(fn):
 @app.route('/matches')
 def data():
     length = request.args.get('length', type=int)
-    matches = request.args.get('matches')
+    match_type = request.args.get('matches')
     d = []
     with opener(cfg['reference'])(cfg['reference']) as f:
         rname, rseq, _ = next(readfq(f))
@@ -44,7 +44,7 @@ def data():
             matches = maze.mummer_matches(fn_ref,
                                           fn_query,
                                           length,
-                                          matches,
+                                          match_type,
                                           cfg['debug'])
             d.append({
                 'rname': rname,
