@@ -5,13 +5,6 @@ var maze = function () {
 
   my.data = null;
 
-  my.outerWidth = 600;
-  my.outerHeight = 600;
-  my.margin = { top: 25, bottom: 15, left: 50, right: 50 };
-  var innerWidth = my.outerWidth - my.margin.left - my.margin.right;
-  my.innerWidth = innerWidth;
-  var innerHeight = my.outerHeight - my.margin.top - my.margin.bottom;
-  my.innerHeight = innerHeight;
 
   my.main = function (selector) {
     $('#footer-icon').click(function () {
@@ -88,6 +81,14 @@ var maze = function () {
     } else {
       $('#control-btn-right').removeClass('active');
     }
+
+    my.outerWidth = Math.min($(window).width(), $(window).height()) * 0.8;
+    my.outerHeight = my.outerWidth;
+    my.margin = { top: 25, bottom: 15, left: 50, right: 50 };
+    var innerWidth = my.outerWidth - my.margin.left - my.margin.right;
+    my.innerWidth = innerWidth;
+    var innerHeight = my.outerHeight - my.margin.top - my.margin.bottom;
+    my.innerHeight = innerHeight;
 
     var x = d3.scale.linear()
       .domain([1, l1])
