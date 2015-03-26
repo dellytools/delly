@@ -3,6 +3,16 @@
 var maze = function () {
   var my = {};
 
+  my.data = null;
+
+  my.outerWidth = 600;
+  my.outerHeight = 600;
+  my.margin = { top: 30, bottom: 50, left: 50, right: 50 };
+  var innerWidth = my.outerWidth - my.margin.left - my.margin.right;
+  my.innerWidth = innerWidth;
+  var innerHeight = my.outerHeight - my.margin.top - my.margin.bottom;
+  my.innerHeight = innerHeight;
+
   my.main = function (selector) {
     $('#footer-icon').click(function () {
       var revealing = parseInt($('footer').css('bottom')) < 0;
@@ -32,6 +42,7 @@ var maze = function () {
 
     $('#visualize').click(function () {
       $('#configModal').modal('hide');
+      $(selector).empty();
       $('.spinner').toggleClass('hide');
 
       var matches =$('#config-matches label.active').text().trim();
@@ -39,12 +50,87 @@ var maze = function () {
 
       $.getJSON('/matches',
         {'matches': matches, 'length': length},
-        function (data) {
+        function (res) {
           $('.spinner').toggleClass('hide');
-          console.log(data);
+          my.data = res;
+          my.vis(selector, my.data[0]);
         }
       );
     });
+  };
+
+  my.vis = function (selector, data) {
+    var l1 = data.rseq.length;
+    var l2 = data.qseq.length;
+
+    var x = d3.scale.linear()
+      .domain([1, l1])
+      .range([0, my.innerWidth]);
+
+    var y = d3.scale.linear()
+      .domain([1, l2])
+      .range([0, my.innerHeight]);
+
+    var xAxisB = d3.svg.axis()
+      .scale(x)
+      .orient('bottom')
+      .tickSize(-my.innerHeight);
+
+    var xAxisT = d3.svg.axis()
+      .scale(x)
+      .orient('top')
+      .tickSize(0);
+
+    var yAxisR = d3.svg.axis()
+      .scale(y)
+      .orient('right')
+      .tickSize(-my.innerWidth);
+
+    var yAxisL = d3.svg.axis()
+      .scale(y)
+      .orient('left')
+      .tickSize(-my.innerWidth);
+
+    var svg = d3.select(selector).append('svg')
+      .attr('width', my.outerWidth)
+      .attr('height', my.outerHeight);
+
+    var g = svg.append('g')
+      .attr('transform', 'translate(' + my.margin.left + ', ' + my.margin.top + ')');
+
+    g.append('g')
+      .attr('class', 'x axis b')
+      .attr('transform', 'translate(0, ' + my.innerHeight + ')')
+      .call(xAxisB);
+
+    g.append('g')
+      .attr('class', 'x axis t')
+      .call(xAxisT);
+
+    g.append('g')
+      .attr('class', 'y axis r')
+      .attr('transform', 'translate(' + my.innerWidth + ', 0)')
+      .call(yAxisR);
+
+    g.append('g')
+      .attr('class', 'y axis l')
+      .call(yAxisL);
+
+    console.log(data.matches.rev);
+
+    g.selectAll('line.matches')
+      .data(data.matches.fwd.concat(data.matches.rev))
+      .enter()
+      .append('line')
+      .attr('class', 'geom matches')
+      .attr('x1', function (d) { return x(d[0]); })
+      .attr('x2', function (d) { return x(d[1]); })
+      .attr('y1', function (d) { return y(d[2]); })
+      .attr('y2', function (d) { return y(d[3]); })
+      // TODO should do this via CSS classes:
+      .style('stroke', function (d) {
+        return d[2] < d[3] ? 'black' : 'red'
+      });
   };
 
   return my;

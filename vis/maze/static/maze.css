@@ -115,3 +115,18 @@ footer a:active, footer a:focus {
 #configModal .modal-body .alert {
   margin: 0;
 }
+
+#vis-wrap {
+  text-align: center;
+}
+
+.axis line,
+.axis path {
+  fill: none;
+  stroke: rgb(222, 222, 222);
+  shape-rendering: crispEdges;
+}
+
+.axis text {
+  font: 10px sans-serif;
+}
