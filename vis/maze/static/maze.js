@@ -7,7 +7,7 @@ var maze = function () {
 
   my.outerWidth = 600;
   my.outerHeight = 600;
-  my.margin = { top: 30, bottom: 50, left: 50, right: 50 };
+  my.margin = { top: 25, bottom: 15, left: 50, right: 50 };
   var innerWidth = my.outerWidth - my.margin.left - my.margin.right;
   my.innerWidth = innerWidth;
   var innerHeight = my.outerHeight - my.margin.top - my.margin.bottom;
@@ -39,10 +39,12 @@ var maze = function () {
     $('#configModal .modal-body .fa').click(function () {
       $('#matches-info').toggleClass('hide');
     });
-
+    
     $('#visualize').click(function () {
       $('#configModal').modal('hide');
       $(selector).empty();
+      $('#control-btn-left').addClass('hide');
+      $('#control-btn-right').addClass('hide');
       $('.spinner').toggleClass('hide');
 
       var matches =$('#config-matches label.active').text().trim();
@@ -53,15 +55,39 @@ var maze = function () {
         function (res) {
           $('.spinner').toggleClass('hide');
           my.data = res;
-          my.vis(selector, my.data[0]);
+          my.vis(selector, 0);
         }
       );
     });
   };
 
-  my.vis = function (selector, data) {
+  my.vis = function (selector, dataIdx) {
+    $(selector).empty();
+
+    var data = my.data[dataIdx]
     var l1 = data.rseq.length;
     var l2 = data.qseq.length;
+
+    $('#control-btn-left').removeClass('hide');
+    $('#control-btn-right').removeClass('hide');
+
+    if (dataIdx > 0) {
+      $('#control-btn-left').addClass('active');
+      $('#control-btn-left.active').click(function () {
+        my.vis(selector, dataIdx-1);
+      });
+    } else {
+      $('#control-btn-left').removeClass('active');
+    }
+
+    if (dataIdx < my.data.length - 1) {
+      $('#control-btn-right').addClass('active');
+      $('#control-btn-right.active').click(function () {
+        my.vis(selector, dataIdx+1);
+      });
+    } else {
+      $('#control-btn-right').removeClass('active');
+    }
 
     var x = d3.scale.linear()
       .domain([1, l1])
@@ -115,8 +141,6 @@ var maze = function () {
     g.append('g')
       .attr('class', 'y axis l')
       .call(yAxisL);
-
-    console.log(data.matches.rev);
 
     g.selectAll('line.matches')
       .data(data.matches.fwd.concat(data.matches.rev))

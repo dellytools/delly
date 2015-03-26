@@ -130,3 +130,17 @@ footer a:active, footer a:focus {
 .axis text {
   font: 10px sans-serif;
 }
+
+.control-btns {
+  text-align: center;
+}
+
+.control-btns .fa {
+  color: #aaa;
+}
+
+.control-btns .fa.active {
+  color: black;
+  opacity: 0.85;
+  cursor: pointer;
+}
