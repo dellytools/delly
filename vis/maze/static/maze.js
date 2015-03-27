@@ -33,6 +33,14 @@ var maze = function () {
       $('#matches-info').toggleClass('hide');
     });
     
+    $('#checkbox-scale').click(function () {
+      if ($('#checkbox-scale').prop('checked')) {
+        $('#config-dim').prop('disabled', true);
+      } else {
+        $('#config-dim').prop('disabled', false);
+      }
+    });
+
     $('#visualize').click(function () {
       $('#configModal').modal('hide');
       $(selector).empty();
@@ -40,7 +48,7 @@ var maze = function () {
       $('#control-btn-right').addClass('hide');
       $('.spinner').toggleClass('hide');
 
-      var matches =$('#config-matches label.active').text().trim();
+      var matches = $('#config-matches label.active').text().trim();
       var length = $('#config-length').val();
 
       $.getJSON('/matches',
@@ -85,7 +93,7 @@ var maze = function () {
     if ($('#checkbox-scale').prop('checked')) {
       my.outerWidth = Math.min($(window).width(), $(window).height()) * 0.8;
     } else {
-      my.outerWidth = 600;
+      my.outerWidth = +$('#config-dim').val();
     }
     my.outerHeight = my.outerWidth;
     my.margin = { top: 25, bottom: 15, left: 50, right: 50 };
