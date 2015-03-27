@@ -37,6 +37,10 @@ header {
   outline: none;
 }
 
+.control-btn:focus {
+  outline: none;
+}
+
 .spinner {
   text-align: center;
   color: black;
