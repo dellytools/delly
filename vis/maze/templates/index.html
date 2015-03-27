@@ -38,6 +38,7 @@ maze: match visualizer
         </div>
         <div class="modal-body">
 
+          <h4>MUMmer3 options</h4>
           <div id="config-matches" class="btn-group" data-toggle="buttons">
             <label class="btn btn-default active">
               <input type="radio" name="options" autocomplete="off" checked> mumreference
@@ -89,16 +90,16 @@ maze: match visualizer
   </div>
 
   <div class="container" id="vis-wrap">
-    <div id="vis"></div>
+    <button id="control-btn-left" type="button" class="btn btn-default hide">
+      <span class="glyphicon glyphicon-chevron-left"></span>
+    </button>
+    <span id="vis"></span>
+    <button id="control-btn-right" type="button" class="btn btn-default hide">
+      <span class="glyphicon glyphicon-chevron-right"></span>
+    </button>
   </div>
 
-  <div class="control-btns">
-    <span id="control-btn-left" class="fa fa-toggle-left fa-2x hide"></span>
-    <span id="control-btn-right" class="fa fa-toggle-right fa-2x hide"></span>
-  </div>
-
-  <!-- TODO: do we keep/move this? -->
-  <div id="footer-icon-wrap" class="hide">
+  <div id="footer-icon-wrap">
     <span class="fa fa-chevron-circle-up fa-2x" id="footer-icon"></span>
   </div>
 

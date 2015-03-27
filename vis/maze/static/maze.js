@@ -65,21 +65,21 @@ var maze = function () {
     $('#control-btn-right').removeClass('hide');
 
     if (dataIdx > 0) {
-      $('#control-btn-left').addClass('active');
-      $('#control-btn-left.active').click(function () {
+      $('#control-btn-left').removeClass('disabled');
+      $('#control-btn-left:not(disabled)').click(function () {
         my.vis(selector, dataIdx-1);
       });
     } else {
-      $('#control-btn-left').removeClass('active');
+      $('#control-btn-left').addClass('disabled');
     }
 
     if (dataIdx < my.data.length - 1) {
-      $('#control-btn-right').addClass('active');
-      $('#control-btn-right.active').click(function () {
+      $('#control-btn-right').removeClass('disabled');
+      $('#control-btn-right:not(disabled)').click(function () {
         my.vis(selector, dataIdx+1);
       });
     } else {
-      $('#control-btn-right').removeClass('active');
+      $('#control-btn-right').addClass('disabled');
     }
 
     my.outerWidth = Math.min($(window).width(), $(window).height()) * 0.8;
