@@ -82,7 +82,11 @@ var maze = function () {
       $('#control-btn-right').addClass('disabled');
     }
 
-    my.outerWidth = Math.min($(window).width(), $(window).height()) * 0.8;
+    if ($('#checkbox-scale').prop('checked')) {
+      my.outerWidth = Math.min($(window).width(), $(window).height()) * 0.8;
+    } else {
+      my.outerWidth = 600;
+    }
     my.outerHeight = my.outerWidth;
     my.margin = { top: 25, bottom: 15, left: 50, right: 50 };
     var innerWidth = my.outerWidth - my.margin.left - my.margin.right;
