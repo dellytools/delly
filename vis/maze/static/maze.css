@@ -120,6 +120,22 @@ footer a:active, footer a:focus {
   margin: 0;
 }
 
+.dropzone {
+  width: 100px;
+  height: 100px;
+  border: 3px dashed #bbb;
+  border-radius: 10px;
+  padding: 5px;
+  text-align: center;
+  display: inline-block;
+  margin-right: 10px;
+}
+
+.dropzone .fa {
+  display: block;
+  margin-bottom: 5px;
+}
+
 #vis-wrap {
   text-align: center;
 }
