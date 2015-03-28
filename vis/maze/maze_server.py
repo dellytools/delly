@@ -19,58 +19,40 @@ cfg = {}
 def index():
     return render_template('index.html')
 
-def opener(fn):
-    if fn.endswith('.gz'):
-        return gzip.open
-    return open
-
 @app.route('/matches')
 def data():
     length = request.args.get('length', type=int)
     match_type = request.args.get('matches')
-    d = []
-    with opener(cfg['reference'])(cfg['reference']) as f:
-        rname, rseq, _ = next(readfq(f))
-        with NamedTemporaryFile(delete=False) as f_ref:
-            fn_ref = f_ref.name
-            print('>{}'.format(rname), file=f_ref)
-            print(rseq, file=f_ref)
-    with opener(cfg['query'])(cfg['query']) as f:
-        for qname, qseq, _ in readfq(f):
-            with NamedTemporaryFile(delete=False) as f_query:
-                fn_query = f_query.name
-                print('>{}'.format(qname), file=f_query)
-                print(qseq, file=f_query)
-            matches = maze.mummer_matches(fn_ref,
-                                          fn_query,
-                                          length,
-                                          match_type,
-                                          cfg['debug'])
-            d.append({
-                'rname': rname,
-                'rseq': rseq,
-                'qname': qname,
-                'qseq': qseq,
-                'matches': matches
-            })
-            os.remove(fn_query)
+    ref = json.loads(request.args.get('ref'))
+    queries = json.loads(request.args.get('query'))
+    m = []
+    with NamedTemporaryFile(delete=False) as f_ref:
+        fn_ref = f_ref.name
+        print('>{}'.format(ref['name']), file=f_ref)
+        print(ref['seq'], file=f_ref)
+    for query in queries:
+        with NamedTemporaryFile(delete=False) as f_query:
+            fn_query = f_query.name
+            print('>{}'.format(query['name']), file=f_query)
+            print(query['seq'], file=f_query)
+        matches = maze.mummer_matches(fn_ref,
+                                      fn_query,
+                                      length,
+                                      match_type,
+                                      cfg['debug'])
+        m.append(matches)
+        os.remove(fn_query)
     os.remove(fn_ref)
-    return json.dumps(d)
+    return json.dumps(m)
 
 @click.command()
 @click.option('-p', '--port', default=5000, help='port number')
 @click.option('--debug/--no-debug', default=False,
               help='run server in debug mode')
-@click.option('-r', '--reference', required=True,
-              help='reference (single) FASTA file')
-@click.option('-q', '--query', required=True,
-              help='query (multi) FASTA file')
 @click.option('-c', '--coords', help='reference coordinates BED file')
-def cli(port, debug, reference, query, coords):
+def cli(port, debug, coords):
     global cfg
     cfg = {
-        'reference': reference,
-        'query': query,
         'debug': debug
     }
     app.run(port=port, debug=debug)

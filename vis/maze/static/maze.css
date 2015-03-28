@@ -136,6 +136,11 @@ footer a:active, footer a:focus {
   margin-bottom: 5px;
 }
 
+.dropzone-hover {
+  color: DodgerBlue;
+  border-color: DodgerBlue;
+}
+
 #vis-wrap {
   text-align: center;
 }

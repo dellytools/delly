@@ -5,7 +5,6 @@ var maze = function () {
 
   my.data = null;
 
-
   my.main = function (selector) {
     $('#footer-icon').click(function () {
       var revealing = parseInt($('footer').css('bottom')) < 0;
@@ -41,6 +40,58 @@ var maze = function () {
       }
     });
 
+    $('#drop-ref').on('dragenter', dropZoneEnter);
+    $('#drop-ref').on('dragleave', dropZoneExit);
+    $('#drop-ref').on('dragover', dropZoneOver);
+    $('#drop-ref').on('drop', function (e) {
+      $(this).removeClass('dropzone-hover');
+      getDroppedFasta(e, 'ref');
+    });
+
+    $('#drop-query').on('dragenter', dropZoneEnter);
+    $('#drop-query').on('dragleave', dropZoneExit);
+    $('#drop-query').on('dragover', dropZoneOver);
+    $('#drop-query').on('drop', function (e) {
+      $(this).removeClass('dropzone-hover');
+      getDroppedFasta(e, 'query');
+    });
+
+    function dropZoneEnter(e) {
+      e.stopPropagation();
+      e.preventDefault();
+      $(this).addClass('dropzone-hover');
+    }
+
+    function dropZoneExit(e) {
+      e.stopPropagation();
+      e.preventDefault();
+      $(this).removeClass('dropzone-hover');
+    }
+
+    function dropZoneOver(e) {
+      e.stopPropagation();
+      e.preventDefault();
+    } 
+
+    function getDroppedFasta(e, type) {
+      e.stopPropagation();
+      e.preventDefault();
+
+      var dt = e.dataTransfer || (e.originalEvent && e.originalEvent.dataTransfer);
+      var files = e.target.files || (dt && dt.files);
+
+      var fReader = new FileReader();
+      fReader.readAsText(files[0]);
+
+      fReader.onload = function (e) {
+        var fString = e.target.result;
+        my[type] = parseFastaString(fString);
+        if (my.ref && my.query) {
+          $('#visualize').prop('disabled', false);
+        }
+      };
+    }
+
     $('#visualize').click(function () {
       $('#configModal').modal('hide');
       $(selector).empty();
@@ -51,9 +102,12 @@ var maze = function () {
       var matches = $('#config-matches label.active').text().trim();
       var length = $('#config-length').val();
 
-      $.getJSON('/matches',
-        {'matches': matches, 'length': length},
-        function (res) {
+      $.getJSON('/matches', {
+          'matches': matches,
+          'length': length,
+          'ref': JSON.stringify(my.ref[0]),
+          'query': JSON.stringify(my.query)
+        }, function (res) {
           $('.spinner').toggleClass('hide');
           my.data = res;
           my.vis(selector, 0);
@@ -66,8 +120,8 @@ var maze = function () {
     $(selector).empty();
 
     var data = my.data[dataIdx]
-    var l1 = data.rseq.length;
-    var l2 = data.qseq.length;
+    var l1 = my.ref[0].seq.length;
+    var l2 = my.query[dataIdx].seq.length;
 
     $('#control-btn-left').removeClass('hide');
     $('#control-btn-right').removeClass('hide');
@@ -156,7 +210,7 @@ var maze = function () {
       .call(yAxisL);
 
     g.selectAll('line.matches')
-      .data(data.matches.fwd.concat(data.matches.rev))
+      .data(data.fwd.concat(data.rev))
       .enter()
       .append('line')
       .attr('class', 'geom matches')
@@ -174,3 +228,45 @@ var maze = function () {
 }();
 
 $(maze.main.bind(null, '#vis'));
+
+function LineReader(str) {
+  this.str = str;
+  this.i = 0;
+  this.next = nextLine;
+}
+
+function nextLine() {
+  l = '';
+  for (; this.i < this.str.length; this.i += 1) {
+    if (this.str[this.i] === '\n') {
+      this.i += 1;
+      break;
+    }
+    l += this.str[this.i];
+  }
+  return l;
+}
+
+function parseFastaString(s) {
+  var seqs = [];
+  var name = seq = null;
+
+  var lr = new LineReader(s);
+  while (l = lr.next()) {
+    if (l[0] === '>') {
+      if (name) {
+        seqs.push({'name': name, 'seq': seq});
+      }
+      seq = '';
+      name = />(\w+)/.exec(l)[1];
+    } else {
+      seq += l;
+    }
+  }
+
+  if (name) {
+    seqs.push({'name': name, 'seq': seq});
+  }
+
+  return seqs;
+}

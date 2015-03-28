@@ -39,11 +39,11 @@ maze: match visualizer
         <div class="modal-body">
 
           <h4>Input files</h4>
-          <div class="dropzone">
+          <div id="drop-ref" class="dropzone">
             <span class="fa fa-upload fa-2x"></span>
             Drop reference FASTA here
           </div>
-          <div class="dropzone">
+          <div id="drop-query" class="dropzone">
             <span class="fa fa-upload fa-2x"></span>
             Drop query FASTA here
           </div>
@@ -76,7 +76,7 @@ maze: match visualizer
         </div> <!-- end modal-body -->
 
         <div class="modal-footer">
-          <button type="button" class="btn btn-primary" id="visualize">Visualize!</button>
+          <button type="button" class="btn btn-primary" id="visualize" disabled>Visualize!</button>
         </div> <!-- end modal-footer -->
 
       </div> <!-- end modal-content -->
