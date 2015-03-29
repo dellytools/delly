@@ -112,7 +112,7 @@ footer a:active, footer a:focus {
   text-align: center;
 }
 
-#configModal .modal-body .fa {
+#match-info {
   cursor: pointer;
 }
 
