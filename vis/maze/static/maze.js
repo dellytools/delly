@@ -93,7 +93,7 @@ var maze = function () {
     }
 
     $('#visualize').click(function () {
-      $('#configModal').modal('hide');
+      $('#config-modal').modal('hide');
       $(selector).empty();
       $('#control-btn-left').addClass('hide');
       $('#control-btn-right').addClass('hide');

@@ -94,17 +94,17 @@ footer a:active, footer a:focus {
   overflow-x: hidden;
 }
 
-#configModal .modal-body .btn-group {
+#config-modal .modal-body .btn-group {
   margin-bottom: 5px;
   margin-right: 10px;
 }
 
-#configModal .modal-body .btn {
+#config-modal .modal-body .btn {
   min-width: 100px;
   max-width: 100px;
 }
 
-#configModal .modal-body input {
+#config-modal .modal-body input {
   display: inline;
   min-width: 300px;
   max-width: 300px;
@@ -112,12 +112,12 @@ footer a:active, footer a:focus {
   text-align: center;
 }
 
-#match-info {
-  cursor: pointer;
+#config-modal .modal-body .alert {
+  margin: 0;
 }
 
-#configModal .modal-body .alert {
-  margin: 0;
+#match-info {
+  cursor: pointer;
 }
 
 .dropzone {
