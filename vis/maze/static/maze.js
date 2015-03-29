@@ -28,7 +28,7 @@ var maze = function () {
       this.blur();
     }); 
 
-    $('#configModal .modal-body .fa').click(function () {
+    $('#match-info').click(function () {
       $('#matches-info').toggleClass('hide');
     });
     
