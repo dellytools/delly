@@ -19,12 +19,14 @@ cfg = {}
 def index():
     return render_template('index.html')
 
-@app.route('/matches')
+@app.route('/matches', methods=['POST'])
 def data():
-    length = request.args.get('length', type=int)
-    match_type = request.args.get('matches')
-    ref = json.loads(request.args.get('ref'))
-    queries = json.loads(request.args.get('query'))
+    args = request.form
+    length = int(args['length'])
+    match_type = args['matches']
+    ref = json.loads(args['ref'])
+    queries = json.loads(args['query'])
+
     m = []
     with NamedTemporaryFile(delete=False) as f_ref:
         fn_ref = f_ref.name

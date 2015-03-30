@@ -113,7 +113,7 @@ var maze = function () {
       var matches = $('#config-matches label.active').text().trim();
       var length = $('#config-length').val();
 
-      $.getJSON('/matches', {
+      $.post('/matches', {
           'matches': matches,
           'length': length,
           'ref': JSON.stringify(my.ref[0]),
@@ -122,7 +122,7 @@ var maze = function () {
           $('.spinner').toggleClass('hide');
           my.data = res;
           my.vis(selector, 0);
-        }
+        }, 'json'
       );
     });
   };
