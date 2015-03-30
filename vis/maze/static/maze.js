@@ -79,17 +79,28 @@ var maze = function () {
 
       var dt = e.dataTransfer || (e.originalEvent && e.originalEvent.dataTransfer);
       var files = e.target.files || (dt && dt.files);
+      var f = files[0];
 
+      readFasta(f, type, /\.gz$/.test(f.name));
+    }
+
+    function readFasta(f, type, isGzip) {
       var fReader = new FileReader();
-      fReader.readAsText(files[0]);
-
+      if (isGzip) {
+        fReader.readAsArrayBuffer(f);
+      } else {
+        fReader.readAsText(f);
+      }
       fReader.onload = function (e) {
-        var fString = e.target.result;
-        my[type] = parseFastaString(fString);
+        var fContent = e.target.result;
+        if (isGzip) {
+          fContent = pako.ungzip(fContent, {'to': 'string'});
+        }
+        my[type] = parseFastaString(fContent);
         if (my.ref && my.query) {
           $('#visualize').prop('disabled', false);
         }
-      };
+      }
     }
 
     $('#visualize').click(function () {
