@@ -13,13 +13,8 @@ var maze = function () {
                 ? 0
                 : -1 * parseInt($('footer').css('height'))
       }, 800, function () {
-        if (revealing) {
-          $('#footer-icon').removeClass('fa-chevron-circle-up');
-          $('#footer-icon').addClass('fa-chevron-circle-down');
-        } else {
-          $('#footer-icon').removeClass('fa-chevron-circle-down');
-          $('#footer-icon').addClass('fa-chevron-circle-up');
-        }
+        $('#footer-icon').toggleClass('fa-chevron-circle-up');
+        $('#footer-icon').toggleClass('fa-chevron-circle-down');
       });
     }); 
 
