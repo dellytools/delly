@@ -2,6 +2,8 @@
 
 from __future__ import print_function
 from varpkg.overlap import overlapValid
+from varpkg.concordance import carrierConcordance
+from varpkg.rd import altRefReadDepthRatio
 import vcf
 import argparse
 import numpy
@@ -9,29 +11,6 @@ import banyan
 import networkx
 import collections
 import re
-
-def carrierConcordance(sv1hap, sv2hap):
-    sv1samples = set(sv1hap.keys())
-    sv2samples = set(sv2hap.keys())
-    intersectSamples = sv1samples.intersection(sv2samples)
-    denominator = len(sv1samples.union(sv2samples))
-    return float(len(intersectSamples))/float(denominator)
-
-def rdAltRefRatio(sv1RC, sv2RC, geno):
-    rcSamples = set(sv1RC.keys()).intersection(set(sv2RC.keys()))
-    hetRC = list()
-    refRC = list()
-    for sp in rcSamples:
-        if (sv1RC[sp] > 0) and (sv2RC[sp] > 0):
-            if sum(geno[sp]) == 0:
-                refRC.append(float(sv1RC[sp])/float(sv2RC[sp]))
-            elif sum(geno[sp]) == 1:
-                hetRC.append(float(sv1RC[sp])/float(sv2RC[sp]))
-    if (len(hetRC)) and (len(refRC)):
-        return numpy.median(numpy.array(hetRC))/numpy.median(numpy.array(refRC))
-    else:
-        return None
-
 
 # Parse command line
 parser = argparse.ArgumentParser(description='Deletion/Duplication filter.')
@@ -76,10 +55,10 @@ if args.cnvVCF:
                 svStart = record.POS
                 svEnd = record.INFO['END']
                 svControlID = re.sub(r"^[A-Z0]*","", record.ID)
-                rdRatio = rdAltRefRatio(rc, sv[int(svControlID)], hap)
+                rdRatio = altRefReadDepthRatio(rc, sv[int(svControlID)], hap)
                 #print(record.CHROM, svStart, svEnd, record.ID, rdRatio, sep="\t")
                 if rdRatio is not None:
-                    if ((record.INFO['SVTYPE'] == "DEL") and (rdRatio < 0.8)) or ((record.INFO['SVTYPE'] == "DUP") and (rdRatio > 1.15)):
+                    if ((record.INFO['SVTYPE'] == "DEL") and (rdRatio < 0.8)) or ((record.INFO['SVTYPE'] == "DUP") and (rdRatio >= 1.3) and (rdRatio <= 1.75)):
                         # Valid Call
                         if not cnvRegion.has_key(record.CHROM):
                             cnvRegion[record.CHROM] = banyan.SortedDict(key_type=(int, int), alg=banyan.RED_BLACK_TREE, updator=banyan.OverlappingIntervalsUpdator)
