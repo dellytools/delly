@@ -14,7 +14,7 @@ def overlapMetrics((s1, e1), (s2, e2)):
     return(overlapLen/max(lenA, lenB), overlapLen/min(lenA, lenB), overlapLen/lenUnion, bpOffset, overlapLen)
 
 # Checks if an overlap is valid with respect to a given required reciprocal overlap and breakpoint offset
-def overlapValid((s1, e1), (s2, e2), reciprocalOverlap, maxOffset):
+def overlapValid((s1, e1), (s2, e2), reciprocalOverlap=0.8, maxOffset=250):
     (maxO, _, _, bpOffset, _) = overlapMetrics((s1, e1), (s2, e2))
     return (maxO >= reciprocalOverlap) and (bpOffset <= maxOffset)
 
