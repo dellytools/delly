@@ -1,25 +1,14 @@
 #! /usr/bin/env python
 
 from __future__ import print_function
+import sys, os
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+from varpkg.overlap import overlapValid
 import vcf
 import argparse
 import numpy
 import banyan
 import collections
-
-
-#Functions
-def overlapValid((s1, e1), (s2, e2), reciprocalOverlap=0.5, maxOffset=500):
-    if (e1 < s2) or (s1 > e2) or ((e1-s1) <= 0) or ((e2-s2) <= 0):
-        return False
-    overlapLen = float(min(e1, e2) - max(s1, s2))
-    # Check reciprocal overlap
-    if (overlapLen < 1) or (overlapLen/float(e1-s1) < reciprocalOverlap) or (overlapLen/float(e2-s2) < reciprocalOverlap):
-        return False
-    # Check offset
-    if max(abs(s2-s1), abs(e2-e1)) > maxOffset:
-        return False
-    return True
 
 
 # Parse command line
