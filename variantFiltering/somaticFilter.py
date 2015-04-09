@@ -81,7 +81,7 @@ if args.vcfFile:
                             if ((not precise) and (call['DV'] >= 2) and (float(call['DV'])/float(call['DV']+call['DR']) >= altAF)) or ((precise) and (call['RV'] >= 2) and (float(call['RV'])/float(call['RR'] + call['RV']) >= altAF)):
                                 rcAlt.append(call['RC'])
             genotypeRatio = float(nCount + tCount) /  float(len(record.samples))
-            if (nCount > 0) and (tCount > 0) and (len(rcRef) == nCount) and (len(rcAlt) == tCount) and (genotypeRatio >= ratioGeno):
+            if (nCount > 0) and (tCount > 0) and (len(rcRef) == nCount) and (len(rcAlt) > 0) and (genotypeRatio >= ratioGeno):
                 rdRatio = 1
                 if numpy.median(rcRef):
                     rdRatio = round(numpy.median(rcAlt)/numpy.median(rcRef), 4)
