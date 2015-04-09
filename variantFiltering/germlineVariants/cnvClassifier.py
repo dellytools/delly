@@ -1,6 +1,8 @@
 #! /usr/bin/env python
 
 from __future__ import print_function
+import sys, os
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from varpkg.overlap import overlapValid
 from varpkg.concordance import carrierConcordance
 from varpkg.rd import altRefReadDepthRatio
