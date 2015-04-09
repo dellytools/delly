@@ -51,9 +51,9 @@ var suave = function () {
     var value = $(elem).text();
     var context = $(elem).closest('.dropdown-menu').attr('id');
     var target = {
-      'config-case': '#selectedCase',
-      'config-control': '#selectedControl',
-      'config-chrom': '#selectedChrom'
+      'config-case': '#selected-case',
+      'config-control': '#selected-control',
+      'config-chrom': '#selected-chrom'
     }[context];
     $(target).html(value);
   }
@@ -83,8 +83,8 @@ var suave = function () {
         
       // both samples have been specified, get chroms
       if (context === 'config-case' || context === 'config-control') {
-        var smplCase = $('#selectedCase').text();
-        var smplControl = $('#selectedControl').text();
+        var smplCase = $('#selected-case').text();
+        var smplControl = $('#selected-control').text();
         if (smplCase && smplControl) {
           populateChroms(smplCase, smplControl);
         }
@@ -97,15 +97,15 @@ var suave = function () {
     });
 
     $('#visualize').click(function () {
-      var smplCase = $('#selectedCase').text();
-      var smplControl = $('#selectedControl').text();
-      var chrom = $('#selectedChrom').text();
+      var smplCase = $('#selected-case').text();
+      var smplControl = $('#selected-control').text();
+      var chrom = $('#selected-chrom').text();
 
       if (!smplCase || !smplControl || ! chrom) {
-        $('#configAlert').removeClass('hide');
+        $('#config-alert').removeClass('hide');
       } else {
-        $('#configAlert').addClass('hide');
-        $('#configModal').modal('hide');
+        $('#config-alert').addClass('hide');
+        $('#config-modal').modal('hide');
         my.sample1 = smplCase;
         my.sample2 = smplControl;
         my.chrom = chrom;
@@ -413,9 +413,9 @@ var suave = function () {
       canvasPoint(brushCtx, xBrush(idx*binSize), yBrush(val));
     });
 
-    $('#jumpToSliceSubmit').click(function () {
-      var s = parseInt($('#jumpToSliceStart').val());
-      var e = parseInt($('#jumpToSliceEnd').val());
+    $('#jump-to-slice-submit').click(function () {
+      var s = parseInt($('#jump-to-slice-start').val());
+      var e = parseInt($('#jump-to-slice-end').val());
 
       // TODO error msg in modal
       if (isNaN(s) || isNaN(e)) {
@@ -435,10 +435,10 @@ var suave = function () {
       rescale('jump', s, e);
     });
 
-    $('#jumpToFeatureSubmit').click(function () {
-      var featID = $('#jumpToFeatureID').val();
+    $('#jump-to-feature-submit').click(function () {
+      var featID = $('#jump-to-feature-id').val();
 
-      $('#controlModal').modal('hide');
+      $('#control-modal').modal('hide');
       jumpToFeature(featID);
     });
 

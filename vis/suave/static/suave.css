@@ -88,7 +88,7 @@ footer a:active, footer a:focus {
   margin: 2px;
 }
 
-#configModal .modal-body .btn {
+#config-modal .modal-body .btn {
   min-width: 200px;
   max-width: 200px;
 }

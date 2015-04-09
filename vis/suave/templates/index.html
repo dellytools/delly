@@ -16,11 +16,11 @@ suave: structural variant explorer
 
   <header>
     <div class="container-fluid">
-      <button type="button" class="pull-left button-header" data-toggle="modal" data-target="#configModal">
+      <button type="button" class="pull-left button-header" data-toggle="modal" data-target="#config-modal">
         <span class="glyphicon glyphicon-menu-hamburger"></span>
       </button>
       <div class="pull-left">setup</div>
-      <button type="button" class="pull-right button-header" data-toggle="modal" data-target="#controlModal">
+      <button type="button" class="pull-right button-header" data-toggle="modal" data-target="#control-modal">
         <span class="glyphicon glyphicon-menu-hamburger"></span>
       </button>
       <div class="pull-right">tools</div>
@@ -29,12 +29,12 @@ suave: structural variant explorer
   </header>
 
   <!-- Config modal -->
-  <div class="modal fade" id="configModal" tabindex="-1">
+  <div class="modal fade" id="config-modal" tabindex="-1">
     <div class="modal-dialog">
       <div class="modal-content">
         <div class="modal-header">
           <button type="button" class="close" data-dismiss="modal"><span>&times;</span></button>
-          <h4 class="modal-title" id="myModalLabel">Setup</h4>
+          <h4 class="modal-title" id="my-modal-label">Setup</h4>
         </div>
         <div class="modal-body">
 
@@ -48,7 +48,7 @@ suave: structural variant explorer
             {% endfor %}
             </ul>
           </div>
-          <span id="selectedCase"></span>
+          <span id="selected-case"></span>
           <br>
 
           <div class="btn-group">
@@ -61,7 +61,7 @@ suave: structural variant explorer
             {% endfor %}
             </ul>
           </div>
-          <span id="selectedControl"></span>
+          <span id="selected-control"></span>
           <br>
           
           <div class="btn-group">
@@ -71,14 +71,14 @@ suave: structural variant explorer
             <ul class="dropdown-menu config" id="config-chrom">
             </ul>
           </div>
-          <span id="selectedChrom"></span>
+          <span id="selected-chrom"></span>
 
         </div>
         <div class="modal-footer">
           <button type="button" class="btn btn-primary" id="visualize">Visualize!</button>
         </div>
 
-        <div class="alert alert-danger hide" id="configAlert">
+        <div class="alert alert-danger hide" id="config-alert">
           Please specify samples and chromosome!
         </div>
       </div>
@@ -86,31 +86,31 @@ suave: structural variant explorer
   </div>  <!-- end config modal -->
 
   <!-- Control modal -->
-  <div class="modal fade" id="controlModal" tabindex="-1">
+  <div class="modal fade" id="control-modal" tabindex="-1">
     <div class="modal-dialog">
       <div class="modal-content">
         <div class="modal-header">
           <button type="button" class="close" data-dismiss="modal"><span>&times;</span></button>
-          <h4 class="modal-title" id="myModalLabel">Tools</h4>
+          <h4 class="modal-title" id="my-modal-label">Tools</h4>
         </div>
         <div class="modal-body">
 
           <form class="form-horizontal">
             <div class="form-group">
-              <label for="jumpToSliceStart" class="col-sm-2 control-label">start</label>
+              <label for="jump-to-slice-start" class="col-sm-2 control-label">start</label>
               <div class="col-sm-10">
-                <input type="number" class="form-control" id="jumpToSliceStart" placeholder="start">
+                <input type="number" class="form-control" id="jump-to-slice-start" placeholder="start">
               </div> 
             </div>
             <div class="form-group">
-              <label for="jumpToSliceEnd" class="col-sm-2 control-label">end</label>
+              <label for="jump-to-slice-end" class="col-sm-2 control-label">end</label>
               <div class="col-sm-10">
-                <input type="number" class="form-control" id="jumpToSliceEnd" placeholder="end">
+                <input type="number" class="form-control" id="jump-to-slice-end" placeholder="end">
               </div> 
             </div>
             <div class="form-group">
               <div class="col-sm-offset-2 col-sm-10">
-                <input type="button" class="btn btn-primary" id="jumpToSliceSubmit" value="Jump to slice"/>
+                <input type="button" class="btn btn-primary" id="jump-to-slice-submit" value="Jump to slice"/>
               </div>
             </div> 
           </form>
@@ -118,14 +118,14 @@ suave: structural variant explorer
 
           <form class="form-horizontal">
             <div class="form-group" id="bloodhound">
-              <label for="jumpToFeatureID" class="col-sm-2 control-label">ID</label>
+              <label for="jump-to-feature-id" class="col-sm-2 control-label">ID</label>
               <div class="col-sm-10">
-                <input type="text" class="form-control typeahead" id="jumpToFeatureID" placeholder="ID">
+                <input type="text" class="form-control typeahead" id="jump-to-feature-id" placeholder="ID">
               </div>
             </div>
             <div class="form-group">
               <div class="col-sm-offset-2 col-sm-10">
-                <input type="button" class="btn btn-primary" id="jumpToFeatureSubmit" value="Jump to feature"/>
+                <input type="button" class="btn btn-primary" id="jump-to-feature-submit" value="Jump to feature"/>
               </div>
             </div> 
           </form>
