@@ -40,6 +40,10 @@ var maze = function () {
     $('#drop-ref').on('dragover', dropZoneOver);
     $('#drop-ref').on('drop', function (e) {
       $(this).removeClass('dropzone-hover');
+      // TODO possible to removeClass "fa-*"?
+      $('#ref-icon-chosen').removeClass('fa-times');
+      $('#ref-icon-chosen').removeClass('fa-check');
+      $('#ref-icon-chosen').addClass('fa-spinner').addClass('fa-pulse');
       getDroppedFasta(e, 'ref');
     });
 
@@ -48,6 +52,10 @@ var maze = function () {
     $('#drop-query').on('dragover', dropZoneOver);
     $('#drop-query').on('drop', function (e) {
       $(this).removeClass('dropzone-hover');
+      $('#query-icon-chosen').removeClass('fa-times');
+      $('#query-icon-chosen').removeClass('fa-check');
+      $('#query-icon-chosen').addClass('fa-spinner').addClass('fa-pulse')
+;
       getDroppedFasta(e, 'query');
     });
 
@@ -91,7 +99,36 @@ var maze = function () {
         if (isGzip) {
           fContent = pako.ungzip(fContent, {'to': 'string'});
         }
-        my[type] = parseFastaString(fContent);
+
+        var seqs = parseFastaString(fContent);
+
+        if (seqs.length > 0) {
+          my[type] = seqs;
+          if (type === 'ref') {
+            $('#ref-icon-chosen').removeClass('fa-spinner')
+                                 .removeClass('fa-pulse')
+                                 .addClass('fa-check');
+            $('#ref-span-chosen').html(f.name);
+          } else {
+            $('#query-icon-chosen').removeClass('fa-spinner')
+                                 .removeClass('fa-pulse')
+                                 .addClass('fa-check');
+            $('#query-span-chosen').html(f.name);
+          }
+        } else {
+          if (type === 'ref') {
+            $('#ref-icon-chosen').removeClass('fa-spinner')
+                                 .removeClass('fa-pulse')
+                                 .addClass('fa-times');
+            $('#ref-span-chosen').empty();
+          } else {
+            $('#query-icon-chosen').removeClass('fa-spinner')
+                                 .removeClass('fa-pulse')
+                                 .addClass('fa-times');
+            $('#query-span-chosen').empty();
+          }
+        }
+
         if (my.ref && my.query) {
           $('#visualize').prop('disabled', false);
         }
@@ -123,11 +160,11 @@ var maze = function () {
   };
 
   my.vis = function (selector, dataIdx) {
-    $(selector).empty();
-
     var data = my.data[dataIdx]
     var l1 = my.ref[0].seq.length;
     var l2 = my.query[dataIdx].seq.length;
+
+    $(selector).empty();
 
     $('#control-btn-left').removeClass('hide');
     $('#control-btn-right').removeClass('hide');
@@ -151,7 +188,8 @@ var maze = function () {
     }
 
     if ($('#checkbox-scale').prop('checked')) {
-      my.outerWidth = Math.min($(window).width(), $(window).height()) * 0.8;
+      my.outerWidth = Math.min($(window).width(),
+                               $(window).height()) * 0.8;
     } else {
       my.outerWidth = +$('#config-dim').val();
     }
