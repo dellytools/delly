@@ -19,7 +19,7 @@ parser.add_argument('-g', '--gqAlt', metavar='15', required=False, dest='gqAlt',
 parser.add_argument('-q', '--gqRef', metavar='15', required=False, dest='gqRef', help='min. GQ for non-carriers (optional)')
 parser.add_argument('-m', '--minsize', metavar='500', required=False, dest='minSize', help='min. size (optional)')
 parser.add_argument('-n', '--maxsize', metavar='5000000', required=False, dest='maxSize', help='max. size (optional)')
-parser.add_argument('-a', '--altaf', metavar='0.4', required=False, dest='altAF', help='min. alt. AF (optional)')
+parser.add_argument('-a', '--altaf', metavar='0.2', required=False, dest='altAF', help='min. alt. AF (optional)')
 parser.add_argument('-r', '--ratioGeno', metavar='0.4', required=False, dest='ratioGeno', help='min. fraction of genotyped samples (optional)')
 parser.add_argument('-k', '--keepOverlap', dest='keepOverlap', action='store_true', help='keep overlapping PE calls')
 parser.add_argument('-f', '--filter', dest='siteFilter', action='store_true', help='Filter sites for PASS')
