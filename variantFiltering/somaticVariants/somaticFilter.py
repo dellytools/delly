@@ -69,6 +69,11 @@ if args.vcfFile:
                         if call.gt_type != 0:
                             if ((not precise) and (call['DV'] >= 2) and (float(call['DV'])/float(call['DV']+call['DR']) >= altAF)) or ((precise) and (call['RV'] >= 2) and (float(call['RV'])/float(call['RR'] + call['RV']) >= altAF)):
                                 rcAlt.append(call['RC'])
+                else:
+                    if (re.search(r"[Nn]ormal", call.sample) != None) and (precise):
+                        if (call['DR'] > 2) and (call['DV'] == 0):
+                            nCount += 1
+                            rcRef.append(call['RC'])
             genotypeRatio = float(nCount + tCount) /  float(len(record.samples))
             if (nCount > 0) and (tCount > 0) and (len(rcRef) == nCount) and (len(rcAlt) > 0) and (genotypeRatio >= ratioGeno):
                 rdRatio = 1
