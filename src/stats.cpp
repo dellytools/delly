@@ -151,6 +151,7 @@ inline int run(Config const& c) {
   boost::progress_display show_progress( (references.end() - references.begin()) + 1 );
   BamTools::BamAlignment al;
   while( reader.GetNextAlignmentCore(al) ) {
+    if ((al.AlignmentFlag & 0x0100) || (al.AlignmentFlag & 0x0200) || (al.AlignmentFlag & 0x0400) || (al.AlignmentFlag & 0x0800)) continue;
     if (oldRefID != al.RefID) {
       ++show_progress;
       oldRefID = al.RefID;
