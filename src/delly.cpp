@@ -1413,6 +1413,15 @@ _initClique(TBamRecordIterator const& el, TSize& svStart, TSize& svEnd, TSize& w
   wiggle =  abs(el->Position - el->MatePosition) + el->Length - el->maxNormalISize -(svEnd -svStart);
 }
 
+// Initialize clique, insertions
+template<typename TBamRecordIterator, typename TSize>
+inline void
+_initClique(TBamRecordIterator const& el, TSize& svStart, TSize& svEnd, TSize& wiggle, SVType<InsertionTag>) {
+  svStart = std::min(el->Position + el->Length, el->MatePosition + el->Length);
+  svEnd = std::max(el->Position, el->MatePosition);
+  wiggle = -(svEnd - svStart);
+}
+
 // Initialize clique, duplications
 template<typename TBamRecordIterator, typename TSize>
 inline void
@@ -1454,15 +1463,6 @@ _initClique(TBamRecordIterator const& el, TSize& svStart, TSize& svEnd, TSize& w
   wiggle=el->maxNormalISize - el->Length;
 }
 
-// Initialize clique, insertions
-template<typename TBamRecordIterator, typename TSize>
-inline void
-_initClique(TBamRecordIterator const& el, TSize& svStart, TSize& svEnd, TSize& wiggle, SVType<InsertionTag>) {
-  svStart = std::min(el->Position + el->Length, el->MatePosition + el->Length);
-  svEnd = std::max(el->Position, el->MatePosition);
-  wiggle =  abs(el->Position - el->MatePosition) + el->Length - el->maxNormalISize -(svEnd -svStart);
-}
-
 
 // Update clique, deletions
 template<typename TBamRecordIterator, typename TSize>
@@ -1476,6 +1476,25 @@ _updateClique(TBamRecordIterator const& el, TSize& svStart, TSize& svEnd, TSize&
   if (wiggleChange > newWiggle) newWiggle=wiggleChange;
 
   // Does the new deletion size agree with all pairs
+  if ((newSvStart < newSvEnd) && (newWiggle<=0)) {
+    svStart = newSvStart;
+    svEnd = newSvEnd;
+    wiggle = newWiggle;
+    return true;
+  }
+  return false;
+}
+
+// Update clique, insertions
+template<typename TBamRecordIterator, typename TSize>
+inline bool 
+_updateClique(TBamRecordIterator const& el, TSize& svStart, TSize& svEnd, TSize& wiggle, SVType<InsertionTag>) 
+{
+  TSize newSvStart = std::max(svStart, std::min(el->Position + el->Length, el->MatePosition + el->Length));
+  TSize newSvEnd = std::min(svEnd, std::max(el->Position, el->MatePosition));
+  TSize newWiggle = -(newSvEnd - newSvStart);
+
+  // Does the new insertion size agree with all pairs
   if ((newSvStart < newSvEnd) && (newWiggle<=0)) {
     svStart = newSvStart;
     svEnd = newSvEnd;
@@ -1572,27 +1591,6 @@ _updateClique(TBamRecordIterator const& el, TSize& svStart, TSize& svEnd, TSize&
   }
   // Is this still a valid translocation cluster?
   if (newWiggle>0) {
-    svStart = newSvStart;
-    svEnd = newSvEnd;
-    wiggle = newWiggle;
-    return true;
-  }
-  return false;
-}
-
-// Update clique, insertions
-template<typename TBamRecordIterator, typename TSize>
-inline bool 
-_updateClique(TBamRecordIterator const& el, TSize& svStart, TSize& svEnd, TSize& wiggle, SVType<InsertionTag>) 
-{
-  TSize newSvStart = std::max(svStart, std::min(el->Position + el->Length, el->MatePosition + el->Length));
-  TSize newSvEnd = std::min(svEnd, std::max(el->Position, el->MatePosition));
-  TSize newWiggle = abs(el->Position - el->MatePosition) + el->Length - el->maxNormalISize -(newSvEnd - newSvStart);
-  TSize wiggleChange = wiggle + (svEnd-svStart) - (newSvEnd - newSvStart);
-  if (wiggleChange > newWiggle) newWiggle=wiggleChange;
-
-  // Does the new deletion size agree with all pairs
-  if ((newSvStart < newSvEnd) && (newWiggle<=0)) {
     svStart = newSvStart;
     svEnd = newSvEnd;
     wiggle = newWiggle;
@@ -1800,7 +1798,7 @@ inline int run(Config const& c, TSVType svType) {
 	    TLibraryMap::iterator libIt=sampleIt->second.find(rG);
 	    if (libIt==sampleIt->second.end()) std::cerr << "Missing read group: " << rG << std::endl;
 	    if (libIt->second.median == 0) continue; // Single-end library
-	    if (_acceptedInsertSize(libIt->second.maxNormalISize, libIt->second.median, abs(al.InsertSize), svType)) continue;  // Normal paired-end (for deletions only)
+	    if (_acceptedInsertSize(libIt->second, abs(al.InsertSize), svType)) continue;  // Normal paired-end (for deletions/insertions only)
 	    if (_acceptedOrientation(libIt->second.defaultOrient, getStrandIndependentOrientation(al), svType)) continue;  // Orientation disagrees with SV type
 
 	    // Get or store the mapping quality for the partner

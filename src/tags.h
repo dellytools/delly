@@ -263,7 +263,7 @@ namespace torali {
 
   // SV Paired-end checks
 
-  // Deletions, duplications and inversions
+  // Deletions, insertions, duplications and inversions
   template<typename TPos, typename TTag>
     inline TPos
     _minCoord(TPos const position, TPos const matePosition, SVType<TTag>) {
@@ -277,7 +277,7 @@ namespace torali {
     return position;
   }
 
-  // Deletions, duplications and inversions
+  // Deletions, insertions, duplications and inversions
   template<typename TPos, typename TTag>
     inline TPos
     _maxCoord(TPos const position, TPos const matePosition, SVType<TTag>) {
@@ -369,24 +369,31 @@ namespace torali {
   }
 
   // Deletions
-  template<typename TISize>
+  template<typename TISize, typename TLibInfo>
     inline bool
-    _acceptedInsertSize(TISize const maxNormalISize, TISize const, TISize const iSize, SVType<DeletionTag>) {
-    return (maxNormalISize > iSize);
+    _acceptedInsertSize(TLibInfo& libInfo, TISize const iSize, SVType<DeletionTag>) {
+    return (libInfo.maxNormalISize > iSize);
+  }
+
+  // Insertions
+  template<typename TISize, typename TLibInfo>
+    inline bool
+    _acceptedInsertSize(TLibInfo& libInfo, TISize const iSize, SVType<InsertionTag>) {
+    return (libInfo.minNormalISize <= iSize);
   }
 
   // Duplications
-  template<typename TISize>
+  template<typename TISize, typename TLibInfo>
     inline bool
-    _acceptedInsertSize(TISize const, TISize const median, TISize const iSize, SVType<DuplicationTag>) {
+    _acceptedInsertSize(TLibInfo& libInfo, TISize const iSize, SVType<DuplicationTag>) {
     // Exclude the chimeras in mate-pair libraries
-    return !((median<1000) || ((median>=1000) && (iSize >=1000)));
+    return !((libInfo.median<1000) || ((libInfo.median>=1000) && (iSize >=1000)));
   }
 
   // Other SV Types
-  template<typename TISize, typename TTag>
+  template<typename TISize, typename TLibInfo, typename TTag>
     inline bool
-    _acceptedInsertSize(TISize const, TISize const, TISize const, SVType<TTag>) {
+    _acceptedInsertSize(TLibInfo&, TISize const, SVType<TTag>) {
     return false;
   }
 
@@ -394,6 +401,13 @@ namespace torali {
   template<typename TOrientation>
   inline bool
     _acceptedOrientation(TOrientation const def, TOrientation const lib, SVType<DeletionTag>) {
+    return (def != lib);
+  }
+
+  // Insertions
+  template<typename TOrientation>
+  inline bool
+    _acceptedOrientation(TOrientation const def, TOrientation const lib, SVType<InsertionTag>) {
     return (def != lib);
   }
 
@@ -433,6 +447,18 @@ namespace torali {
     if ((pair2Max >= pair1Max) && ((pair2Max + pair2ReadLength - pair1Max) > pair2maxNormalISize)) return true;
     return false;
   }
+
+  // Insertions
+  template<typename TSize, typename TISize>
+    inline bool
+    _pairsDisagree(TSize const pair1Min, TSize const pair1Max, TSize const pair1ReadLength, TISize const pair1maxNormalISize, TSize const pair2Min, TSize const pair2Max, TSize const pair2ReadLength, TISize const pair2maxNormalISize, int const, int const, SVType<InsertionTag>) {
+    //std::cout << pair1Min << ',' << pair1Max << ',' << pair1ReadLength << ',' << pair1maxNormalISize << ',' << pair2Min << ',' << pair2Max << ',' << pair2ReadLength << ',' << pair2maxNormalISize << std::endl;
+    if ((pair2Min + pair2ReadLength - pair1Min) > pair1maxNormalISize) return true;
+    if ((pair2Max < pair1Max) && ((pair1Max + pair1ReadLength - pair2Max) > pair1maxNormalISize)) return true;
+    if ((pair2Max >= pair1Max) && ((pair2Max + pair2ReadLength - pair1Max) > pair2maxNormalISize)) return true;
+    return false;
+  }
+
 
   // Duplications
   template<typename TSize, typename TISize>
@@ -508,14 +534,6 @@ namespace torali {
     return false;
   }
 
-
-  // Insertions
-  template<typename TSize, typename TISize>
-    inline bool
-    _pairsDisagree(TSize const, TSize const, TSize const, TISize const, TSize const, TSize const, TSize const, TISize const, int const, int const, SVType<InsertionTag>) {
-    // ToDo
-    return false;
-  }
 
 
 
