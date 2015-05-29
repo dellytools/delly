@@ -1599,6 +1599,37 @@ _updateClique(TBamRecordIterator const& el, TSize& svStart, TSize& svEnd, TSize&
   return false;
 }
 
+template<typename TSize>
+inline bool
+_svSizeCheck(TSize const s, TSize const e, SVType<DeletionTag>) {
+  return (( e - s ) >= 300);
+}
+
+template<typename TSize>
+inline bool
+_svSizeCheck(TSize const s, TSize const e, SVType<DuplicationTag>) {
+  return (( e - s ) >= 100);
+}
+
+template<typename TSize>
+inline bool
+_svSizeCheck(TSize const s, TSize const e, SVType<InversionTag>) {
+  return (( e - s ) >= 100);
+}
+
+template<typename TSize>
+inline bool
+_svSizeCheck(TSize const s, TSize const e, SVType<InsertionTag>) {
+  return (( e - s ) >= 0);
+}
+
+template<typename TSize>
+inline bool
+_svSizeCheck(TSize const, TSize const, SVType<TranslocationTag>) {
+  return true;
+}
+
+
 template<typename TConfig, typename TSampleLibrary, typename TSVs, typename TCountMap, typename TTag>
 inline void
 _annotateJunctionReads(TConfig const& c, TSampleLibrary& sampleLib, TSVs& svs, TCountMap& junctionCountMap, SVType<TTag> svType) 
@@ -1976,7 +2007,7 @@ inline int run(Config const& c, TSVType svType) {
 	}
       }
 
-      if ((clique.size()>1) && ( (clusterRefID!=clusterMateRefID) || ((svEnd - svStart) >= 100) ) ) {
+      if ((clique.size()>1) && (_svSizeCheck(svStart, svEnd, svType))) {
 	StructuralVariantRecord svRec;
 	svRec.chr = refIndex;
 	svRec.chr2 = clusterMateRefID;

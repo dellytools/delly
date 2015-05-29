@@ -445,6 +445,7 @@ namespace torali {
     if ((pair2Min + pair2ReadLength - pair1Min) > pair1maxNormalISize) return true;
     if ((pair2Max < pair1Max) && ((pair1Max + pair1ReadLength - pair2Max) > pair1maxNormalISize)) return true;
     if ((pair2Max >= pair1Max) && ((pair2Max + pair2ReadLength - pair1Max) > pair2maxNormalISize)) return true;
+    if ((pair1Max < pair2Min) || (pair2Max < pair1Min)) return true;
     return false;
   }
 
@@ -456,6 +457,7 @@ namespace torali {
     if ((pair2Min + pair2ReadLength - pair1Min) > pair1maxNormalISize) return true;
     if ((pair2Max < pair1Max) && ((pair1Max + pair1ReadLength - pair2Max) > pair1maxNormalISize)) return true;
     if ((pair2Max >= pair1Max) && ((pair2Max + pair2ReadLength - pair1Max) > pair2maxNormalISize)) return true;
+    if ((pair1Max < pair2Min) || (pair2Max < pair1Min)) return true;
     return false;
   }
 
