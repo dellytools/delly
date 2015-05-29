@@ -264,7 +264,7 @@ namespace torali
 	  if (percentile!=0) libInfoIt->second.maxNormalISize = libInfoIt->second.percentileCutoff;
 	  else libInfoIt->second.maxNormalISize = libInfoIt->second.median + (madCutoff * libInfoIt->second.mad);
 	  libInfoIt->second.minNormalISize = libInfoIt->second.median - (madCutoff * libInfoIt->second.mad);
-	  if (libInfoIt->second.minNormalISize < 1) libInfoIt->second.minNormalISize=1;
+	  if (libInfoIt->second.minNormalISize < 0) libInfoIt->second.minNormalISize=0;
 	}
       }
     }
