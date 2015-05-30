@@ -193,6 +193,7 @@ var maze = function () {
     } else {
       my.outerWidth = +$('#config-dim').val();
     }
+
     my.outerHeight = my.outerWidth;
     my.margin = { top: 25, bottom: 15, left: 50, right: 50 };
     var innerWidth = my.outerWidth - my.margin.left - my.margin.right;
@@ -227,6 +228,12 @@ var maze = function () {
       .scale(y)
       .orient('left')
       .tickSize(-my.innerWidth);
+  
+    var zoom = d3.behavior.zoom()
+      .x(x)
+      .y(y)
+      .scaleExtent([1, 100])
+      .on('zoom', zoomed);
 
     var svg = d3.select(selector).append('svg')
       .attr('width', my.outerWidth)
@@ -234,6 +241,13 @@ var maze = function () {
 
     var g = svg.append('g')
       .attr('transform', 'translate(' + my.margin.left + ', ' + my.margin.top + ')');
+
+    g.call(zoom);
+
+    g.append('rect')
+      .attr('class', 'overlay')
+      .attr('width', my.innerWidth)
+      .attr('height', my.innerHeight);
 
     g.append('g')
       .attr('class', 'x axis b')
@@ -253,7 +267,19 @@ var maze = function () {
       .attr('class', 'y axis l')
       .call(yAxisL);
 
-    g.selectAll('line.matches')
+    g.append('defs')
+      .append('svg:clipPath')
+      .attr("id", "clipChartArea")
+      .append('rect')
+      .attr('x', 0)
+      .attr('y', 0)
+      .attr('width', my.innerWidth)
+      .attr('height', my.innerHeight);
+
+    var chartArea = g.append('g')
+      .attr('clip-path', 'url(#clipChartArea)');
+
+    chartArea.selectAll('line.matches')
       .data(data.fwd.concat(data.rev))
       .enter()
       .append('line')
@@ -266,6 +292,19 @@ var maze = function () {
       .style('stroke', function (d) {
         return d[2] < d[3] ? 'black' : 'red'
       });
+
+      function zoomed() {
+        chartArea.selectAll('.geom')
+          .data(data.fwd.concat(data.rev))
+          .attr('x1', function (d) { return x(d[0]); })
+          .attr('x2', function (d) { return x(d[1]); })
+          .attr('y1', function (d) { return y(d[2]); })
+          .attr('y2', function (d) { return y(d[3]); });
+        g.select(".x.axis.b").call(xAxisB);
+        g.select(".x.axis.t").call(xAxisT);
+        g.select(".y.axis.r").call(yAxisR);
+        g.select(".y.axis.l").call(yAxisL);
+      }
   };
 
   return my;
@@ -280,7 +319,7 @@ function LineReader(str) {
 }
 
 function nextLine() {
-  l = '';
+  var l = '';
   for (; this.i < this.str.length; this.i += 1) {
     if (this.str[this.i] === '\n') {
       this.i += 1;
@@ -293,10 +332,11 @@ function nextLine() {
 
 function parseFastaString(s) {
   var seqs = [];
-  var name = seq = null;
+  var name = null;
+  var seq = null;
 
   var lr = new LineReader(s);
-  while (l = lr.next()) {
+  while (var l = lr.next()) {
     if (l[0] === '>') {
       if (name) {
         seqs.push({'name': name, 'seq': seq});
