@@ -334,9 +334,11 @@ function parseFastaString(s) {
   var seqs = [];
   var name = null;
   var seq = null;
+  var lr;
+  var l;
 
-  var lr = new LineReader(s);
-  while (var l = lr.next()) {
+  lr = new LineReader(s);
+  while (l = lr.next()) {
     if (l[0] === '>') {
       if (name) {
         seqs.push({'name': name, 'seq': seq});
