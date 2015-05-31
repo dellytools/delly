@@ -24,6 +24,9 @@ You will also need a "modern" web browser. Chrome, Firefox and Safari
 should all work. Technically, Opera and IE9+ should be fine as well 
 although these haven't been tested.
 
+`maze` uses `MUMmer3` to compute matches, thus you need the
+`mummer` binary in your `$PATH`.
+
 ## Running the app
 First off, start the server:
 
