@@ -1093,6 +1093,20 @@ _addOrientation(int, SVType<InsertionTag>) {
   return "NtoN";
 }
 
+// Insertion length
+template<typename TSize, typename TTag>
+inline TSize
+_addInsertionLength(TSize, SVType<TTag>) {
+  return 0;
+}
+
+// Insertion length
+template<typename TSize>
+inline TSize
+_addInsertionLength(TSize l, SVType<InsertionTag>) {
+  return l;
+}
+
 
 template<typename TConfig, typename TStructuralVariantRecord, typename TJunctionCountMap, typename TReadCountMap, typename TCountMap, typename TTag>
 inline void
@@ -1137,6 +1151,7 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
   ofile << "##INFO=<ID=SVTYPE,Number=1,Type=String,Description=\"Type of structural variant\">" << std::endl;
   ofile << "##INFO=<ID=SVMETHOD,Number=1,Type=String,Description=\"Type of approach used to detect SV\">" << std::endl;
   ofile << "##INFO=<ID=CONTROL,Number=1,Type=Integer,Description=\"Control variant\">" << std::endl;
+  ofile << "##INFO=<ID=INSLEN,Number=1,Type=Integer,Description=\"Predicted length of the insertion\">" << std::endl;
   ofile << "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">" << std::endl;
   ofile << "##FORMAT=<ID=GL,Number=G,Type=Float,Description=\"Log10-scaled genotype likelihoods for RR,RA,AA genotypes\">" << std::endl;
   ofile << "##FORMAT=<ID=GQ,Number=1,Type=Integer,Description=\"Genotype Quality\">" << std::endl;
@@ -1182,6 +1197,7 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
     ofile << "CHR2=" << references[svIter->chr2].RefName << ";";
     ofile << "END=" << svIter->svEnd << ";";
     ofile << "CT=" << _addOrientation(svIter->ct, svType) << ";";
+    ofile << "INSLEN=" << _addInsertionLength(svIter->insLen, svType) << ";";
     ofile << "PE=" << svIter->peSupport << ";";
     ofile << "MAPQ=" << svIter->peMapQuality;
     if (svIter->precise)  {
@@ -1285,6 +1301,13 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
   }
 
   ofile.close();
+}
+
+template<typename TConfig, typename TStructuralVariantRecord>
+inline bool
+findPutativeSplitReads(TConfig const&, std::vector<TStructuralVariantRecord>&,  SVType<InsertionTag>) 
+{
+  return false;
 }
 
 template<typename TConfig, typename TStructuralVariantRecord, typename TTag>
@@ -2033,6 +2056,10 @@ inline int run(Config const& c, TSVType svType) {
 	svRec.srAlignQuality=0;
 	svRec.precise=false;
 	svRec.ct=connectionType;
+	std::vector<int32_t> inslenV;
+	for(typename TCliqueMembers::const_iterator itC = clique.begin(); itC!=clique.end(); ++itC) inslenV.push_back(g[*itC]->Median - (abs(g[*itC]->Position - g[*itC]->MatePosition) + g[*itC]->Length));
+	std::sort(inslenV.begin(), inslenV.end());
+	svRec.insLen = inslenV[inslenV.size()/2];
 #pragma omp critical
 	{
 	  svRec.id = clique_count++;

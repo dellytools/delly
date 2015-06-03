@@ -53,19 +53,6 @@ namespace torali {
     }
   }   
 
-  template<typename TRef, typename TQuality>
-    inline TQuality
-    _pairQuality(TRef const RefID, TRef const MateRefID, TQuality const q1, TQuality const q2, SVType<TranslocationTag>) {
-    if (RefID==MateRefID) return q2;
-    else return std::min(q1, q2);
-  }
-
-  template<typename TRef, typename TQuality, typename TTag>
-    inline TQuality
-    _pairQuality(TRef const, TRef const, TQuality const q1, TQuality const q2, SVType<TTag>) {
-    return std::min(q1, q2);
-  }
-
   template<typename TFiles, typename TSampleLibrary, typename TSVs, typename TCountMap, typename TSVType>
     inline void
     annotateSpanningCoverage(TFiles const& files, uint16_t const minMapQual, TSampleLibrary& sampleLib, TSVs& svs, TCountMap& spanCountMap, TSVType svType)
@@ -182,14 +169,14 @@ namespace torali {
 	      if (!inserted) continue;
 	      
 	      // Abnormal paired-end
-	      if ((getStrandIndependentOrientation(al) != libIt->second.defaultOrient) || (outerISize > libIt->second.maxNormalISize) || (al.RefID!=al.MateRefID)) {
+	      if ((getStrandIndependentOrientation(al) != libIt->second.defaultOrient) || (outerISize < libIt->second.minNormalISize) || (outerISize > libIt->second.maxNormalISize) || (al.RefID!=al.MateRefID)) {
 		if (_acceptedInsertSize(libIt->second, abs(al.InsertSize), svType)) continue;  // Normal paired-end (for deletions, insertions only)
 		if (_acceptedOrientation(libIt->second.defaultOrient, getStrandIndependentOrientation(al), svType)) continue;  // Orientation disagrees with SV type
 		
 		// Does the pair confirm the SV
 		int32_t const minPos = _minCoord(al.Position, al.MatePosition, svType);
 		int32_t const maxPos = _maxCoord(al.Position, al.MatePosition, svType);
-		
+
 		bool validSize = true;
 		if (al.RefID==itSV->chr) {
 		  if (minPos < itSV->svStart) {
@@ -206,10 +193,21 @@ namespace torali {
 		// Hash the quality
 		unsigned int index=((al.Position % (int)boost::math::pow<14>(2))<<14) + (al.MatePosition % (int)boost::math::pow<14>(2));
 		qualities[index]=al.MapQuality;
+		if (al.HasTag("AS")) {
+		  uint8_t as = 0;
+		  al.GetTag("AS", as);
+		  qualities[index]=as + 1;
+		}
 	      } else {
 		// Get the two mapping qualities
 		unsigned int index=((al.MatePosition % (int)boost::math::pow<14>(2))<<14) + (al.Position % (int)boost::math::pow<14>(2));
-		uint16_t pairQuality = _pairQuality(al.RefID, al.MateRefID, qualities[index], al.MapQuality, svType);
+		uint16_t r2Qual = al.MapQuality;
+		if (al.HasTag("AS")) {
+		  uint8_t as = 0;
+		  al.GetTag("AS", as);
+		  r2Qual=as + 1;
+		}
+		uint16_t pairQuality = std::min(qualities[index], r2Qual);
 		qualities[index]=0;
 		
 		// Pair quality
@@ -238,7 +236,7 @@ namespace torali {
 		      if ((itSV->svStart>=sPos) && (itSV->svStart<=ePos)) leftIt->second.first.push_back(pairQuality);
 		      if ((itSV->svEnd>=sPos) && (itSV->svEnd<=ePos)) rightIt->second.first.push_back(pairQuality);
 		    }		      
-		  } else if ((getStrandIndependentOrientation(al) != libIt->second.defaultOrient) || (outerISize > libIt->second.maxNormalISize) || (al.RefID!=al.MateRefID)) {
+		  } else if ((getStrandIndependentOrientation(al) != libIt->second.defaultOrient) || (outerISize < libIt->second.minNormalISize) || (outerISize > libIt->second.maxNormalISize) || (al.RefID!=al.MateRefID)) {
 		    // Missing spanning coverage
 		    if (_mateIsUpstream(libIt->second.defaultOrient, (al.AlignmentFlag & 0x0040), (al.AlignmentFlag & 0x0010))) {
 		      if ((itSV->chr==al.RefID) && (itSV->svStart>=al.Position) && (itSV->svStart<=(al.Position + libIt->second.maxNormalISize))) leftIt->second.second.push_back(pairQuality);

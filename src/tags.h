@@ -237,6 +237,7 @@ namespace torali {
     int peSupport;
     int srSupport;
     int wiggle;
+    int insLen;
     double srAlignQuality;
     unsigned int id;
     unsigned int controlID;
@@ -547,6 +548,13 @@ _getSVRef(TSeq const* const ref, TSVRecord const& svRec, TRef const, SVType<Dele
   return boost::to_upper_copy(std::string(ref + svRec.svStartBeg, ref + svRec.svStartEnd)) + boost::to_upper_copy(std::string(ref + svRec.svEndBeg, ref + svRec.svEndEnd));
 }
 
+// Insertions
+template<typename TSeq, typename TSVRecord, typename TRef>
+inline std::string
+_getSVRef(TSeq const* const ref, TSVRecord const& svRec, TRef const, SVType<InsertionTag>) {
+  return boost::to_upper_copy(std::string(ref + svRec.svStartBeg, ref + svRec.svEndEnd));
+}
+
 // Duplications
 template<typename TSeq, typename TSVRecord, typename TRef>
 inline std::string
@@ -640,16 +648,6 @@ _getSVRef(TSeq const* const ref, TSVRecord const& svRec, TRef const refIndex, SV
   }
   return "";
 }
-
-// Insertions
-template<typename TSeq, typename TSVRecord, typename TRef>
-inline std::string
-_getSVRef(TSeq const* const ref, TSVRecord const& svRec, TRef const, SVType<InsertionTag>) {
-  return boost::to_upper_copy(std::string(ref + svRec.svStartBeg, ref + svRec.svStartEnd)) + boost::to_upper_copy(std::string(ref + svRec.svEndBeg, ref + svRec.svEndEnd));
-}
-
-
-
 
 
 
