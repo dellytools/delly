@@ -33,12 +33,9 @@ Contact: Tobias Rausch (rausch@embl.de)
 #include <boost/filesystem.hpp>
 #include <boost/tokenizer.hpp>
 #include <boost/progress.hpp>
-#include "api/BamReader.h"
-#include "api/BamIndex.h"
 
 #include "version.h"
 #include "intervaltree.h"
-#include "util.h"
 
 using namespace torali;
 

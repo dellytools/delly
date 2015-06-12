@@ -24,19 +24,17 @@ Contact: Tobias Rausch (rausch@embl.de)
 #ifndef JUNCTION_H
 #define JUNCTION_H
 
-#include "tags.h"
-#include "api/BamReader.h"
-#include "api/BamIndex.h"
-#include "api/BamAlignment.h"
 
 #include <boost/multiprecision/cpp_int.hpp>
+#include <htslib/kseq.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>
 #include <zlib.h>
 #include <stdio.h>
-#include "kseq.h"
 #include "fasta_reader.h"
+#include "tags.h"
+
 KSEQ_INIT(gzFile, gzread)
 
 namespace torali {
@@ -252,10 +250,29 @@ inline void
   typedef typename TCountMap::mapped_type TCountPair;
   typedef typename TCountPair::first_type TQualVector;
 
-  // Get the references
-  BamTools::BamReader readerRef;
-  if ( ! readerRef.Open(files[0].string()) ) return;
-  BamTools::RefVector references = readerRef.GetReferenceData();
+  // Open file handles
+  typedef std::vector<std::string> TRefNames;
+  typedef std::vector<uint32_t> TRefLength;
+  TRefNames refnames;
+  TRefLength reflen;
+  typedef std::vector<samFile*> TSamFile;
+  typedef std::vector<hts_idx_t*> TIndex;
+  TSamFile samfile;
+  TIndex idx;
+  samfile.resize(files.size());
+  idx.resize(files.size());
+  for(unsigned int file_c = 0; file_c < files.size(); ++file_c) {
+    samfile[file_c] = sam_open(files[file_c].string().c_str(), "r");
+    idx[file_c] = sam_index_load(samfile[file_c], files[file_c].string().c_str());
+    if (!file_c) {
+      bam_hdr_t* hdr = sam_hdr_read(samfile[file_c]);
+      for (int i = 0; i<hdr->n_targets; ++i) {
+	refnames.push_back(hdr->target_name[i]);
+	reflen.push_back(hdr->target_len[i]);
+      }
+      bam_hdr_destroy(hdr);
+    }
+  }
 
   // Sort Structural Variants
   sort(svs.begin(), svs.end(), SortSVs<StructuralVariantRecord>());
@@ -267,7 +284,7 @@ inline void
   // Process chromosome by chromosome
   boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
   std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Junction read annotation" << std::endl;
-  boost::progress_display show_progress( references.size() );
+  boost::progress_display show_progress( refnames.size() );
 
   // Get junction probes for all SVs on this chromosome
   typedef boost::unordered_map<unsigned int, std::string> TProbes;
@@ -281,9 +298,8 @@ inline void
   seq = kseq_init(fp);
   while ((l = kseq_read(seq)) >= 0) {
     // Find reference index
-    BamTools::RefVector::const_iterator itRef = references.begin();
-    for(int32_t refIndex=0;itRef!=references.end();++itRef, ++refIndex) {
-      if (seq->name.s == references[refIndex].RefName) {
+    for(int32_t refIndex=0; refIndex < refnames.size(); ++refIndex) {
+      if (seq->name.s == refnames[refIndex]) {
         ++show_progress;
 	
 	// Iterate SVs
@@ -299,10 +315,10 @@ inline void
 	  svRec.chr2 = itSV->chr2;
 	  svRec.svStartBeg = std::max(itSV->svStart - consLen, 0);
 	  svRec.svStart = itSV->svStart;
-	  svRec.svStartEnd = std::min(itSV->svStart + consLen, references[itSV->chr].RefLength);
+	  svRec.svStartEnd = std::min((uint32_t) itSV->svStart + consLen, reflen[itSV->chr]);
 	  svRec.svEndBeg = std::max(itSV->svEnd - consLen, 0);
 	  svRec.svEnd = itSV->svEnd;
-	  svRec.svEndEnd = std::min(itSV->svEnd + consLen, references[itSV->chr2].RefLength);
+	  svRec.svEndEnd = std::min((uint32_t) itSV->svEnd + consLen, reflen[itSV->chr2]);
 	  svRec.ct = itSV->ct;
 	  if ((itSV->chr != itSV->chr2) && (itSV->chr2 == refIndex)) {
             refProbes[itSV->id] = _getSVRef(seq->seq.s, svRec, refIndex, svType);
@@ -382,11 +398,6 @@ inline void
 	  // Get a sample name
 	  std::string sampleName(files[file_c].stem().string());
 
-	  // Initialize bam file
-	  BamTools::BamReader reader;
-	  reader.Open(files[file_c].string());
-	  reader.LocateIndex();
-
 	  // Read alignments
 	  itSV = svs.begin();
 	  itSVEnd = svs.end();
@@ -407,7 +418,6 @@ inline void
 	      TUniqueReads unique_reads;
 
 	      // Scan left and right breakpoint
-	      BamTools::BamAlignment al;
 	      for (unsigned int bpPoint = 0; bpPoint<2; ++bpPoint) {
 		int32_t regionChr = itSV->chr;
 		int regionStart = std::max(0, (int) itSV->svStart - (int) consLen/2);
@@ -417,33 +427,38 @@ inline void
 		  regionStart = std::max(0, (int) itSV->svEnd - (int) consLen/2);
 		  regionEnd = itSV->svEnd + consLen/2;
 		}
-		if (reader.SetRegion(regionChr, regionStart, regionChr, regionEnd)) {
-		  while( reader.GetNextAlignmentCore(al) ) {
-		    if (al.RefID != refIndex) break;
-		    if ((al.AlignmentFlag & 0x0004) || (al.AlignmentFlag & 0x0100) || (al.AlignmentFlag & 0x0200) || (al.AlignmentFlag & 0x0400) || (al.AlignmentFlag & 0x0800) || (al.MapQuality < minMapQual)) continue;
-		    
-		    // Get the sequence 
-		    al.BuildCharData();
+		hts_itr_t* iter = sam_itr_queryi(idx[file_c], regionChr, regionStart, regionEnd);
+		bam1_t* rec = bam_init1();
+		while (sam_itr_next(samfile[file_c], iter, rec) >= 0) {
+		  if (rec->core.flag & (BAM_FSECONDARY | BAM_FQCFAIL | BAM_FDUP | BAM_FSUPPLEMENTARY | BAM_FUNMAP)) continue;
+		  if (rec->core.qual < minMapQual) continue;
 
-		    // Is it a unique pair
-		    boost::hash<std::string> string_hash;
-		    typename TUniqueReads::const_iterator pos = unique_reads.begin();
-		    bool inserted;
-		    boost::tie(pos, inserted) = unique_reads.insert(string_hash(al.QueryBases));
-		    if (inserted) {
-		      unsigned int hamCutoff=2;
-		      unsigned int altHam=_getMinHammingDistance(al.QueryBases, altKmer, 0);
-		      if (altHam>hamCutoff) altHam=_getMinHammingDistance(al.QueryBases, rAltKmer, 0);
-		      unsigned int refHam=_getMinHammingDistance(al.QueryBases, refKmer, 0);
-		      if (refHam>hamCutoff) refHam=_getMinHammingDistance(al.QueryBases, rRefKmer, 0);
-		      if ((altHam<=hamCutoff) && (refHam>hamCutoff)) {
-			altKmerCount.push_back(al.MapQuality);
-		      } else if ((altHam>hamCutoff) && (refHam<=hamCutoff)) {
-			refKmerCount.push_back(al.MapQuality);
-		      }
+		  // Get the sequence
+		  std::string sequence; 
+		  sequence.resize(rec->core.l_qseq);
+		  uint8_t* seqptr = bam_get_seq(rec);
+		  for (int i = 0; i < rec->core.l_qseq; ++i) sequence[i] = "=ACMGRSVTWYHKDBN"[bam_seqi(seqptr, i)];
+
+		  // Is it a unique pair
+		  boost::hash<std::string> string_hash;
+		  typename TUniqueReads::const_iterator pos = unique_reads.begin();
+		  bool inserted;
+		  boost::tie(pos, inserted) = unique_reads.insert(string_hash(sequence));
+		  if (inserted) {
+		    unsigned int hamCutoff=2;
+		    unsigned int altHam=_getMinHammingDistance(sequence, altKmer, 0);
+		    if (altHam>hamCutoff) altHam=_getMinHammingDistance(sequence, rAltKmer, 0);
+		    unsigned int refHam=_getMinHammingDistance(sequence, refKmer, 0);
+		    if (refHam>hamCutoff) refHam=_getMinHammingDistance(sequence, rRefKmer, 0);
+		    if ((altHam<=hamCutoff) && (refHam>hamCutoff)) {
+		      altKmerCount.push_back(rec->core.qual);
+		    } else if ((altHam>hamCutoff) && (refHam<=hamCutoff)) {
+		      refKmerCount.push_back(rec->core.qual);
 		    }
 		  }
 		}
+		bam_destroy1(rec);
+		hts_itr_destroy(iter);
 	      }
 
 	      // Insert counts
@@ -459,6 +474,12 @@ inline void
   }
   kseq_destroy(seq);
   gzclose(fp);
+
+  // Clean-up
+  for(unsigned int file_c = 0; file_c < files.size(); ++file_c) {
+    hts_idx_destroy(idx[file_c]);
+    sam_close(samfile[file_c]);
+  }
 }
 
 

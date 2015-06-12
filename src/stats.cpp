@@ -36,11 +36,13 @@ Contact: Tobias Rausch (rausch@embl.de)
 #include <boost/iostreams/filter/zlib.hpp>
 #include <boost/iostreams/filter/gzip.hpp>
 #include <boost/filesystem.hpp>
-#include "api/BamReader.h"
-#include "api/BamIndex.h"
+#include <htslib/sam.h>
+
+#ifdef PROFILE
+#include "gperftools/profiler.h"
+#endif
 
 #include "version.h"
-#include "util.h"
 #include "tags.h"
 
 using namespace torali;
@@ -82,24 +84,17 @@ inline int run(Config const& c) {
   boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
 
   // Check that all input bam files exist and are indexed
-  BamTools::BamReader reader;
-  if ( ! reader.Open(c.bam.string()) ) {
-    std::cerr << "Could not open input bam file: " << c.bam.string() << std::endl;
-    reader.Close();
+  samFile* samfile = sam_open(c.bam.string().c_str(), "r");
+  if ( ! samfile ) {
+    std::cerr << "Could not open input file: " << c.bam.string() << std::endl;
     return -1;
   }
-  reader.LocateIndex();
-  if ( !reader.HasIndex() ) {
-    std::cerr << "Missing bam index file: " << c.bam.string() << std::endl;
-    reader.Close();
-    return -1;
-  }
+  bam_hdr_t* hdr = sam_hdr_read(samfile);
+  bam1_t* rec = bam_init1();
 
   // Get references
-  BamTools::RefVector references = reader.GetReferenceData();
   TCount genomeLen = 0;
-  BamTools::RefVector::const_iterator itRef = references.begin();
-  for(int refIndex=0; itRef!=references.end(); ++itRef, ++refIndex) genomeLen += itRef->RefLength;
+  for (int i = 0; i<hdr->n_targets; ++i) genomeLen += hdr->target_len[i];
   TCount genomeDiploidLen = 2*genomeLen;
 
   // Vector of all paired-reads
@@ -148,13 +143,12 @@ inline int run(Config const& c) {
 
   // Read alignments
   int32_t oldRefID=-1;
-  boost::progress_display show_progress( (references.end() - references.begin()) + 1 );
-  BamTools::BamAlignment al;
-  while( reader.GetNextAlignmentCore(al) ) {
-    if ((al.AlignmentFlag & 0x0100) || (al.AlignmentFlag & 0x0200) || (al.AlignmentFlag & 0x0400) || (al.AlignmentFlag & 0x0800)) continue;
-    if (oldRefID != al.RefID) {
+  boost::progress_display show_progress(hdr->n_targets + 1);  
+  while (sam_read1(samfile, hdr, rec) >= 0) {
+    if (rec->core.flag & (BAM_FSECONDARY | BAM_FQCFAIL | BAM_FDUP | BAM_FSUPPLEMENTARY)) continue;
+    if (oldRefID != rec->core.tid) {
       ++show_progress;
-      oldRefID = al.RefID;
+      oldRefID = rec->core.tid;
 
       // Get redundant pair counts for the old chromosome
       sort(vecPairM.begin(), vecPairM.end(), SortPairedMapping());
@@ -177,122 +171,122 @@ inline int run(Config const& c) {
       }
       vecPairM = vecPairC;
     }
-    if (!(al.AlignmentFlag & 0x0100) && !(al.AlignmentFlag & 0x0200) && !(al.AlignmentFlag & 0x0400) && !(al.AlignmentFlag & 0x0800)) {
 
-      // Single-end statistics
-      ++totalReadCount;
-      if (al.AlignmentFlag & 0x0040) ++totalRead1;
-      else ++totalRead2;
-      if (!(al.AlignmentFlag & 0x0004)) {
-	++mappedReadCount;
-	if (al.AlignmentFlag & 0x0040) ++totalMappedRead1;
-	else ++totalMappedRead2;
-	sumReadLength+=al.Length;
-	if ((TCount) al.Length < minReadLength) minReadLength=al.Length;
-	if ((TCount) al.Length > maxReadLength) maxReadLength=al.Length;
-      }
-      
-      // Paired-end statistics
-      if (al.AlignmentFlag & 0x0001) {
-	++pairedReadCount;
-	if (!((al.AlignmentFlag & 0x0004) || (al.AlignmentFlag & 0x0008))) {
-	  ++pairedReadMappedCount;
-	  // Same chr?
-	  if (al.RefID == al.MateRefID) {
-	    ++pairedReadSameChr;
-	    if (al.AlignmentFlag & 0x0040) {
-	      int iSize = 0;
-	      switch(getStrandSpecificOrientation(al)) {
-	      case 0:
-		++strandOrient[0];
-		++orient[0];
-		iSize = al.InsertSize + al.Length;
-		if (iSize < 0) iSize=0;
-		if (iSize > maxInsertSize) iSize = maxInsertSize - 1;
-		++fPlus[iSize];
-		break;
-	      case 1:
-		++strandOrient[1];
-		++orient[1];
-		iSize = -al.InsertSize + al.Length;
-		if (iSize < 0) iSize=0;
-		if (iSize > maxInsertSize) iSize = maxInsertSize - 1;
-		++fMinus[iSize];
-		break;
-	      case 2:
-		++strandOrient[2];
-		++orient[2];
-		iSize = al.InsertSize;
-		if (iSize < 0) iSize=0;
-		if (iSize > maxInsertSize) iSize = maxInsertSize - 1;
-		++rPlus[iSize];
-		break;
-	      case 3:
-		++strandOrient[3];
-		++orient[3];
-		iSize = -al.InsertSize + al.Length + al.Length;
-		if (iSize < 0) iSize=0;
-		if (iSize > maxInsertSize) iSize = maxInsertSize - 1;
-		++rMinus[iSize];
-		break;
-	      case 4:
-		++strandOrient[4];
-		++orient[2];
-		iSize = -al.InsertSize;
-		if (iSize < 0) iSize=0;
-		if (iSize > maxInsertSize) iSize = maxInsertSize - 1;
-		++rPlus[iSize];
-		break;
-	      case 5:
-		++strandOrient[5];
-		++orient[3];
-		iSize = al.InsertSize + al.Length + al.Length;
-		if (iSize < 0) iSize=0;
-		if (iSize > maxInsertSize) iSize = maxInsertSize - 1;
-		++rMinus[iSize];
-		break;
-	      case 6:
-		++strandOrient[6];
-		++orient[0];
-		iSize = -al.InsertSize + al.Length;
-		if (iSize < 0) iSize=0;
-		if (iSize > maxInsertSize) iSize = maxInsertSize - 1;
-		++fPlus[iSize];
-		break;
-	      case 7:
-		++strandOrient[7];
-		++orient[1];
-		iSize = al.InsertSize + al.Length;
-		if (iSize < 0) iSize=0;
-		if (iSize > maxInsertSize) iSize = maxInsertSize - 1;
-		++fMinus[iSize];
-		break;
-	      default:
-		std::cerr << "False orientation." << std::endl;
-		return -1;
-	      }
+    // Single-end statistics
+    ++totalReadCount;
+    if (rec->core.flag & BAM_FREAD1) ++totalRead1;
+    else ++totalRead2;
+    if (!(rec->core.flag & BAM_FUNMAP)) {
+      ++mappedReadCount;
+      if (rec->core.flag & BAM_FREAD1) ++totalMappedRead1;
+      else ++totalMappedRead2;
+      sumReadLength+=rec->core.l_qseq;
+      if ((TCount) rec->core.l_qseq < minReadLength) minReadLength=rec->core.l_qseq;
+      if ((TCount) rec->core.l_qseq > maxReadLength) maxReadLength=rec->core.l_qseq;
+    }
+    
+    // Paired-end statistics
+    if (rec->core.flag & BAM_FPAIRED) {
+      ++pairedReadCount;
+      if (!((rec->core.flag & BAM_FUNMAP) || (rec->core.flag & BAM_FMUNMAP))) {
+	++pairedReadMappedCount;
+	// Same chr?
+	if (rec->core.tid == rec->core.mtid) {
+	  ++pairedReadSameChr;
+	  if (rec->core.flag & BAM_FREAD1) {
+	    int iSize = 0;
+	    switch(getStrandSpecificOrientation(rec->core)) {
+	    case 0:
+	      ++strandOrient[0];
+	      ++orient[0];
+	      iSize = rec->core.isize + rec->core.l_qseq;
+	      if (iSize < 0) iSize=0;
+	      if (iSize > maxInsertSize) iSize = maxInsertSize - 1;
+	      ++fPlus[iSize];
+	      break;
+	    case 1:
+	      ++strandOrient[1];
+	      ++orient[1];
+	      iSize = -rec->core.isize + rec->core.l_qseq;
+	      if (iSize < 0) iSize=0;
+	      if (iSize > maxInsertSize) iSize = maxInsertSize - 1;
+	      ++fMinus[iSize];
+	      break;
+	    case 2:
+	      ++strandOrient[2];
+	      ++orient[2];
+	      iSize = rec->core.isize;
+	      if (iSize < 0) iSize=0;
+	      if (iSize > maxInsertSize) iSize = maxInsertSize - 1;
+	      ++rPlus[iSize];
+	      break;
+	    case 3:
+	      ++strandOrient[3];
+	      ++orient[3];
+	      iSize = -rec->core.isize + rec->core.l_qseq + rec->core.l_qseq;
+	      if (iSize < 0) iSize=0;
+	      if (iSize > maxInsertSize) iSize = maxInsertSize - 1;
+	      ++rMinus[iSize];
+	      break;
+	    case 4:
+	      ++strandOrient[4];
+	      ++orient[2];
+	      iSize = -rec->core.isize;
+	      if (iSize < 0) iSize=0;
+	      if (iSize > maxInsertSize) iSize = maxInsertSize - 1;
+	      ++rPlus[iSize];
+	      break;
+	    case 5:
+	      ++strandOrient[5];
+	      ++orient[3];
+	      iSize = rec->core.isize + rec->core.l_qseq + rec->core.l_qseq;
+	      if (iSize < 0) iSize=0;
+	      if (iSize > maxInsertSize) iSize = maxInsertSize - 1;
+	      ++rMinus[iSize];
+	      break;
+	    case 6:
+	      ++strandOrient[6];
+	      ++orient[0];
+	      iSize = -rec->core.isize + rec->core.l_qseq;
+	      if (iSize < 0) iSize=0;
+	      if (iSize > maxInsertSize) iSize = maxInsertSize - 1;
+	      ++fPlus[iSize];
+	      break;
+	    case 7:
+	      ++strandOrient[7];
+	      ++orient[1];
+	      iSize = rec->core.isize + rec->core.l_qseq;
+	      if (iSize < 0) iSize=0;
+	      if (iSize > maxInsertSize) iSize = maxInsertSize - 1;
+	      ++fMinus[iSize];
+	      break;
+	    default:
+	      std::cerr << "False orientation." << std::endl;
+	      return -1;
 	    }
 	  }
-	  // Collect all paired-end mapped reads
-	  if (al.AlignmentFlag & 0x0040) {
-	    PairedMapping pM;
-	    if (al.Position < al.MatePosition) {
-	      pM.Position = al.Position;
-	      pM.MatePosition = al.MatePosition;
-	      pM.RefID = al.RefID;
-	      pM.MateRefID = al.MateRefID;
-	    } else {
-	      pM.Position = al.MatePosition;
-	      pM.MatePosition = al.Position;
-	      pM.RefID = al.MateRefID;
-	      pM.MateRefID = al.RefID;
-	    }
-	    vecPairM.push_back(pM);
+	}
+	
+	// Collect all paired-end mapped reads
+	if (rec->core.flag & BAM_FREAD1) {
+	  PairedMapping pM;
+	  if (rec->core.pos < rec->core.mpos) {
+	    pM.Position = rec->core.pos;
+	    pM.MatePosition = rec->core.mpos;
+	    pM.RefID = rec->core.tid;
+	    pM.MateRefID = rec->core.mtid;
+	  } else {
+	    pM.Position = rec->core.mpos;
+	    pM.MatePosition = rec->core.pos;
+	    pM.RefID = rec->core.mtid;
+	    pM.MateRefID = rec->core.tid;
 	  }
+	  vecPairM.push_back(pM);
 	}
       }
     }
   }
+
   // Get translocated redundant pairs and counts for the last chromosome
   sort(vecPairM.begin(), vecPairM.end(), SortPairedMapping());
   TVecPaired::const_iterator pBeg = vecPairM.begin();
@@ -554,6 +548,11 @@ inline int run(Config const& c) {
   insfile << lastBound << "\t" << binRP << "\tR+" << std::endl;
   insfile << lastBound << "\t" << binRM << "\tR-" << std::endl;      
   insfile.close();
+
+  bam_destroy1(rec);
+  bam_hdr_destroy(hdr);
+  sam_close(samfile);
+
 
 #ifdef PROFILE
   ProfilerStop();

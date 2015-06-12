@@ -25,10 +25,8 @@ Contact: Tobias Rausch (rausch@embl.de)
 #define COVERAGE_H
 
 #include <boost/container/flat_set.hpp>
+#include <htslib/sam.h>
 #include "tags.h"
-#include "api/BamReader.h"
-#include "api/BamIndex.h"
-#include "api/BamAlignment.h"
 
 namespace torali {
 
@@ -43,44 +41,36 @@ inline std::string cigarString(TCigarVec const& cigarOperations) {
   return cigar.str();
 }
 
-template<typename TCigarVec>
-inline unsigned int halfAlignmentLength(TCigarVec const& cigarOperations) {
-  typename TCigarVec::const_iterator coIter = cigarOperations.begin();
-  if (coIter == cigarOperations.end()) return 0;
+inline unsigned int halfAlignmentLength(bam1_t* rec) {
+  uint32_t* cigar = bam_get_cigar(rec);
   unsigned int alen = 0;
-  for(; coIter != cigarOperations.end(); ++coIter) {
-    if (coIter->Type == 'M') alen+=coIter->Length;
-  }
+  for (int i = 0; i < rec->core.n_cigar; ++i) 
+    if (bam_cigar_op(cigar[i]) == BAM_CMATCH) alen+=bam_cigar_oplen(cigar[i]);
   return (alen/2);
 }
 
 
-
-template<typename TPos, typename TCigar, typename TWindow, typename TCount>
+template<typename TWindow, typename TCount>
 inline void
-_addBpCounts(TPos pos, TCigar cigar, TWindow posBeg, TWindow posEnd, TCount& bp_sum, BpLevelType<BpLevelCount>)
+_addBpCounts(bam1_t* rec, TWindow posBeg, TWindow posEnd, TCount& bp_sum, BpLevelType<BpLevelCount>)
 {  
-  if (pos >= posEnd) return;
-  int32_t bpPos = pos;
-  int num_start = 0;
-  int num_end = 0;
-  std::string::const_iterator cig = cigar.begin();
-  std::string::const_iterator cigEnd = cigar.end();
-  for(;cig!=cigEnd; ++cig, ++num_end) {
-    if (((int) *cig >=48) && ((int) *cig <= 57)) continue;
-    unsigned int len = atoi(cigar.substr(num_start, (num_end-num_start)).c_str());
-    if (*cig == 'M') 
-      for(unsigned int i = 0; i<len; ++i, ++bpPos) {
+  if (rec->core.pos >= posEnd) return;
+  int32_t bpPos = rec->core.pos;
+  uint32_t* cigar = bam_get_cigar(rec);
+  for (int i = 0; i < rec->core.n_cigar; ++i) {
+    int op = bam_cigar_op(cigar[i]);
+    int ol = bam_cigar_oplen(cigar[i]);
+    if (op == BAM_CMATCH) 
+      for(unsigned int k = 0; k<ol; ++k, ++bpPos) {
 	if ((bpPos>=posBeg) && (bpPos<posEnd)) ++bp_sum;
       }
-    else if ((*cig == 'N') || (*cig=='D')) bpPos += len;
-    num_start = num_end + 1;
+    else if ((op == BAM_CREF_SKIP) || (op == BAM_CDEL)) bpPos += ol;
   }
 }
 
-template<typename TPos, typename TCigar, typename TWindow, typename TCount>
+template<typename TWindow, typename TCount>
 inline void
-_addBpCounts(TPos, TCigar, TWindow, TWindow, TCount, BpLevelType<NoBpLevelCount>)
+_addBpCounts(bam1_t*, TWindow, TWindow, TCount, BpLevelType<NoBpLevelCount>)
 {  
   //Nop
 }
@@ -105,6 +95,18 @@ annotateCoverage(TFiles const& files, uint16_t minMapQual, TSampleLibrary& sampl
 {
   typedef typename TSVs::value_type TSV;
 
+  // Open file handles
+  typedef std::vector<samFile*> TSamFile;
+  typedef std::vector<hts_idx_t*> TIndex;
+  TSamFile samfile;
+  TIndex idx;
+  samfile.resize(files.size());
+  idx.resize(files.size());
+  for(unsigned int file_c = 0; file_c < files.size(); ++file_c) {
+    samfile[file_c] = sam_open(files[file_c].string().c_str(), "r");
+    idx[file_c] = sam_index_load(samfile[file_c], files[file_c].string().c_str());
+  }
+
   // For alignment midpoint, maximum read-length
   int32_t maxReadLen = 1000;
 
@@ -127,11 +129,6 @@ annotateCoverage(TFiles const& files, uint16_t minMapQual, TSampleLibrary& sampl
     // Get a sample name
     std::string sampleName(files[file_c].stem().string());
 
-    // Initialize bam file
-    BamTools::BamReader reader;
-    reader.Open(files[file_c].string());
-    reader.LocateIndex();
-
     // Read alignments
     int32_t oldChr = -1;
     typedef std::vector< std::pair<int32_t, int32_t> > TInterval;
@@ -144,7 +141,7 @@ annotateCoverage(TFiles const& files, uint16_t minMapQual, TSampleLibrary& sampl
     typename TSVs::const_iterator itSVEnd = svs.end();
     for(;itSV!=itSVEnd;++itSV) {
       if (file_c==(files.size()-1)) ++show_progress;
-
+      
       // Find all non-overlapping sub-intervals
       if (itSV->chr!=oldChr) {
 	oldChr=itSV->chr;
@@ -187,23 +184,25 @@ annotateCoverage(TFiles const& files, uint16_t minMapQual, TSampleLibrary& sampl
 	  int32_t oldPos=-1;
 
 	  // Read alignments
-	  BamTools::BamAlignment al;
-	  if (reader.SetRegion(oldChr, std::max(0, (int32_t) itInt->first - maxReadLen), oldChr, itInt->second)) {
-	    while( reader.GetNextAlignmentCore(al) ) {
-	      if ((al.AlignmentFlag & 0x0004) || (al.AlignmentFlag & 0x0200) || (al.AlignmentFlag & 0x0400) || (al.MapQuality < minMapQual) || (al.AlignmentFlag & 0x0100) || (al.AlignmentFlag & 0x0800)) continue;
+	  hts_itr_t* iter = sam_itr_queryi(idx[file_c], oldChr, std::max(0, (int32_t) itInt->first - maxReadLen), itInt->second);
+	  bam1_t* rec = bam_init1();
+	  while (sam_itr_next(samfile[file_c], iter, rec) >= 0) {
+	    if (rec->core.flag & (BAM_FSECONDARY | BAM_FQCFAIL | BAM_FDUP | BAM_FSUPPLEMENTARY | BAM_FUNMAP)) continue;
+	    if (rec->core.qual < minMapQual) continue;
 	  
-	      // Is it a unique pair
-	      if (al.Position!=oldPos) {
-		oldPos=al.Position;
-		unique_pairs_read.clear();
-	      }
-	      if (_redundancyFilter(al.MatePosition, unique_pairs_read, covType)) {
-		int32_t midPoint = al.Position + halfAlignmentLength(al.CigarData);
-		if ((midPoint >= itInt->first) && (midPoint < itInt->second)) ++read_sum;
-		_addBpCounts(al.Position, cigarString(al.CigarData), itInt->first, itInt->second, bp_sum, bpLevel);
-	      }
+	    // Is it a unique pair
+	    if (rec->core.pos!=oldPos) {
+	      oldPos=rec->core.pos;
+	      unique_pairs_read.clear();
+	    }
+	    if (_redundancyFilter(rec->core.mpos, unique_pairs_read, covType)) {
+	      int32_t midPoint = rec->core.pos + halfAlignmentLength(rec);
+	      if ((midPoint >= itInt->first) && (midPoint < itInt->second)) ++read_sum;
+	      _addBpCounts(rec, itInt->first, itInt->second, bp_sum, bpLevel);
 	    }
 	  }
+	  bam_destroy1(rec);
+	  hts_itr_destroy(iter);
 	  bpSum.push_back(bp_sum);
 	  readSum.push_back(read_sum);
 	}
@@ -235,6 +234,11 @@ annotateCoverage(TFiles const& files, uint16_t minMapQual, TSampleLibrary& sampl
 	countMapIt->second.second=cumReadSum;
       }
     }
+  }
+  // Clean-up
+  for(unsigned int file_c = 0; file_c < files.size(); ++file_c) {
+    hts_idx_destroy(idx[file_c]);
+    sam_close(samfile[file_c]);
   }
 }
 

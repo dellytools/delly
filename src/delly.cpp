@@ -41,8 +41,7 @@ Contact: Tobias Rausch (rausch@embl.de)
 #include <boost/functional/hash.hpp>
 #include <boost/filesystem.hpp>
 #include <boost/progress.hpp>
-#include "api/BamReader.h"
-#include "api/BamIndex.h"
+#include <htslib/sam.h>
 
 #ifdef OPENMP
 #include <omp.h>
@@ -97,20 +96,19 @@ struct Config {
 
 // Reduced bam alignment record data structure
 struct BamAlignRecord {
-  int32_t     Length;
-  int32_t     RefID;         
-  int32_t     Position;      
-  int32_t     MateRefID; 
-  int32_t     MatePosition;
-  uint16_t    MapQuality;    
-  int32_t     Median;
-  int32_t     Mad;
-  int32_t     maxNormalISize;
-  int         libOrient;
-  uint32_t    AlignmentFlag; 
+  int32_t l_qseq;
+  int32_t tid;         
+  int32_t pos;      
+  int32_t mtid; 
+  int32_t mpos;
+  uint8_t MapQuality;
+  int32_t Median;
+  int32_t Mad;
+  int32_t maxNormalISize;
+  int libOrient;
+  uint32_t flag; 
 
-  BamAlignRecord(BamTools::BamAlignment const& al, uint16_t pairQuality, int32_t median, int32_t mad, int32_t maxISize, int lO) : Length(al.Length), RefID(al.RefID), Position(al.Position), MateRefID(al.MateRefID), MatePosition(al.MatePosition), MapQuality(pairQuality), Median(median), Mad(mad), maxNormalISize(maxISize), libOrient(lO), AlignmentFlag(al.AlignmentFlag) {}
-
+  BamAlignRecord(bam1_t* rec, uint8_t pairQuality, int32_t median, int32_t mad, int32_t maxISize, int lO) : l_qseq(rec->core.l_qseq), tid(rec->core.tid), pos(rec->core.pos), mtid(rec->core.mtid), mpos(rec->core.mpos), MapQuality(pairQuality), Median(median), Mad(mad), maxNormalISize(maxISize), libOrient(lO), flag(rec->core.flag) {}
 };
 
 // Sort reduced bam alignment records
@@ -118,14 +116,14 @@ template<typename TRecord>
 struct SortBamRecords : public std::binary_function<TRecord, TRecord, bool>
 {
   inline bool operator()(TRecord const& s1, TRecord const& s2) const {
-    if (s1.RefID==s1.MateRefID) {
-      return ((std::min(s1.Position,s1.MatePosition) < std::min(s2.Position,s2.MatePosition)) || 
-	      ((std::min(s1.Position,s1.MatePosition) == std::min(s2.Position,s2.MatePosition)) && (std::max(s1.Position,s1.MatePosition) < std::max(s2.Position,s2.MatePosition))) ||
-	      ((std::min(s1.Position,s1.MatePosition) == std::min(s2.Position,s2.MatePosition)) && (std::max(s1.Position,s1.MatePosition) == std::max(s2.Position,s2.MatePosition)) && (s1.maxNormalISize < s2.maxNormalISize)));
+    if (s1.tid==s1.mtid) {
+      return ((std::min(s1.pos, s1.mpos) < std::min(s2.pos, s2.mpos)) || 
+	      ((std::min(s1.pos, s1.mpos) == std::min(s2.pos, s2.mpos)) && (std::max(s1.pos, s1.mpos) < std::max(s2.pos, s2.mpos))) ||
+	      ((std::min(s1.pos, s1.mpos) == std::min(s2.pos, s2.mpos)) && (std::max(s1.pos, s1.mpos) == std::max(s2.pos, s2.mpos)) && (s1.maxNormalISize < s2.maxNormalISize)));
     } else {
-      return ((s1.Position < s2.Position) ||
-	      ((s1.Position == s2.Position) && (s1.MatePosition < s2.MatePosition)) ||
-	      ((s1.Position == s2.Position) && (s1.MatePosition == s2.MatePosition) && (s1.maxNormalISize < s2.maxNormalISize)));
+      return ((s1.pos < s2.pos) ||
+	      ((s1.pos == s2.pos) && (s1.mpos < s2.mpos)) ||
+	      ((s1.pos == s2.pos) && (s1.mpos == s2.mpos) && (s1.maxNormalISize < s2.maxNormalISize)));
     }
   }
 };
@@ -180,12 +178,12 @@ struct SortEdgeRecords : public std::binary_function<TRecord, TRecord, bool>
 
 // ExcludeInterval
 struct ExcludeInterval {
-  int32_t RefID;
+  int32_t tid;
   int32_t start;
   int32_t end;
   
   ExcludeInterval() {}
-  ExcludeInterval(int32_t r, int32_t s, int32_t e) : RefID(r), start(s), end(e) {}
+  ExcludeInterval(int32_t r, int32_t s, int32_t e) : tid(r), start(s), end(e) {}
 };
 
 // Sort exclude intervals
@@ -193,7 +191,7 @@ template<typename TRecord>
 struct SortExcludeIntervals : public std::binary_function<TRecord, TRecord, bool>
 {
   inline bool operator()(TRecord const& i1, TRecord const& i2) const {
-    return ((i1.RefID < i2.RefID) || ((i1.RefID == i2.RefID) && (i1.start < i2.start)) || ((i1.RefID == i2.RefID) && (i1.start == i2.start) && (i1.end < i2.end)));
+    return ((i1.tid < i2.tid) || ((i1.tid == i2.tid) && (i1.start < i2.start)) || ((i1.tid == i2.tid) && (i1.start == i2.start) && (i1.end < i2.end)));
   }
 };
 
@@ -957,9 +955,9 @@ _addID(SVType<InsertionTag>) {
 }
 
 // Parse Delly vcf file
-template<typename TConfig, typename TReferences, typename TSize, typename TStructuralVariantRecord, typename TTag>
+template<typename TConfig, typename TRefNames, typename TRefLen, typename TSize, typename TStructuralVariantRecord, typename TTag>
 inline void
-vcfParse(TConfig const& c, TReferences const references, TSize const overallMaxISize, std::vector<TStructuralVariantRecord>& svs, SVType<TTag> svType)
+vcfParse(TConfig const& c, TRefNames const& refnames, TRefLen const& reflen, TSize const overallMaxISize, std::vector<TStructuralVariantRecord>& svs, SVType<TTag> svType)
 {
   bool refPresent=false;
   if (boost::filesystem::exists(c.genome) && boost::filesystem::is_regular_file(c.genome) && boost::filesystem::file_size(c.genome)) refPresent=true;
@@ -967,8 +965,7 @@ vcfParse(TConfig const& c, TReferences const references, TSize const overallMaxI
   if (vcfFile.is_open()) {
     typedef boost::unordered_map<std::string, unsigned int> TMapChr;
     TMapChr mapChr;
-    typename TReferences::const_iterator itRef = references.begin();
-    for(unsigned int i = 0;itRef!=references.end();++itRef, ++i) mapChr[ itRef->RefName ] = i;
+    for(unsigned int i = 0; i<refnames.size(); ++i) mapChr[ refnames[i] ] = i;
     while (vcfFile.good()) {
       std::string vcfLine;
       getline(vcfFile, vcfLine);
@@ -1013,7 +1010,7 @@ vcfParse(TConfig const& c, TReferences const references, TSize const overallMaxI
 	      std::string key = keyValue.substr(0, found);
 	      std::string value = keyValue.substr(found+1);
 	      if (key == "PE") svRec.peSupport = boost::lexical_cast<int>(value);
-	      else if (key == "MAPQ") svRec.peMapQuality = boost::lexical_cast<uint16_t>(value);
+	      else if (key == "MAPQ") svRec.peMapQuality = boost::lexical_cast<uint8_t>(value);
 	      else if (key == "SR") svRec.srSupport = boost::lexical_cast<int>(value);
 	      else if (key == "SRQ") svRec.srAlignQuality = boost::lexical_cast<double>(value);
 	      else if (key == "CHR2") {
@@ -1041,9 +1038,9 @@ vcfParse(TConfig const& c, TReferences const references, TSize const overallMaxI
 	      else continue;
 	    }
 	    svRec.svStartBeg = std::max(svRec.svStart - 1 - overallMaxISize, 0);
-	    svRec.svStartEnd = std::min(svRec.svStart - 1 + overallMaxISize, references[svRec.chr].RefLength);
+	    svRec.svStartEnd = std::min((uint32_t) svRec.svStart - 1 + overallMaxISize, reflen[svRec.chr]);
 	    svRec.svEndBeg = std::max(svRec.svEnd - 1 - overallMaxISize, 0);
-	    svRec.svEndEnd = std::min(svRec.svEnd - 1 + overallMaxISize, references[svRec.chr2].RefLength);
+	    svRec.svEndEnd = std::min((uint32_t) svRec.svEnd - 1 + overallMaxISize, reflen[svRec.chr2]);
 	    if ((svRec.chr==svRec.chr2) && (svRec.svStartEnd > svRec.svEndBeg)) {
 	      unsigned int midPointDel = ((svRec.svEnd - svRec.svStart) / 2) + svRec.svStart;
 	      svRec.svStartEnd = midPointDel -1;
@@ -1118,9 +1115,15 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
   typedef typename TCountPair::first_type TMapqVector;
 
   // Get the references
-  BamTools::BamReader reader;
-  reader.Open(c.files[0].string());
-  BamTools::RefVector references = reader.GetReferenceData();
+  typedef std::vector<std::string> TRefNames;
+  TRefNames refnames;
+  if (refnames.empty()) {
+    samFile* samfile = sam_open(c.files[0].string().c_str(), "r");
+    bam_hdr_t* hdr = sam_hdr_read(samfile);
+    for (int i = 0; i<hdr->n_targets; ++i) refnames.push_back(hdr->target_name[i]);
+    bam_hdr_destroy(hdr);
+    sam_close(samfile);
+  }
 
   // Output all structural variants
   std::ofstream ofile(c.outfile.string().c_str());
@@ -1186,7 +1189,7 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
     
     std::stringstream id;
     id << _addID(svType) << std::setw(8) << std::setfill('0') << svIter->id;
-    ofile << references[svIter->chr].RefName << "\t" << svIter->svStart << "\t" << id.str() << "\tN\t<" << _addID(svType) << ">\t.\t" <<  filterField << "\t";
+    ofile << refnames[svIter->chr] << "\t" << svIter->svStart << "\t" << id.str() << "\tN\t<" << _addID(svType) << ">\t.\t" <<  filterField << "\t";
 
     // Add info fields
     if (svIter->precise) ofile << "PRECISE;";
@@ -1194,7 +1197,7 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
     ofile << "CIEND=" << -svIter->wiggle << "," << svIter->wiggle << ";CIPOS=" << -svIter->wiggle << "," << svIter->wiggle << ";";
     ofile << "SVTYPE=" << _addID(svType) << ";";
     ofile << "SVMETHOD=EMBL.DELLYv" << dellyVersionNumber << ";";
-    ofile << "CHR2=" << references[svIter->chr2].RefName << ";";
+    ofile << "CHR2=" << refnames[svIter->chr2] << ";";
     ofile << "END=" << svIter->svEnd << ";";
     ofile << "CT=" << _addOrientation(svIter->ct, svType) << ";";
     ofile << "INSLEN=" << _addInsertionLength(svIter->insLen, svType) << ";";
@@ -1303,6 +1306,14 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
   ofile.close();
 }
 
+template<typename TClipSizes>
+inline void _clips(bam1_t* rec, TClipSizes& csizes) {
+  uint32_t* cigar = bam_get_cigar(rec);
+  for (int i = 0; i < rec->core.n_cigar; ++i) 
+    if (bam_cigar_op(cigar[i]) == BAM_CSOFT_CLIP) csizes.push_back(bam_cigar_oplen(cigar[i]));
+}
+
+
 template<typename TConfig, typename TStructuralVariantRecord>
 inline bool
 findPutativeSplitReads(TConfig const&, std::vector<TStructuralVariantRecord>&,  SVType<InsertionTag>) 
@@ -1316,10 +1327,24 @@ findPutativeSplitReads(TConfig const& c, std::vector<TStructuralVariantRecord>& 
 {
   typedef std::vector<TStructuralVariantRecord> TSVs;
 
-  // Parse reference information
-  BamTools::BamReader reader;
-  if ( ! reader.Open(c.files[0].string())) return -1;
-  BamTools::RefVector references = reader.GetReferenceData();
+  // Open file handles
+  typedef std::vector<std::string> TRefNames;
+  TRefNames refnames;
+  typedef std::vector<samFile*> TSamFile;
+  typedef std::vector<hts_idx_t*> TIndex;
+  TSamFile samfile;
+  TIndex idx;
+  samfile.resize(c.files.size());
+  idx.resize(c.files.size());
+  for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
+    samfile[file_c] = sam_open(c.files[file_c].string().c_str(), "r");
+    idx[file_c] = sam_index_load(samfile[file_c], c.files[file_c].string().c_str());
+    if (!file_c) {
+      bam_hdr_t* hdr = sam_hdr_read(samfile[file_c]);
+      for (int i = 0; i<hdr->n_targets; ++i) refnames.push_back(hdr->target_name[i]);
+      bam_hdr_destroy(hdr);
+    }
+  }
 
   // Parse genome, no single-anchored reads anymore only soft-clipped reads
   unsigned int totalSplitReadsAligned = 0;
@@ -1329,12 +1354,11 @@ findPutativeSplitReads(TConfig const& c, std::vector<TStructuralVariantRecord>& 
   seq = kseq_init(fp);
   boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
   std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Split-read alignment" << std::endl;
-  boost::progress_display show_progress( references.size() );
+  boost::progress_display show_progress( refnames.size() );
   while ((l = kseq_read(seq)) >= 0) {
     // Find reference index
-    BamTools::RefVector::const_iterator itRef = references.begin();
-    for(int32_t refIndex=0;itRef!=references.end();++itRef, ++refIndex) {
-      if (seq->name.s == references[refIndex].RefName) {
+    for(int32_t refIndex=0; refIndex < refnames.size(); ++refIndex) {
+      if (seq->name.s == refnames[refIndex]) {
 	++show_progress;
 
 	// Iterate all structural variants on this chromosome
@@ -1353,14 +1377,8 @@ findPutativeSplitReads(TConfig const& c, std::vector<TStructuralVariantRecord>& 
 	    TSplitReadSet splitReadSet;
 
 	    // Find putative split reads in all samples
-            #pragma omp parallel for default(shared)
+#pragma omp parallel for default(shared)
 	    for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
-	      // Initialize bam file
-	      BamTools::BamReader reader;
-	      reader.Open(c.files[file_c].string());
-	      reader.LocateIndex();
-
-	      BamTools::BamAlignment al;
 	      for (unsigned int bpPoint = 0; bpPoint<2; ++bpPoint) {
 		int32_t regionChr = svIt->chr;
 		int regionStart = (svIt->svStartBeg + svIt->svStart)/2;
@@ -1370,31 +1388,33 @@ findPutativeSplitReads(TConfig const& c, std::vector<TStructuralVariantRecord>& 
 		  regionStart = (svIt->svEndBeg + svIt->svEnd)/2;
 		  regionEnd = (svIt->svEnd + svIt->svEndEnd)/2;
 		}
-		if (reader.SetRegion(regionChr, regionStart, regionChr, regionEnd)) {
-		  while (reader.GetNextAlignmentCore(al)) {
-		    if (al.RefID != refIndex) break;
-		    if (!(al.AlignmentFlag & 0x0004) && !(al.AlignmentFlag & 0x0100) && !(al.AlignmentFlag & 0x0200) && !(al.AlignmentFlag & 0x0400) && !(al.AlignmentFlag & 0x0800)) {
-		      // Clipped read
-		      typedef std::vector<int> TIntVector;
-		      TIntVector clipSizes;
-		      TIntVector readPositions;
-		      TIntVector genomePositions;
-		      bool hasSoftClips = al.GetSoftClips(clipSizes, readPositions, genomePositions, false);
-		      // Exactly one soft clip
-		      if ((hasSoftClips) && (clipSizes.size()==1)) {
-			// Get the sequence
-			al.BuildCharData();
-			  
-			// Minimum clip size length fulfilled?
-			int minClipSize = (int) (log10(al.QueryBases.size()) * 10);
+		hts_itr_t* iter = sam_itr_queryi(idx[file_c], regionChr, regionStart, regionEnd);
+		bam1_t* rec = bam_init1();
+		while (sam_itr_next(samfile[file_c], iter, rec) >= 0) {
+		  if (rec->core.flag & (BAM_FSECONDARY | BAM_FQCFAIL | BAM_FDUP | BAM_FSUPPLEMENTARY | BAM_FUNMAP)) continue;
+
+		  // Clipped read
+		  typedef std::vector<int> TIntVector;
+		  TIntVector clipSizes;
+		  _clips(rec, clipSizes);
+		  // Exactly one soft clip
+		  if (clipSizes.size()==1) {
+		    // Get the sequence
+		    std::string sequence;
+		    sequence.resize(rec->core.l_qseq);
+		    uint8_t* seqptr = bam_get_seq(rec);
+		    for (int i = 0; i < rec->core.l_qseq; ++i) sequence[i] = "=ACMGRSVTWYHKDBN"[bam_seqi(seqptr, i)];
+		    
+		    // Minimum clip size length fulfilled?
+		    int minClipSize = (int) (log10(rec->core.l_qseq) * 10);
 #pragma omp critical
-			{
-			  if (clipSizes[0]>=minClipSize) splitReadSet.insert(al.QueryBases);
-			}
-		      }
+		    {
+		      if (clipSizes[0]>=minClipSize) splitReadSet.insert(sequence);
 		    }
 		  }
 		}
+		bam_destroy1(rec);
+		hts_itr_destroy(iter);		
 	      }
 	    }
 	    //std::cout << "Num. split reads: " << splitReadSet.size() << std::endl;
@@ -1423,6 +1443,12 @@ findPutativeSplitReads(TConfig const& c, std::vector<TStructuralVariantRecord>& 
   kseq_destroy(seq);
   gzclose(fp);
 
+  // Clean-up
+  for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
+    hts_idx_destroy(idx[file_c]);
+    sam_close(samfile[file_c]);
+  }
+
   return (totalSplitReadsAligned>0);
 }
 
@@ -1431,17 +1457,17 @@ findPutativeSplitReads(TConfig const& c, std::vector<TStructuralVariantRecord>& 
 template<typename TBamRecordIterator, typename TSize>
 inline void
 _initClique(TBamRecordIterator const& el, TSize& svStart, TSize& svEnd, TSize& wiggle, SVType<DeletionTag>) {
-  svStart = std::min(el->Position + el->Length, el->MatePosition + el->Length);
-  svEnd = std::max(el->Position, el->MatePosition);
-  wiggle =  abs(el->Position - el->MatePosition) + el->Length - el->maxNormalISize -(svEnd -svStart);
+  svStart = std::min(el->pos + el->l_qseq, el->mpos + el->l_qseq);
+  svEnd = std::max(el->pos, el->mpos);
+  wiggle =  abs(el->pos - el->mpos) + el->l_qseq - el->maxNormalISize -(svEnd -svStart);
 }
 
 // Initialize clique, insertions
 template<typename TBamRecordIterator, typename TSize>
 inline void
 _initClique(TBamRecordIterator const& el, TSize& svStart, TSize& svEnd, TSize& wiggle, SVType<InsertionTag>) {
-  svStart = std::min(el->Position + el->Length, el->MatePosition + el->Length);
-  svEnd = std::max(el->Position, el->MatePosition);
+  svStart = std::min(el->pos + el->l_qseq, el->mpos + el->l_qseq);
+  svEnd = std::max(el->pos, el->mpos);
   wiggle = -(svEnd - svStart);
 }
 
@@ -1449,9 +1475,9 @@ _initClique(TBamRecordIterator const& el, TSize& svStart, TSize& svEnd, TSize& w
 template<typename TBamRecordIterator, typename TSize>
 inline void
 _initClique(TBamRecordIterator const& el, TSize& svStart, TSize& svEnd, TSize& wiggle, SVType<DuplicationTag>) {
-  svStart = std::min(el->Position, el->MatePosition);
-  svEnd = std::max(el->Position + el->Length, el->MatePosition + el->Length);
-  wiggle =  abs(el->Position - el->MatePosition) - el->Length + el->maxNormalISize -(svEnd -svStart);
+  svStart = std::min(el->pos, el->mpos);
+  svEnd = std::max(el->pos + el->l_qseq, el->mpos + el->l_qseq);
+  wiggle =  abs(el->pos - el->mpos) - el->l_qseq + el->maxNormalISize -(svEnd -svStart);
 }
 
 // Initialize clique, inversions
@@ -1460,13 +1486,13 @@ inline void
 _initClique(TBamRecordIterator const& el, TSize& svStart, TSize& svEnd, TSize& wiggle, SVType<InversionTag>) {
   int ct=_getSpanOrientation(*el, el->libOrient, SVType<InversionTag>());
   if (ct==1) {
-    svStart = std::min(el->Position, el->MatePosition) + el->Length;
-    svEnd = std::max(el->Position, el->MatePosition) + el->Length;
+    svStart = std::min(el->pos, el->mpos) + el->l_qseq;
+    svEnd = std::max(el->pos, el->mpos) + el->l_qseq;
   } else {
-    svStart = std::min(el->Position, el->MatePosition);
-    svEnd = std::max(el->Position, el->MatePosition);
+    svStart = std::min(el->pos, el->mpos);
+    svEnd = std::max(el->pos, el->mpos);
   }
-  wiggle=el->maxNormalISize - el->Length;
+  wiggle=el->maxNormalISize - el->l_qseq;
 }
 
 // Initialize clique, translocations
@@ -1475,15 +1501,15 @@ inline void
 _initClique(TBamRecordIterator const& el, TSize& svStart, TSize& svEnd, TSize& wiggle, SVType<TranslocationTag>) {
   int ct=_getSpanOrientation(*el, el->libOrient, SVType<TranslocationTag>());
   if (ct%2==0) {
-    svStart = el->Position + el->Length;
-    if (ct>=2) svEnd = el->MatePosition;
-    else svEnd = el->MatePosition + el->Length;
+    svStart = el->pos + el->l_qseq;
+    if (ct>=2) svEnd = el->mpos;
+    else svEnd = el->mpos + el->l_qseq;
   } else {
-    svStart = el->Position;
-    if (ct>=2) svEnd = el->MatePosition + el->Length;
-    else svEnd = el->MatePosition;
+    svStart = el->pos;
+    if (ct>=2) svEnd = el->mpos + el->l_qseq;
+    else svEnd = el->mpos;
   }
-  wiggle=el->maxNormalISize - el->Length;
+  wiggle=el->maxNormalISize - el->l_qseq;
 }
 
 
@@ -1492,9 +1518,9 @@ template<typename TBamRecordIterator, typename TSize>
 inline bool 
 _updateClique(TBamRecordIterator const& el, TSize& svStart, TSize& svEnd, TSize& wiggle, SVType<DeletionTag>) 
 {
-  TSize newSvStart = std::max(svStart, std::min(el->Position + el->Length, el->MatePosition + el->Length));
-  TSize newSvEnd = std::min(svEnd, std::max(el->Position, el->MatePosition));
-  TSize newWiggle = abs(el->Position - el->MatePosition) + el->Length - el->maxNormalISize -(newSvEnd - newSvStart);
+  TSize newSvStart = std::max(svStart, std::min(el->pos + el->l_qseq, el->mpos + el->l_qseq));
+  TSize newSvEnd = std::min(svEnd, std::max(el->pos, el->mpos));
+  TSize newWiggle = abs(el->pos - el->mpos) + el->l_qseq - el->maxNormalISize -(newSvEnd - newSvStart);
   TSize wiggleChange = wiggle + (svEnd-svStart) - (newSvEnd - newSvStart);
   if (wiggleChange > newWiggle) newWiggle=wiggleChange;
 
@@ -1513,8 +1539,8 @@ template<typename TBamRecordIterator, typename TSize>
 inline bool 
 _updateClique(TBamRecordIterator const& el, TSize& svStart, TSize& svEnd, TSize& wiggle, SVType<InsertionTag>) 
 {
-  TSize newSvStart = std::max(svStart, std::min(el->Position + el->Length, el->MatePosition + el->Length));
-  TSize newSvEnd = std::min(svEnd, std::max(el->Position, el->MatePosition));
+  TSize newSvStart = std::max(svStart, std::min(el->pos + el->l_qseq, el->mpos + el->l_qseq));
+  TSize newSvEnd = std::min(svEnd, std::max(el->pos, el->mpos));
   TSize newWiggle = -(newSvEnd - newSvStart);
 
   // Does the new insertion size agree with all pairs
@@ -1532,9 +1558,9 @@ template<typename TBamRecordIterator, typename TSize>
 inline bool 
 _updateClique(TBamRecordIterator const& el, TSize& svStart, TSize& svEnd, TSize& wiggle, SVType<DuplicationTag>) 
 {
-  TSize newSvStart = std::min(svStart, std::min(el->Position, el->MatePosition));
-  TSize newSvEnd = std::max(svEnd, std::max(el->Position + el->Length, el->MatePosition + el->Length));
-  TSize newWiggle = abs(el->Position - el->MatePosition) - el->Length + el->maxNormalISize -(newSvEnd - newSvStart);
+  TSize newSvStart = std::min(svStart, std::min(el->pos, el->mpos));
+  TSize newSvEnd = std::max(svEnd, std::max(el->pos + el->l_qseq, el->mpos + el->l_qseq));
+  TSize newWiggle = abs(el->pos - el->mpos) - el->l_qseq + el->maxNormalISize -(newSvEnd - newSvStart);
   TSize wiggleChange = wiggle - ((newSvEnd - newSvStart) - (svEnd-svStart));
   if (wiggleChange < newWiggle) newWiggle=wiggleChange;
 
@@ -1559,14 +1585,14 @@ _updateClique(TBamRecordIterator const& el, TSize& svStart, TSize& svEnd, TSize&
   TSize newWiggle;
   TSize wiggleChange;
   if (ct==1) {
-    newSvStart = std::max(svStart, std::min(el->Position, el->MatePosition) + el->Length);
-    newSvEnd = std::max(svEnd, std::max(el->Position, el->MatePosition) + el->Length);
-    newWiggle = std::min(el->maxNormalISize - (newSvStart - std::min(el->Position, el->MatePosition)), el->maxNormalISize - (newSvEnd - std::max(el->Position, el->MatePosition)));
+    newSvStart = std::max(svStart, std::min(el->pos, el->mpos) + el->l_qseq);
+    newSvEnd = std::max(svEnd, std::max(el->pos, el->mpos) + el->l_qseq);
+    newWiggle = std::min(el->maxNormalISize - (newSvStart - std::min(el->pos, el->mpos)), el->maxNormalISize - (newSvEnd - std::max(el->pos, el->mpos)));
     wiggleChange = wiggle - std::max(newSvStart - svStart, newSvEnd - svEnd);
   } else {
-    newSvStart = std::min(svStart, std::min(el->Position, el->MatePosition));
-    newSvEnd = std::min(svEnd, std::max(el->Position, el->MatePosition));
-    newWiggle = std::min(el->maxNormalISize - (std::min(el->Position, el->MatePosition) + el->Length - newSvStart), el->maxNormalISize - (std::max(el->Position, el->MatePosition) + el->Length - newSvEnd));
+    newSvStart = std::min(svStart, std::min(el->pos, el->mpos));
+    newSvEnd = std::min(svEnd, std::max(el->pos, el->mpos));
+    newWiggle = std::min(el->maxNormalISize - (std::min(el->pos, el->mpos) + el->l_qseq - newSvStart), el->maxNormalISize - (std::max(el->pos, el->mpos) + el->l_qseq - newSvEnd));
     wiggleChange = wiggle - std::max(svStart - newSvStart, svEnd - newSvEnd);
   }
   if (wiggleChange < newWiggle) newWiggle=wiggleChange;
@@ -1592,23 +1618,23 @@ _updateClique(TBamRecordIterator const& el, TSize& svStart, TSize& svEnd, TSize&
   TSize newSvEnd;
   TSize newWiggle = wiggle;
   if (ct%2==0) {
-    newSvStart = std::max(svStart, el->Position + el->Length);
+    newSvStart = std::max(svStart, el->pos + el->l_qseq);
     newWiggle -= (newSvStart - svStart);
     if (ct>=2) {
-      newSvEnd = std::min(svEnd, el->MatePosition);
+      newSvEnd = std::min(svEnd, el->mpos);
       newWiggle -= (svEnd - newSvEnd);
     } else  {
-      newSvEnd = std::max(svEnd, el->MatePosition + el->Length);
+      newSvEnd = std::max(svEnd, el->mpos + el->l_qseq);
       newWiggle -= (newSvEnd - svEnd);
     }
   } else {
-    newSvStart = std::min(svStart, el->Position);
+    newSvStart = std::min(svStart, el->pos);
     newWiggle -= (svStart - newSvStart);
     if (ct>=2) {
-      newSvEnd = std::max(svEnd, el->MatePosition + el->Length);
+      newSvEnd = std::max(svEnd, el->mpos + el->l_qseq);
       newWiggle -= (newSvEnd - svEnd);
     } else {
-      newSvEnd = std::min(svEnd, el->MatePosition);
+      newSvEnd = std::min(svEnd, el->mpos);
       newWiggle -= (svEnd - newSvEnd);
     }
   }
@@ -1685,11 +1711,10 @@ _annotateSpanningCoverage(TConfig const& c, TSampleLibrary& sampleLib, TSVs& svs
 
 template<typename TSVType>
 inline int run(Config const& c, TSVType svType) {
-
 #ifdef PROFILE
   ProfilerStart("delly.prof");
 #endif
-
+  
   // Collect all promising structural variants
   typedef std::vector<StructuralVariantRecord> TVariants;
   TVariants svs;
@@ -1702,42 +1727,32 @@ inline int run(Config const& c, TSVType svType) {
   typedef boost::unordered_map<std::string, TLibraryMap> TSampleLibrary;
   TSampleLibrary sampleLib;
   int overallMaxISize = 0;
+  getLibraryParams(c.files, sampleLib, c.percentAbnormal, c.madCutoff);
+  for(TSampleLibrary::const_iterator sampleIt=sampleLib.begin(); sampleIt!=sampleLib.end();++sampleIt)
+    for(TLibraryMap::const_iterator libIt=sampleIt->second.begin();libIt!=sampleIt->second.end();++libIt)
+      if (libIt->second.maxNormalISize > overallMaxISize) overallMaxISize = libIt->second.maxNormalISize;
 
-  // Check that all input bam files exist and are indexed
-  BamTools::RefVector references;
+  // Open file handles
+  typedef std::vector<std::string> TRefNames;
+  typedef std::vector<uint32_t> TRefLength;
+  TRefNames refnames;
+  TRefLength reflen;
+  typedef std::vector<samFile*> TSamFile;
+  typedef std::vector<hts_idx_t*> TIndex;
+  TSamFile samfile;
+  TIndex idx;
+  samfile.resize(c.files.size());
+  idx.resize(c.files.size());
   for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
-    BamTools::BamReader reader;
-    if ( ! reader.Open(c.files[file_c].string()) ) {
-      std::cerr << "Could not open input bam file: " << c.files[file_c].string() << std::endl;
-      reader.Close();
-      return -1;
-    }
-    reader.LocateIndex();
-    if ( !reader.HasIndex() ) {
-      std::cerr << "Missing bam index file: " << c.files[file_c].string() << std::endl;
-      reader.Close();
-      return -1;
-    }
-
-    // Get references
-    if (file_c==0) references = reader.GetReferenceData();
-  }
-
-  // Get library parameters
-#pragma omp parallel for default(shared)
-  for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
-    // Get a sample name
-    std::string sampleName(c.files[file_c].stem().string());
-
-    // Get library parameters and overall maximum insert size
-    TLibraryMap libInfo;
-    getLibraryParams(c.files[file_c], libInfo, c.percentAbnormal, c.madCutoff);
-#pragma omp critical
-    {
-      TLibraryMap::const_iterator libIter=libInfo.begin();
-      for(;libIter!=libInfo.end();++libIter) 
-	if (libIter->second.maxNormalISize > overallMaxISize) overallMaxISize = libIter->second.maxNormalISize;
-      sampleLib.insert(std::make_pair(sampleName, libInfo));
+    samfile[file_c] = sam_open(c.files[file_c].string().c_str(), "r");
+    idx[file_c] = sam_index_load(samfile[file_c], c.files[file_c].string().c_str());
+    if (!file_c) {
+      bam_hdr_t* hdr = sam_hdr_read(samfile[file_c]);
+      for (int i = 0; i<hdr->n_targets; ++i) {
+	refnames.push_back(hdr->target_name[i]);
+	reflen.push_back(hdr->target_len[i]);
+      }
+      bam_hdr_destroy(hdr);
     }
   }
 
@@ -1751,16 +1766,15 @@ inline int run(Config const& c, TSVType svType) {
   }
 
   // Parse exclude interval list
-  BamTools::RefVector::const_iterator itRef = references.begin();
+  TRefNames::const_iterator itRef = refnames.begin();
   std::vector<bool> validChr;
   typedef std::vector<ExcludeInterval> TExclInterval;
   TExclInterval exclIntervals;
-  validChr.resize(references.size());
-  std::fill(validChr.begin(), validChr.end(), true);
+  validChr.resize(refnames.size(), true);
   if (boost::filesystem::exists(c.exclude) && boost::filesystem::is_regular_file(c.exclude) && boost::filesystem::file_size(c.exclude)) {
     typedef boost::unordered_map<std::string, unsigned int> TMapChr;
     TMapChr mapChr;
-    for(unsigned int i = 0;itRef!=references.end();++itRef, ++i) mapChr[ itRef->RefName ] = i;
+    for(unsigned int i = 0;itRef!=refnames.end();++itRef, ++i) mapChr[ *itRef ] = i;
     std::ifstream chrFile(c.exclude.string().c_str(), std::ifstream::in);
     if (chrFile.is_open()) {
       while (chrFile.good()) {
@@ -1792,16 +1806,15 @@ inline int run(Config const& c, TSVType svType) {
   if (boost::filesystem::exists(c.vcffile) && boost::filesystem::is_regular_file(c.vcffile) && boost::filesystem::file_size(c.vcffile)) peMapping=false;
 
   // Qualities
-  typedef boost::unordered_map<unsigned int, uint16_t> TQualities;
+  typedef boost::unordered_map<unsigned int, uint8_t> TQualities;
   std::vector<TQualities> qualities;
   qualities.resize(c.files.size());
 
   // Process chromosome by chromosome
   boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
   std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Paired-end clustering" << std::endl;
-  boost::progress_display show_progress( (references.end() - references.begin()) );
-  itRef = references.begin();
-  for(int refIndex=0; (itRef!=references.end()) && (peMapping); ++itRef, ++refIndex) {
+  boost::progress_display show_progress( refnames.size() );
+  for(int refIndex=0; (refIndex < refnames.size()) && (peMapping); ++refIndex) {
     ++show_progress;
     if (!validChr[refIndex]) continue;
       
@@ -1810,16 +1823,11 @@ inline int run(Config const& c, TSVType svType) {
     TBamRecord bamRecord;
 
     // Iterate all samples
-    #pragma omp parallel for default(shared)
+#pragma omp parallel for default(shared)
     for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
       // Get a sample name
       std::string sampleName(c.files[file_c].stem().string());
       TSampleLibrary::iterator sampleIt=sampleLib.find(sampleName);
-
-      // Initialize bam file
-      BamTools::BamReader reader;
-      reader.Open(c.files[file_c].string());
-      reader.LocateIndex();
 
       // Unique pairs for the given sample
       typedef boost::container::flat_set<int32_t> TUniquePairs;
@@ -1827,69 +1835,73 @@ inline int run(Config const& c, TSVType svType) {
 
       // Read alignments
       int32_t oldAlignPos=-1;
-      BamTools::BamAlignment al;
-      if ( reader.Jump(refIndex, 0) ) {
-	while( reader.GetNextAlignmentCore(al) ) {
-	  if (al.RefID!=refIndex) break; // Stop when we hit the next chromosome
-	  if ((al.AlignmentFlag & 0x0001) && !(al.AlignmentFlag & 0x0004) && !(al.AlignmentFlag & 0x0008) && !(al.AlignmentFlag & 0x0100) && !(al.AlignmentFlag & 0x0200) && !(al.AlignmentFlag & 0x0400) && !(al.AlignmentFlag & 0x0800) && (al.MapQuality >= c.minMapQual) && (al.RefID>=0) && (al.MateRefID>=0)) {
-	    // Mapping positions valid?
-	    if (_mappingPos(al.RefID, al.MateRefID, al.Position, al.MatePosition, svType)) continue;
-
-	    // Is the read or its mate in a black-masked region
-	    if (!exclIntervals.empty()) {
-	      typename TExclInterval::const_iterator itBlackMask = std::lower_bound(exclIntervals.begin(), exclIntervals.end(), ExcludeInterval(al.RefID, al.Position, 0), SortExcludeIntervals<ExcludeInterval>());
-	      if (itBlackMask!=exclIntervals.begin()) --itBlackMask;
-	      if ((itBlackMask->RefID==al.RefID) && (itBlackMask->start <= al.Position) && (al.Position<=itBlackMask->end)) continue;
-	      itBlackMask = std::lower_bound(exclIntervals.begin(), exclIntervals.end(), ExcludeInterval(al.MateRefID, al.MatePosition, 0), SortExcludeIntervals<ExcludeInterval>());
-	      if (itBlackMask!=exclIntervals.begin()) --itBlackMask;
-	      if ((itBlackMask->RefID==al.MateRefID) && (itBlackMask->start <= al.MatePosition) && (al.MatePosition<=itBlackMask->end)) continue;
+      hts_itr_t* iter = sam_itr_queryi(idx[file_c], refIndex, 0, reflen[refIndex]);
+      bam1_t* rec = bam_init1();
+      while (sam_itr_next(samfile[file_c], iter, rec) >= 0) {
+	if (rec->core.flag & (BAM_FSECONDARY | BAM_FQCFAIL | BAM_FDUP | BAM_FSUPPLEMENTARY | BAM_FUNMAP | BAM_FMUNMAP)) continue;
+	if ((rec->core.flag & BAM_FPAIRED) && (rec->core.qual >= c.minMapQual) && (rec->core.tid>=0) && (rec->core.mtid>=0)) {
+	  // Mapping positions valid?
+	  if (_mappingPos(rec->core.tid, rec->core.mtid, rec->core.pos, rec->core.mpos, svType)) continue;
+	
+	  // Is the read or its mate in a black-masked region
+	  if (!exclIntervals.empty()) {
+	    typename TExclInterval::const_iterator itBlackMask = std::lower_bound(exclIntervals.begin(), exclIntervals.end(), ExcludeInterval(rec->core.tid, rec->core.pos, 0), SortExcludeIntervals<ExcludeInterval>());
+	    if (itBlackMask!=exclIntervals.begin()) --itBlackMask;
+	    if ((itBlackMask->tid==rec->core.tid) && (itBlackMask->start <= rec->core.pos) && (rec->core.pos<=itBlackMask->end)) continue;
+	    itBlackMask = std::lower_bound(exclIntervals.begin(), exclIntervals.end(), ExcludeInterval(rec->core.mtid, rec->core.mpos, 0), SortExcludeIntervals<ExcludeInterval>());
+	    if (itBlackMask!=exclIntervals.begin()) --itBlackMask;
+	    if ((itBlackMask->tid==rec->core.mtid) && (itBlackMask->start <= rec->core.mpos) && (rec->core.mpos<=itBlackMask->end)) continue;
+	  }
+	  
+	  // Is this a discordantly mapped paired-end?
+	  std::string rG = "DefaultLib";
+	  uint8_t *rgptr = bam_aux_get(rec, "RG");
+	  if (rgptr) {
+	    char* rg = (char*) (rgptr + 1);
+	    rG = std::string(rg);
+	  }
+	  TLibraryMap::iterator libIt=sampleIt->second.find(rG);
+	  if (libIt==sampleIt->second.end()) std::cerr << "Missing read group: " << rG << std::endl;
+	  if (libIt->second.median == 0) continue; // Single-end library
+	  if (_acceptedInsertSize(libIt->second, abs(rec->core.isize), svType)) continue;  // Normal paired-end (for deletions/insertions only)
+	  if (_acceptedOrientation(libIt->second.defaultOrient, getStrandIndependentOrientation(rec->core), svType)) continue;  // Orientation disagrees with SV type
+	  
+	  // Get or store the mapping quality for the partner
+	  if (_firstPairObs(rec->core.tid, rec->core.mtid, rec->core.pos, rec->core.mpos, svType)) {
+	    // Hash the quality
+	    unsigned int index=((rec->core.pos % (int)boost::math::pow<14>(2))<<14) + (rec->core.mpos % (int)boost::math::pow<14>(2));
+	    qualities[file_c][index]=rec->core.qual;
+	  } else {
+	    // Get the two mapping qualities
+	    unsigned int index=((rec->core.mpos % (int)boost::math::pow<14>(2))<<14) + (rec->core.pos % (int)boost::math::pow<14>(2));
+	    uint8_t pairQuality = (qualities[file_c][index] < rec->core.qual) ? qualities[file_c][index] : rec->core.qual;
+	    qualities[file_c][index]=0;
+	    
+	    // Pair quality
+	    if (pairQuality < c.minMapQual) continue;
+	    
+	    // Store the paired-end
+	    if (rec->core.pos!=oldAlignPos) {
+	      oldAlignPos=rec->core.pos;
+	      unique_pairs.clear();
 	    }
-
-	    // Is this a discordantly mapped paired-end?
-	    al.BuildCharData();
-	    std::string rG = "DefaultLib";
-	    al.GetTag("RG", rG);
-	    TLibraryMap::iterator libIt=sampleIt->second.find(rG);
-	    if (libIt==sampleIt->second.end()) std::cerr << "Missing read group: " << rG << std::endl;
-	    if (libIt->second.median == 0) continue; // Single-end library
-	    if (_acceptedInsertSize(libIt->second, abs(al.InsertSize), svType)) continue;  // Normal paired-end (for deletions/insertions only)
-	    if (_acceptedOrientation(libIt->second.defaultOrient, getStrandIndependentOrientation(al), svType)) continue;  // Orientation disagrees with SV type
-
-	    // Get or store the mapping quality for the partner
-	    if (_firstPairObs(al.RefID, al.MateRefID, al.Position, al.MatePosition, svType)) {
-	      // Hash the quality
-	      unsigned int index=((al.Position % (int)boost::math::pow<14>(2))<<14) + (al.MatePosition % (int)boost::math::pow<14>(2));
-	      qualities[file_c][index]=al.MapQuality;
-	    } else {
-	      // Get the two mapping qualities
-	      unsigned int index=((al.MatePosition % (int)boost::math::pow<14>(2))<<14) + (al.Position % (int)boost::math::pow<14>(2));
-	      uint16_t pairQuality = std::min(qualities[file_c][index], al.MapQuality);
-	      qualities[file_c][index]=0;
-
-	      // Pair quality
-	      if (pairQuality < c.minMapQual) continue;
-
-	      // Store the paired-end
-	      if (al.Position!=oldAlignPos) {
-		oldAlignPos=al.Position;
-		unique_pairs.clear();
-	      }
-	      if (unique_pairs.insert(al.MatePosition).second) {
+	    if (unique_pairs.insert(rec->core.mpos).second) {
 #pragma omp critical
-		{
-		  bamRecord.push_back(BamAlignRecord(al, pairQuality, libIt->second.median, libIt->second.mad, libIt->second.maxNormalISize, libIt->second.defaultOrient));
-		}
-		++libIt->second.abnormal_pairs;
-	      } else {
-		++libIt->second.non_unique_abnormal_pairs;
+	      {
+		bamRecord.push_back(BamAlignRecord(rec, pairQuality, libIt->second.median, libIt->second.mad, libIt->second.maxNormalISize, libIt->second.defaultOrient));
 	      }
+	      ++libIt->second.abnormal_pairs;
+	    } else {
+	      ++libIt->second.non_unique_abnormal_pairs;
 	    }
 	  }
 	}
       }
-
       // Clean-up qualities
       _resetQualities(qualities[file_c], svType);
+
+      bam_destroy1(rec);
+      hts_itr_destroy(iter);
     }
     
     // Sort BAM records according to position
@@ -1913,15 +1925,15 @@ inline int run(Config const& c, TSVType svType) {
     TBamRecord::const_iterator vecBeg = bamRecord.begin();
     TBamRecord::const_iterator vecEnd = bamRecord.end();
     for(;vecBeg!=vecEnd; ++vecBeg) {
-      int32_t const minCoord = _minCoord(vecBeg->Position, vecBeg->MatePosition, svType);
-      int32_t const maxCoord = _maxCoord(vecBeg->Position, vecBeg->MatePosition, svType);
+      int32_t const minCoord = _minCoord(vecBeg->pos, vecBeg->mpos, svType);
+      int32_t const maxCoord = _maxCoord(vecBeg->pos, vecBeg->mpos, svType);
       TBamRecord::const_iterator vecNext = vecBeg + 1;
-      for(; ((vecNext != vecEnd) && (abs(_minCoord(vecNext->Position, vecNext->MatePosition, svType) + vecNext->Length - minCoord) <= overallMaxISize)) ; ++vecNext) {
+      for(; ((vecNext != vecEnd) && (abs(_minCoord(vecNext->pos, vecNext->mpos, svType) + vecNext->l_qseq - minCoord) <= overallMaxISize)) ; ++vecNext) {
 	// Check that mate chr agree (only for translocations)
-	if (vecBeg->MateRefID!=vecNext->MateRefID) continue;
+	if (vecBeg->mtid!=vecNext->mtid) continue;
 
 	// Check combinability of pairs
-	if (_pairsDisagree(minCoord, maxCoord, vecBeg->Length, vecBeg->maxNormalISize, _minCoord(vecNext->Position, vecNext->MatePosition, svType), _maxCoord(vecNext->Position, vecNext->MatePosition, svType), vecNext->Length, vecNext->maxNormalISize, _getSpanOrientation(*vecBeg, vecBeg->libOrient, svType), _getSpanOrientation(*vecNext, vecNext->libOrient, svType), svType)) continue;
+	if (_pairsDisagree(minCoord, maxCoord, vecBeg->l_qseq, vecBeg->maxNormalISize, _minCoord(vecNext->pos, vecNext->mpos, svType), _maxCoord(vecNext->pos, vecNext->mpos, svType), vecNext->l_qseq, vecNext->maxNormalISize, _getSpanOrientation(*vecBeg, vecBeg->libOrient, svType), _getSpanOrientation(*vecNext, vecNext->libOrient, svType), svType)) continue;
 	
 	TNameVertexMap::iterator pos;
 	bool inserted;
@@ -1953,7 +1965,7 @@ inline int run(Config const& c, TSVType svType) {
 	  boost::graph_traits<Graph>::edge_descriptor e;
 	  tie(e, inserted) = add_edge(u,v, g);
 	  if (inserted) {
-	    int locEdgeWeight=abs( abs( (_minCoord(vecNext->Position, vecNext->MatePosition, svType) - minCoord) - (_maxCoord(vecNext->Position, vecNext->MatePosition, svType) - maxCoord) ) - abs(vecBeg->Median - vecNext->Median) );
+	    int locEdgeWeight=abs( abs( (_minCoord(vecNext->pos, vecNext->mpos, svType) - minCoord) - (_maxCoord(vecNext->pos, vecNext->mpos, svType) - maxCoord) ) - abs(vecBeg->Median - vecNext->Median) );
 	    weightMap[e] = (locEdgeWeight > 30000) ? 30000 : locEdgeWeight;
 	  }
 	}
@@ -1999,8 +2011,8 @@ inline int run(Config const& c, TSVType svType) {
       TCliqueMembers clique;
       TCliqueMembers incompatible;
       int svStart, svEnd, wiggle;
-      int32_t clusterRefID=g[itWEdge->source]->RefID;
-      int32_t clusterMateRefID=g[itWEdge->source]->MateRefID;
+      int32_t clusterRefID=g[itWEdge->source]->tid;
+      int32_t clusterMateRefID=g[itWEdge->source]->mtid;
       _initClique(g[itWEdge->source], svStart, svEnd, wiggle, svType);
       int connectionType = _getSpanOrientation(*g[itWEdge->source], g[itWEdge->source]->libOrient, svType);
       if ((clusterRefID==clusterMateRefID) && (svStart >= svEnd))  continue;
@@ -2035,15 +2047,15 @@ inline int run(Config const& c, TSVType svType) {
 	svRec.chr = refIndex;
 	svRec.chr2 = clusterMateRefID;
 	svRec.svStartBeg = std::max((int) svStart - overallMaxISize, 0);
-	svRec.svStart = std::min(svStart + 1, references[refIndex].RefLength);
-	svRec.svStartEnd = std::min(svStart + overallMaxISize, references[refIndex].RefLength);
+	svRec.svStart = std::min((uint32_t) svStart + 1, reflen[refIndex]);
+	svRec.svStartEnd = std::min((uint32_t) svStart + overallMaxISize, reflen[refIndex]);
 	svRec.svEndBeg = std::max((int) svEnd - overallMaxISize, 0);
-	svRec.svEnd = std::min(svEnd+1, references[clusterMateRefID].RefLength);
-	svRec.svEndEnd = std::min(svEnd + overallMaxISize, references[clusterMateRefID].RefLength);
+	svRec.svEnd = std::min((uint32_t) svEnd+1, reflen[clusterMateRefID]);
+	svRec.svEndEnd = std::min((uint32_t) svEnd + overallMaxISize, reflen[clusterMateRefID]);
 	svRec.peSupport = clique.size();
 	svRec.wiggle = abs(wiggle);
 	svRec.controlID = 0;
-	std::vector<uint16_t> mapQV;
+	std::vector<uint8_t> mapQV;
 	for(typename TCliqueMembers::const_iterator itC = clique.begin(); itC!=clique.end(); ++itC) mapQV.push_back(g[*itC]->MapQuality);
 	std::sort(mapQV.begin(), mapQV.end());
 	svRec.peMapQuality = mapQV[mapQV.size()/2];
@@ -2057,7 +2069,7 @@ inline int run(Config const& c, TSVType svType) {
 	svRec.precise=false;
 	svRec.ct=connectionType;
 	std::vector<int32_t> inslenV;
-	for(typename TCliqueMembers::const_iterator itC = clique.begin(); itC!=clique.end(); ++itC) inslenV.push_back(g[*itC]->Median - (abs(g[*itC]->Position - g[*itC]->MatePosition) + g[*itC]->Length));
+	for(typename TCliqueMembers::const_iterator itC = clique.begin(); itC!=clique.end(); ++itC) inslenV.push_back(g[*itC]->Median - (abs(g[*itC]->pos - g[*itC]->mpos) + g[*itC]->l_qseq));
 	std::sort(inslenV.begin(), inslenV.end());
 	svRec.insLen = inslenV[inslenV.size()/2];
 #pragma omp critical
@@ -2073,16 +2085,22 @@ inline int run(Config const& c, TSVType svType) {
 	    for(typename TCliqueMembers::const_iterator itC=clique.begin(); itC!=clique.end(); ++itC) {
 	      std::stringstream id;
 	      id << _addID(svType) << std::setw(8) << std::setfill('0') << svRec.id;
-	      dumpPeFile << id.str() << "\t" << references[g[*itC]->RefID].RefName << "\t" << g[*itC]->Position << "\t" <<  references[g[*itC]->MateRefID].RefName << "\t" << g[*itC]->MatePosition << "\t" << g[*itC]->MapQuality << std::endl;
+	      dumpPeFile << id.str() << "\t" << refnames[g[*itC]->tid] << "\t" << g[*itC]->pos << "\t" <<  refnames[g[*itC]->mtid] << "\t" << g[*itC]->mpos << "\t" << (unsigned int) g[*itC]->MapQuality << std::endl;
 	    }
 	  }
 	}
       }
     }
   }
-
+  
   // Close dump PE file
   if (dumpPe) dumpPeFile.close();
+
+  // Clean-up
+  for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
+    hts_idx_destroy(idx[file_c]);
+    sam_close(samfile[file_c]);
+  }
 
   // Split-read search
   if (peMapping) {
@@ -2091,7 +2109,7 @@ inline int run(Config const& c, TSVType svType) {
 	findPutativeSplitReads(c, svs, svType);
   } else {
     // Read SV records from input vcffile
-    vcfParse(c, references, overallMaxISize, svs, svType);
+    vcfParse(c, refnames, reflen, overallMaxISize, svs, svType);
   }
 
   // Debug output
@@ -2106,10 +2124,10 @@ inline int run(Config const& c, TSVType svType) {
 
   // Annotate junction reads
   typedef std::pair<std::string, int> TSampleSVPair;
-  typedef std::pair<std::vector<uint16_t>, std::vector<uint16_t> > TReadQual;
+  typedef std::pair<std::vector<uint8_t>, std::vector<uint8_t> > TReadQual;
   typedef boost::unordered_map<TSampleSVPair, TReadQual> TJunctionCountMap;
   TJunctionCountMap junctionCountMap;
-  if (boost::filesystem::exists(c.genome) && boost::filesystem::is_regular_file(c.genome) && boost::filesystem::file_size(c.genome))
+  if (boost::filesystem::exists(c.genome) && boost::filesystem::is_regular_file(c.genome) && boost::filesystem::file_size(c.genome)) 
     _annotateJunctionReads(c, sampleLib, svs, junctionCountMap, svType);
 
   // Annotate spanning coverage
@@ -2140,7 +2158,7 @@ inline int run(Config const& c, TSVType svType) {
       std::cout << "RG: ID=" << libIt->first << ",Median=" << libIt->second.median << ",MAD=" << libIt->second.mad << ",Orientation=" << (int) libIt->second.defaultOrient << ",InsertSizeCutoff=" << libIt->second.maxNormalISize << ",DuplicateDiscordantPairs=" << libIt->second.non_unique_abnormal_pairs << ",UniqueDiscordantPairs=" << libIt->second.abnormal_pairs << std::endl;
     }
   }
-
+  
 #ifdef PROFILE
   ProfilerStop();
 #endif

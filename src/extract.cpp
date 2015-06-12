@@ -26,14 +26,10 @@ Contact: Tobias Rausch (rausch@embl.de)
 #include <boost/program_options/options_description.hpp>
 #include <boost/program_options/parsers.hpp>
 #include <boost/program_options/variables_map.hpp>
-#include "api/BamReader.h"
-#include "api/BamIndex.h"
-
+#include <htslib/kseq.h>
 
 #include "version.h"
 #include "extract.h"
-
-#define MAX_CHROM_SIZE 250000000
 
 using namespace torali;
 

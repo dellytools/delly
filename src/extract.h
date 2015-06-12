@@ -25,6 +25,7 @@ Contact: Tobias Rausch (rausch@embl.de)
 #define EXTRACT_H
 
 #include <iostream>
+#include <fstream>
 #include <boost/program_options/cmdline.hpp>
 #include <boost/program_options/options_description.hpp>
 #include <boost/program_options/parsers.hpp>
@@ -36,7 +37,7 @@ Contact: Tobias Rausch (rausch@embl.de)
 #include <boost/progress.hpp>
 
 #include <zlib.h>
-#include "kseq.h"
+#include <htslib/kseq.h>
 KSEQ_INIT(gzFile, gzread)
 
 

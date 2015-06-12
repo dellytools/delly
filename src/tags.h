@@ -26,10 +26,6 @@ Contact: Tobias Rausch (rausch@embl.de)
 
 namespace torali {
 
-  // Constants
-  #define MAX_CHROM_SIZE 250000000
-
-
   // Tags
   struct DeletionTag;
   struct DuplicationTag;
@@ -64,21 +60,21 @@ namespace torali {
   template<typename TBamRecord>
   inline int
     getStrandIndependentOrientation(TBamRecord const& al) {
-    if (al.AlignmentFlag & 0x0040) {
-      if (!(al.AlignmentFlag & 0x0010)) {
-	if (!(al.AlignmentFlag & 0x0020)) return (al.Position < al.MatePosition) ? 0 : 1;
-	else return (al.Position < al.MatePosition) ? 2 : 3;
+    if (al.flag & BAM_FREAD1) {
+      if (!(al.flag & BAM_FREVERSE)) {
+	if (!(al.flag & BAM_FMREVERSE)) return (al.pos < al.mpos) ? 0 : 1;
+	else return (al.pos < al.mpos) ? 2 : 3;
       } else {
-	if (!(al.AlignmentFlag & 0x0020)) return (al.Position > al.MatePosition) ? 2 : 3;
-	else return (al.Position > al.MatePosition) ? 0 : 1;
+	if (!(al.flag & BAM_FMREVERSE)) return (al.pos > al.mpos) ? 2 : 3;
+	else return (al.pos > al.mpos) ? 0 : 1;
       }
     } else {
-      if (!(al.AlignmentFlag & 0x0010)) {
-	if (!(al.AlignmentFlag & 0x0020)) return (al.Position < al.MatePosition) ? 1 : 0;
-	else return (al.Position < al.MatePosition) ? 2 : 3;
+      if (!(al.flag & BAM_FREVERSE)) {
+	if (!(al.flag & BAM_FMREVERSE)) return (al.pos < al.mpos) ? 1 : 0;
+	else return (al.pos < al.mpos) ? 2 : 3;
       } else {
-	if (!(al.AlignmentFlag & 0x0020)) return (al.Position > al.MatePosition) ? 2 : 3;
-	else return (al.Position > al.MatePosition) ? 1 : 0;
+	if (!(al.flag & BAM_FMREVERSE)) return (al.pos > al.mpos) ? 2 : 3;
+	else return (al.pos > al.mpos) ? 1 : 0;
       }
     }
   }
@@ -95,17 +91,17 @@ namespace torali {
   template<typename TBamRecord>
   inline int
     getStrandSpecificOrientation(TBamRecord const& al) {
-    if (!(al.AlignmentFlag  & 0x0010)) {
-      if (!(al.AlignmentFlag & 0x0020)) {
-        return (al.Position < al.MatePosition) ? 0 : 1;
+    if (!(al.flag  & BAM_FREVERSE)) {
+      if (!(al.flag & BAM_FMREVERSE)) {
+        return (al.pos < al.mpos) ? 0 : 1;
       } else {
-        return (al.Position < al.MatePosition) ? 2 : 3;
+        return (al.pos < al.mpos) ? 2 : 3;
       }
     } else {
-      if (!(al.AlignmentFlag & 0x0020)) {
-        return (al.Position > al.MatePosition) ? 4 : 5;
+      if (!(al.flag & BAM_FMREVERSE)) {
+        return (al.pos > al.mpos) ? 4 : 5;
       } else {
-        return (al.Position > al.MatePosition) ? 6 : 7;
+        return (al.pos > al.mpos) ? 6 : 7;
       }
     }
   }
@@ -130,26 +126,26 @@ namespace torali {
     inline int 
     _getSpanOrientation(TBamRecord const& al, int const defaultOrient, SVType<InversionTag>) {
     int orient = getStrandIndependentOrientation(al);
-    if (al.AlignmentFlag & 0x0040) {
+    if (al.flag & BAM_FREAD1) {
       if (defaultOrient == 0) {
-	if (((orient==2) && (al.Position < al.MatePosition)) || ((orient == 3) && (al.Position > al.MatePosition))) return 1;
+	if (((orient==2) && (al.pos < al.mpos)) || ((orient == 3) && (al.pos > al.mpos))) return 1;
       } else if (defaultOrient == 1) {
-	if (((orient==2) && (al.Position > al.MatePosition)) || ((orient == 3) && (al.Position < al.MatePosition))) return 1;
+	if (((orient==2) && (al.pos > al.mpos)) || ((orient == 3) && (al.pos < al.mpos))) return 1;
       } else if (defaultOrient == 2) {
-	if (((orient==0) && (al.Position < al.MatePosition)) || ((orient == 1) && (al.Position > al.MatePosition))) return 1;
+	if (((orient==0) && (al.pos < al.mpos)) || ((orient == 1) && (al.pos > al.mpos))) return 1;
       } else if (defaultOrient == 3) {
-	if (((orient==0) && (al.Position > al.MatePosition)) || ((orient == 1) && (al.Position < al.MatePosition))) return 1;
+	if (((orient==0) && (al.pos > al.mpos)) || ((orient == 1) && (al.pos < al.mpos))) return 1;
       }
       return 0;
     } else {
       if (defaultOrient == 0) {
-	if (((orient==2) && (al.Position > al.MatePosition)) || ((orient == 3) && (al.Position < al.MatePosition))) return 1;
+	if (((orient==2) && (al.pos > al.mpos)) || ((orient == 3) && (al.pos < al.mpos))) return 1;
       } else if (defaultOrient == 1) {
-	if (((orient==2) && (al.Position < al.MatePosition)) || ((orient == 3) && (al.Position > al.MatePosition))) return 1;
+	if (((orient==2) && (al.pos < al.mpos)) || ((orient == 3) && (al.pos > al.mpos))) return 1;
       } else if (defaultOrient == 2) {
-	if (((orient==0) && (al.Position > al.MatePosition)) || ((orient == 1) && (al.Position < al.MatePosition))) return 1;
+	if (((orient==0) && (al.pos > al.mpos)) || ((orient == 1) && (al.pos < al.mpos))) return 1;
       } else if (defaultOrient == 3) {
-	if (((orient==0) && (al.Position < al.MatePosition)) || ((orient == 1) && (al.Position > al.MatePosition))) return 1;
+	if (((orient==0) && (al.pos < al.mpos)) || ((orient == 1) && (al.pos > al.mpos))) return 1;
       }
       return 0;
     }
@@ -162,29 +158,29 @@ namespace torali {
     inline int 
     _inOrderAssign(TBamRecord const& al, bool flipped) {
     if (!flipped) {
-      if (!(al.AlignmentFlag & 0x0010)) {
-	if (!(al.AlignmentFlag & 0x0020)) {
-	  return (al.AlignmentFlag & 0x0040) ? 0 : 1;
+      if (!(al.flag & BAM_FREVERSE)) {
+	if (!(al.flag & BAM_FMREVERSE)) {
+	  return (al.flag & BAM_FREAD1) ? 0 : 1;
 	} else {
 	  return 2;
 	}
       } else {
-	if (!(al.AlignmentFlag & 0x0020)) {
+	if (!(al.flag & BAM_FMREVERSE)) {
 	  return 3;
 	} else {
-	  return (al.AlignmentFlag & 0x0040) ? 1 : 0;
+	  return (al.flag & BAM_FREAD1) ? 1 : 0;
 	}
       }
     } else {
-      if (!(al.AlignmentFlag & 0x0010)) {
-	if (!(al.AlignmentFlag & 0x0020)) {
+      if (!(al.flag & BAM_FREVERSE)) {
+	if (!(al.flag & BAM_FMREVERSE)) {
 	  return 2;
 	} else {
-	  return (al.AlignmentFlag & 0x0040) ? 0 : 1;
+	  return (al.flag & BAM_FREAD1) ? 0 : 1;
 	}
       } else {
-	if (!(al.AlignmentFlag & 0x0020)) {
-	  return (al.AlignmentFlag & 0x0040) ? 1 : 0;
+	if (!(al.flag & BAM_FMREVERSE)) {
+	  return (al.flag & BAM_FREAD1) ? 1 : 0;
 	} else {
 	  return 3;
 	}

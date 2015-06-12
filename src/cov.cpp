@@ -41,8 +41,7 @@ Contact: Tobias Rausch (rausch@embl.de)
 #include <boost/filesystem.hpp>
 #include <boost/tokenizer.hpp>
 #include <boost/progress.hpp>
-#include "api/BamReader.h"
-#include "api/BamIndex.h"
+#include <htslib/sam.h>
 
 #ifdef OPENMP
 #include <omp.h>
@@ -77,38 +76,23 @@ run(Config const& c, TCoverageType covType)
   typedef boost::unordered_map<std::string, LibraryInfo> TLibraryMap;
   typedef boost::unordered_map<std::string, TLibraryMap> TSampleLibrary;
   TSampleLibrary sampleLib;
-
-  // Scan libraries
-  for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
-    // Get a sample name
-    std::string sampleName(c.files[file_c].stem().string());
-
-    // Check that all input bam files exist
-    BamTools::BamReader reader;
-    if ( ! reader.Open(c.files[file_c].string()) ) {
-      std::cerr << "Could not open input bam file: " << c.files[file_c].string() << std::endl;
-      reader.Close();
-      return -1;
-    }
-    
-    // Check that all input bam files are indexed
-    reader.LocateIndex();
-    if ( !reader.HasIndex() ) {
-      std::cerr << "Missing bam index file: " << c.files[file_c].string() << std::endl;
-      reader.Close();
-      return -1;
-    }
-
-    // Get library parameters and overall maximum insert size
-    TLibraryMap libInfo;
-    getLibraryParams(c.files[file_c], libInfo, 0, 5);
-    sampleLib.insert(std::make_pair(sampleName, libInfo));
-  }
+  getLibraryParams(c.files, sampleLib, 0, 5);
 
   // Get references
-  BamTools::BamReader readerRef;
-  if ( ! readerRef.Open(c.files[0].string()) ) return -1;
-  BamTools::RefVector references = readerRef.GetReferenceData();
+  typedef std::vector<std::string> TRefNames;
+  typedef std::vector<uint32_t> TRefLength;
+  TRefNames refnames;
+  TRefLength reflen;
+  if (refnames.empty()) {
+    samFile* samfile = sam_open(c.files[0].string().c_str(), "r");
+    bam_hdr_t* hdr = sam_hdr_read(samfile);
+    for (int i = 0; i<hdr->n_targets; ++i) {
+      refnames.push_back(hdr->target_name[i]);
+      reflen.push_back(hdr->target_len[i]);
+    }
+    bam_hdr_destroy(hdr);
+    sam_close(samfile);
+  }
 
   // Read all SV intervals
   typedef std::vector<CovRecord> TSVs;
@@ -118,8 +102,7 @@ run(Config const& c, TCoverageType covType)
   if (boost::filesystem::exists(c.int_file) && boost::filesystem::is_regular_file(c.int_file) && boost::filesystem::file_size(c.int_file)) {
     typedef boost::unordered_map<std::string, unsigned int> TMapChr;
     TMapChr mapChr;
-    typename BamTools::RefVector::const_iterator itRef = references.begin();
-    for(unsigned int i = 0;itRef!=references.end();++itRef, ++i) mapChr[ itRef->RefName ] = i;
+    for(unsigned int i = 0; i<refnames.size(); ++i) mapChr[ refnames[i] ] = i;
     std::ifstream interval_file(c.int_file.string().c_str(), std::ifstream::in);
     if (interval_file.is_open()) {
       while (interval_file.good()) {
@@ -150,24 +133,23 @@ run(Config const& c, TCoverageType covType)
     }
   } else {
     // Create artificial intervals
-    typename BamTools::RefVector::const_iterator itRef = references.begin();
-    for(int refIndex=0;itRef!=references.end();++itRef, ++refIndex) {
+    for(int refIndex=0; refIndex < refnames.size(); ++refIndex) {
       int32_t pos = 0;
       unsigned int wSize = c.window_size;
       unsigned int wOffset = c.window_offset;
       if (c.window_num>0) {
-	wSize=(itRef->RefLength / c.window_num) + 1;
+	wSize=(reflen[refIndex] / c.window_num) + 1;
 	wOffset=wSize;
       }
-      while (pos < references[refIndex].RefLength) {
+      while (pos < reflen[refIndex]) {
 	int32_t window_len = pos+wSize;
-	if (window_len > references[refIndex].RefLength) window_len = references[refIndex].RefLength;
+	if (window_len > reflen[refIndex]) window_len = reflen[refIndex];
 	CovRecord sv;
 	sv.chr = refIndex;
 	sv.svStart = pos;
 	sv.svEnd = window_len;
 	std::stringstream s; 
-	s << references[sv.chr].RefName << ":" << sv.svStart << "-" << sv.svEnd;
+	s << refnames[sv.chr] << ":" << sv.svStart << "-" << sv.svEnd;
 	idToName.insert(std::make_pair(intervalCount, s.str()));
 	sv.id = intervalCount++;
 	svs.push_back(sv);
@@ -218,7 +200,7 @@ run(Config const& c, TCoverageType covType)
   typename TSVs::const_iterator itSV = svs.begin();
   typename TSVs::const_iterator itSVEnd = svs.end();
   for(;itSV!=itSVEnd;++itSV) {
-    dataOut << references[itSV->chr].RefName << "\t" << itSV->svStart << "\t" << itSV->svEnd << "\t" << idToName.find(itSV->id)->second;
+    dataOut << refnames[itSV->chr] << "\t" << itSV->svStart << "\t" << itSV->svEnd << "\t" << idToName.find(itSV->id)->second;
     // Iterate all samples
     for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
       // Get the sample name
