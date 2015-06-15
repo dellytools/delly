@@ -1010,7 +1010,7 @@ vcfParse(TConfig const& c, TRefNames const& refnames, TRefLen const& reflen, TSi
 	      std::string key = keyValue.substr(0, found);
 	      std::string value = keyValue.substr(found+1);
 	      if (key == "PE") svRec.peSupport = boost::lexical_cast<int>(value);
-	      else if (key == "MAPQ") svRec.peMapQuality = boost::lexical_cast<uint8_t>(value);
+	      else if (key == "MAPQ") svRec.peMapQuality = (uint8_t) boost::lexical_cast<uint16_t>(value); // lexical_cast does not work for uint8_t
 	      else if (key == "SR") svRec.srSupport = boost::lexical_cast<int>(value);
 	      else if (key == "SRQ") svRec.srAlignQuality = boost::lexical_cast<double>(value);
 	      else if (key == "CHR2") {
@@ -1202,7 +1202,7 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
     ofile << "CT=" << _addOrientation(svIter->ct, svType) << ";";
     ofile << "INSLEN=" << _addInsertionLength(svIter->insLen, svType) << ";";
     ofile << "PE=" << svIter->peSupport << ";";
-    ofile << "MAPQ=" << svIter->peMapQuality;
+    ofile << "MAPQ=" << (int) svIter->peMapQuality;
     if (svIter->precise)  {
       ofile << ";SR=" << svIter->srSupport;
       ofile << ";SRQ=" << svIter->srAlignQuality;

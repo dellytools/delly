@@ -199,24 +199,27 @@ namespace torali {
 	    if (_firstPairObs(rec->core.tid, rec->core.mtid, rec->core.pos, rec->core.mpos, svType)) {
 	      // Hash the quality
 	      unsigned int index=((rec->core.pos % (int)boost::math::pow<14>(2))<<14) + (rec->core.mpos % (int)boost::math::pow<14>(2));
-	      qualities[index]=rec->core.qual;
+	      uint8_t r2Qual = rec->core.qual;
 	      uint8_t* ptr = bam_aux_get(rec, "AS");
 	      if (ptr) {
-		int score = (int) bam_aux2i(ptr) + 1;
-		qualities[index]=(uint8_t) ( (score<255) ? score : 255 );
+		int score = std::abs((int) bam_aux2i(ptr));
+		r2Qual = (uint8_t) ( (score<255) ? score : 255 );
 	      }
+	      r2Qual = ( r2Qual == 0) ? 1 : r2Qual;
+	      qualities[index] = r2Qual;
 	    } else {
 	      // Get the two mapping qualities
 	      unsigned int index=((rec->core.mpos % (int)boost::math::pow<14>(2))<<14) + (rec->core.pos % (int)boost::math::pow<14>(2));
 	      uint8_t r2Qual = rec->core.qual;
 	      uint8_t* ptr = bam_aux_get(rec, "AS");
 	      if (ptr) {
-		int score = (int) bam_aux2i(ptr) + 1;
-		r2Qual=(uint8_t) ( (score<255) ? score : 255 );
+		int score = std::abs((int) bam_aux2i(ptr));
+		r2Qual = (uint8_t) ( (score<255) ? score : 255 );
 	      }
+	      r2Qual = ( r2Qual == 0) ? 1 : r2Qual;
 	      uint8_t pairQuality = std::min(qualities[index], r2Qual);
 	      qualities[index]=0;
-		
+
 	      // Pair quality
 	      if (pairQuality < minMapQual) continue;
 	      

@@ -239,7 +239,7 @@ namespace torali {
     unsigned int controlID;
     bool precise;
     int ct;
-    uint16_t peMapQuality;
+    uint8_t peMapQuality;
     int32_t chr;
     int32_t chr2;
     std::string consensus;
