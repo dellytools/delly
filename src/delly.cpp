@@ -36,7 +36,6 @@ Contact: Tobias Rausch (rausch@embl.de)
 #include <boost/date_time/posix_time/posix_time.hpp>
 #include <boost/date_time/gregorian/gregorian.hpp>
 #include <boost/math/special_functions/pow.hpp>
-#include <boost/multiprecision/cpp_dec_float.hpp>
 #include <boost/tokenizer.hpp>
 #include <boost/functional/hash.hpp>
 #include <boost/filesystem.hpp>
@@ -1230,8 +1229,7 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
       int rcCount = 0;
 
       // Compute GLs
-      typedef boost::multiprecision::number<boost::multiprecision::cpp_dec_float<25> > FLP;
-      FLP gl[3];
+      double gl[3];
       int gqVal;
       std::string gtype;
       bool trGL;
@@ -1242,12 +1240,12 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
 	  rvCount = jctCountMapIt->second.second.size();
 	}
       } else {
-	FLP glLeft[3];
+	double glLeft[3];
 	int gqValLeft;
 	std::string gtypeLeft;
 	bool trGLLeft;
 	trGLLeft = _computeGLs(spanLeftIt->second.first, spanLeftIt->second.second, &glLeft[0], gqValLeft, gtypeLeft);
-	FLP glRight[3];
+	double glRight[3];
 	int gqValRight;
 	std::string gtypeRight;
 	bool trGLRight;

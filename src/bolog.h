@@ -24,17 +24,18 @@ Contact: Tobias Rausch (rausch@embl.de)
 #ifndef BOLOG_H
 #define BOLOG_H
 
-#include <boost/multiprecision/cpp_dec_float.hpp>
+#include <boost/math/special_functions/round.hpp>
 
 namespace torali {
 
+#define SMALLEST_GL -1000
 
 template<typename TPrecision>
 struct BoLog {
   std::vector<TPrecision> phred2prob;
 
   BoLog() {
-    for(int i = 0; i<=256; ++i) phred2prob.push_back(boost::multiprecision::pow(TPrecision(10), -(TPrecision(i)/TPrecision(10))));
+    for(int i = 0; i <= boost::math::round(-10 * SMALLEST_GL); ++i) phred2prob.push_back(std::pow(TPrecision(10), -(TPrecision(i)/TPrecision(10))));
   }
 };
 
@@ -48,16 +49,16 @@ struct BoLog {
    for(unsigned int geno=0; geno<=2; ++geno) gl[geno]=0;
    unsigned int peDepth=mapqRef.size() + mapqAlt.size();
    for(typename TMapqVector::const_iterator mapqRefIt = mapqRef.begin();mapqRefIt!=mapqRef.end();++mapqRefIt) {
-     gl[0] += boost::multiprecision::log10(bl.phred2prob[*mapqRefIt]);
-     gl[1] += boost::multiprecision::log10(bl.phred2prob[*mapqRefIt] + (FLP(1) - bl.phred2prob[*mapqRefIt]));
-     gl[2] += boost::multiprecision::log10(FLP(1) - bl.phred2prob[*mapqRefIt]);
+     gl[0] += std::log10(bl.phred2prob[*mapqRefIt]);
+     gl[1] += std::log10(bl.phred2prob[*mapqRefIt] + (FLP(1) - bl.phred2prob[*mapqRefIt]));
+     gl[2] += std::log10(FLP(1) - bl.phred2prob[*mapqRefIt]);
    }
    for(typename TMapqVector::const_iterator mapqAltIt = mapqAlt.begin();mapqAltIt!=mapqAlt.end();++mapqAltIt) {
-     gl[0] += boost::multiprecision::log10(FLP(1) - bl.phred2prob[*mapqAltIt]);
-     gl[1] += boost::multiprecision::log10((FLP(1) - bl.phred2prob[*mapqAltIt]) + bl.phred2prob[*mapqAltIt]);
-     gl[2] += boost::multiprecision::log10(bl.phred2prob[*mapqAltIt]);
+     gl[0] += std::log10(FLP(1) - bl.phred2prob[*mapqAltIt]);
+     gl[1] += std::log10((FLP(1) - bl.phred2prob[*mapqAltIt]) + bl.phred2prob[*mapqAltIt]);
+     gl[2] += std::log10(bl.phred2prob[*mapqAltIt]);
    }
-   gl[1] += -FLP(peDepth) * boost::multiprecision::log10(FLP(2));
+   gl[1] += -FLP(peDepth) * std::log10(FLP(2));
    unsigned int glBest=0;
    FLP glBestVal=gl[glBest];
    for(unsigned int geno=1; geno<=2; ++geno) {
@@ -66,21 +67,22 @@ struct BoLog {
        glBest = geno;
      }
    }
-   // Rescale by best genotype and get second best genotype for GQ
-   FLP glSecondBestVal=-std::numeric_limits<FLP>::infinity();
+   // Rescale by best genotype
    for(unsigned int geno=0; geno<=2; ++geno) {
-     if ((gl[geno]>glSecondBestVal) && (gl[geno]<=glBestVal) && (geno!=glBest)) glSecondBestVal=gl[geno];
      gl[geno] -= glBestVal;
+     // Cap at smallest GL
+     gl[geno] = (gl[geno] > SMALLEST_GL) ? gl[geno] : SMALLEST_GL;
    }
 
    // Phred-scaled genotype likelihoods
    uint32_t pl[3];
-   pl[0] = boost::multiprecision::iround(-10 * gl[0]);
-   pl[1] = boost::multiprecision::iround(-10 * gl[1]);
-   pl[2] = boost::multiprecision::iround(-10 * gl[2]);
-   for (unsigned int geno=0; geno<=2; ++geno) pl[geno] = (pl[geno] < 255) ? pl[geno] : 255;
+   pl[0] = boost::math::round(-10 * gl[0]);
+   pl[1] = boost::math::round(-10 * gl[1]);
+   pl[2] = boost::math::round(-10 * gl[2]);
    if ((peDepth) && (pl[0] + pl[1] + pl[2] > 0)) {
-     gq = boost::multiprecision::iround(-10 * boost::multiprecision::log10((1-1/(bl.phred2prob[pl[0]]+bl.phred2prob[pl[1]]+bl.phred2prob[pl[2]]))));
+     FLP likelihood = std::log10((1-1/(bl.phred2prob[pl[0]]+bl.phred2prob[pl[1]]+bl.phred2prob[pl[2]])));
+     likelihood = (likelihood > SMALLEST_GL) ? likelihood : SMALLEST_GL;
+     gq = boost::math::round(-10 * likelihood);
      if (glBest==0) gtype = "1/1";
      else if (glBest==1) gtype = "0/1";
      else gtype = "0/0";
