@@ -134,7 +134,7 @@ run(Config const& c, TCoverageType covType)
   } else {
     // Create artificial intervals
     for(int refIndex=0; refIndex < (int) refnames.size(); ++refIndex) {
-      int32_t pos = 0;
+      uint32_t pos = 0;
       unsigned int wSize = c.window_size;
       unsigned int wOffset = c.window_offset;
       if (c.window_num>0) {
@@ -142,7 +142,7 @@ run(Config const& c, TCoverageType covType)
 	wOffset=wSize;
       }
       while (pos < reflen[refIndex]) {
-	int32_t window_len = pos+wSize;
+	uint32_t window_len = pos+wSize;
 	if (window_len > reflen[refIndex]) window_len = reflen[refIndex];
 	CovRecord sv;
 	sv.chr = refIndex;
