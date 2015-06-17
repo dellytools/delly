@@ -72,15 +72,23 @@ struct BoLog {
      if ((gl[geno]>glSecondBestVal) && (gl[geno]<=glBestVal) && (geno!=glBest)) glSecondBestVal=gl[geno];
      gl[geno] -= glBestVal;
    }
-   gq = boost::multiprecision::iround(FLP(10) * boost::multiprecision::log10( boost::multiprecision::pow(FLP(10), glBestVal) / boost::multiprecision::pow(FLP(10), glSecondBestVal) ) );
-   if (peDepth) {
+
+   // Phred-scaled genotype likelihoods
+   uint32_t pl[3];
+   pl[0] = boost::multiprecision::iround(-10 * gl[0]);
+   pl[1] = boost::multiprecision::iround(-10 * gl[1]);
+   pl[2] = boost::multiprecision::iround(-10 * gl[2]);
+   for (unsigned int geno=0; geno<=2; ++geno) pl[geno] = (pl[geno] < 255) ? pl[geno] : 255;
+   if ((peDepth) && (pl[0] + pl[1] + pl[2] > 0)) {
+     gq = boost::multiprecision::iround(-10 * boost::multiprecision::log10((1-1/(bl.phred2prob[pl[0]]+bl.phred2prob[pl[1]]+bl.phred2prob[pl[2]]))));
      if (glBest==0) gtype = "1/1";
      else if (glBest==1) gtype = "0/1";
      else gtype = "0/0";
    } else {
      gtype = "./.";
+     gq = 0;
    }
-   return (peDepth > 0);
+   return (gq > 0);
  }
  
 
