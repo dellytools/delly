@@ -44,7 +44,7 @@ inline std::string cigarString(TCigarVec const& cigarOperations) {
 inline unsigned int halfAlignmentLength(bam1_t* rec) {
   uint32_t* cigar = bam_get_cigar(rec);
   unsigned int alen = 0;
-  for (int i = 0; i < rec->core.n_cigar; ++i) 
+  for (unsigned int i = 0; i < rec->core.n_cigar; ++i) 
     if (bam_cigar_op(cigar[i]) == BAM_CMATCH) alen+=bam_cigar_oplen(cigar[i]);
   return (alen/2);
 }
@@ -61,7 +61,7 @@ _addBpCounts(bam1_t* rec, TWindow posBeg, TWindow posEnd, TCount& bp_sum, BpLeve
     int op = bam_cigar_op(cigar[i]);
     int ol = bam_cigar_oplen(cigar[i]);
     if (op == BAM_CMATCH) 
-      for(unsigned int k = 0; k<ol; ++k, ++bpPos) {
+      for(int k = 0; k<ol; ++k, ++bpPos) {
 	if ((bpPos>=posBeg) && (bpPos<posEnd)) ++bp_sum;
       }
     else if ((op == BAM_CREF_SKIP) || (op == BAM_CDEL)) bpPos += ol;

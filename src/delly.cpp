@@ -1291,7 +1291,7 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
 template<typename TClipSizes>
 inline void _clips(bam1_t* rec, TClipSizes& csizes) {
   uint32_t* cigar = bam_get_cigar(rec);
-  for (int i = 0; i < rec->core.n_cigar; ++i) 
+  for (unsigned int i = 0; i < rec->core.n_cigar; ++i) 
     if (bam_cigar_op(cigar[i]) == BAM_CSOFT_CLIP) csizes.push_back(bam_cigar_oplen(cigar[i]));
 }
 
