@@ -53,6 +53,7 @@ Contact: Tobias Rausch (rausch@embl.de)
 
 #include "version.h"
 #include "util.h"
+#include "bolog.h"
 #include "dna_score.h"
 #include "align_config.h"
 #include "align_gotoh.h"
@@ -1241,25 +1242,24 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
       // Compute genotype likelihoods
       //typedef boost::multiprecision::cpp_dec_float_50 FLP;
       typedef boost::multiprecision::number<boost::multiprecision::cpp_dec_float<25> > FLP;
+      BoLog<FLP> bl;
       FLP gl[3];
-      unsigned int glBest=0;
+      for(unsigned int geno=0; geno<=2; ++geno) gl[geno]=0;
       unsigned int peDepth=mapqRef.size() + mapqAlt.size();
-      FLP glBestVal=-std::numeric_limits<FLP>::infinity();
-      FLP scaling = -FLP(peDepth) * boost::multiprecision::log10(FLP(2));
-      for(unsigned int geno=0; geno<=2; ++geno) {
-	FLP refLike=0;
-	FLP altLike=0;
-	typename TMapqVector::const_iterator mapqRefIt = mapqRef.begin();
-	typename TMapqVector::const_iterator mapqRefItEnd = mapqRef.end();
-	for(;mapqRefIt!=mapqRefItEnd;++mapqRefIt) {
-	  refLike += boost::multiprecision::log10( (FLP(2.0 - geno) * boost::multiprecision::pow(FLP(10), -FLP(*mapqRefIt)/FLP(10)) + FLP(geno) * (FLP(1) - boost::multiprecision::pow(FLP(10), -FLP(*mapqRefIt)/FLP(10) ) ) ) );
-	}
-	typename TMapqVector::const_iterator mapqAltIt = mapqAlt.begin();
-	typename TMapqVector::const_iterator mapqAltItEnd = mapqAlt.end();
-	for(;mapqAltIt!=mapqAltItEnd;++mapqAltIt) {
-	  altLike += boost::multiprecision::log10( ((FLP(2.0 - geno) * (FLP(1) - boost::multiprecision::pow(FLP(10), -FLP(*mapqAltIt)/FLP(10) ))) + FLP(geno) * boost::multiprecision::pow(FLP(10), -FLP(*mapqAltIt)/FLP(10) ) ) );
-	}
-	gl[geno]=scaling+refLike+altLike;
+      for(typename TMapqVector::const_iterator mapqRefIt = mapqRef.begin();mapqRefIt!=mapqRef.end();++mapqRefIt) {
+	gl[0] += boost::multiprecision::log10(bl.phred2prob[*mapqRefIt]);
+	gl[1] += boost::multiprecision::log10(bl.phred2prob[*mapqRefIt] + (FLP(1) - bl.phred2prob[*mapqRefIt]));
+	gl[2] += boost::multiprecision::log10(FLP(1) - bl.phred2prob[*mapqRefIt]);
+      }
+      for(typename TMapqVector::const_iterator mapqAltIt = mapqAlt.begin();mapqAltIt!=mapqAlt.end();++mapqAltIt) {
+	gl[0] += boost::multiprecision::log10(FLP(1) - bl.phred2prob[*mapqAltIt]);
+	gl[1] += boost::multiprecision::log10((FLP(1) - bl.phred2prob[*mapqAltIt]) + bl.phred2prob[*mapqAltIt]);
+	gl[2] += boost::multiprecision::log10(bl.phred2prob[*mapqAltIt]);
+      }
+      gl[1] += -FLP(peDepth) * boost::multiprecision::log10(FLP(2));
+      unsigned int glBest=0;
+      FLP glBestVal=gl[glBest];
+      for(unsigned int geno=1; geno<=2; ++geno) {
 	if (gl[geno] > glBestVal) {
 	  glBestVal=gl[geno];
 	  glBest = geno;
@@ -2197,7 +2197,7 @@ int main(int argc, char **argv) {
   boost::program_options::options_description geno("Genotyping options");
   geno.add_options()
     ("vcfgeno,v", boost::program_options::value<boost::filesystem::path>(&c.vcffile)->default_value("site.vcf"), "input vcf file for genotyping only")
-    ("geno-qual,u", boost::program_options::value<unsigned short>(&c.minGenoQual)->default_value(1), "min. mapping quality for genotyping")
+    ("geno-qual,u", boost::program_options::value<unsigned short>(&c.minGenoQual)->default_value(5), "min. mapping quality for genotyping")
     ;
 
   // Define hidden options
@@ -2247,8 +2247,8 @@ int main(int argc, char **argv) {
   for(int i=0; i<argc; ++i) { std::cout << argv[i] << ' '; }
   std::cout << std::endl;
 
-  // Always ignore reads of mapping quality 0 for genotyping
-  if (c.minGenoQual<1) c.minGenoQual=1;
+  // Always ignore reads of mapping quality <5 for genotyping, otherwise het. is more likely!
+  if (c.minGenoQual<5) c.minGenoQual=5;
 
   // Run main program
   if (c.svType == "DEL") return run(c, SVType<DeletionTag>());
