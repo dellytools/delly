@@ -133,7 +133,7 @@ run(Config const& c, TCoverageType covType)
     }
   } else {
     // Create artificial intervals
-    for(int refIndex=0; refIndex < refnames.size(); ++refIndex) {
+    for(int refIndex=0; refIndex < (int) refnames.size(); ++refIndex) {
       int32_t pos = 0;
       unsigned int wSize = c.window_size;
       unsigned int wOffset = c.window_offset;

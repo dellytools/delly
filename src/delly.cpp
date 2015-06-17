@@ -1112,8 +1112,6 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
 {
   // Typedefs
   typedef typename TCountMap::key_type TSampleSVPair;
-  typedef typename TCountMap::mapped_type TCountPair;
-  typedef typename TCountPair::first_type TMapqVector;
 
   // Get the references
   typedef std::vector<std::string> TRefNames;
@@ -1224,79 +1222,63 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
       typename TCountMap::const_iterator spanLeftIt=spanCountMap.find(sampleSVPairLeft);
       typename TCountMap::const_iterator spanRightIt=spanCountMap.find(sampleSVPairRight);
 
-      // Junction counts
-      TMapqVector mapqRef = TMapqVector();
-      TMapqVector mapqAlt = TMapqVector();
-      if (svIter->precise) {
-	// Genotyping for precise events uses junction read qualities
-	mapqRef = jctCountMapIt->second.first;
-	mapqAlt = jctCountMapIt->second.second;
-      } else {
-	// Genotyping for imprecise events uses spanning pair qualities, always use the minimum of left and right breakpoint
-	if (spanLeftIt->second.first.size() <= spanRightIt->second.first.size()) mapqRef=spanLeftIt->second.first;
-	else mapqRef=spanRightIt->second.first;
-	if (spanLeftIt->second.second.size() <= spanRightIt->second.second.size()) mapqAlt=spanLeftIt->second.second;
-	else mapqAlt=spanRightIt->second.second;
-      }
+      // Counters
+      int drCount = 0;
+      int dvCount = 0;
+      int rrCount = 0;
+      int rvCount = 0;
+      int rcCount = 0;
 
-      // Compute genotype likelihoods
-      //typedef boost::multiprecision::cpp_dec_float_50 FLP;
+      // Compute GLs
       typedef boost::multiprecision::number<boost::multiprecision::cpp_dec_float<25> > FLP;
-      BoLog<FLP> bl;
       FLP gl[3];
-      for(unsigned int geno=0; geno<=2; ++geno) gl[geno]=0;
-      unsigned int peDepth=mapqRef.size() + mapqAlt.size();
-      for(typename TMapqVector::const_iterator mapqRefIt = mapqRef.begin();mapqRefIt!=mapqRef.end();++mapqRefIt) {
-	gl[0] += boost::multiprecision::log10(bl.phred2prob[*mapqRefIt]);
-	gl[1] += boost::multiprecision::log10(bl.phred2prob[*mapqRefIt] + (FLP(1) - bl.phred2prob[*mapqRefIt]));
-	gl[2] += boost::multiprecision::log10(FLP(1) - bl.phred2prob[*mapqRefIt]);
-      }
-      for(typename TMapqVector::const_iterator mapqAltIt = mapqAlt.begin();mapqAltIt!=mapqAlt.end();++mapqAltIt) {
-	gl[0] += boost::multiprecision::log10(FLP(1) - bl.phred2prob[*mapqAltIt]);
-	gl[1] += boost::multiprecision::log10((FLP(1) - bl.phred2prob[*mapqAltIt]) + bl.phred2prob[*mapqAltIt]);
-	gl[2] += boost::multiprecision::log10(bl.phred2prob[*mapqAltIt]);
-      }
-      gl[1] += -FLP(peDepth) * boost::multiprecision::log10(FLP(2));
-      unsigned int glBest=0;
-      FLP glBestVal=gl[glBest];
-      for(unsigned int geno=1; geno<=2; ++geno) {
-	if (gl[geno] > glBestVal) {
-	  glBestVal=gl[geno];
-	  glBest = geno;
+      int gqVal;
+      std::string gtype;
+      bool trGL;
+      if (svIter->precise) {
+	trGL = _computeGLs(jctCountMapIt->second.first, jctCountMapIt->second.second, &gl[0], gqVal, gtype);
+	if (jctCountMapIt!=jctCountMap.end()) {
+	  rrCount = jctCountMapIt->second.first.size();
+	  rvCount = jctCountMapIt->second.second.size();
 	}
+      } else {
+	FLP glLeft[3];
+	int gqValLeft;
+	std::string gtypeLeft;
+	bool trGLLeft;
+	trGLLeft = _computeGLs(spanLeftIt->second.first, spanLeftIt->second.second, &glLeft[0], gqValLeft, gtypeLeft);
+	FLP glRight[3];
+	int gqValRight;
+	std::string gtypeRight;
+	bool trGLRight;
+	trGLRight = _computeGLs(spanRightIt->second.first, spanRightIt->second.second, &glRight[0], gqValRight, gtypeRight);
+	if (gqValLeft > gqValRight) {
+	  trGL = trGLLeft;
+	  gl[0] = glLeft[0]; gl[1] = glLeft[1]; gl[2] = glLeft[2];
+	  gqVal = gqValLeft;
+	  gtype = gtypeLeft;
+	  drCount=spanLeftIt->second.first.size();
+	  dvCount=spanLeftIt->second.second.size();
+	} else {
+	  trGL = trGLRight;
+	  gl[0] = glRight[0]; gl[1] = glRight[1]; gl[2] = glRight[2];
+	  gqVal = gqValRight;
+	  gtype = gtypeRight;
+	  drCount=spanRightIt->second.first.size();
+	  dvCount=spanRightIt->second.second.size();
+	}
+	//std::cerr << id.str() << "\t" << sampleName << "\tGTLeft:" << gtypeLeft << "\tGLLeft:" << glLeft[2] << "," << glLeft[1] << "," << glLeft[0] << "\tGQLeft:" << gqValLeft << "\tDRLeft:" << spanLeftIt->second.first.size() << "\tDVLeft:" << spanLeftIt->second.second.size() << "\tGTRight:" << gtypeRight << "\tGLRight:" << glRight[2] << "," << glRight[1] << "," << glRight[0] << "\tGQRight:" << gqValRight << "\tDRRight:" << spanRightIt->second.first.size() << "\tDVRight:" << spanRightIt->second.second.size() << std::endl;
       }
-      // Rescale by best genotype and get second best genotype for GQ
-      FLP glSecondBestVal=-std::numeric_limits<FLP>::infinity();
-      for(unsigned int geno=0; geno<=2; ++geno) {
-	if ((gl[geno]>glSecondBestVal) && (gl[geno]<=glBestVal) && (geno!=glBest)) glSecondBestVal=gl[geno];
-	gl[geno] -= glBestVal;
-      }
-      int gqVal = boost::multiprecision::iround(FLP(10) * boost::multiprecision::log10( boost::multiprecision::pow(FLP(10), glBestVal) / boost::multiprecision::pow(FLP(10), glSecondBestVal) ) );
+      typename TReadCountMap::const_iterator readCountMapIt=readCountMap.find(sampleSVPairLeft);
+      if (readCountMapIt!=readCountMap.end()) rcCount = readCountMapIt->second.second;
+
       // Output genotypes
-      if (peDepth) {
-	if (glBest==0) ofile << "\t1/1:";
-	else if (glBest==1) ofile << "\t0/1:";
-	else ofile << "\t0/0:";
-	ofile << gl[2] << "," << gl[1] << "," << gl[0] << ":" << gqVal << ":";
+      if (trGL) {
+	ofile << "\t" << gtype << ":" << gl[2] << "," << gl[1] << "," << gl[0] << ":" << gqVal << ":";
 	if (gqVal<15) ofile << "LowQual:";
 	else ofile << "PASS:";
       } else {
 	ofile << "\t./.:.,.,.:0:LowQual:";
-      }
-      typename TReadCountMap::const_iterator readCountMapIt=readCountMap.find(sampleSVPairLeft);
-      int rcCount = 0;
-      if (readCountMapIt!=readCountMap.end()) rcCount = readCountMapIt->second.second;
-      int drCount = 0;
-      int dvCount = 0;
-      if (spanLeftIt->second.first.size() <= spanRightIt->second.first.size()) drCount=spanLeftIt->second.first.size();
-      else drCount=spanRightIt->second.first.size();
-      if (spanLeftIt->second.second.size() <= spanRightIt->second.second.size()) dvCount=spanLeftIt->second.second.size();
-      else dvCount=spanRightIt->second.second.size();
-      int rrCount = 0;
-      int rvCount = 0;
-      if (jctCountMapIt!=jctCountMap.end()) {
-	rrCount = jctCountMapIt->second.first.size();
-	rvCount = jctCountMapIt->second.second.size();
       }
       ofile << rcCount << ":" << drCount << ":" << dvCount << ":" << rrCount << ":" << rvCount;
     }
@@ -1357,7 +1339,7 @@ findPutativeSplitReads(TConfig const& c, std::vector<TStructuralVariantRecord>& 
   boost::progress_display show_progress( refnames.size() );
   while ((l = kseq_read(seq)) >= 0) {
     // Find reference index
-    for(int32_t refIndex=0; refIndex < refnames.size(); ++refIndex) {
+    for(int32_t refIndex=0; refIndex < (int32_t) refnames.size(); ++refIndex) {
       if (seq->name.s == refnames[refIndex]) {
 	++show_progress;
 
@@ -1814,7 +1796,7 @@ inline int run(Config const& c, TSVType svType) {
   boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
   std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Paired-end clustering" << std::endl;
   boost::progress_display show_progress( refnames.size() );
-  for(int refIndex=0; (refIndex < refnames.size()) && (peMapping); ++refIndex) {
+  for(int refIndex=0; (refIndex < (int) refnames.size()) && (peMapping); ++refIndex) {
     ++show_progress;
     if (!validChr[refIndex]) continue;
       

@@ -298,7 +298,7 @@ inline void
   seq = kseq_init(fp);
   while ((l = kseq_read(seq)) >= 0) {
     // Find reference index
-    for(int32_t refIndex=0; refIndex < refnames.size(); ++refIndex) {
+    for(int32_t refIndex=0; refIndex < (int32_t) refnames.size(); ++refIndex) {
       if (seq->name.s == refnames[refIndex]) {
         ++show_progress;
 	
