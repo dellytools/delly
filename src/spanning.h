@@ -203,9 +203,8 @@ namespace torali {
 	      uint8_t* ptr = bam_aux_get(rec, "AS");
 	      if (ptr) {
 		int score = std::abs((int) bam_aux2i(ptr));
-		r2Qual = (uint8_t) ( (score<255) ? score : 255 );
+		r2Qual = std::min(r2Qual, (uint8_t) ( (score<255) ? score : 255 ));
 	      }
-	      r2Qual = ( r2Qual == 0) ? 1 : r2Qual;
 	      qualities[index] = r2Qual;
 	    } else {
 	      // Get the two mapping qualities
@@ -214,9 +213,8 @@ namespace torali {
 	      uint8_t* ptr = bam_aux_get(rec, "AS");
 	      if (ptr) {
 		int score = std::abs((int) bam_aux2i(ptr));
-		r2Qual = (uint8_t) ( (score<255) ? score : 255 );
+		r2Qual = std::min(r2Qual, (uint8_t) ( (score<255) ? score : 255 ));
 	      }
-	      r2Qual = ( r2Qual == 0) ? 1 : r2Qual;
 	      uint8_t pairQuality = std::min(qualities[index], r2Qual);
 	      qualities[index]=0;
 
