@@ -57,7 +57,7 @@ _addBpCounts(bam1_t* rec, TWindow posBeg, TWindow posEnd, TCount& bp_sum, BpLeve
   if (rec->core.pos >= posEnd) return;
   int32_t bpPos = rec->core.pos;
   uint32_t* cigar = bam_get_cigar(rec);
-  for (int i = 0; i < rec->core.n_cigar; ++i) {
+  for (unsigned int i = 0; i < rec->core.n_cigar; ++i) {
     int op = bam_cigar_op(cigar[i]);
     int ol = bam_cigar_oplen(cigar[i]);
     if (op == BAM_CMATCH) 
