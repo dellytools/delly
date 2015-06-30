@@ -1786,7 +1786,7 @@ inline int run(Config const& c, TSVType svType) {
   if (boost::filesystem::exists(c.vcffile) && boost::filesystem::is_regular_file(c.vcffile) && boost::filesystem::file_size(c.vcffile)) peMapping=false;
 
   // Qualities
-  typedef boost::unordered_map<unsigned int, uint8_t> TQualities;
+  typedef boost::unordered_map<std::size_t, uint8_t> TQualities;
   std::vector<TQualities> qualities;
   qualities.resize(c.files.size());
 
@@ -1848,14 +1848,24 @@ inline int run(Config const& c, TSVType svType) {
 	  
 	  // Get or store the mapping quality for the partner
 	  if (_firstPairObs(rec->core.tid, rec->core.mtid, rec->core.pos, rec->core.mpos, svType)) {
-	    // Hash the quality
-	    unsigned int index=((rec->core.pos % (int)boost::math::pow<14>(2))<<14) + (rec->core.mpos % (int)boost::math::pow<14>(2));
-	    qualities[file_c][index]=rec->core.qual;
+	    uint8_t r2Qual = rec->core.qual;
+	    uint8_t* ptr = bam_aux_get(rec, "AS");
+	    if (ptr) {
+	      int score = std::abs((int) bam_aux2i(ptr));
+	      r2Qual = std::min(r2Qual, (uint8_t) ( (score<255) ? score : 255 ));
+	    }
+	    qualities[file_c][hash_pair(rec)]= r2Qual;
 	  } else {
 	    // Get the two mapping qualities
-	    unsigned int index=((rec->core.mpos % (int)boost::math::pow<14>(2))<<14) + (rec->core.pos % (int)boost::math::pow<14>(2));
-	    uint8_t pairQuality = (qualities[file_c][index] < rec->core.qual) ? qualities[file_c][index] : rec->core.qual;
-	    qualities[file_c][index]=0;
+	    uint8_t r2Qual = rec->core.qual;
+	    uint8_t* ptr = bam_aux_get(rec, "AS");
+	    if (ptr) {
+	      int score = std::abs((int) bam_aux2i(ptr));
+	      r2Qual = std::min(r2Qual, (uint8_t) ( (score<255) ? score : 255 ));
+	    }
+	    std::size_t index=hash_pair_mate(rec);
+	    uint8_t pairQuality = std::min(qualities[file_c][index], r2Qual);
+	    qualities[file_c][index]= (uint8_t) 0;
 	    
 	    // Pair quality
 	    if (pairQuality < c.minMapQual) continue;

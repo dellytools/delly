@@ -60,6 +60,32 @@ namespace torali
   };
 
   
+  inline unsigned int halfAlignmentLength(bam1_t* rec) {
+    uint32_t* cigar = bam_get_cigar(rec);
+    unsigned int alen = 0;
+    for (unsigned int i = 0; i < rec->core.n_cigar; ++i)
+      if (bam_cigar_op(cigar[i]) == BAM_CMATCH) alen+=bam_cigar_oplen(cigar[i]);
+    return (alen/2);
+  }
+  
+  inline std::size_t hash_pair(bam1_t* rec) {
+    std::size_t seed = 0;
+    boost::hash_combine(seed, rec->core.tid);
+    boost::hash_combine(seed, rec->core.pos);
+    boost::hash_combine(seed, rec->core.mtid);
+    boost::hash_combine(seed, rec->core.mpos);
+    return seed;
+  }
+
+  inline std::size_t hash_pair_mate(bam1_t* rec) {
+    std::size_t seed = 0;
+    boost::hash_combine(seed, rec->core.mtid);
+    boost::hash_combine(seed, rec->core.mpos);
+    boost::hash_combine(seed, rec->core.tid);
+    boost::hash_combine(seed, rec->core.pos);
+    return seed;
+  }
+
   template<typename TAlphabet>
     inline void
     reverseComplement(std::vector<TAlphabet>& seq) 

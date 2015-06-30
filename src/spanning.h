@@ -119,31 +119,41 @@ namespace torali {
 	svSample = std::make_pair(sampleName, itSV->id);
 	typename TCountMap::iterator rightIt = spanCountMap.find(svSample);
 
-	// Processed reads
-	typedef std::set<std::string> TProcessedReads;
-	TProcessedReads procReads;
-
 	// Qualities
-	typedef boost::unordered_map<unsigned int, uint8_t> TQualities;
+	typedef boost::unordered_map<std::size_t, uint8_t> TQualities;
 	TQualities qualities;
 
 	// Unique pairs for the given sample
 	typedef boost::container::flat_set<int32_t> TUniquePairs;
 	TUniquePairs unique_pairs;
 
+	// Pre-compute regions
+	unsigned int maxBp = 2;
+	int32_t regionChr1 = itSV->chr;
+	int regionStart1 = std::max(0, (int) itSV->svStart - (int) maxInsertSize);
+	int regionEnd1 = itSV->svStart + maxInsertSize;
+	int32_t regionChr2 = itSV->chr2;
+	int regionStart2 = std::max(0, (int) itSV->svEnd - (int) maxInsertSize);
+	int regionEnd2 = itSV->svEnd + maxInsertSize;
+	if ((regionChr1 == regionChr2) && (regionEnd1 + maxInsertSize >= regionStart2)) {
+	  // Small SV, scan area only once
+	  maxBp = 1;
+	  regionEnd1 = regionEnd2;
+	}
+
 	// Scan left and right breakpoint
-	for (unsigned int bpPoint = 0; bpPoint<2; ++bpPoint) {
+	for (unsigned int bpPoint = 0; bpPoint < maxBp; ++bpPoint) {
 	  int32_t regionChr;
 	  int regionStart;
 	  int regionEnd;
 	  if (bpPoint==(unsigned int)(itSV->chr==itSV->chr2)) {
-	    regionChr = itSV->chr2;
-	    regionStart = std::max(0, (int) itSV->svEnd - (int) maxInsertSize);
-	    regionEnd = itSV->svEnd + maxInsertSize;
+	    regionChr = regionChr2;
+	    regionStart = regionStart2;
+	    regionEnd = regionEnd2;
 	  } else {
-	    regionChr = itSV->chr;
-	    regionStart = std::max(0, (int) itSV->svStart - (int) maxInsertSize);
-	    regionEnd = itSV->svStart + maxInsertSize;
+	    regionChr = regionChr1;
+	    regionStart = regionStart1;
+	    regionEnd = regionEnd1;
 	  }
 	  int32_t oldAlignPos=-1;
 	  hts_itr_t* iter = sam_itr_queryi(idx[file_c], regionChr, regionStart, regionEnd);
@@ -166,20 +176,12 @@ namespace torali {
 	    if (libIt->second.median == 0) continue; // Single-end library
 	    int outerISize = std::abs(rec->core.pos - rec->core.mpos) + rec->core.l_qseq;
 	      
-	    // Have we processed this read already?
-	    std::string readId = bam_get_qname(rec);
-	    if (rec->core.flag & BAM_FREAD1) readId.append("First");
-	    else readId.append("Second");
-	    typename TProcessedReads::const_iterator procReadPos = procReads.begin();
-	    bool inserted;
-	    boost::tie(procReadPos, inserted) = procReads.insert(readId);
-	    if (!inserted) continue;
-	      
 	    // Abnormal paired-end
 	    if ((getStrandIndependentOrientation(rec->core) != libIt->second.defaultOrient) || (outerISize < libIt->second.minNormalISize) || (outerISize > libIt->second.maxNormalISize) || (rec->core.tid!=rec->core.mtid)) {
 	      if (_acceptedInsertSize(libIt->second, abs(rec->core.isize), svType)) continue;  // Normal paired-end (for deletions, insertions only)
 	      if (_acceptedOrientation(libIt->second.defaultOrient, getStrandIndependentOrientation(rec->core), svType)) continue;  // Orientation disagrees with SV type
-	      
+	      if (!(((itSV->chr == rec->core.tid) && (itSV->chr2 == rec->core.mtid)) || ((itSV->chr == rec->core.mtid) && (itSV->chr2 == rec->core.tid)))) continue;
+
 	      // Does the pair confirm the SV
 	      int32_t const minPos = _minCoord(rec->core.pos, rec->core.mpos, svType);
 	      int32_t const maxPos = _maxCoord(rec->core.pos, rec->core.mpos, svType);
@@ -197,26 +199,22 @@ namespace torali {
 		    
 	    // Get or store the mapping quality for the partner
 	    if (_firstPairObs(rec->core.tid, rec->core.mtid, rec->core.pos, rec->core.mpos, svType)) {
-	      // Hash the quality
-	      unsigned int index=((rec->core.pos % (int)boost::math::pow<14>(2))<<14) + (rec->core.mpos % (int)boost::math::pow<14>(2));
 	      uint8_t r2Qual = rec->core.qual;
 	      uint8_t* ptr = bam_aux_get(rec, "AS");
 	      if (ptr) {
 		int score = std::abs((int) bam_aux2i(ptr));
 		r2Qual = std::min(r2Qual, (uint8_t) ( (score<255) ? score : 255 ));
 	      }
-	      qualities[index] = r2Qual;
+	      qualities[hash_pair(rec)] = r2Qual;
 	    } else {
 	      // Get the two mapping qualities
-	      unsigned int index=((rec->core.mpos % (int)boost::math::pow<14>(2))<<14) + (rec->core.pos % (int)boost::math::pow<14>(2));
 	      uint8_t r2Qual = rec->core.qual;
 	      uint8_t* ptr = bam_aux_get(rec, "AS");
 	      if (ptr) {
 		int score = std::abs((int) bam_aux2i(ptr));
 		r2Qual = std::min(r2Qual, (uint8_t) ( (score<255) ? score : 255 ));
 	      }
-	      uint8_t pairQuality = std::min(qualities[index], r2Qual);
-	      qualities[index]=0;
+	      uint8_t pairQuality = std::min(qualities[hash_pair_mate(rec)], r2Qual);
 
 	      // Pair quality
 	      if (pairQuality < minMapQual) continue;
@@ -229,21 +227,13 @@ namespace torali {
 	      if (unique_pairs.insert(rec->core.mpos).second) {
 		// Insert the interval
 		if ((getStrandIndependentOrientation(rec->core) == libIt->second.defaultOrient) && (outerISize >= libIt->second.minNormalISize) && (outerISize <= libIt->second.maxNormalISize) && (rec->core.tid==rec->core.mtid)) {
-		  // Normal spanning coverage
-		  int32_t sPos = std::min(rec->core.pos, rec->core.mpos);
-		  int32_t ePos = std::max(rec->core.pos, rec->core.mpos) + rec->core.l_qseq;
-		  int32_t midPoint = sPos+(ePos-sPos)/2;
-		  sPos=std::max(sPos, midPoint - rec->core.l_qseq);
-		  ePos=std::min(ePos, midPoint + rec->core.l_qseq);
-		  int32_t innerSPos = std::min(rec->core.pos, rec->core.mpos) + rec->core.l_qseq;
-		  int32_t innerEPos = std::max(rec->core.pos, rec->core.mpos);
-		  if ((innerSPos<innerEPos) && ((innerEPos - innerSPos) > (ePos-sPos))) {
-		    if ((itSV->svStart>=innerSPos) && (itSV->svStart<=innerEPos)) leftIt->second.first.push_back(pairQuality);
-		    if ((itSV->svEnd>=innerSPos) && (itSV->svEnd<=innerEPos)) rightIt->second.first.push_back(pairQuality);
-		  } else {
-		    if ((itSV->svStart>=sPos) && (itSV->svStart<=ePos)) leftIt->second.first.push_back(pairQuality);
-		    if ((itSV->svEnd>=sPos) && (itSV->svEnd<=ePos)) rightIt->second.first.push_back(pairQuality);
-		    }		      
+		  // Normal spanning coverage, take inner insert-size
+		  int32_t sPosStart = std::min(rec->core.pos, rec->core.mpos);
+		  int32_t ePosStart = std::min(rec->core.pos, rec->core.mpos) + rec->core.l_qseq;
+		  int32_t sPosEnd = std::max(rec->core.pos, rec->core.mpos);
+		  int32_t ePosEnd = std::max(rec->core.pos, rec->core.mpos) + rec->core.l_qseq;
+		  if ((itSV->chr==rec->core.tid) && (itSV->svStart>=sPosStart) && (itSV->svStart<=ePosStart)) leftIt->second.first.push_back(pairQuality);
+		  if ((itSV->chr2==rec->core.tid) && (itSV->svEnd>=sPosEnd) && (itSV->svEnd<=ePosEnd)) rightIt->second.first.push_back(pairQuality);
 		} else if ((getStrandIndependentOrientation(rec->core) != libIt->second.defaultOrient) || (outerISize < libIt->second.minNormalISize) || (outerISize > libIt->second.maxNormalISize) || (rec->core.tid!=rec->core.mtid)) {
 		  // Missing spanning coverage
 		  if (_mateIsUpstream(libIt->second.defaultOrient, (rec->core.flag & BAM_FREAD1), (rec->core.flag & BAM_FREVERSE))) {

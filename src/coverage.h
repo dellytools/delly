@@ -41,15 +41,6 @@ inline std::string cigarString(TCigarVec const& cigarOperations) {
   return cigar.str();
 }
 
-inline unsigned int halfAlignmentLength(bam1_t* rec) {
-  uint32_t* cigar = bam_get_cigar(rec);
-  unsigned int alen = 0;
-  for (unsigned int i = 0; i < rec->core.n_cigar; ++i) 
-    if (bam_cigar_op(cigar[i]) == BAM_CMATCH) alen+=bam_cigar_oplen(cigar[i]);
-  return (alen/2);
-}
-
-
 template<typename TWindow, typename TCount>
 inline void
 _addBpCounts(bam1_t* rec, TWindow posBeg, TWindow posEnd, TCount& bp_sum, BpLevelType<BpLevelCount>)
