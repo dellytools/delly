@@ -76,13 +76,13 @@ struct BoLog {
 
    // Phred-scaled genotype likelihoods
    uint32_t pl[3];
-   pl[0] = boost::math::round(-10 * gl[0]);
-   pl[1] = boost::math::round(-10 * gl[1]);
-   pl[2] = boost::math::round(-10 * gl[2]);
+   pl[0] = (uint32_t) boost::math::round(-10 * gl[0]);
+   pl[1] = (uint32_t) boost::math::round(-10 * gl[1]);
+   pl[2] = (uint32_t) boost::math::round(-10 * gl[2]);
    if ((peDepth) && (pl[0] + pl[1] + pl[2] > 0)) {
-     FLP likelihood = std::log10((1-1/(bl.phred2prob[pl[0]]+bl.phred2prob[pl[1]]+bl.phred2prob[pl[2]])));
+     FLP likelihood = (FLP) std::log10((1-1/(bl.phred2prob[pl[0]]+bl.phred2prob[pl[1]]+bl.phred2prob[pl[2]])));
      likelihood = (likelihood > SMALLEST_GL) ? likelihood : SMALLEST_GL;
-     gq = boost::math::round(-10 * likelihood);
+     gq = (TGQ) boost::math::round(-10 * likelihood);
      if (glBest==0) gtype = "1/1";
      else if (glBest==1) gtype = "0/1";
      else gtype = "0/0";
