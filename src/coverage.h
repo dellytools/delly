@@ -27,6 +27,7 @@ Contact: Tobias Rausch (rausch@embl.de)
 #include <boost/container/flat_set.hpp>
 #include <htslib/sam.h>
 #include "tags.h"
+#include "util.h"
 
 namespace torali {
 
