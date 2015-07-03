@@ -22,6 +22,11 @@ parser.add_argument('-m', '--minsize', metavar='500', required=False, dest='minS
 parser.add_argument('-n', '--maxsize', metavar='500000000', required=False, dest='maxSize', help='max. size (optional)')
 parser.add_argument('-r', '--ratioGeno', metavar='0.75', required=False, dest='ratioGeno', help='min. fraction of genotyped samples (optional)')
 parser.add_argument('-f', '--filter', dest='siteFilter', action='store_true', help='Filter sites for PASS')
+
+# edits (meiers):
+parser.add_argument('-N', '--normal', metavar='name', required=False, dest='nameNormal', help='Name of normal sample in VCF (optional)')
+parser.add_argument('-T', '--tumor',  metavar='name', required=False, dest='nameTumor', help='Name of tumor sample in VCF (optional)')
+
 args = parser.parse_args()
 
 # Command-line args
@@ -59,18 +64,18 @@ if args.vcfFile:
             tCount = 0
             for call in record.samples:
                 if call.called:
-                    if re.search(r"[Nn]ormal", call.sample) != None:
+                    if args.nameNormal and call.sample == args.nameNormal or re.search(r"[Nn]ormal", call.sample) != None:
                         nCount += 1
                         if call.gt_type == 0:
                             if ((not precise) and (call['DV'] == 0)) or ((precise) and (call['RV'] == 0)):
                                 rcRef.append(call['RC'])
-                    if re.search(r"[Tt]umo[ur]", call.sample) != None:
+                    if args.nameTumor and call.sample == args.nameTumor or re.search(r"[Tt]umo[ur]", call.sample) != None:
                         tCount += 1
                         if call.gt_type != 0:  # Misses subclonal SVs with call['DV']>0 and GT=0/0
                             if ((not precise) and (call['DV'] >= 2) and (float(call['DV'])/float(call['DV']+call['DR']) >= altAF)) or ((precise) and (call['RV'] >= 2) and (float(call['RV'])/float(call['RR'] + call['RV']) >= altAF)):
                                 rcAlt.append(call['RC'])
                 else:
-                    if (re.search(r"[Nn]ormal", call.sample) != None) and (precise):
+                    if (args.nameNormal and call.sample == args.nameNormal or re.search(r"[Nn]ormal", call.sample) != None) and (precise):
                         if (call['DR'] > 2) and (call['DV'] == 0):
                             nCount += 1
                             rcRef.append(call['RC'])
