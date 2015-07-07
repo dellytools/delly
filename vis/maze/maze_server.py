@@ -47,10 +47,22 @@ def data():
     os.remove(fn_ref)
     return json.dumps(m)
 
+
+@app.route('/detail')
+def detail():
+    args  = request.form
+    #ref   = json.loads(args['ref'])
+    #query = json.loads(args['query'])
+    ref = dict(name='chr6:1000-2000', seq='AACGACTGATGCTAGCACTAGCTTAGCTAGCTAGCTAGCTAGCTAGCTAGC')
+    query = dict(name='read0815', seq='ATCATGCTAGCTGATCATCGTAGCTGACTGATCTAGCTAC')
+    return render_template('detail.html', ref=ref, query=query)
+
+
 @click.command()
 @click.option('-p', '--port', default=5000, help='port number')
 @click.option('--debug/--no-debug', default=False,
               help='run server in debug mode')
+# Todo(meiers): revisit the --coords option
 @click.option('-c', '--coords', help='reference coordinates BED file')
 def cli(port, debug, coords):
     global cfg
