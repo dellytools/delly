@@ -32,7 +32,7 @@ var suave = function () {
 
   // TODO this needs to be dynamic based on the actual VCF
   // also: use colorbrewer palette
-  var svColors = {'INV': 'orange', 'DUP': '#666', 'DEL': 'DodgerBlue'};
+  var svColors = {'INV': 'orange', 'DUP': '#666', 'DEL': 'DodgerBlue', 'TRA': 'MediumSeaGreen'};
 
   function populateChroms(s1, s2) {
     $.getJSON('/chroms/' + s1 + '/' + s2, function (res) {
@@ -292,7 +292,9 @@ var suave = function () {
           + ' ('
           + d['ct']
           + ')\x0A'
-          + 'start: '
+          + 'destination: '
+          + d['chr2']
+          + '\x0Astart: '
           + posFormat(d['start'])
           + ' end: '
           + posFormat(d['end']);
