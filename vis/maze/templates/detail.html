@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<!--
+maze: match visualizer
+2014-2015 Markus Hsi-Yang Fritz
+-->
+<head>
+  <meta charset="UTF-8">
+  <title>maze</title>
+  <link href="{{ url_for('static', filename='bootstrap/css/bootstrap.min.css') }}" rel="stylesheet">
+  <link href="{{ url_for('static', filename='googlefonts/stylesheet.css') }}" rel="stylesheet">
+  <link href="{{ url_for('static', filename='font-awesome/css/font-awesome.min.css') }}" rel="stylesheet">
+  <link href="{{ url_for('static', filename='maze.css') }}" rel="stylesheet">
+</head>
+<body>
+
+
+  <header>
+    <div class="container-fluid">
+      <!--
+      <button type="button" class="pull-left button-header" data-toggle="modal" data-target="#config-modal">
+        <span class="glyphicon glyphicon-menu-hamburger"></span>
+      </button>
+      -->
+      <div class="pull-left">{{ query.name }}</div>
+      <!-- Todo(meiers): make this button work -->
+      <button type="button" class="pull-right button-header">
+        <span class="glyphicon glyphicon-remove"></span>
+      </button>
+      <div class="pull-right">close</div>
+    </div>
+  </header>
+
+
+ <!-- Config modal -->
+ <!--
+  <div class="modal fade" id="config-modal" tabindex="-1">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <button type="button" class="close" data-dismiss="modal"><span>&times;</span></button>
+          <h4 class="modal-title">Setup</h4>
+        </div>
+        <div class="modal-body">
+
+          <h4>Input files</h4>
+          <div id="drop-ref" class="dropzone">
+            <span class="fa fa-upload fa-2x"></span>
+            Drop reference FASTA here
+          </div>
+          <div id="drop-query" class="dropzone">
+            <span class="fa fa-upload fa-2x"></span>
+            Drop query FASTA here
+          </div>
+          <div>
+            <span id="ref-icon-chosen" class="fa fa-times"></span>
+            ref. file: <span id="ref-span-chosen"></span>
+            <br>
+            <span id="query-icon-chosen" class="fa fa-times"></span>
+            query file: <span id="query-span-chosen"></span>
+          </div>
+
+
+          <h4>MUMmer3 options</h4>
+          <div id="config-matches" class="btn-group" data-toggle="buttons">
+            <label class="btn btn-default active">
+              <input type="radio" name="options" autocomplete="off" checked> mumreference
+            </label>
+            <label class="btn btn-default">
+              <input type="radio" name="options" autocomplete="off" title="Maximal Unique Matches"> mum
+            </label>
+            <label class="btn btn-default">
+              <input type="radio" name="options" autocomplete="off" title="Maximal Unique Matches"> maxmatch
+            </label>
+          </div>match type <span id="match-info" class="fa fa-info-circle"></span>
+          <div class="alert alert-info hide" id="matches-info">
+            <p><b>mumreference:</b> matches that are unique in the reference but not necessarily in the query</p>
+            <p><b>mum:</b> matches that are unique in both the reference and query</p>
+            <p><b>maxmatch:</b> maximal matches regardless of their uniqueness</p>
+          </div>
+          <br>
+          <input id="config-length" type="number" class="form-control" value="15">minimal match length
+
+          <h4>Chart options</h4>
+          <input id="checkbox-scale" type="checkbox" checked> Scale chart width/height according to browser window
+          <br>
+          <input id="config-dim" type="number" class="form-control" value="600" disabled>chart width/height (px)
+
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-primary" id="visualize" disabled>Visualize!</button>
+        </div> 
+
+      </div>
+    </div>
+  </div>
+  -->
+
+
+  <!-- Control modal -->
+  <!--
+  <div class="modal fade" id="control-modal" tabindex="-1">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <button type="button" class="close" data-dismiss="modal"><span>&times;</span></button>
+          <h4 class="modal-title">Tools</h4>
+        </div>
+        <div class="modal-body">
+
+          ...coming soon...
+        </div>
+      </div>
+    </div>
+  </div>
+  -->
+
+
+  <div class="spinner hide">
+    <span class="fa fa-spinner fa-pulse fa-5x"></span>
+  </div>
+
+  <div class="container" id="vis-wrap">
+    <button id="control-btn-left" type="button" class="btn btn-default hide control-btn">
+      <span class="glyphicon glyphicon-chevron-left"></span>
+    </button>
+    <span id="vis"></span>
+    <button id="control-btn-right" type="button" class="btn btn-default hide control-btn">
+      <span class="glyphicon glyphicon-chevron-right"></span>
+    </button>
+  </div>
+
+  <div id="footer-icon-wrap">
+    <span class="fa fa-chevron-circle-up fa-2x" id="footer-icon"></span>
+  </div>
+
+  <footer>
+    <div>maze &mdash; match visualizer</div>
+    <div>part of the DELLY software <a href="https://github.com/tobiasrausch/delly" target="_blank"><span class="fa fa-github"></span></a></div>
+    <div>2014-2015 Markus Hsi-Yang Fritz</div>
+  </footer>
+
+  <script src="{{ url_for('static', filename='jquery.min.js') }}"></script>
+  <script src="{{ url_for('static', filename='bootstrap/js/bootstrap.min.js') }}"></script>
+  <script src="{{ url_for('static', filename='d3.min.js') }}"></script>
+  <script src="{{ url_for('static', filename='pako.min.js') }}"></script>
+  <script src="{{ url_for('static', filename='maze.js') }}"></script>
+</body>
+</html>
