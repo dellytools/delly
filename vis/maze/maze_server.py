@@ -50,12 +50,7 @@ def data():
 
 @app.route('/detail')
 def detail():
-    args  = request.form
-    #ref   = json.loads(args['ref'])
-    #query = json.loads(args['query'])
-    ref = dict(name='chr6:1000-2000', seq='AACGACTGATGCTAGCACTAGCTTAGCTAGCTAGCTAGCTAGCTAGCTAGC')
-    query = dict(name='read0815', seq='ATCATGCTAGCTGATCATCGTAGCTGACTGATCTAGCTAC')
-    return render_template('detail.html', ref=ref, query=query)
+    return render_template('detail.html')
 
 
 @click.command()
