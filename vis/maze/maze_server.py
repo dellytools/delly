@@ -9,6 +9,7 @@ from tempfile import NamedTemporaryFile
 import os
 import gzip
 import json
+import time # Todo(meiers): could be removed later
 from readfq import readfq
 import maze
 
@@ -51,6 +52,20 @@ def data():
 @app.route('/detail')
 def detail():
     return render_template('detail.html')
+
+@app.route('/breakpoints', methods=['POST'])
+def breakpoints():
+    args = request.form
+    # Todo(meiers): Get LAST parameters, too
+    ref = json.loads(args['ref'])
+    query = json.loads(args['query'])
+    matches = maze.LASTsplit_matches(ref, query)
+    # Todo(meiers): return breakpoints, too
+    # breakpoints = ... 
+
+    time.sleep(1)
+    return json.dumps(dict(matches=[maze._transform_coords(m) for m in matches],
+                           breakpoints=[]))
 
 
 @click.command()

@@ -41,7 +41,7 @@ header {
   outline: none;
 }
 
-.spinner {
+.spinner, .spinner2 {
   text-align: center;
   color: black;
   opacity: 0.85;
