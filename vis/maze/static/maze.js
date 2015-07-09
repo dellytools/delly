@@ -170,8 +170,10 @@ var maze = function () {
     $('#control-btn-left').removeClass('hide');
     $('#control-btn-right').removeClass('hide');
     $('#control-btn-detail').removeClass('hide');
-
+    $('#control-btn-left').off('click');
+    $('#control-btn-right').off('click');
     $('#control-btn-detail').off('click');
+
     $('#control-btn-detail:not(disabled)').click(function () { // currently never disabled
         console.log('open new window for ' + dataIdx)
         var wnd = window.open("detail");
