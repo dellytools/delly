@@ -171,7 +171,9 @@ var maze = function () {
     $('#control-btn-right').removeClass('hide');
     $('#control-btn-detail').removeClass('hide');
 
+    $('#control-btn-detail').off('click');
     $('#control-btn-detail:not(disabled)').click(function () { // currently never disabled
+        console.log('open new window for ' + dataIdx)
         var wnd = window.open("detail");
         wnd.transferData = { data: data, query: my.query[dataIdx], ref: my.ref[0]}; // Todo(meiers): Change ref[0] in the future
       });
