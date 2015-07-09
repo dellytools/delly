@@ -26,18 +26,34 @@ maze: match visualizer
     </div>
   </header>
 
-  <!-- Dotplot -->
-  <div class="container" id="vis-wrap">
-    <div class="spinner">
-      <span class="fa fa-spinner fa-pulse fa-5x"></span>
-    </div>
-    <span id="vis"></span>
-  </div>
+  
+  <div class="container">
+    <div class="row">
 
-  <!-- Info fields (matches, breakpoints etc.) -->
-  <div class="container" id="match-wrap">
-    <div class="spinner2">
-      <span class="fa fa-spinner fa-pulse fa-5x"></span>
+      <!-- Dotplot -->
+      <div class="col-md-5" id="vis-wrap">
+        <div class="spinner">
+          <span class="fa fa-spinner fa-pulse fa-5x"></span>
+        </div>
+        <span id="vis"></span>
+      </div>
+
+      <!-- Info fields (matches, breakpoints etc.) -->      
+      <div class="col-md-7" id="match-wrap">
+        <h3>last-split matches</h3>
+        <div class="list-group" id="listLASTmatches">
+          <div class="spinner">
+            <span class="fa fa-spinner fa-pulse fa-5x"></span>
+          </div>
+        </div>
+        <h3>breakpoints</h3>
+        <div class="list-group" id="listLASTbps">
+          <div class="spinner">
+            <span class="fa fa-spinner fa-pulse fa-5x"></span>
+          </div>
+        </div>
+      </div>
+
     </div>
   </div>
 

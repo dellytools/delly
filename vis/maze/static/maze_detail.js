@@ -40,20 +40,8 @@ var maze_detail = function () {
     // plot dots
     $('#title-upper-left').append(my.query.name)
     $(selector).empty();
-    $('.spinner').toggleClass('hide');
+    $(selector).parent().find(".spinner").toggleClass('hide');
     my.vis(selector);
-
-    // get LAST matches
-    $.post('/breakpoints', {
-          'ref': JSON.stringify(my.ref.seq),
-          'query': JSON.stringify(my.query.seq)
-        }, function (res) {
-          $('.spinner2').toggleClass('hide');
-          my.LASTmatches = res.matches;
-          
-          my.addLASTmatches(selector);
-        }, 'json'
-      );
   };
 
 
@@ -63,8 +51,10 @@ var maze_detail = function () {
     var l1 = my.ref.seq.length;
     var l2 = my.query.seq.length;
 
+
     $(selector).empty();    
-    my.outerWidth = Math.min(500, $(window).height()) * 0.8;
+    my.outerWidth = $(selector).parent().width() * 0.98;
+    console.log("Create dotplot in " + selector + " with width " + my.outerWidth);
     my.outerHeight = my.outerWidth;
     my.margin = { top: 25, bottom: 15, left: 50, right: 50 };
     var innerWidth = my.outerWidth - my.margin.left - my.margin.right;
@@ -188,58 +178,76 @@ var maze_detail = function () {
 
   // show or hide all elements belonging to a match
   my.toggleMatch = function(selector, idx, mode='show') {
-    console.log("Toggle: " + idx)
     idxs = idx.split(',');
     for (i in idxs) {
-      console.log(idxs[i])
       if (mode=='show') $(selector + " .geom[match_index=" + idxs[i] + "]").show()
       else              $(selector + " .geom[match_index=" + idxs[i] + "]").hide()
     }
   };
 
-  // Todo(meiers): consider use of selector here. Better use 2 selectors 
-  //              (one for plot, one for output table).
   // adds highlightable LAST matches to the dotplot
-  my.addLASTmatches = function (selector) {
-    
-    // draw rectangles
-    d3.select(selector).select("svg g g.plotarea").selectAll("rect.geom.last")
-      .data(my.LASTmatches)
-    .enter().append("rect")
-      .style("opacity", "0.3")
-      .attr("class", "geom last")
-      .attr("match_index", function(d,i)   {return i; })
-      .attr("x", function(d)      {return my.scales.x(d.d1); })
-      .attr("y", function(d)      {return my.scales.y(d.q1); })
-      .attr("width", function(d)  {return my.scales.x(d.d2) - my.scales.x(d.d1); })
-      .attr("height", function(d) {return my.scales.y(d.q2) - my.scales.y(d.q1); })
-      .style("fill", function (d) {return d.strand == '+' ? 'black' : 'red'});
-      
+  my.addLASTmatches = function (chartSelector, tableSelector) {
 
-      // Todo(meiers): CSS define matchlist and matchlistHeader
-    // list matches
-    $('div#match-wrap').append('<span class="matchlistHeader">last-split matches</span>' + 
-                                '<ul class="matchlist" id="listLASTmatches"></ul>');
-    for (x in my.LASTmatches) {
-      var m = my.LASTmatches[x];
-      $('div#match-wrap ul#listLASTmatches').append("<li class='" + (m.strand == '+' ? 'plus' : 'minus') + 
-                    "' match_index='" + x + "'>" + m.sim + " mismatches. " + 
-                    "Ref[" + (m.d1) + ":" + (m.d2)  + "] (" + m.d1 + ":" + 
-                    m.d2 + ") query[" + m.q1 + ":" + m.q2 + "] <pre>" + m.record + 
-                    "</pre></li>");
-    }
+    // get LAST matches
+    /*
+    $.post('/breakpoints', {
+          'ref': JSON.stringify(my.ref.seq),
+          'query': JSON.stringify(my.query.seq)
+        }, function (res) {
+          my.LASTmatches = res.matches;
+        }, 'json'
+    );
+    */
+    $.post('/breakpoints', {
+          'ref': JSON.stringify(my.ref.seq),
+          'query': JSON.stringify(my.query.seq)
 
-    // Todo(meiers): This event handler will probably hold even for breakpoints etc.
-    // Event handler
-    $('div#match-wrap li').click(function(d) { $('pre', this).toggle(); });
-    $('div#match-wrap li').mouseover(function(x) {
-                      my.toggleMatch(selector, $(this).attr('match_index'), 'show')});
-    $('div#match-wrap li').mouseout(function(x) {
-                      my.toggleMatch(selector, $(this).attr('match_index'), 'hide')});
+        // when successfull
+        }, function (result) {
+          my.LASTmatches = result.matches;
+          console.log(my.LASTmatches);
+          // draw rectangles
+          d3.select(chartSelector).select("svg g g.plotarea").selectAll("rect.geom.last")
+            .data(my.LASTmatches)
+          .enter().append("rect")
+            .attr("match_index", function(d,i)   {return i; })
+            .attr("x", function(d)      {return my.scales.x(d.d1); })
+            .attr("y", function(d)      {return my.scales.y(d.q1); })
+            .attr("width", function(d)  {return my.scales.x(d.d2) - my.scales.x(d.d1); })
+            .attr("height", function(d) {return my.scales.y(d.q2) - my.scales.y(d.q1); })
+            .attr("class", function (d) {return "geom last " + (d.strand == '+' ? 'plus' : 'minus') });
+          // hide spinner
+          $(tableSelector).parent().find('.spinner').toggleClass('hide');
+          // list matches (unique id listLASTmatches)
+          for (x in my.LASTmatches) {
+            var m = my.LASTmatches[x];
+            $(tableSelector).append(
+                  '<a class="list-group-item collapse-group" match_index="' + x + '">' + 
+                  '  <button class="btn btn-default pull-right" type="button" data-toggle="collapse" data-target="#listLASTmatches a[match_index=' + x + '] pre">' +
+                  '    <span class="glyphicon glyphicon-collapse-down"></span>' +
+                  '  </button>' +
+                  '  <h5>' + 
+                       m.sim + ' mismatches. Ref[' + (m.d1) + ':' + (m.d2)  + '] vs. Query[' + m.q1 + ':' + m.q2 + '] (' + m.strand + ')' + 
+                  '  </h5>' +
+                  '  <pre class="collapse" aria-expanded="false">' + 
+                       m.record + 
+                  '  </pre>' +
+                  '</a>');
+          }
 
-    // initially hide
-    $('#chart svg svg rect.geom.last').hide();
-    $('div#match-wrap li pre').hide();
+          // Todo(meiers): This event handler will probably hold even for breakpoints etc.
+          // Event handler
+          $(tableSelector + ' a').mouseover(function(x) {
+                            my.toggleMatch(chartSelector, $(this).attr('match_index'), 'show')});
+          $(tableSelector + ' a').mouseout(function(x) {
+                            my.toggleMatch(chartSelector, $(this).attr('match_index'), 'hide')});
+          // initially hide rectangles
+          $(chartSelector + ' svg rect.geom.last').hide();
+
+        // in case of failure
+        }, 'json').fail(function() {
+          $(tableSelector).append('<div class="alert alert-danger alert-dismissable" role="alert">Could not generate last-split matches.</div>')
+        });
   };
 
   return my;
@@ -249,5 +257,6 @@ var maze_detail = function () {
 // load maze_detail when ready
 $(document).ready(function() {
   $(maze_detail.main.bind(null, '#vis'));
+  $(maze_detail.addLASTmatches.bind(null, '#vis', '#listLASTmatches'));
 });
 

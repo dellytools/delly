@@ -41,7 +41,7 @@ header {
   outline: none;
 }
 
-.spinner, .spinner2 {
+.spinner {
   text-align: center;
   color: black;
   opacity: 0.85;
@@ -164,4 +164,17 @@ footer a:active, footer a:focus {
 .overlay {
   fill: none;
   pointer-events: all;
+}
+
+rect.last {
+  opacity:0.3;
+  fill:#888888;
+}
+
+rect.last.minus {
+  fill:#ff0000;
+}
+
+pre {
+  font-size:9px;
 }
