@@ -137,7 +137,7 @@ def _transform_coords(match):
         m['q2'] = match['qlen'] - match['q1']
     return m
 
-def LASTsplit_breakpoints(ref, seq, matches, W=25, V=15): # matches must be sorted by query
+def LASTsplit_breakpoints(ref, seq, matches, W=40, V=20): # matches must be sorted by query
     breakpoints = []
     for m1,m2 in zip(matches, matches[1:]):
         just = 16
@@ -208,7 +208,7 @@ def _miho(seq1, seq2):
     return count
 
 
-def LASTsplit_ref_breakpoints(ref, seq, matches, W=25, V=15):
+def LASTsplit_ref_breakpoints(ref, seq, matches, W=40, V=25):
     X=100
     breakpoints = []
     for m1, m2 in itt.combinations(matches, 2):

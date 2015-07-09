@@ -28,6 +28,9 @@ var maze_detail = function () {
       });
     }); 
 
+    // Close button
+    $('#btn-close').click(function() {window.close()});
+
     // Get query, ref and MUMer matches from the maze overview page
     if (window['transferData'] != undefined) {
       dat = window.transferData;
@@ -203,7 +206,7 @@ var maze_detail = function () {
 
   // show or hide all elements belonging to a match
   my.toggleMatch = function(visSelector, idx, mode) {
-    idxs = idx.split(',');
+    var idxs = idx.split(',');
     for (i in idxs) {
       if (mode=='show') $(visSelector + " .geom[match_index=" + idxs[i] + "]").show()
       else              $(visSelector + " .geom[match_index=" + idxs[i] + "]").hide()
