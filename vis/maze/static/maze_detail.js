@@ -223,18 +223,22 @@ var maze_detail = function () {
       .attr("height", function(d) {return my.scales.y(d.q2) - my.scales.y(d.q1); })
       .attr("class", function (d) {return "geom last " + (d.strand == '+' ? 'plus' : 'minus') });
     // list matches (unique id listLASTmatches)
-    for (x in my.LASTmatches) {
-      var m = my.LASTmatches[x];
-      $(matchSelector).append(
-            '<a class="list-group-item collapse-group" match_index="' + x + '">' + 
-            '  <button class="btn btn-default pull-right" type="button" data-toggle="collapse" data-target="#listLASTmatches a[match_index=' + x + '] pre">' +
-            '    <span class="glyphicon glyphicon-collapse-down"></span>' +
-            '  </button>' +
-            '  <h5>' + 
-                 m.sim + ' mismatches. Ref[' + (m.d1) + ':' + (m.d2)  + '] vs. Query[' + m.q1 + ':' + m.q2 + '] (' + m.strand + ')' + 
-            '  </h5>' +
-            '  <pre class="collapse" aria-expanded="false">' + m.record + '</pre>' +
-            '</a>');
+    if (my.LASTmatches.length<1) {
+      $(matchSelector).append('<div class="alert alert-warning" role="alert">No matches found.</div>');
+    } else {
+      for (x in my.LASTmatches) {
+        var m = my.LASTmatches[x];
+        $(matchSelector).append(
+              '<a class="list-group-item collapse-group" match_index="' + x + '">' + 
+              '  <button class="btn btn-default pull-right" type="button" data-toggle="collapse" data-target="#listLASTmatches a[match_index=' + x + '] pre">' +
+              '    <span class="glyphicon glyphicon-collapse-down"></span>' +
+              '  </button>' +
+              '  <h5>' + 
+                   m.sim + ' mismatches. Ref[' + (m.d1) + ':' + (m.d2)  + '] vs. Query[' + m.q1 + ':' + m.q2 + '] (' + m.strand + ')' + 
+              '  </h5>' +
+              '  <pre class="collapse" aria-expanded="false">' + m.record + '</pre>' +
+              '</a>');
+      }
     }
     // initially hide rectangles
     $(visSelector + ' svg rect.geom.last').hide();
@@ -242,35 +246,43 @@ var maze_detail = function () {
 
 
   my.addLASTbps = function (bpsSelector) {
-    for ( x in my.LASTbps) {
-      var br = my.LASTbps[x];
-      $(bpsSelector).append(
-        '<a class="list-group-item collapse-group" match_index="' + br.match_index + '">' + 
-            '  <button class="btn btn-default pull-right" type="button" data-toggle="collapse" data-target="' + bpsSelector + ' a[match_index=\'' + br.match_index  + '\'] pre">' +
-            '    <span class="glyphicon glyphicon-collapse-down"></span>' +
-            '  </button>' +
-            '  <h5>' + 
-                 (br.length>0 ? br.length + ' bp ' + br.event : 'Exact breakpoint') + ' around query[' + br.qu_coords[0] + ':' + br.qu_coords[1] + ']' +
-            '  </h5>' +
-            '  <pre class="collapse" aria-expanded="false">' + br.html + '</pre>' +
-            '</a>');
+    if (my.LASTbps.length<1) {
+      $(bpsSelector).append('<div class="alert alert-warning" role="alert">No breakpoints on the query.</div>');
+    } else {
+      for ( x in my.LASTbps) {
+        var br = my.LASTbps[x];
+        $(bpsSelector).append(
+          '<a class="list-group-item collapse-group" match_index="' + br.match_index + '">' + 
+              '  <button class="btn btn-default pull-right" type="button" data-toggle="collapse" data-target="' + bpsSelector + ' a[match_index=\'' + br.match_index  + '\'] pre">' +
+              '    <span class="glyphicon glyphicon-collapse-down"></span>' +
+              '  </button>' +
+              '  <h5>' + 
+                   (br.length>0 ? br.length + ' bp ' + br.event : 'Exact breakpoint') + ' around query[' + br.qu_coords[0] + ':' + br.qu_coords[1] + ']' +
+              '  </h5>' +
+              '  <pre class="collapse" aria-expanded="false">' + br.html + '</pre>' +
+              '</a>');
+      }
     }
   };
 
   my.addLASTrefbps = function (refbpsSelector) {
-    for ( x in my.LASTrefbps) {
-      var br = my.LASTrefbps[x];
-      console.log(br);
-      $(refbpsSelector).append(
-        '<a class="list-group-item collapse-group" match_index="' + br.match_index + '">' + 
-            '  <button class="btn btn-default pull-right" type="button" data-toggle="collapse" data-target="' + refbpsSelector + ' a[match_index=\'' + br.match_index  + '\'] pre">' +
-            '    <span class="glyphicon glyphicon-collapse-down"></span>' +
-            '  </button>' +
-            '  <h5>' + 
-                 (br.length>0 ? br.length + ' bp ' + br.event : 'Exact breakpoint') + ' around Ref[' + br.ref_coords[0] + ':' + br.ref_coords[1] + ']' +
-            '  </h5>' +
-            '  <pre class="collapse" aria-expanded="false">' + br.html + '</pre>' +
-            '</a>');
+    if (my.LASTbps.length<1) {
+      $(refbpsSelector).append('<div class="alert alert-warning" role="alert">No breakpoints on the reference within 100bp distance.</div>');
+    } else {
+      for ( x in my.LASTrefbps) {
+        var br = my.LASTrefbps[x];
+        console.log(br);
+        $(refbpsSelector).append(
+          '<a class="list-group-item collapse-group" match_index="' + br.match_index + '">' + 
+              '  <button class="btn btn-default pull-right" type="button" data-toggle="collapse" data-target="' + refbpsSelector + ' a[match_index=\'' + br.match_index  + '\'] pre">' +
+              '    <span class="glyphicon glyphicon-collapse-down"></span>' +
+              '  </button>' +
+              '  <h5>' + 
+                   (br.length>0 ? br.length + ' bp ' + br.event : 'Exact breakpoint') + ' around Ref[' + br.ref_coords[0] + ':' + br.ref_coords[1] + ']' +
+              '  </h5>' +
+              '  <pre class="collapse" aria-expanded="false">' + br.html + '</pre>' +
+              '</a>');
+      }
     }
   };
 
