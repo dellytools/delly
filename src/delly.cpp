@@ -1691,9 +1691,9 @@ _annotateJunctionReads(TConfig const& c, TSampleLibrary& sampleLib, TSVs& svs, T
 }
 
 
-template<typename TConfig, typename TRefNames, typename TRefLength, typename TSampleLibrary, typename TSVs, typename TCountMap, typename TTag>
+template<typename TConfig, typename TRefNames, typename TSampleLibrary, typename TSVs, typename TCountMap, typename TTag>
 inline void
-_annotateCoverage(TConfig const& c, TRefNames const& refnames, TRefLength const& reflen, TSampleLibrary& sampleLib, TSVs& svs, TCountMap& countMap, SVType<TTag>) 
+_annotateCoverage(TConfig const& c, TRefNames const& refnames, TSampleLibrary& sampleLib, TSVs& svs, TCountMap& countMap, SVType<TTag>) 
 {
   // Find Ns in the reference genome
   typedef boost::icl::interval_set<int> TNIntervals;
@@ -1764,11 +1764,11 @@ _annotateCoverage(TConfig const& c, TRefNames const& refnames, TRefLength const&
     sRight.chr = itSV->chr;
     sRight.id = ++maxId;
     sRight.svStart = itSV->svEnd;
-    sRight.svEnd = std::min(itSV->svEnd + halfSize, (int) reflen[sRight.chr]);
+    sRight.svEnd = itSV->svEnd + halfSize;
     itO = ni[sRight.chr].find(boost::icl::discrete_interval<int>::right_open(sRight.svStart, sRight.svEnd));
     while (itO != ni[sRight.chr].end()) {
       sRight.svStart = itO->upper();
-      sRight.svEnd = std::min(itO->upper() + halfSize, (int) reflen[sRight.chr]);
+      sRight.svEnd = itO->upper() + halfSize;
       itO = ni[sRight.chr].find(boost::icl::discrete_interval<int>::right_open(sRight.svStart, sRight.svEnd));
     }
     svMap.insert(std::make_pair(sRight.id, std::make_pair(itSV->id, false)));
@@ -1795,9 +1795,9 @@ _annotateCoverage(TConfig const& c, TRefNames const& refnames, TRefLength const&
   }
 }
 
-template<typename TConfig, typename TRefNames, typename TRefLength, typename TSampleLibrary, typename TSVs, typename TCountMap>
+template<typename TConfig, typename TRefNames, typename TSampleLibrary, typename TSVs, typename TCountMap>
 inline void
-_annotateCoverage(TConfig const&, TRefNames const&, TRefLength const&, TSampleLibrary&, TSVs&, TCountMap&, SVType<TranslocationTag>) 
+_annotateCoverage(TConfig const&, TRefNames const&, TSampleLibrary&, TSVs&, TCountMap&, SVType<TranslocationTag>) 
 {
   //Nop
 }
@@ -2249,7 +2249,7 @@ inline int run(Config const& c, TSVType svType) {
   // Annotate coverage
   typedef boost::unordered_map<TSampleSVPair, ReadCount> TRCMap;
   TRCMap rcMap;
-  _annotateCoverage(c, refnames, reflen, sampleLib, svs, rcMap, svType);
+  _annotateCoverage(c, refnames, sampleLib, svs, rcMap, svType);
 
   // VCF output
   if (svs.size()) {
