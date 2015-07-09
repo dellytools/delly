@@ -1788,7 +1788,7 @@ _annotateCoverage(TConfig const& c, TRefNames const& refnames, TSampleLibrary& s
     typename TSVMap::const_iterator itSVMap = svMap.find(svID);
     if (itSVMap != svMap.end()) svID = itSVMap->second.first;
     typename TCountMap::iterator itCM = countMap.find(std::make_pair(rcIt->first.first, svID));
-    if (itCM == countMap.end()) itCM = countMap.insert(std::make_pair(rcIt->first, ReadCount(0, 0, 0))).first;
+    if (itCM == countMap.end()) itCM = countMap.insert(std::make_pair(std::make_pair(rcIt->first.first, svID), ReadCount(0, 0, 0))).first;
     if (itSVMap == svMap.end()) itCM->second.rc = rcIt->second.second;
     else if (itSVMap->second.second) itCM->second.leftRC = rcIt->second.second;
     else itCM->second.rightRC = rcIt->second.second;
