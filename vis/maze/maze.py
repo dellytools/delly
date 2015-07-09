@@ -1,6 +1,7 @@
 from __future__ import print_function
 import re, os, glob, sys
 from tempfile import NamedTemporaryFile
+import itertools as itt
 from subprocess import check_output, call, Popen, PIPE
 
 
@@ -117,9 +118,9 @@ def _format_last_alignment(m, w=60):
         am = am[w:]
     final = ''        
     for i in range(len(l1)):
-        final += 'ref'.format(m['strand']).ljust(8) + l1[i] + '\n'
-        final += ''.ljust(8) + lm[i] + '\n'
-        final += 'read{}'.format(m['strand']).ljust(8) + l2[i] + '\n'
+        final += 'Ref   +'.format(m['strand']).ljust(10) + l1[i] + '\n'
+        final += ''.ljust(10) + lm[i] + '\n'
+        final += 'Query {}'.format(m['strand']).ljust(10) + l2[i] + '\n'
         final += '\n'
     return (final)
 
@@ -179,12 +180,12 @@ def LASTsplit_breakpoints(ref, seq, matches, W=25, V=15): # matches must be sort
 
         # HTML outuput
         is_miho = print_qu_coords[1] - print_qu_coords[0] <= 1
-        html  = upper[:just] + '<span class="mark"><b>' + upper[just:just+W] + '</b>' + upper[just+W:just+W+mm_right] + '</span>' + upper[just+W+mm_right:] + '\n'
+        html  = upper[:just] + '<span><b>' + upper[just:just+W] + '</b>' + upper[just+W:just+W+mm_right] + '</span>' + upper[just+W+mm_right:] + '\n'
         if is_miho:
-            html += middle[:just] + '<span class="mark"><b>' + middle[just:] + '</b></span>\n'
+            html += middle[:just] + '<span><b>' + middle[just:] + '</b></span>\n'
         else:
-            html += middle[:just] + '<span class="mark"><b>' + middle[just:just+W] + '</b></span>' + middle[just+W:just+W+len(spacer)] + '<span class="mark"><b>' + middle[just+W+len(spacer):] + '</b></span>\n'
-        html += lower[:max(just,len(lower)-W-mm_left)] + '<span class="mark">' + lower[max(just,len(lower)-W-mm_left):max(just,len(lower)-W)] + '<b>' + lower[max(just,len(lower)-W):] + '</span>' + '\n'
+            html += middle[:just] + '<span><b>' + middle[just:just+W] + '</b></span>' + middle[just+W:just+W+len(spacer)] + '<span><b>' + middle[just+W+len(spacer):] + '</b></span>\n'
+        html += lower[:max(just,len(lower)-W-mm_left)] + '<span>' + lower[max(just,len(lower)-W-mm_left):max(just,len(lower)-W)] + '<b>' + lower[max(just,len(lower)-W):] + '</span>' + '\n'
         
         breakpoints.append(dict(html=html,
                                 qu_coords=(print_qu_coords[0], print_qu_coords[1]),
@@ -205,3 +206,89 @@ def _miho(seq1, seq2):
             break
         count += 1
     return count
+
+
+def LASTsplit_ref_breakpoints(ref, seq, matches, W=25, V=15):
+    X=100
+    breakpoints = []
+    for m1, m2 in itt.combinations(matches, 2):
+        # m2 is always >= m1 on the query
+        if abs(m1['d2'] - m2['d1']) < X:
+            # exclude matches with sequencing end
+            if matches.index(m1) == 0 and m1['strand']=='-':
+                continue
+            left, right = m1, m2
+        elif abs(m2['d2'] - m1['d1']) < X:
+            # exclude matches with sequencing end
+            if matches.index(m2) == len(matches)-1 and m2['strand']=='+':
+                continue
+            left , right = m2, m1
+        else:
+            continue
+        just = 16
+        S = seq if left['strand']  == '+' else _rc(seq)
+        T = seq if right['strand'] == '+' else _rc(seq)
+        a = left['q2']
+        b = left['d2']
+        c = right['d1']
+        d = right['q1']
+
+        # upper panel
+        pr_a = left['q2'] if left['strand'] == '+' else len(seq)-left['q2']
+        upper ="Qu{} {}-{}:".format(left['strand'], pr_a-W+1, pr_a+V).ljust(just) +\
+                S[a-W : a].upper().rjust(W) +\
+                S[a   : a+V].lower()
+
+        # middle panel
+        spacer = ref[b   : c  ] #if c-b < 20 else seq[b:b+5] + '...' + seq[c-5:c]
+        middle = "Ref {}-{}:".format(b-W+1, c+W).ljust(just) +\
+            ref[b-W : b  ].upper().rjust(W) +\
+            spacer.lower() +\
+            ref[max(b,c)   : max(b,c)+W].upper().ljust(W) # at least length 2*W
+
+        # lower panel
+        pr_d = right['q1'] if right['strand'] == '+' else (len(seq)-right['q1'])
+        lower = "Qu{} {}-{}:".format(right['strand'], pr_d-V+1, pr_d+W).ljust(just) +\
+                (T[d-min(V, W-b+c) : d ].lower() +\
+                T[d   : d+W+max(b-c,0)].upper()).rjust(len(middle)-just)
+
+        # HARDCODED MIHO LIMIT: 50 (!)
+        mm_right = _miho(S[a:a+50], ref[b:b+50])
+        mm_left = _miho(T[d-50:d][::-1], ref[c-50:c][::-1])
+
+        # HTML outuput
+        is_overlap = b>c
+        html  = 'Microhomology:' + str((mm_right,mm_left)) + '\n'
+        html += upper[:just] + '<span><b>' + upper[just:just+W] + '</b>' + upper[just+W:just+W+mm_right] + '</span>' + upper[just+W+mm_right:] + '\n'
+
+        # middle
+        html         += middle[:just]
+        html         += '<span><b>'
+        if is_overlap:
+            html     += middle[just:]
+        else:
+            html     += middle[just : just+W]
+            html     += '</b>' 
+            # no consecutive coloring
+            if mm_left + mm_right < len(spacer):
+                html += middle[just+W          : just+W+mm_right]
+                html += '</span>'
+                html += middle[just+W+mm_right : just+W+len(spacer)-mm_left]
+                html += '<span>'
+                html += middle[just+W+len(spacer)-mm_left : just+W+len(spacer)]
+            # consecutive coloring
+            else: 
+                html += middle[just+W : just+len(spacer)]
+            html     += '<b>'
+            html     += middle[just+W+len(spacer) : ]
+        html     += '</b></span>' + '\n'
+        html         += lower[:max(just,len(lower)-W-mm_left-max(0,b-c))] + '<span>' + lower[max(just,len(lower)-W-mm_left-max(0,b-c)):max(just,len(lower)-W-mm_left-max(0,b-c))] + '<b>' + lower[max(just,len(lower)-W-mm_left-max(0,b-c)):] + '</span>' + '\n'
+
+        breakpoints.append(dict(html=html,
+                                match_index=str(matches.index(m1))+','+str(matches.index(m2)), 
+                                ref_coords=(b+1,c+1),
+                                event='Overlap' if is_overlap else 'Distance',
+                                miho=(mm_left, mm_right),
+                                length=abs(c-b)))
+    return breakpoints
+

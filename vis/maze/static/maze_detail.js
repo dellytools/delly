@@ -11,8 +11,9 @@ var maze_detail = function () {
   my.MUMmatches  = null;
   my.LASTmatches = null;
   my.LASTbps     = null;
+  my.LASTrefbps  = null;
 
-  my.main = function (visSelector, matchSelector, bpsSelector) {
+  my.main = function (visSelector, matchSelector, bpsSelector, refbpsSelector) {
 
     // Todo(meiers): outsource duplicate code
     $('#footer-icon').click(function () {
@@ -61,6 +62,10 @@ var maze_detail = function () {
           my.LASTbps = result.breakpoints;
           $(bpsSelector).parent().find('.spinner').toggleClass('hide', true);
           my.addLASTbps(bpsSelector);
+          // ref breakpoints
+          my.LASTrefbps = result.refbreakpoints;
+          $(refbpsSelector).parent().find('.spinner').toggleClass('hide', true);
+          my.addLASTrefbps(refbpsSelector);
           // event handler
           $('a.list-group-item').mouseover(function(x) {my.toggleMatch(visSelector, $(this).attr('match_index'), 'show')});
           $(' a.list-group-item').mouseout(function(x) {my.toggleMatch(visSelector, $(this).attr('match_index'), 'hide')});
@@ -83,7 +88,6 @@ var maze_detail = function () {
 
     $(visSelector).empty();    
     my.outerWidth = $(visSelector).parent().width() * 0.98;
-    console.log("Create dotplot in " + visSelector + " with width " + my.outerWidth);
     my.outerHeight = my.outerWidth;
     my.margin = { top: 25, bottom: 15, left: 50, right: 50 };
     var innerWidth = my.outerWidth - my.margin.left - my.margin.right;
@@ -198,7 +202,7 @@ var maze_detail = function () {
   };
 
   // show or hide all elements belonging to a match
-  my.toggleMatch = function(visSelector, idx, mode='show') {
+  my.toggleMatch = function(visSelector, idx, mode) {
     idxs = idx.split(',');
     for (i in idxs) {
       if (mode=='show') $(visSelector + " .geom[match_index=" + idxs[i] + "]").show()
@@ -229,9 +233,7 @@ var maze_detail = function () {
             '  <h5>' + 
                  m.sim + ' mismatches. Ref[' + (m.d1) + ':' + (m.d2)  + '] vs. Query[' + m.q1 + ':' + m.q2 + '] (' + m.strand + ')' + 
             '  </h5>' +
-            '  <pre class="collapse" aria-expanded="false">' + 
-                 m.record + 
-            '  </pre>' +
+            '  <pre class="collapse" aria-expanded="false">' + m.record + '</pre>' +
             '</a>');
     }
     // initially hide rectangles
@@ -242,7 +244,6 @@ var maze_detail = function () {
   my.addLASTbps = function (bpsSelector) {
     for ( x in my.LASTbps) {
       var br = my.LASTbps[x];
-      console.log(br);
       $(bpsSelector).append(
         '<a class="list-group-item collapse-group" match_index="' + br.match_index + '">' + 
             '  <button class="btn btn-default pull-right" type="button" data-toggle="collapse" data-target="' + bpsSelector + ' a[match_index=\'' + br.match_index  + '\'] pre">' +
@@ -251,17 +252,25 @@ var maze_detail = function () {
             '  <h5>' + 
                  (br.length>0 ? br.length + ' bp ' + br.event : 'Exact breakpoint') + ' around query[' + br.qu_coords[0] + ':' + br.qu_coords[1] + ']' +
             '  </h5>' +
-            '  <pre class="collapse" aria-expanded="false">' + 
-                 br.html + 
-            '  </pre>' +
+            '  <pre class="collapse" aria-expanded="false">' + br.html + '</pre>' +
             '</a>');
-      /*
-      "<li match_index='" + br.match_index + 
-                                "'>Query coordinates: " + br.qu_coords[0] + "/" + 
-                                br.qu_coords[1] + "<br>" +
-                                (br.length>0 ? br.event + ' of length ' + br.length : 'exact break') + 
-                                "<pre>" + br.html + "</pre>");
-      */
+    }
+  };
+
+  my.addLASTrefbps = function (refbpsSelector) {
+    for ( x in my.LASTrefbps) {
+      var br = my.LASTrefbps[x];
+      console.log(br);
+      $(refbpsSelector).append(
+        '<a class="list-group-item collapse-group" match_index="' + br.match_index + '">' + 
+            '  <button class="btn btn-default pull-right" type="button" data-toggle="collapse" data-target="' + refbpsSelector + ' a[match_index=\'' + br.match_index  + '\'] pre">' +
+            '    <span class="glyphicon glyphicon-collapse-down"></span>' +
+            '  </button>' +
+            '  <h5>' + 
+                 (br.length>0 ? br.length + ' bp ' + br.event : 'Exact breakpoint') + ' around Ref[' + br.ref_coords[0] + ':' + br.ref_coords[1] + ']' +
+            '  </h5>' +
+            '  <pre class="collapse" aria-expanded="false">' + br.html + '</pre>' +
+            '</a>');
     }
   };
 
@@ -286,6 +295,6 @@ for ( x in d.breakpoints) {
 
 // load maze_detail when ready
 $(document).ready(function() {
-  $(maze_detail.main.bind(null, '#vis', '#listLASTmatches', '#listLASTbps'));
+  $(maze_detail.main.bind(null, '#vis', '#listLASTmatches', '#listLASTbps', '#listLASTrefbps'));
 });
 

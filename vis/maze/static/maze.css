@@ -179,7 +179,7 @@ pre {
   font-size:9px;
   /* font-family:monospace; */
 }
-pre span.mark {
+pre span {
   padding:0px;
   background-color:rgba(255,131,0, 0.3);
 }
