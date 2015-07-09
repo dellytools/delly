@@ -36,6 +36,7 @@ Contact: Tobias Rausch (rausch@embl.de)
 #include <boost/date_time/posix_time/posix_time.hpp>
 #include <boost/date_time/gregorian/gregorian.hpp>
 #include <boost/math/special_functions/pow.hpp>
+#include <boost/icl/split_interval_map.hpp>
 #include <boost/tokenizer.hpp>
 #include <boost/functional/hash.hpp>
 #include <boost/filesystem.hpp>
@@ -194,6 +195,18 @@ struct SortExcludeIntervals : public std::binary_function<TRecord, TRecord, bool
     return ((i1.tid < i2.tid) || ((i1.tid == i2.tid) && (i1.start < i2.start)) || ((i1.tid == i2.tid) && (i1.start == i2.start) && (i1.end < i2.end)));
   }
 };
+
+// Read count struct
+struct ReadCount {
+  int leftRC;
+  int rc;
+  int rightRC;
+
+  ReadCount() {}
+  ReadCount(int l, int m, int r) : leftRC(l), rc(m), rightRC(r) {}
+};
+
+
 
 // Deletions
 template<typename TUSize, typename TSize>
@@ -1015,7 +1028,7 @@ vcfParse(TConfig const& c, TRefNames const& refnames, TRefLen const& reflen, TSi
 	      else if (key == "SRQ") svRec.srAlignQuality = boost::lexical_cast<double>(value);
 	      else if (key == "CHR2") {
 		TMapChr::const_iterator mapChr2It = mapChr.find(value);
-		if (mapChrIt != mapChr.end()) svRec.chr2 = mapChr2It->second;
+		if (mapChr2It != mapChr.end()) svRec.chr2 = mapChr2It->second;
 	      }
 	      else if (key == "END") svRec.svEnd = boost::lexical_cast<int32_t>(value);
 	      else if (key == "CONSENSUS") svRec.consensus = value;
@@ -1158,6 +1171,9 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
   ofile << "##FORMAT=<ID=GQ,Number=1,Type=Integer,Description=\"Genotype Quality\">" << std::endl;
   ofile << "##FORMAT=<ID=FT,Number=1,Type=String,Description=\"Per-sample genotype filter\">" << std::endl;
   ofile << "##FORMAT=<ID=RC,Number=1,Type=Integer,Description=\"Raw high-quality read counts for the SV\">" << std::endl;
+  ofile << "##FORMAT=<ID=RCL,Number=1,Type=Integer,Description=\"Raw high-quality read counts for the left control region\">" << std::endl;
+  ofile << "##FORMAT=<ID=RCR,Number=1,Type=Integer,Description=\"Raw high-quality read counts for the right control region\">" << std::endl;
+  ofile << "##FORMAT=<ID=CN,Number=1,Type=Integer,Description=\"Read-depth based copy-number estimate for autosomal sites\">" << std::endl;
   ofile << "##FORMAT=<ID=DR,Number=1,Type=Integer,Description=\"# high-quality reference pairs\">" << std::endl;
   ofile << "##FORMAT=<ID=DV,Number=1,Type=Integer,Description=\"# high-quality variant pairs\">" << std::endl;
   ofile << "##FORMAT=<ID=RR,Number=1,Type=Integer,Description=\"# high-quality reference junction reads\">" << std::endl;
@@ -1211,7 +1227,7 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
     }
 
     // Add genotype columns (right bp only across all samples)
-    ofile << "\tGT:GL:GQ:FT:RC:DR:DV:RR:RV";
+    ofile << "\tGT:GL:GQ:FT:RCL:RC:RCR:CN:DR:DV:RR:RV";
     for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
       // Get the sample name
       std::string sampleName(c.files[file_c].stem().string());
@@ -1226,7 +1242,9 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
       int dvCount = 0;
       int rrCount = 0;
       int rvCount = 0;
+      int leftRC = 0;
       int rcCount = 0;
+      int rightRC = 0;
 
       // Compute GLs
       double gl[3];
@@ -1268,7 +1286,13 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
 	//std::cerr << id.str() << "\t" << sampleName << "\tGTLeft:" << gtypeLeft << "\tGLLeft:" << glLeft[2] << "," << glLeft[1] << "," << glLeft[0] << "\tGQLeft:" << gqValLeft << "\tDRLeft:" << spanLeftIt->second.first.size() << "\tDVLeft:" << spanLeftIt->second.second.size() << "\tGTRight:" << gtypeRight << "\tGLRight:" << glRight[2] << "," << glRight[1] << "," << glRight[0] << "\tGQRight:" << gqValRight << "\tDRRight:" << spanRightIt->second.first.size() << "\tDVRight:" << spanRightIt->second.second.size() << std::endl;
       }
       typename TReadCountMap::const_iterator readCountMapIt=readCountMap.find(sampleSVPairLeft);
-      if (readCountMapIt!=readCountMap.end()) rcCount = readCountMapIt->second.second;
+      if (readCountMapIt!=readCountMap.end()) {
+	leftRC = readCountMapIt->second.leftRC;
+	rcCount = readCountMapIt->second.rc;
+	rightRC = readCountMapIt->second.rightRC;
+      }	
+      int cnEst = -1;
+      if ((leftRC + rightRC) > 0) cnEst = boost::math::iround( 2.0 * (double) rcCount / (double) (leftRC + rightRC) );
 
       // Output genotypes
       if (trGL) {
@@ -1278,7 +1302,7 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
       } else {
 	ofile << "\t./.:.,.,.:0:LowQual:";
       }
-      ofile << rcCount << ":" << drCount << ":" << dvCount << ":" << rrCount << ":" << rvCount;
+      ofile << leftRC << ":" << rcCount << ":" << rightRC << ":" << cnEst << ":" << drCount << ":" << dvCount << ":" << rrCount << ":" << rvCount;
     }
     ofile << std::endl;
   }
@@ -1667,16 +1691,113 @@ _annotateJunctionReads(TConfig const& c, TSampleLibrary& sampleLib, TSVs& svs, T
 }
 
 
-template<typename TConfig, typename TSampleLibrary, typename TSVs, typename TCountMap, typename TTag>
+template<typename TConfig, typename TRefNames, typename TRefLength, typename TSampleLibrary, typename TSVs, typename TCountMap, typename TTag>
 inline void
-_annotateCoverage(TConfig const& c, TSampleLibrary& sampleLib, TSVs& svs, TCountMap& countMap, SVType<TTag>) 
+_annotateCoverage(TConfig const& c, TRefNames const& refnames, TRefLength const& reflen, TSampleLibrary& sampleLib, TSVs& svs, TCountMap& countMap, SVType<TTag>) 
 {
-  annotateCoverage(c.files, c.minGenoQual, sampleLib, svs, countMap, BpLevelType<NoBpLevelCount>(), CoverageType<RedundancyFilterTag>());
+  // Find Ns in the reference genome
+  typedef boost::icl::interval_set<int> TNIntervals;
+  typedef std::vector<TNIntervals> TNGenome;
+  TNGenome ni;
+  ni.resize(refnames.size());
+
+  if (boost::filesystem::exists(c.genome) && boost::filesystem::is_regular_file(c.genome) && boost::filesystem::file_size(c.genome)) {
+    kseq_t *seq;
+    int l;
+    gzFile fp = gzopen(c.genome.string().c_str(), "r");
+    seq = kseq_init(fp);
+    while ((l = kseq_read(seq)) >= 0) {
+      for(int32_t refIndex=0; refIndex < (int32_t) refnames.size(); ++refIndex) {
+	if (seq->name.s == refnames[refIndex]) {
+	  bool nrun = false;
+	  int nstart = l;
+	  for(int i=0; i<l; ++i) {
+	    if ((seq->seq.s[i] != 'n') && (seq->seq.s[i] != 'N')) {
+	      if (nrun) {
+		ni[refIndex].add(boost::icl::discrete_interval<int>::right_open(nstart,i));
+		nrun = false;
+	      }
+	    } else {
+	      if (!nrun) {
+		nrun = true;
+		nstart = i;
+	      }
+	    }
+	  }
+	  if (nrun) ni[refIndex].add(boost::icl::discrete_interval<int>::right_open(nstart,l));
+	}
+      }
+    }
+    kseq_destroy(seq);
+    gzclose(fp);
+  }
+
+  // Add control regions
+  TSVs svc = svs;
+  unsigned int maxId = 0;
+  for (typename TSVs::const_iterator itSV = svs.begin(); itSV != svs.end(); ++itSV)
+    if (itSV->id > maxId) maxId = itSV->id;  
+  // Assign control regions to primary SVs, true = left
+  typedef std::pair<unsigned int, bool> TLR;
+  typedef std::map<unsigned int, TLR> TSVMap;
+  TSVMap svMap;
+  for (typename TSVs::const_iterator itSV = svs.begin(); itSV != svs.end(); ++itSV) {
+    int halfSize = (itSV->svEnd - itSV->svStart)/2;
+
+    // Left control region
+    StructuralVariantRecord sLeft;
+    sLeft.chr = itSV->chr;
+    sLeft.id = ++maxId;
+    sLeft.svStart = std::max(itSV->svStart - halfSize, 0);
+    sLeft.svEnd = itSV->svStart;
+    typename TNIntervals::const_iterator itO = ni[sLeft.chr].find(boost::icl::discrete_interval<int>::right_open(sLeft.svStart, sLeft.svEnd));
+    while (itO != ni[sLeft.chr].end()) {
+      sLeft.svStart = std::max(itO->lower() - halfSize, 0);
+      sLeft.svEnd = itO->lower();
+      itO = ni[sLeft.chr].find(boost::icl::discrete_interval<int>::right_open(sLeft.svStart, sLeft.svEnd));
+    }
+    svMap.insert(std::make_pair(sLeft.id, std::make_pair(itSV->id, true)));
+    svc.push_back(sLeft);
+
+    // Right control region
+    StructuralVariantRecord sRight;
+    sRight.chr = itSV->chr;
+    sRight.id = ++maxId;
+    sRight.svStart = itSV->svEnd;
+    sRight.svEnd = std::min(itSV->svEnd + halfSize, (int) reflen[sRight.chr]);
+    itO = ni[sRight.chr].find(boost::icl::discrete_interval<int>::right_open(sRight.svStart, sRight.svEnd));
+    while (itO != ni[sRight.chr].end()) {
+      sRight.svStart = itO->upper();
+      sRight.svEnd = std::min(itO->upper() + halfSize, (int) reflen[sRight.chr]);
+      itO = ni[sRight.chr].find(boost::icl::discrete_interval<int>::right_open(sRight.svStart, sRight.svEnd));
+    }
+    svMap.insert(std::make_pair(sRight.id, std::make_pair(itSV->id, false)));
+    svc.push_back(sRight);
+    //std::cerr << itSV->id << ':' << sLeft.svStart << '-' << sLeft.svEnd << ',' << itSV->svStart << '-' << itSV->svEnd << ',' << sRight.svStart << '-' << sRight.svEnd << std::endl;
+  }
+  
+  typedef std::pair<std::string, int> TSampleSVPair;
+  typedef std::pair<int, int> TBpRead;
+  typedef boost::unordered_map<TSampleSVPair, TBpRead> TReadCountMap;
+  TReadCountMap readCountMap;
+  annotateCoverage(c.files, c.minGenoQual, sampleLib, svc, readCountMap, BpLevelType<NoBpLevelCount>(), CoverageType<RedundancyFilterTag>());
+  typename TReadCountMap::const_iterator rcIt = readCountMap.begin();
+  for (typename TReadCountMap::const_iterator rcIt = readCountMap.begin(); rcIt != readCountMap.end(); ++rcIt) {
+    // Map control regions back to original id
+    int svID = rcIt->first.second;
+    typename TSVMap::const_iterator itSVMap = svMap.find(svID);
+    if (itSVMap != svMap.end()) svID = itSVMap->second.first;
+    typename TCountMap::iterator itCM = countMap.find(std::make_pair(rcIt->first.first, svID));
+    if (itCM == countMap.end()) itCM = countMap.insert(std::make_pair(rcIt->first, ReadCount(0, 0, 0))).first;
+    if (itSVMap == svMap.end()) itCM->second.rc = rcIt->second.second;
+    else if (itSVMap->second.second) itCM->second.leftRC = rcIt->second.second;
+    else itCM->second.rightRC = rcIt->second.second;
+  }
 }
 
-template<typename TConfig, typename TSampleLibrary, typename TSVs, typename TCountMap>
+template<typename TConfig, typename TRefNames, typename TRefLength, typename TSampleLibrary, typename TSVs, typename TCountMap>
 inline void
-_annotateCoverage(TConfig const&, TSampleLibrary&, TSVs&, TCountMap&, SVType<TranslocationTag>) 
+_annotateCoverage(TConfig const&, TRefNames const&, TRefLength const&, TSampleLibrary&, TSVs&, TCountMap&, SVType<TranslocationTag>) 
 {
   //Nop
 }
@@ -2126,14 +2247,13 @@ inline int run(Config const& c, TSVType svType) {
   _annotateSpanningCoverage(c, sampleLib, svs, spanCountMap, svType);
 
   // Annotate coverage
-  typedef std::pair<int, int> TBpRead;
-  typedef boost::unordered_map<TSampleSVPair, TBpRead> TReadCountMap;
-  TReadCountMap readCountMap;
-  _annotateCoverage(c, sampleLib, svs, readCountMap, svType);
+  typedef boost::unordered_map<TSampleSVPair, ReadCount> TRCMap;
+  TRCMap rcMap;
+  _annotateCoverage(c, refnames, reflen, sampleLib, svs, rcMap, svType);
 
   // VCF output
   if (svs.size()) {
-    vcfOutput(c, svs, junctionCountMap, readCountMap, spanCountMap, svType);
+    vcfOutput(c, svs, junctionCountMap, rcMap, spanCountMap, svType);
   }
 
 
