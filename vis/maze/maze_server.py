@@ -60,12 +60,11 @@ def breakpoints():
     ref = json.loads(args['ref'])
     query = json.loads(args['query'])
     matches = maze.LASTsplit_matches(ref, query)
-    # Todo(meiers): return breakpoints, too
-    # breakpoints = ... 
+    breakpoints = maze.LASTsplit_breakpoints(ref, query, matches)
 
     time.sleep(1)
     return json.dumps(dict(matches=[maze._transform_coords(m) for m in matches],
-                           breakpoints=[]))
+                           breakpoints=breakpoints))
 
 
 @click.command()

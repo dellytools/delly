@@ -101,7 +101,6 @@ def LASTsplit_matches(ref, seq):
 
     return matches
 
-# Todo(meiers): Do we really need this?
 def _format_last_alignment(m, w=60):
     a1 = m['ali1']
     a2 = m['ali2']
@@ -136,3 +135,73 @@ def _transform_coords(match):
         m['q1'] = match['qlen'] - match['q2'] + 1
         m['q2'] = match['qlen'] - match['q1']
     return m
+
+def LASTsplit_breakpoints(ref, seq, matches, W=25, V=15): # matches must be sorted by query
+    breakpoints = []
+    for m1,m2 in zip(matches, matches[1:]):
+        just = 16
+        print_qu_coords =   (m1['q2'] if m1['strand']=='+' else len(seq) - m1['q1'],\
+                            (m2['q1'] if m2['strand']=='+' else len(seq) - m2['q2'])+1)
+
+        S    = ref      if m1['strand'] == '+' else _rc(ref)
+        T    = ref      if m2['strand'] == '+' else _rc(ref)
+        a    = m1['d2'] if m1['strand'] == '+' else len(ref) - m1['d1']
+        b = m1['q2'] if m1['strand']=='+' else len(seq) - m1['q1']
+        c = m2['q1'] if m2['strand']=='+' else len(seq) - m2['q2']
+        d    = m2['d1'] if m2['strand'] == '+' else len(ref) - m2['d2']
+
+        # upper panel
+        a_pr = m1['d2'] if m1['strand'] == '+' else m1['d1']
+        upper ="Ref{} {}-{}:".format(m1['strand'], 
+                                     a_pr-W+1, 
+                                     a_pr+V).ljust(just) +\
+                S[a-W : a].upper().rjust(W) +\
+                S[a   : a+V].lower()
+
+        # middle panel
+        spacer = seq[b   : c  ].lower() if c-b < 20 else (seq[b:b+5] + '...' + seq[c-5:c]).lower()
+        middle = "Read {}-{}:".format(b-W+1, c+W).ljust(just) +\
+                seq[b-W : b  ].upper().rjust(W) +\
+                spacer.lower() +\
+                seq[c   : c+W].upper()
+        
+        # lower panel:
+        d_pr = m2['d1'] if m2['strand'] == '+' else m2['d2']
+        lower = "Ref{} {}-{}:".format(m2['strand'],
+                                      d_pr-V+1,
+                                      d_pr+W).ljust(just) +\
+                (T[d-V : d  ].lower() +\
+                 T[d   : d+W].upper()).rjust(2*W+len(spacer))
+
+        # HARDCODED MIHO LIMIT: 50
+        mm_left = _miho(T[max(d-50,0):d][::-1], seq[max(c-50,0):c][::-1])
+        mm_right = _miho(S[a:a+25], seq[b:b+25])
+
+        # HTML outuput
+        is_miho = print_qu_coords[1] - print_qu_coords[0] <= 1
+        html  = upper[:just] + '<span class="mark"><b>' + upper[just:just+W] + '</b>' + upper[just+W:just+W+mm_right] + '</span>' + upper[just+W+mm_right:] + '\n'
+        if is_miho:
+            html += middle[:just] + '<span class="mark"><b>' + middle[just:] + '</b></span>\n'
+        else:
+            html += middle[:just] + '<span class="mark"><b>' + middle[just:just+W] + '</b></span>' + middle[just+W:just+W+len(spacer)] + '<span class="mark"><b>' + middle[just+W+len(spacer):] + '</b></span>\n'
+        html += lower[:max(just,len(lower)-W-mm_left)] + '<span class="mark">' + lower[max(just,len(lower)-W-mm_left):max(just,len(lower)-W)] + '<b>' + lower[max(just,len(lower)-W):] + '</span>' + '\n'
+        
+        breakpoints.append(dict(html=html,
+                                qu_coords=(print_qu_coords[0], print_qu_coords[1]),
+                                match_index=str(matches.index(m1))+','+str(matches.index(m2)), 
+                                event='Microhomology' if is_miho else 'Insertion',
+                                length=mm_left + mm_right if is_miho else print_qu_coords[1] - print_qu_coords[0] - 1))
+    return breakpoints
+
+def _rc(seq):
+    rc = dict(a='t', c='g', g='c', t='a',
+              A='T', C='G', G='C', T='A')
+    return "".join([rc[b] if b in rc else 'N' for b in seq[::-1]])
+
+def _miho(seq1, seq2):
+    count=0
+    for x in [a==b for (a,b) in zip(seq1, seq2)]:
+        if not x:
+            break
+        count += 1
+    return count

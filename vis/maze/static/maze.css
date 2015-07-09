@@ -177,4 +177,9 @@ rect.last.minus {
 
 pre {
   font-size:9px;
+  /* font-family:monospace; */
+}
+pre span.mark {
+  padding:0px;
+  background-color:rgba(255,131,0, 0.3);
 }
