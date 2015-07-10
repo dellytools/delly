@@ -1004,7 +1004,6 @@ vcfParse(TConfig const& c, TRefNames const& refnames, TRefLen const& reflen, TSi
 	    svRec.srSupport=0;
 	    svRec.srAlignQuality=0;
 	    svRec.wiggle = 0;
-	    svRec.controlID = 0;
 	    svRec.precise = false;
 	    // Ignore ref, alt, qual and filter
 	    tokIter++; tokIter++; tokIter++; tokIter++;
@@ -1047,7 +1046,6 @@ vcfParse(TConfig const& c, TRefNames const& refnames, TRefLen const& reflen, TSi
 		if (abs(endOff2)>svRec.wiggle) svRec.wiggle=abs(endOff2);
 	      }
 	      else if (key == "CT") svRec.ct = _decodeOrientation(value, svType);
-	      else if (key == "CONTROL") svRec.controlID = boost::lexical_cast<unsigned int>(value);
 	      else continue;
 	    }
 	    svRec.svStartBeg = std::max(svRec.svStart - 1 - overallMaxISize, 0);
@@ -1164,7 +1162,6 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
   ofile << "##INFO=<ID=PRECISE,Number=0,Type=Flag,Description=\"Precise structural variation\">" << std::endl;
   ofile << "##INFO=<ID=SVTYPE,Number=1,Type=String,Description=\"Type of structural variant\">" << std::endl;
   ofile << "##INFO=<ID=SVMETHOD,Number=1,Type=String,Description=\"Type of approach used to detect SV\">" << std::endl;
-  ofile << "##INFO=<ID=CONTROL,Number=1,Type=Integer,Description=\"Control variant\">" << std::endl;
   ofile << "##INFO=<ID=INSLEN,Number=1,Type=Integer,Description=\"Predicted length of the insertion\">" << std::endl;
   ofile << "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">" << std::endl;
   ofile << "##FORMAT=<ID=GL,Number=G,Type=Float,Description=\"Log10-scaled genotype likelihoods for RR,RA,AA genotypes\">" << std::endl;
@@ -1221,9 +1218,6 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
       ofile << ";SR=" << svIter->srSupport;
       ofile << ";SRQ=" << svIter->srAlignQuality;
       ofile << ";CONSENSUS=" << svIter->consensus;
-    }
-    if (svIter->controlID > 0) {
-      ofile << ";CONTROL=" << svIter->controlID;
     }
 
     // Add genotype columns (right bp only across all samples)
@@ -2165,7 +2159,6 @@ inline int run(Config const& c, TSVType svType) {
 	svRec.svEndEnd = std::min((uint32_t) svEnd + overallMaxISize, reflen[clusterMateRefID]);
 	svRec.peSupport = clique.size();
 	svRec.wiggle = abs(wiggle);
-	svRec.controlID = 0;
 	std::vector<uint8_t> mapQV;
 	for(typename TCliqueMembers::const_iterator itC = clique.begin(); itC!=clique.end(); ++itC) mapQV.push_back(g[*itC]->MapQuality);
 	std::sort(mapQV.begin(), mapQV.end());

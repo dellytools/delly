@@ -236,7 +236,6 @@ namespace torali {
     int insLen;
     double srAlignQuality;
     unsigned int id;
-    unsigned int controlID;
     bool precise;
     int ct;
     uint8_t peMapQuality;
