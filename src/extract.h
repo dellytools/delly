@@ -171,6 +171,8 @@ namespace torali {
 	}
       }
       ofile.close();
+      kseq_destroy(seq);
+      gzclose(fp);
 
       // End
       now = boost::posix_time::second_clock::local_time();
