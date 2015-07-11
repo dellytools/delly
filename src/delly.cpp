@@ -1776,7 +1776,6 @@ _annotateCoverage(TConfig const& c, TRefNames const& refnames, TSampleLibrary& s
   typedef boost::unordered_map<TSampleSVPair, TBpRead> TReadCountMap;
   TReadCountMap readCountMap;
   annotateCoverage(c.files, c.minGenoQual, sampleLib, svc, readCountMap, BpLevelType<NoBpLevelCount>(), CoverageType<RedundancyFilterTag>());
-  typename TReadCountMap::const_iterator rcIt = readCountMap.begin();
   for (typename TReadCountMap::const_iterator rcIt = readCountMap.begin(); rcIt != readCountMap.end(); ++rcIt) {
     // Map control regions back to original id
     int svID = rcIt->first.second;
