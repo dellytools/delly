@@ -1263,7 +1263,7 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
 	bool trGLRight;
 	trGLRight = _computeGLs(spanRightIt->second.first, spanRightIt->second.second, &glRight[0], gqValRight, gtypeRight);
 	//if (gqValLeft > gqValRight) {
-	if ((spanLeftIt->second.first.size()) && (spanLeftIt->second.first.size()<spanRightIt->second.first.size())) {
+	if (spanLeftIt->second.first.size()<spanRightIt->second.first.size()) {
 	  trGL = trGLLeft;
 	  gl[0] = glLeft[0]; gl[1] = glLeft[1]; gl[2] = glLeft[2];
 	  gqVal = gqValLeft;
