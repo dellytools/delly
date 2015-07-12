@@ -9,9 +9,9 @@ from tempfile import NamedTemporaryFile
 import os
 import gzip
 import json
-import time # Todo(meiers): could be removed later
 from readfq import readfq
 import maze
+import maze_breakpoints
 
 app = Flask(__name__)
 cfg = {}
@@ -49,24 +49,17 @@ def data():
     return json.dumps(m)
 
 
-@app.route('/detail')
-def detail():
-    return render_template('detail.html')
-
-@app.route('/breakpoints', methods=['POST'])
+@app.route('/breakpoints')
 def breakpoints():
+    return maze_breakpoints.index()
+
+@app.route('/compute_breakpoints', methods=['POST'])
+def compute_breakpoints():
     args = request.form
     # Todo(meiers): Get LAST parameters, too
     ref = json.loads(args['ref'])
     query = json.loads(args['query'])
-    matches = maze.LASTsplit_matches(ref, query)
-    breakpoints = maze.LASTsplit_breakpoints(ref, query, matches)
-    ref_breakpoints = maze.LASTsplit_ref_breakpoints(ref, query, matches)
-
-    time.sleep(1)
-    return json.dumps(dict(matches=[maze._transform_coords(m) for m in matches],
-                           breakpoints=breakpoints,
-                           refbreakpoints=ref_breakpoints))
+    return maze_breakpoints.breakpoints(ref, query)
 
 
 @click.command()

@@ -50,7 +50,7 @@ var maze_detail = function () {
     my.vis(visSelector);
 
     // Get LAST matches and breakpoints
-    $.post('/breakpoints', {
+    $.post('/compute_breakpoints', {
           'ref': JSON.stringify(my.ref.seq),
           'query': JSON.stringify(my.query.seq)
 
