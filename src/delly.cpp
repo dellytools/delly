@@ -2039,7 +2039,7 @@ inline int run(Config const& c, TSVType svType) {
 
 	// Check combinability of pairs
 	if (_pairsDisagree(minCoord, maxCoord, vecBeg->l_qseq, vecBeg->maxNormalISize, _minCoord(vecNext->pos, vecNext->mpos, svType), _maxCoord(vecNext->pos, vecNext->mpos, svType), vecNext->l_qseq, vecNext->maxNormalISize, _getSpanOrientation(*vecBeg, vecBeg->libOrient, svType), _getSpanOrientation(*vecNext, vecNext->libOrient, svType), svType)) continue;
-	
+
 	TNameVertexMap::iterator pos;
 	bool inserted;
 	
@@ -2088,7 +2088,6 @@ inline int run(Config const& c, TSVType svType) {
     std::fill(compSize.begin(), compSize.end(), 0);
     boost::graph_traits<Graph>::vertex_iterator vIt, vItEnd;
     for(boost::tie(vIt, vItEnd) = boost::vertices(g); vIt != vItEnd; ++vIt) ++compSize[my_comp[*vIt]];
-    //for(TCompSize::const_iterator compIt = compSize.begin(); compIt!=compSize.end(); ++compIt) std::cerr << *compIt << std::endl;
 
     // Iterate each component
 #pragma omp parallel for default(shared)
