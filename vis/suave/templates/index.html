@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<!--
+suave: structural variant explorer
+2014-2015 Markus Hsi-Yang Fritz
+-->
+<head>
+  <meta charset="UTF-8">
+  <title>suave</title>
+  <link href="{{ url_for('static', filename='bootstrap/css/bootstrap.min.css') }}" rel="stylesheet">
+  <link href="{{ url_for('static', filename='googlefonts/stylesheet.css') }}" rel="stylesheet">
+  <link href="{{ url_for('static', filename='font-awesome/css/font-awesome.min.css') }}" rel="stylesheet">
+  <link href="{{ url_for('static', filename='suave.css') }}" rel="stylesheet">
+</head>
+<body>
+
+  <header>
+    <div class="container-fluid">
+      <button type="button" class="pull-left button-header" data-toggle="modal" data-target="#config-modal">
+        <span class="glyphicon glyphicon-menu-hamburger"></span>
+      </button>
+      <div class="pull-left">setup</div>
+      <button type="button" class="pull-right button-header" data-toggle="modal" data-target="#control-modal">
+        <span class="glyphicon glyphicon-menu-hamburger"></span>
+      </button>
+      <div class="pull-right">tools</div>
+      <div class="header-title">suave</div>
+    </div>
+  </header>
+
+  <!-- Config modal -->
+  <div class="modal fade" id="config-modal" tabindex="-1">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <button type="button" class="close" data-dismiss="modal"><span>&times;</span></button>
+          <h4 class="modal-title" id="my-modal-label">Setup</h4>
+        </div>
+        <div class="modal-body">
+
+          <div class="btn-group">
+            <button class="btn btn-default dropdown-toggle" type="button" data-toggle="dropdown">
+              Case sample <span class="caret"></span>
+            </button>
+            <ul class="dropdown-menu config" id="config-case">
+            {% for s in samples %}
+              <li><a href="javascript:undefined">{{ s }}</a></li>
+            {% endfor %}
+            </ul>
+          </div>
+          <span id="selected-case"></span>
+          <br>
+
+          <div class="btn-group">
+            <button class="btn btn-default dropdown-toggle" type="button" data-toggle="dropdown">
+              Control sample <span class="caret"></span>
+            </button>
+            <ul class="dropdown-menu config" id="config-control">
+            {% for s in samples %}
+              <li><a href="javascript:undefined">{{ s }}</a></li>
+            {% endfor %}
+            </ul>
+          </div>
+          <span id="selected-control"></span>
+          <br>
+          
+          <div class="btn-group">
+            <button class="btn btn-default dropdown-toggle" type="button" data-toggle="dropdown">
+              Chromosome <span class="caret"></span>
+            </button>
+            <ul class="dropdown-menu config" id="config-chrom">
+            </ul>
+          </div>
+          <span id="selected-chrom"></span>
+
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-primary" id="visualize">Visualize!</button>
+        </div>
+
+        <div class="alert alert-danger hide" id="config-alert">
+          Please specify samples and chromosome!
+        </div>
+      </div>
+    </div>
+  </div>  <!-- end config modal -->
+
+  <!-- Control modal -->
+  <div class="modal fade" id="control-modal" tabindex="-1">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <button type="button" class="close" data-dismiss="modal"><span>&times;</span></button>
+          <h4 class="modal-title" id="my-modal-label">Tools</h4>
+        </div>
+        <div class="modal-body">
+
+          <form class="form-horizontal">
+            <div class="form-group">
+              <label for="jump-to-slice-start" class="col-sm-2 control-label">start</label>
+              <div class="col-sm-10">
+                <input type="number" class="form-control" id="jump-to-slice-start" placeholder="start">
+              </div> 
+            </div>
+            <div class="form-group">
+              <label for="jump-to-slice-end" class="col-sm-2 control-label">end</label>
+              <div class="col-sm-10">
+                <input type="number" class="form-control" id="jump-to-slice-end" placeholder="end">
+              </div> 
+            </div>
+            <div class="form-group">
+              <div class="col-sm-offset-2 col-sm-10">
+                <input type="button" class="btn btn-primary" id="jump-to-slice-submit" value="Jump to slice"/>
+              </div>
+            </div> 
+          </form>
+          <hr>    
+
+          <form class="form-horizontal">
+            <div class="form-group" id="bloodhound">
+              <label for="jump-to-feature-id" class="col-sm-2 control-label">ID</label>
+              <div class="col-sm-10">
+                <input type="text" class="form-control typeahead" id="jump-to-feature-id" placeholder="ID">
+              </div>
+            </div>
+            <div class="form-group">
+              <div class="col-sm-offset-2 col-sm-10">
+                <input type="button" class="btn btn-primary" id="jump-to-feature-submit" value="Jump to feature"/>
+              </div>
+            </div> 
+          </form>
+
+        </div>
+      </div>
+    </div>
+  </div> 
+
+  <div class="container" id="vis-wrap">
+    <div id="vis"></div>
+  </div>
+
+  <div id="footer-icon-wrap">
+    <span class="fa fa-chevron-circle-up fa-2x" id="footer-icon"></span>
+  </div>
+
+  <footer>
+    <div>suave &mdash; structural variant explorer</div>
+    <div>part of the DELLY software <a href="https://github.com/tobiasrausch/delly" target="_blank"><span class="fa fa-github"></span></a></div>
+    <div>2014-2015 Markus Hsi-Yang Fritz</div>
+  </footer>
+
+  <script src="{{ url_for('static', filename='jquery.min.js') }}"></script>
+  <script src="{{ url_for('static', filename='bootstrap/js/bootstrap.min.js') }}"></script>
+  <script src="{{ url_for('static', filename='d3.min.js') }}"></script>
+  <script src="{{ url_for('static', filename='underscore-min.js') }}"></script>
+  <script src="{{ url_for('static', filename='typeahead.js/typeahead.bundle.min.js') }}"></script>
+  <script src="{{ url_for('static', filename='suave.js') }}"></script>
+</body>
+</html>
