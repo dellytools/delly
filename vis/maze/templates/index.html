@@ -20,10 +20,10 @@ maze: match visualizer
         <span class="glyphicon glyphicon-menu-hamburger"></span>
       </button>
       <div class="pull-left">setup</div>
-      <button type="button" class="pull-right button-header" data-toggle="modal" data-target="#control-modal">
-        <span class="glyphicon glyphicon-menu-hamburger"></span>
+      <button id="control-btn-breakpoints" type="button" class="pull-right button-header">
+        <span class="glyphicon glyphicon-new-window"></span>
       </button>
-      <div class="pull-right">tools</div>
+      <div class="pull-right">breakpoints</div>
       <div class="header-title">maze</div>
     </div>
   </header>
@@ -91,22 +91,6 @@ maze: match visualizer
     </div> <!-- end modal-dialog -->
   </div> <!-- end config modal -->
 
-  <!-- Control modal -->
-  <div class="modal fade" id="control-modal" tabindex="-1">
-    <div class="modal-dialog">
-      <div class="modal-content">
-        <div class="modal-header">
-          <button type="button" class="close" data-dismiss="modal"><span>&times;</span></button>
-          <h4 class="modal-title">Tools</h4>
-        </div>
-        <div class="modal-body">
-
-          ...coming soon...
-        </div> <!-- end modal-body -->
-      </div> <!-- end modal-content -->
-    </div> <!-- end modal-dialog -->
-  </div> <!-- end control modal -->
-
   <div class="spinner hide">
     <span class="fa fa-spinner fa-pulse fa-5x"></span>
   </div>
@@ -118,9 +102,6 @@ maze: match visualizer
     <span id="vis"></span>
     <button id="control-btn-right" type="button" class="btn btn-default hide control-btn">
       <span class="glyphicon glyphicon-chevron-right"></span>
-    </button>
-    <button id="control-btn-detail" type="button" class="btn btn-default hide control-btn">
-      <span class="glyphicon glyphicon-new-window"></span>
     </button>
   </div>
 

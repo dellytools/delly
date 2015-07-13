@@ -140,7 +140,6 @@ var maze = function () {
       $(selector).empty();
       $('#control-btn-left').addClass('hide');
       $('#control-btn-right').addClass('hide');
-      $('#control-btn-detail').addClass('hide');
       $('.spinner').toggleClass('hide');
 
       var matches = $('#config-matches label.active').text().trim();
@@ -169,10 +168,9 @@ var maze = function () {
 
     $('#control-btn-left').removeClass('hide');
     $('#control-btn-right').removeClass('hide');
-    $('#control-btn-detail').removeClass('hide');
-    $('#control-btn-detail').off('click');
+    $('#control-btn-breakpoints').off('click');
 
-    $('#control-btn-detail:not(disabled)').click(function () { // currently never disabled
+    $('#control-btn-breakpoints:not(disabled)').click(function () { // currently never disabled
         console.log('open new window for ' + dataIdx)
         var wnd = window.open("breakpoints");
         wnd.transferData = { data: data, query: my.query[dataIdx], ref: my.ref[0]}; // Todo(meiers): Change ref[0] in the future
