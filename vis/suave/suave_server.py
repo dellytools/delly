@@ -119,9 +119,7 @@ def depth(s1, s2, c):
             cfg['x'] = f1['/{}/read_counts'.format(c)][:]
             cfg['y'] = f2['/{}/read_counts'.format(c)][:]
             cfg['chrom'] = c
-            # FIXME
             cfg['norm'] = calc_norm_factor(s1, s2)
-            cfg['norm'] = 1
 
         if n_bins <= n_req:
             x_sum = cfg['x'][bin_start:bin_end+1]
