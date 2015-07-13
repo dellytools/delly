@@ -39,13 +39,12 @@ namespace torali
     int mad;
     int percentileCutoff;
     int minNormalISize;
+    int minISizeCutoff;
     int maxNormalISize;
+    int maxISizeCutoff;
     int defaultOrient;
     unsigned int non_unique_abnormal_pairs;
     unsigned int abnormal_pairs;
-
-    
-  LibraryInfo() : median(0), mad(0), percentileCutoff(0), maxNormalISize(0), defaultOrient(0), non_unique_abnormal_pairs(0), abnormal_pairs(0) {}
   };
 
 
@@ -329,10 +328,13 @@ namespace torali
 	    libInfoIt->second.median = (int) paramIt->second.median;
 	    libInfoIt->second.mad = (int) paramIt->second.mad;
 	    libInfoIt->second.percentileCutoff = (int) paramIt->second.percentileCutoff;
-	    if (percentile!=0) libInfoIt->second.maxNormalISize = libInfoIt->second.percentileCutoff;
-	    else libInfoIt->second.maxNormalISize = libInfoIt->second.median + (madCutoff * libInfoIt->second.mad);
-	    libInfoIt->second.minNormalISize = libInfoIt->second.median - (madCutoff * libInfoIt->second.mad);
+	    libInfoIt->second.maxNormalISize = libInfoIt->second.median + (5 * libInfoIt->second.mad);
+	    libInfoIt->second.minNormalISize = libInfoIt->second.median - (5 * libInfoIt->second.mad);
 	    if (libInfoIt->second.minNormalISize < 0) libInfoIt->second.minNormalISize=0;
+	    if (percentile!=0) libInfoIt->second.maxISizeCutoff = libInfoIt->second.percentileCutoff;
+	    else libInfoIt->second.maxISizeCutoff = libInfoIt->second.median + (madCutoff * libInfoIt->second.mad);
+	    libInfoIt->second.minISizeCutoff = libInfoIt->second.median - (madCutoff * libInfoIt->second.mad);
+	    if (libInfoIt->second.minISizeCutoff < 0) libInfoIt->second.minISizeCutoff=0;
 	  }
 	}
       }

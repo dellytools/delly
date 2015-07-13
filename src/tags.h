@@ -368,14 +368,14 @@ namespace torali {
   template<typename TISize, typename TLibInfo>
     inline bool
     _acceptedInsertSize(TLibInfo& libInfo, TISize const iSize, SVType<DeletionTag>) {
-    return (libInfo.maxNormalISize > iSize);
+    return (libInfo.maxISizeCutoff > iSize);
   }
 
   // Insertions
   template<typename TISize, typename TLibInfo>
     inline bool
     _acceptedInsertSize(TLibInfo& libInfo, TISize const iSize, SVType<InsertionTag>) {
-    return (libInfo.minNormalISize <= iSize);
+    return (libInfo.minISizeCutoff <= iSize);
   }
 
   // Duplications

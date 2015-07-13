@@ -178,7 +178,7 @@ namespace torali {
 	      
 	    // Abnormal paired-end
 	    if ((getStrandIndependentOrientation(rec->core) != libIt->second.defaultOrient) || (outerISize < libIt->second.minNormalISize) || (outerISize > libIt->second.maxNormalISize) || (rec->core.tid!=rec->core.mtid)) {
-	      if (_acceptedInsertSize(libIt->second, abs(rec->core.isize), svType)) continue;  // Normal paired-end (for deletions, insertions only)
+	      if (_acceptedInsertSize(libIt->second, abs(rec->core.isize), svType)) continue;  // Normal paired-end (for deletions, insertions only - this uses minISizeCutoff and maxISizeCutoff)
 	      if (_acceptedOrientation(libIt->second.defaultOrient, getStrandIndependentOrientation(rec->core), svType)) continue;  // Orientation disagrees with SV type
 	      if (!(((itSV->chr == rec->core.tid) && (itSV->chr2 == rec->core.mtid)) || ((itSV->chr == rec->core.mtid) && (itSV->chr2 == rec->core.tid)))) continue;
 
