@@ -248,7 +248,7 @@ namespace torali {
 		  if (std::abs(midPoint - itSV->svStart) < std::abs(itSV->svEnd - midPoint)) {
 		    if ((itSV->chr==rec->core.tid) && (itSV->svStart>=sPos) && (itSV->svStart<=ePos)) leftIt->second.first.push_back(pairQuality);
 		  } else {
-		    if ((itSV->chr==rec->core.tid) && (itSV->svEnd>=sPos) && (itSV->svEnd<=ePos)) rightIt->second.first.push_back(pairQuality);
+		    if ((itSV->chr2==rec->core.tid) && (itSV->svEnd>=sPos) && (itSV->svEnd<=ePos)) rightIt->second.first.push_back(pairQuality);
 		  }
 		} else if ((getStrandIndependentOrientation(rec->core) != libIt->second.defaultOrient) || (outerISize < libIt->second.minNormalISize) || (outerISize > libIt->second.maxNormalISize) || (rec->core.tid!=rec->core.mtid)) {
 		  // Missing spanning coverage
