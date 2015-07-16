@@ -15,6 +15,12 @@ then
     exit -1
 fi
 
+
+# check samtools. Not cool that we need samtools but the whole assembly script is gonna be changed in the future anyways.
+USE_SAMTOOLS=1
+samtools 2> /dev/null
+if [ $? -gt 1 ]; then echo "In order to automatically generate reference files for maze, please provide samtools faidx"; USE_SAMTOOLS=0; fi
+
 SPADES=/g/solexa/home/build.big-al/SPAdes-3.5.0-Linux/bin/spades.py
 
 SCRIPT=$(readlink -f "$0")
@@ -33,7 +39,7 @@ fi
 SID=`echo ${VARIANTS} | sed 's/^.*\///' | sed 's/\..*$//'`
 
 # Extract assembly reads
-python ${BASEDIR}/extractAssemblyReads.py -v ${VARIANTS} -s ${BAMLIST} ${UMAPPED}
+python ${BASEDIR}/extractAssemblyReads.py -v ${VARIANTS} -s ${BAMLIST} ${UMAPPED} 2> coords.table
 
 # Run the assembly
 for FQ1 in ${SID}.*.1.fastq
@@ -45,6 +51,7 @@ do
     if [ -f assembly.${SID}.${SVID}/contigs.fasta ]
     then
 	cat assembly.${SID}.${SVID}/contigs.fasta | gzip -c > contigs.${SID}.${SVID}.fasta.gz
+    if [ $USE_SAMTOOLS -ge 1 ]; then grep $FQ1 coords.table | cut -f2 | samtools faidx $GENOME - | gzip -c > contigs.${SID}.${SVID}.reference.fasta.gz; fi
     fi
     rm -rf assembly.${SID}.${SVID} ${FQ1} ${FQ2}
 done
