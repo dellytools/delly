@@ -51,7 +51,11 @@ do
     if [ -f assembly.${SID}.${SVID}/contigs.fasta ]
     then
 	cat assembly.${SID}.${SVID}/contigs.fasta | gzip -c > contigs.${SID}.${SVID}.fasta.gz
-    if [ $USE_SAMTOOLS -ge 1 ]; then grep $FQ1 coords.table | cut -f2 | samtools faidx $GENOME - | gzip -c > contigs.${SID}.${SVID}.reference.fasta.gz; fi
+    if [ $USE_SAMTOOLS -ge 1 ]; 
+	then
+		echo "grep $FQ1 coords.table" $(grep $FQ1 coords.table)
+		grep $FQ1 coords.table | cut -f2 | xargs samtools faidx $GENOME | gzip -c > contigs.${SID}.${SVID}.reference.fasta.gz; fi
     fi
     rm -rf assembly.${SID}.${SVID} ${FQ1} ${FQ2}
 done
+rm coords.table

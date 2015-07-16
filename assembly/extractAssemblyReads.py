@@ -9,6 +9,8 @@ import collections
 import errno
 import numpy
 import random
+import sys
+
 
 def rev_compl(s):
     basecomplement = {'A': 'T', 'C': 'G', 'G': 'C', 'T': 'A', 'N': 'N'}
@@ -150,7 +152,8 @@ if len(sv.keys()):
     for chrom in sv.keys():
         for (start, end, svID, svt, carrier, dupBounds, delBounds) in sv[chrom]:
             print("Processing: " + svID + " " + chrom + ":" + str(start) + "-" + str(end))
-            print(args.vcfFile.strip().split('.')[0] + "." + svID + ".1.fastq" + "\t" + chrom + ":" + str(start) + "-" + str(end), file=sys.stderr)
+            print(args.vcfFile.strip().split('.')[0] + "." + svID + ".1.fastq", 
+                  chrom + ":" + str(start) + "-" + str(end), sep="\t", file=sys.stderr)
 
             # Collect clip positions
             windowStart = max(0, start-bpPrecision)
