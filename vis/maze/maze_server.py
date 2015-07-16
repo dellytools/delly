@@ -11,6 +11,7 @@ import gzip
 import json
 from readfq import readfq
 import maze
+import maze_breakpoints
 
 app = Flask(__name__)
 cfg = {}
@@ -47,10 +48,25 @@ def data():
     os.remove(fn_ref)
     return json.dumps(m)
 
+
+@app.route('/breakpoints')
+def breakpoints():
+    return maze_breakpoints.index()
+
+@app.route('/compute_breakpoints', methods=['POST'])
+def compute_breakpoints():
+    args = request.form
+    # Todo(meiers): Get LAST parameters, too
+    ref = json.loads(args['ref'])
+    query = json.loads(args['query'])
+    return maze_breakpoints.breakpoints(ref, query)
+
+
 @click.command()
 @click.option('-p', '--port', default=5000, help='port number')
 @click.option('--debug/--no-debug', default=False,
               help='run server in debug mode')
+# Todo(meiers): revisit the --coords option
 @click.option('-c', '--coords', help='reference coordinates BED file')
 def cli(port, debug, coords):
     global cfg

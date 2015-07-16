@@ -23,6 +23,7 @@ Contact: Tobias Rausch (rausch@embl.de)
 
 #include <iostream>
 #include <fstream>
+#include <boost/unordered_map.hpp>
 #include <boost/graph/adjacency_list.hpp>
 #include <boost/graph/connected_components.hpp>
 #include <boost/program_options/cmdline.hpp>
@@ -40,8 +41,7 @@ Contact: Tobias Rausch (rausch@embl.de)
 #include <boost/filesystem.hpp>
 #include <boost/tokenizer.hpp>
 #include <boost/progress.hpp>
-#include "api/BamReader.h"
-#include "api/BamIndex.h"
+#include <htslib/sam.h>
 
 #ifdef OPENMP
 #include <omp.h>
@@ -58,57 +58,41 @@ struct Config {
   unsigned int window_size;
   unsigned int window_offset;
   unsigned int window_num;
-  uint16_t minMapQual;
+  uint16_t minGenoQual;
   bool bp_flag;
   bool avg_flag;
   bool inclCigar;
-  bool cov_norm;
   boost::filesystem::path outfile;
   boost::filesystem::path int_file;
   std::vector<boost::filesystem::path> files;
 };
 
 
-template<typename TSingleHit, typename TCoverageType>
+template<typename TCoverageType>
 inline int
-run(Config const& c, TSingleHit, TCoverageType covType)
+run(Config const& c, TCoverageType covType)
 {
   // Create library objects
-  typedef std::map<std::string, LibraryInfo> TLibraryMap;
-  typedef std::map<std::string, TLibraryMap> TSampleLibrary;
+  typedef boost::unordered_map<std::string, LibraryInfo> TLibraryMap;
+  typedef boost::unordered_map<std::string, TLibraryMap> TSampleLibrary;
   TSampleLibrary sampleLib;
-
-  // Scan libraries
-  for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
-    // Get a sample name
-    std::string sampleName(c.files[file_c].stem().string());
-
-    // Check that all input bam files exist
-    BamTools::BamReader reader;
-    if ( ! reader.Open(c.files[file_c].string()) ) {
-      std::cerr << "Could not open input bam file: " << c.files[file_c].string() << std::endl;
-      reader.Close();
-      return -1;
-    }
-    
-    // Check that all input bam files are indexed
-    reader.LocateIndex();
-    if ( !reader.HasIndex() ) {
-      std::cerr << "Missing bam index file: " << c.files[file_c].string() << std::endl;
-      reader.Close();
-      return -1;
-    }
-
-    // Get library parameters and overall maximum insert size
-    TLibraryMap libInfo;
-    getLibraryParams(c.files[file_c], libInfo, 0, 5);
-    sampleLib.insert(std::make_pair(sampleName, libInfo));
-  }
+  getLibraryParams(c.files, sampleLib, 0, 5);
 
   // Get references
-  BamTools::BamReader readerRef;
-  if ( ! readerRef.Open(c.files[0].string()) ) return -1;
-  BamTools::RefVector references = readerRef.GetReferenceData();
+  typedef std::vector<std::string> TRefNames;
+  typedef std::vector<uint32_t> TRefLength;
+  TRefNames refnames;
+  TRefLength reflen;
+  if (refnames.empty()) {
+    samFile* samfile = sam_open(c.files[0].string().c_str(), "r");
+    bam_hdr_t* hdr = sam_hdr_read(samfile);
+    for (int i = 0; i<hdr->n_targets; ++i) {
+      refnames.push_back(hdr->target_name[i]);
+      reflen.push_back(hdr->target_len[i]);
+    }
+    bam_hdr_destroy(hdr);
+    sam_close(samfile);
+  }
 
   // Read all SV intervals
   typedef std::vector<CovRecord> TSVs;
@@ -118,8 +102,7 @@ run(Config const& c, TSingleHit, TCoverageType covType)
   if (boost::filesystem::exists(c.int_file) && boost::filesystem::is_regular_file(c.int_file) && boost::filesystem::file_size(c.int_file)) {
     typedef boost::unordered_map<std::string, unsigned int> TMapChr;
     TMapChr mapChr;
-    typename BamTools::RefVector::const_iterator itRef = references.begin();
-    for(unsigned int i = 0;itRef!=references.end();++itRef, ++i) mapChr[ itRef->RefName ] = i;
+    for(unsigned int i = 0; i<refnames.size(); ++i) mapChr[ refnames[i] ] = i;
     std::ifstream interval_file(c.int_file.string().c_str(), std::ifstream::in);
     if (interval_file.is_open()) {
       while (interval_file.good()) {
@@ -150,24 +133,23 @@ run(Config const& c, TSingleHit, TCoverageType covType)
     }
   } else {
     // Create artificial intervals
-    typename BamTools::RefVector::const_iterator itRef = references.begin();
-    for(int refIndex=0;itRef!=references.end();++itRef, ++refIndex) {
-      int32_t pos = 0;
+    for(int refIndex=0; refIndex < (int) refnames.size(); ++refIndex) {
+      uint32_t pos = 0;
       unsigned int wSize = c.window_size;
       unsigned int wOffset = c.window_offset;
       if (c.window_num>0) {
-	wSize=(itRef->RefLength / c.window_num) + 1;
+	wSize=(reflen[refIndex] / c.window_num) + 1;
 	wOffset=wSize;
       }
-      while (pos < references[refIndex].RefLength) {
-	int32_t window_len = pos+wSize;
-	if (window_len > references[refIndex].RefLength) window_len = references[refIndex].RefLength;
+      while (pos < reflen[refIndex]) {
+	uint32_t window_len = pos+wSize;
+	if (window_len > reflen[refIndex]) window_len = reflen[refIndex];
 	CovRecord sv;
 	sv.chr = refIndex;
 	sv.svStart = pos;
 	sv.svEnd = window_len;
 	std::stringstream s; 
-	s << references[sv.chr].RefName << ":" << sv.svStart << "-" << sv.svEnd;
+	s << refnames[sv.chr] << ":" << sv.svStart << "-" << sv.svEnd;
 	idToName.insert(std::make_pair(intervalCount, s.str()));
 	sv.id = intervalCount++;
 	svs.push_back(sv);
@@ -183,7 +165,8 @@ run(Config const& c, TSingleHit, TCoverageType covType)
   TCountMap countMap;
 
   // Annotate coverage
-  annotateCoverage(c.files, c.minMapQual, c.inclCigar, c.cov_norm, sampleLib, svs, countMap, TSingleHit(), covType);
+  if (c.inclCigar) annotateCoverage(c.files, c.minGenoQual, sampleLib, svs, countMap, BpLevelType<BpLevelCount>(), covType);
+  else annotateCoverage(c.files, c.minGenoQual, sampleLib, svs, countMap, BpLevelType<NoBpLevelCount>(), covType);
 
   // Output library statistics
   std::cout << "Library statistics" << std::endl;
@@ -217,7 +200,7 @@ run(Config const& c, TSingleHit, TCoverageType covType)
   typename TSVs::const_iterator itSV = svs.begin();
   typename TSVs::const_iterator itSVEnd = svs.end();
   for(;itSV!=itSVEnd;++itSV) {
-    dataOut << references[itSV->chr].RefName << "\t" << itSV->svStart << "\t" << itSV->svEnd << "\t" << idToName.find(itSV->id)->second;
+    dataOut << refnames[itSV->chr] << "\t" << itSV->svStart << "\t" << itSV->svEnd << "\t" << idToName.find(itSV->id)->second;
     // Iterate all samples
     for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
       // Get the sample name
@@ -248,9 +231,8 @@ int main(int argc, char **argv) {
     ("help,?", "show help message")
     ("avg-cov,a", "show average coverage")
     ("bp-count,b", "show base pair count")
-    ("disable-covnorm,c", "disable coverage normalization")
     ("disable-redundancy,d", "disable redundancy filtering")
-    ("quality-cut,q", boost::program_options::value<uint16_t>(&c.minMapQual)->default_value(0), "exclude all alignments with quality < q")
+    ("quality-cut,q", boost::program_options::value<uint16_t>(&c.minGenoQual)->default_value(0), "exclude all alignments with quality < q")
     ("outfile,f", boost::program_options::value<boost::filesystem::path>(&c.outfile)->default_value("cov.gz"), "coverage output file")
     ;
 
@@ -303,8 +285,6 @@ int main(int argc, char **argv) {
   }
   bool disableRedFilter=false;
   if (vm.count("disable-redundancy")) disableRedFilter=true;
-  if (vm.count("disable-covnorm")) c.cov_norm = false;
-  else c.cov_norm = true;
   if (vm.count("bp-count")) c.bp_flag = true;
   else c.bp_flag = false;
   if (vm.count("avg-cov")) c.avg_flag = true;
@@ -319,11 +299,6 @@ int main(int argc, char **argv) {
   std::cout << std::endl;
  
   // Run coverage annotation
-  if (c.inclCigar) {
-    if (disableRedFilter) return run(c, SingleHit<int32_t, std::string>(), CoverageType<NoRedundancyFilterTag>());
-    else return run(c, SingleHit<int32_t, std::string>(), CoverageType<RedundancyFilterTag>());
-  } else {
-    if (disableRedFilter) run(c, SingleHit<int32_t, void>(), CoverageType<NoRedundancyFilterTag>());
-    else return run(c, SingleHit<int32_t, void>(), CoverageType<RedundancyFilterTag>());
-  }
+  if (disableRedFilter) return run(c, CoverageType<NoRedundancyFilterTag>());
+  else return run(c, CoverageType<RedundancyFilterTag>());
 }

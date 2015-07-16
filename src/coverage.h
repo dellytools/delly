@@ -24,16 +24,16 @@ Contact: Tobias Rausch (rausch@embl.de)
 #ifndef COVERAGE_H
 #define COVERAGE_H
 
+#include <boost/container/flat_set.hpp>
+#include <htslib/sam.h>
 #include "tags.h"
-#include "api/BamReader.h"
-#include "api/BamIndex.h"
-#include "api/BamAlignment.h"
+#include "util.h"
 
 namespace torali {
 
 
 template<typename TCigarVec>
-inline std::string  cigarString(TCigarVec const& cigarOperations) {
+inline std::string cigarString(TCigarVec const& cigarOperations) {
   std::stringstream cigar;
   typename TCigarVec::const_iterator coIter = cigarOperations.begin();
   if (coIter == cigarOperations.end()) cigar << "*";
@@ -42,237 +42,197 @@ inline std::string  cigarString(TCigarVec const& cigarOperations) {
   return cigar.str();
 }
 
-
-
-// Single hit data structure for alignment position of a single read
-template<typename TPos, typename TCigar>
-struct SingleHit {
-  TPos pos;
-  TCigar cigar;
-
-  SingleHit() {}
-
-  SingleHit(TPos p) : pos(p) {}
-
-  SingleHit(BamTools::BamAlignment const& al) : pos(al.Position), cigar(cigarString(al.CigarData)) {}
-};
-
-template<typename TPos>
-struct SingleHit<TPos, void> {
-  TPos pos;
-
-  SingleHit() {}
-
-  SingleHit(TPos p) : pos(p) {}
-
-  SingleHit(BamTools::BamAlignment const& al) : pos(al.Position) {}
-};
-
-
-template<typename THit>
-struct SortSingleHits : public std::binary_function<THit, THit, bool>
-{
-  inline bool operator()(THit const& hit1, THit const& hit2) {
-    return (hit1.pos < hit2.pos);
-  }
-};
-
-
-
- template<typename TPos, typename TCigar, typename TWindow, typename TCount>
+template<typename TWindow, typename TCount>
 inline void
-_addReadAndBpCounts(std::vector<SingleHit<TPos, TCigar> > const& hit_vector, TWindow posBeg, TWindow posEnd, TCount& read_sum, TCount& bp_sum)
-{
-  typedef SingleHit<TPos, TCigar> TSingleHit;
-  typedef std::vector<TSingleHit> THits;
-  // Assume a maximum 10kb read
-  typename THits::const_iterator vecBeg = std::lower_bound(hit_vector.begin(), hit_vector.end(), TSingleHit(std::max(0, posBeg - 10000)), SortSingleHits<TSingleHit>());
-  typename THits::const_iterator vecEnd = hit_vector.end();
-  
-  // Add read and bp counts
-  for(;vecBeg!=vecEnd; ++vecBeg) {
-    if (vecBeg->pos >= posEnd) break;
-    if (vecBeg->pos >= posBeg) ++read_sum;
-    int32_t bpPos = vecBeg->pos;
-    int num_start = 0;
-    int num_end = 0;
-    std::string::const_iterator cig = vecBeg->cigar.begin();
-    std::string::const_iterator cigEnd = vecBeg->cigar.end();
-    for(;cig!=cigEnd; ++cig, ++num_end) {
-      if (((int) *cig >=48) && ((int) *cig <= 57)) continue;
-      unsigned int len = atoi(vecBeg->cigar.substr(num_start, (num_end-num_start)).c_str());
-      if (*cig == 'M') 
-	for(unsigned int i = 0; i<len; ++i, ++bpPos) {
-	  if ((bpPos>=posBeg) && (bpPos<posEnd)) ++bp_sum;
-	}
-      else if ((*cig == 'N') || (*cig=='D')) bpPos += len;
-      num_start = num_end + 1;
-    }
+_addBpCounts(bam1_t* rec, TWindow posBeg, TWindow posEnd, TCount& bp_sum, BpLevelType<BpLevelCount>)
+{  
+  if (rec->core.pos >= posEnd) return;
+  int32_t bpPos = rec->core.pos;
+  uint32_t* cigar = bam_get_cigar(rec);
+  for (unsigned int i = 0; i < rec->core.n_cigar; ++i) {
+    int op = bam_cigar_op(cigar[i]);
+    int ol = bam_cigar_oplen(cigar[i]);
+    if (op == BAM_CMATCH) 
+      for(int k = 0; k<ol; ++k, ++bpPos) {
+	if ((bpPos>=posBeg) && (bpPos<posEnd)) ++bp_sum;
+      }
+    else if ((op == BAM_CREF_SKIP) || (op == BAM_CDEL)) bpPos += ol;
   }
 }
 
-template<typename TPos, typename TWindow, typename TCount>
+template<typename TWindow, typename TCount>
 inline void
-_addReadAndBpCounts(std::vector<SingleHit<TPos, void> > const& hit_vector, TWindow posBeg, TWindow posEnd, TCount& read_sum, TCount&)
-{
-  typedef SingleHit<TPos, void> TSingleHit;
-  typedef std::vector<TSingleHit> THits;
-  typename THits::const_iterator vecBeg = std::lower_bound(hit_vector.begin(), hit_vector.end(), TSingleHit(posBeg), SortSingleHits<TSingleHit>());
-  typename THits::const_iterator vecEnd = hit_vector.end();
-
-  // Add read counts
-  for(;vecBeg!=vecEnd; ++vecBeg) {
-    if (vecBeg->pos >= posEnd) break;
-    ++read_sum;
-  }
+_addBpCounts(bam1_t*, TWindow, TWindow, TCount, BpLevelType<NoBpLevelCount>)
+{  
+  //Nop
 }
 
-
-template<typename TBamRecord, typename TUniquePairs>
+template<typename TPos, typename TUniquePairs>
 inline bool 
-_redundancyFilter(TBamRecord const& al, TUniquePairs& uRead1, TUniquePairs& uRead2, CoverageType<RedundancyFilterTag>) {
-  Hit hitPos(al);
-  bool inserted;
-  typename TUniquePairs::const_iterator pos;
-  if (al.AlignmentFlag & 0x0040) boost::tie(pos, inserted) = uRead1.insert(hitPos);
-  else boost::tie(pos, inserted) = uRead2.insert(hitPos);
-  return inserted;
+_redundancyFilter(TPos matePos, TUniquePairs& uRead, CoverageType<RedundancyFilterTag>) {
+  return uRead.insert(matePos).second;
 }
 
-template<typename TBamRecord, typename TUniquePairs>
+template<typename TPos, typename TUniquePairs>
 inline bool
-_redundancyFilter(TBamRecord const&, TUniquePairs&, TUniquePairs&, CoverageType<NoRedundancyFilterTag>) {
+_redundancyFilter(TPos, TUniquePairs&, CoverageType<NoRedundancyFilterTag>) {
   return true;
 }
 
 
 
- template<typename TFiles, typename TSampleLibrary, typename TSVs, typename TCountMap, typename TSingleHit, typename TCoverageType>
+template<typename TFiles, typename TSampleLibrary, typename TSVs, typename TCountMap, typename TBpLevelType, typename TCoverageType>
 inline void
-annotateCoverage(TFiles const& files, uint16_t minMapQual, bool inclCigar, bool cov_norm, TSampleLibrary& sampleLib, TSVs& svs, TCountMap& countMap, TSingleHit, TCoverageType covType)
+annotateCoverage(TFiles const& files, uint16_t minMapQual, TSampleLibrary& sampleLib, TSVs& svs, TCountMap& countMap, TBpLevelType bpLevel, TCoverageType covType)
 {
   typedef typename TSVs::value_type TSV;
-  typedef typename TCountMap::key_type TSampleSVPair;
 
-   // Get the references
-  BamTools::BamReader readerRef;
-  if ( ! readerRef.Open(files[0].string()) ) return;
-  BamTools::RefVector references = readerRef.GetReferenceData();
+  // Open file handles
+  typedef std::vector<samFile*> TSamFile;
+  typedef std::vector<hts_idx_t*> TIndex;
+  TSamFile samfile;
+  TIndex idx;
+  samfile.resize(files.size());
+  idx.resize(files.size());
+  for(unsigned int file_c = 0; file_c < files.size(); ++file_c) {
+    samfile[file_c] = sam_open(files[file_c].string().c_str(), "r");
+    idx[file_c] = sam_index_load(samfile[file_c], files[file_c].string().c_str());
+  }
+
+  // For alignment midpoint, maximum read-length
+  int32_t maxReadLen = 1000;
 
   // Sort Structural Variants
   sort(svs.begin(), svs.end(), SortSVs<TSV>());
 
   // Initialize count maps
-  typedef boost::unordered_map<std::string, uint64_t> TMappedReads;
-  TMappedReads mappedReadCounts;
-  for(typename TSampleLibrary::iterator sIt = sampleLib.begin(); sIt!=sampleLib.end();++sIt) {
-    mappedReadCounts.insert(std::make_pair(sIt->first, 0));
-    for(typename TSVs::const_iterator itSV = svs.begin(); itSV!=svs.end(); ++itSV) countMap.insert(std::make_pair(std::make_pair(sIt->first, itSV->id), std::make_pair(0,0)));
-  }
-
-  // Process chromosome by chromosome
-  boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
-  std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Read-depth annotation" << std::endl;
-  boost::progress_display show_progress( (references.end() - references.begin()) );
-  typename BamTools::RefVector::const_iterator  itRef = references.begin();
-  for(int refIndex=0;itRef!=references.end();++itRef, ++refIndex) {
-    ++show_progress;
-
-    // Iterate all samples
-#pragma omp parallel for default(shared)
-    for(unsigned int file_c = 0; file_c < files.size(); ++file_c) {
-    
-      // Iterate all SAM files and collect all hits
-      typedef std::vector<TSingleHit> THits;
-      THits hit_vector;  
-      uint64_t mappedCount=0;
-
-      // Get a sample name
-      std::string sampleName(files[file_c].stem().string());
-
-      // Initialize bam file
-      BamTools::BamReader reader;
-      reader.Open(files[file_c].string());
-      reader.LocateIndex();
-      
-      // Unique pairs for the given sample
-      typedef std::set<Hit> TUniquePairs;
-      TUniquePairs unique_pairs_read1;
-      TUniquePairs unique_pairs_read2;
-
-      // Read alignments
-      BamTools::BamAlignment al;
-      if (reader.Jump(refIndex, 0)) {
-	while( reader.GetNextAlignmentCore(al) ) {
-	  if (al.RefID != refIndex) break;
-	  if ((al.AlignmentFlag & 0x0004) || (al.AlignmentFlag & 0x0200) || (al.AlignmentFlag & 0x0400) || (al.MapQuality < minMapQual) || (!(inclCigar) && ((al.AlignmentFlag & 0x0100) || (al.AlignmentFlag & 0x0800)))) continue;
-	  
-	  // Is it a unique pair
-	  bool inserted = _redundancyFilter(al, unique_pairs_read1, unique_pairs_read2, covType);
-	  if ((inserted) || !(al.AlignmentFlag & 0x0001)) {
-	    //Collect hits
-	    hit_vector.push_back(TSingleHit(al));
-	    ++mappedCount;
-	  }
-	}
-      }
-#pragma omp critical
-      mappedReadCounts[sampleName]+=mappedCount;
-    
-      // Sort SAM records by chromosome and position
-      std::stable_sort(hit_vector.begin(), hit_vector.end(), SortSingleHits<TSingleHit>());
-
-      // Store coverage for all input intervals
-      typename TSVs::const_iterator itSV = std::lower_bound(svs.begin(), svs.end(), TSV(refIndex, 0, 0), SortSVs<TSV>());
-      for(;itSV!=svs.end();++itSV) {
-	if (itSV->chr != refIndex) break;
-	// Iterate all reads falling into that range
-	unsigned int bp_sum = 0;
-	unsigned int read_sum = 0;
-	_addReadAndBpCounts(hit_vector, itSV->svStart, itSV->svEnd, read_sum, bp_sum);
-
-	// Store counts
-	TSampleSVPair svSample = std::make_pair(sampleName, itSV->id);
-	typename TCountMap::iterator countMapIt=countMap.find(svSample);
-	countMapIt->second.first=bp_sum;
-	countMapIt->second.second=read_sum;
-      }
+  for(typename TSampleLibrary::iterator sIt = sampleLib.begin(); sIt!=sampleLib.end(); ++sIt) {
+    for(typename TSVs::const_iterator itSV = svs.begin(); itSV!=svs.end(); ++itSV) {
+      countMap.insert(std::make_pair(std::make_pair(sIt->first, itSV->id), std::make_pair(0,0)));
     }
   }
 
-  // Get normalization factors
-  typedef std::vector<uint64_t> TReadCounts;
-  typedef boost::unordered_map<std::string, double> TSampleNorm;
-  TReadCounts readCounts;
-  TSampleNorm sampleNorm;
-  typename TMappedReads::iterator mapRIt=mappedReadCounts.begin();
-  for(;mapRIt!=mappedReadCounts.end();++mapRIt) {
-    sampleNorm.insert(std::make_pair(mapRIt->first, mapRIt->second));
-    readCounts.push_back(mapRIt->second);
-  }
-  std::sort(readCounts.begin(), readCounts.end());
-  double median=readCounts[readCounts.size()/2];
-  typename TSampleNorm::iterator normIt=sampleNorm.begin();
-  for(;normIt!=sampleNorm.end();++normIt) {
-    if ((cov_norm) && (normIt->second!=0)) normIt->second = median/normIt->second;
-    else normIt->second = 1.0;
-  }
+  // Iterate all samples
+  boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
+  std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Read-depth annotation" << std::endl;
+  boost::progress_display show_progress( (svs.end() - svs.begin()) );
+#pragma omp parallel for default(shared)
+  for(unsigned int file_c = 0; file_c < files.size(); ++file_c) {
+    // Get a sample name
+    std::string sampleName(files[file_c].stem().string());
 
-  // Normalize read counts
-  typename TSampleLibrary::iterator sampleIt=sampleLib.begin();
-  for(;sampleIt!=sampleLib.end();++sampleIt) {
+    // Read alignments
+    int32_t oldChr = -1;
+    typedef std::vector< std::pair<int32_t, int32_t> > TInterval;
+    TInterval intervals;
+    typedef std::vector<unsigned int> TIntervalSum;
+    TIntervalSum readSum;
+    TIntervalSum bpSum;
+
     typename TSVs::const_iterator itSV = svs.begin();
     typename TSVs::const_iterator itSVEnd = svs.end();
     for(;itSV!=itSVEnd;++itSV) {
-      TSampleSVPair svSample = std::make_pair(sampleIt->first, itSV->id);
-      typename TCountMap::iterator countMapIt=countMap.find(svSample);
-      typename TSampleNorm::iterator sampleNormIt=sampleNorm.find(sampleIt->first);
-      countMapIt->second.first = int( (double) countMapIt->second.first * sampleNormIt->second);
-      countMapIt->second.second = int( (double) countMapIt->second.second * sampleNormIt->second);
+      if (file_c==(files.size()-1)) ++show_progress;
+      
+      // Find all non-overlapping sub-intervals
+      if (itSV->chr!=oldChr) {
+	oldChr=itSV->chr;
+	intervals.clear();
+	bpSum.clear();
+	readSum.clear();
+	typedef std::set<int32_t> TBreaks;
+	TBreaks iBounds;
+	iBounds.insert(itSV->svStart);
+	iBounds.insert(itSV->svEnd);
+	int32_t maxPos = itSV->svEnd;
+	typename TSVs::const_iterator itSVFor = itSV;
+	for(++itSVFor;itSVFor!=itSVEnd; ++itSVFor) {
+	  if (oldChr!=itSVFor->chr) break;
+	  if (itSVFor->svStart>maxPos) {
+	    typename TBreaks::const_iterator itBreak = iBounds.begin();
+	    typename TBreaks::const_iterator itBreakNext = iBounds.begin();
+	    for(++itBreakNext; itBreakNext!=iBounds.end(); ++itBreakNext, ++itBreak) intervals.push_back(std::make_pair(*itBreak, *itBreakNext));
+	    maxPos=itSVFor->svEnd;
+	    iBounds.clear();
+	  }
+	  iBounds.insert(itSVFor->svStart);
+	  iBounds.insert(itSVFor->svEnd);
+	  if (itSVFor->svEnd > maxPos) maxPos=itSVFor->svEnd;
+	}
+	typename TBreaks::const_iterator itBreak = iBounds.begin();
+	typename TBreaks::const_iterator itBreakNext = iBounds.begin();
+	for(++itBreakNext; itBreakNext!=iBounds.end(); ++itBreakNext, ++itBreak) intervals.push_back(std::make_pair(*itBreak, *itBreakNext));
+
+	// Process sub-intervals
+	typename TInterval::const_iterator itInt = intervals.begin();
+	for(;itInt!=intervals.end(); ++itInt) {
+	  // Unique pairs for the given interval
+	  typedef boost::container::flat_set<int32_t> TUniquePairs;
+	  TUniquePairs unique_pairs_read;
+
+	  // Count reads / aligned base-pairs
+	  unsigned int bp_sum = 0;
+	  unsigned int read_sum = 0;
+	  int32_t oldPos=-1;
+
+	  // Read alignments
+	  hts_itr_t* iter = sam_itr_queryi(idx[file_c], oldChr, std::max(0, (int32_t) itInt->first - maxReadLen), itInt->second);
+	  bam1_t* rec = bam_init1();
+	  while (sam_itr_next(samfile[file_c], iter, rec) >= 0) {
+	    if (rec->core.flag & (BAM_FSECONDARY | BAM_FQCFAIL | BAM_FDUP | BAM_FSUPPLEMENTARY | BAM_FUNMAP)) continue;
+	    if (rec->core.qual < minMapQual) continue;
+	  
+	    // Is it a unique pair
+	    if (rec->core.pos!=oldPos) {
+	      oldPos=rec->core.pos;
+	      unique_pairs_read.clear();
+	    }
+	    if (_redundancyFilter(rec->core.mpos, unique_pairs_read, covType)) {
+	      int32_t midPoint = rec->core.pos + halfAlignmentLength(rec);
+	      if ((midPoint >= itInt->first) && (midPoint < itInt->second)) ++read_sum;
+	      _addBpCounts(rec, itInt->first, itInt->second, bp_sum, bpLevel);
+	    }
+	  }
+	  bam_destroy1(rec);
+	  hts_itr_destroy(iter);
+	  bpSum.push_back(bp_sum);
+	  readSum.push_back(read_sum);
+	}
+      }
+
+      // Sum up sub-intervals
+      unsigned int cumBpSum = 0;
+      unsigned int cumReadSum = 0;
+      typename TInterval::const_iterator itInt = intervals.begin();
+      typename TIntervalSum::const_iterator itRead = readSum.begin();
+      typename TIntervalSum::const_iterator itBp = bpSum.begin();
+      for(;itInt!=intervals.end(); ++itInt, ++itRead, ++itBp) {
+	//std::cerr << itInt->first << ',' << itInt->second << ':' << *itRead << ',' << *itBp << '(' << itSV->svStart << ',' << itSV->svEnd << ')' << cumReadSum << std::endl;
+	if (itInt->first > itSV->svEnd) break;
+	if ((itInt->first >= itSV->svStart) && (itInt->second <= itSV->svEnd)) {
+	  cumBpSum+=(*itBp);
+	  cumReadSum+=(*itRead);
+	}
+      }
+
+      // Store counts
+#pragma omp critical
+      {
+	typedef typename TCountMap::key_type TSampleSVPair;
+	TSampleSVPair svSample = std::make_pair(sampleName, itSV->id);
+	typename TCountMap::iterator countMapIt=countMap.find(svSample);
+	//std::cerr << itSV->id << ':' << cumBpSum << ',' << cumReadSum << std::endl;
+	countMapIt->second.first=cumBpSum;
+	countMapIt->second.second=cumReadSum;
+      }
     }
   }
+  // Clean-up
+  for(unsigned int file_c = 0; file_c < files.size(); ++file_c) {
+    hts_idx_destroy(idx[file_c]);
+    sam_close(samfile[file_c]);
+  }
 }
-
 
 }
 

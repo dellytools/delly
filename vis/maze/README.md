@@ -25,7 +25,10 @@ should all work. Technically, Opera and IE9+ should be fine as well
 although these haven't been tested.
 
 `maze` uses `MUMmer3` to compute matches, thus you need the
-`mummer` binary in your `$PATH`.
+`mummer` binary in your `$PATH`. For breakpoint analysis, you
+will also need the `lastdb`, `lastal` and `last-split` binaries 
+from the [LAST](http://last.cbrc.jp/) package.
+
 
 ## Running the app
 First off, start the server:

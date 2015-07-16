@@ -36,17 +36,20 @@ Contact: Tobias Rausch (rausch@embl.de)
 #include <boost/iostreams/filter/zlib.hpp>
 #include <boost/iostreams/filter/gzip.hpp>
 #include <boost/filesystem.hpp>
-#include "api/BamReader.h"
-#include "api/BamIndex.h"
+#include <htslib/sam.h>
+
+#ifdef PROFILE
+#include "gperftools/profiler.h"
+#endif
 
 #include "version.h"
-#include "util.h"
 #include "tags.h"
 
 using namespace torali;
 
 // Config arguments
 struct Config {
+  bool text_flag;
   uint32_t maxsize;
   boost::filesystem::path bam;
   boost::filesystem::path outfile;
@@ -81,39 +84,18 @@ inline int run(Config const& c) {
   boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
 
   // Check that all input bam files exist and are indexed
-  BamTools::BamReader reader;
-  if ( ! reader.Open(c.bam.string()) ) {
-    std::cerr << "Could not open input bam file: " << c.bam.string() << std::endl;
-    reader.Close();
+  samFile* samfile = sam_open(c.bam.string().c_str(), "r");
+  if ( ! samfile ) {
+    std::cerr << "Could not open input file: " << c.bam.string() << std::endl;
     return -1;
   }
-  reader.LocateIndex();
-  if ( !reader.HasIndex() ) {
-    std::cerr << "Missing bam index file: " << c.bam.string() << std::endl;
-    reader.Close();
-    return -1;
-  }
-
-  // Open output file
-  std::ofstream ofile(c.outfile.string().c_str());
+  bam_hdr_t* hdr = sam_hdr_read(samfile);
+  bam1_t* rec = bam_init1();
 
   // Get references
-  BamTools::RefVector references = reader.GetReferenceData();
   TCount genomeLen = 0;
-  BamTools::RefVector::const_iterator itRef = references.begin();
-  ofile << "SAM file: " << c.bam.string() << std::endl;
-  ofile << std::endl;
-  ofile << "Reference information " << std::endl;
-  for(int refIndex=0; itRef!=references.end(); ++itRef, ++refIndex) {
-    ofile << itRef->RefName << " (" << itRef->RefLength << "bp); ";
-    genomeLen += itRef->RefLength;
-  }
+  for (int i = 0; i<hdr->n_targets; ++i) genomeLen += hdr->target_len[i];
   TCount genomeDiploidLen = 2*genomeLen;
-  ofile << std::endl;
-  ofile << "Haploid genome length: " << genomeLen << std::endl;
-  ofile << "Diploid genome length: " << genomeDiploidLen << std::endl;
-  ofile << std::endl;
-
 
   // Vector of all paired-reads
   typedef std::vector<uint32_t> TVecSize;
@@ -161,12 +143,12 @@ inline int run(Config const& c) {
 
   // Read alignments
   int32_t oldRefID=-1;
-  boost::progress_display show_progress( (references.end() - references.begin()) + 1 );
-  BamTools::BamAlignment al;
-  while( reader.GetNextAlignmentCore(al) ) {
-    if (oldRefID != al.RefID) {
+  boost::progress_display show_progress(hdr->n_targets + 1);  
+  while (sam_read1(samfile, hdr, rec) >= 0) {
+    if (rec->core.flag & (BAM_FSECONDARY | BAM_FQCFAIL | BAM_FDUP | BAM_FSUPPLEMENTARY)) continue;
+    if (oldRefID != rec->core.tid) {
       ++show_progress;
-      oldRefID = al.RefID;
+      oldRefID = rec->core.tid;
 
       // Get redundant pair counts for the old chromosome
       sort(vecPairM.begin(), vecPairM.end(), SortPairedMapping());
@@ -189,122 +171,122 @@ inline int run(Config const& c) {
       }
       vecPairM = vecPairC;
     }
-    if (!(al.AlignmentFlag & 0x0100) && !(al.AlignmentFlag & 0x0200) && !(al.AlignmentFlag & 0x0400) && !(al.AlignmentFlag & 0x0800)) {
 
-      // Single-end statistics
-      ++totalReadCount;
-      if (al.AlignmentFlag & 0x0040) ++totalRead1;
-      else ++totalRead2;
-      if (!(al.AlignmentFlag & 0x0004)) {
-	++mappedReadCount;
-	if (al.AlignmentFlag & 0x0040) ++totalMappedRead1;
-	else ++totalMappedRead2;
-	sumReadLength+=al.Length;
-	if ((TCount) al.Length < minReadLength) minReadLength=al.Length;
-	if ((TCount) al.Length > maxReadLength) maxReadLength=al.Length;
-      }
-      
-      // Paired-end statistics
-      if (al.AlignmentFlag & 0x0001) {
-	++pairedReadCount;
-	if (!((al.AlignmentFlag & 0x0004) || (al.AlignmentFlag & 0x0008))) {
-	  ++pairedReadMappedCount;
-	  // Same chr?
-	  if (al.RefID == al.MateRefID) {
-	    ++pairedReadSameChr;
-	    if (al.AlignmentFlag & 0x0040) {
-	      int iSize = 0;
-	      switch(getStrandSpecificOrientation(al)) {
-	      case 0:
-		++strandOrient[0];
-		++orient[0];
-		iSize = al.InsertSize + al.Length;
-		if (iSize < 0) iSize=0;
-		if (iSize > maxInsertSize) iSize = maxInsertSize - 1;
-		++fPlus[iSize];
-		break;
-	      case 1:
-		++strandOrient[1];
-		++orient[1];
-		iSize = -al.InsertSize + al.Length;
-		if (iSize < 0) iSize=0;
-		if (iSize > maxInsertSize) iSize = maxInsertSize - 1;
-		++fMinus[iSize];
-		break;
-	      case 2:
-		++strandOrient[2];
-		++orient[2];
-		iSize = al.InsertSize;
-		if (iSize < 0) iSize=0;
-		if (iSize > maxInsertSize) iSize = maxInsertSize - 1;
-		++rPlus[iSize];
-		break;
-	      case 3:
-		++strandOrient[3];
-		++orient[3];
-		iSize = -al.InsertSize + al.Length + al.Length;
-		if (iSize < 0) iSize=0;
-		if (iSize > maxInsertSize) iSize = maxInsertSize - 1;
-		++rMinus[iSize];
-		break;
-	      case 4:
-		++strandOrient[4];
-		++orient[2];
-		iSize = -al.InsertSize;
-		if (iSize < 0) iSize=0;
-		if (iSize > maxInsertSize) iSize = maxInsertSize - 1;
-		++rPlus[iSize];
-		break;
-	      case 5:
-		++strandOrient[5];
-		++orient[3];
-		iSize = al.InsertSize + al.Length + al.Length;
-		if (iSize < 0) iSize=0;
-		if (iSize > maxInsertSize) iSize = maxInsertSize - 1;
-		++rMinus[iSize];
-		break;
-	      case 6:
-		++strandOrient[6];
-		++orient[0];
-		iSize = -al.InsertSize + al.Length;
-		if (iSize < 0) iSize=0;
-		if (iSize > maxInsertSize) iSize = maxInsertSize - 1;
-		++fPlus[iSize];
-		break;
-	      case 7:
-		++strandOrient[7];
-		++orient[1];
-		iSize = al.InsertSize + al.Length;
-		if (iSize < 0) iSize=0;
-		if (iSize > maxInsertSize) iSize = maxInsertSize - 1;
-		++fMinus[iSize];
-		break;
-	      default:
-		std::cerr << "False orientation." << std::endl;
-		return -1;
-	      }
+    // Single-end statistics
+    ++totalReadCount;
+    if (rec->core.flag & BAM_FREAD1) ++totalRead1;
+    else ++totalRead2;
+    if (!(rec->core.flag & BAM_FUNMAP)) {
+      ++mappedReadCount;
+      if (rec->core.flag & BAM_FREAD1) ++totalMappedRead1;
+      else ++totalMappedRead2;
+      sumReadLength+=rec->core.l_qseq;
+      if ((TCount) rec->core.l_qseq < minReadLength) minReadLength=rec->core.l_qseq;
+      if ((TCount) rec->core.l_qseq > maxReadLength) maxReadLength=rec->core.l_qseq;
+    }
+    
+    // Paired-end statistics
+    if (rec->core.flag & BAM_FPAIRED) {
+      ++pairedReadCount;
+      if (!((rec->core.flag & BAM_FUNMAP) || (rec->core.flag & BAM_FMUNMAP))) {
+	++pairedReadMappedCount;
+	// Same chr?
+	if (rec->core.tid == rec->core.mtid) {
+	  ++pairedReadSameChr;
+	  if (rec->core.flag & BAM_FREAD1) {
+	    int iSize = 0;
+	    switch(getStrandSpecificOrientation(rec->core)) {
+	    case 0:
+	      ++strandOrient[0];
+	      ++orient[0];
+	      iSize = rec->core.isize + rec->core.l_qseq;
+	      if (iSize < 0) iSize=0;
+	      if (iSize > maxInsertSize) iSize = maxInsertSize - 1;
+	      ++fPlus[iSize];
+	      break;
+	    case 1:
+	      ++strandOrient[1];
+	      ++orient[1];
+	      iSize = -rec->core.isize + rec->core.l_qseq;
+	      if (iSize < 0) iSize=0;
+	      if (iSize > maxInsertSize) iSize = maxInsertSize - 1;
+	      ++fMinus[iSize];
+	      break;
+	    case 2:
+	      ++strandOrient[2];
+	      ++orient[2];
+	      iSize = rec->core.isize;
+	      if (iSize < 0) iSize=0;
+	      if (iSize > maxInsertSize) iSize = maxInsertSize - 1;
+	      ++rPlus[iSize];
+	      break;
+	    case 3:
+	      ++strandOrient[3];
+	      ++orient[3];
+	      iSize = -rec->core.isize + rec->core.l_qseq + rec->core.l_qseq;
+	      if (iSize < 0) iSize=0;
+	      if (iSize > maxInsertSize) iSize = maxInsertSize - 1;
+	      ++rMinus[iSize];
+	      break;
+	    case 4:
+	      ++strandOrient[4];
+	      ++orient[2];
+	      iSize = -rec->core.isize;
+	      if (iSize < 0) iSize=0;
+	      if (iSize > maxInsertSize) iSize = maxInsertSize - 1;
+	      ++rPlus[iSize];
+	      break;
+	    case 5:
+	      ++strandOrient[5];
+	      ++orient[3];
+	      iSize = rec->core.isize + rec->core.l_qseq + rec->core.l_qseq;
+	      if (iSize < 0) iSize=0;
+	      if (iSize > maxInsertSize) iSize = maxInsertSize - 1;
+	      ++rMinus[iSize];
+	      break;
+	    case 6:
+	      ++strandOrient[6];
+	      ++orient[0];
+	      iSize = -rec->core.isize + rec->core.l_qseq;
+	      if (iSize < 0) iSize=0;
+	      if (iSize > maxInsertSize) iSize = maxInsertSize - 1;
+	      ++fPlus[iSize];
+	      break;
+	    case 7:
+	      ++strandOrient[7];
+	      ++orient[1];
+	      iSize = rec->core.isize + rec->core.l_qseq;
+	      if (iSize < 0) iSize=0;
+	      if (iSize > maxInsertSize) iSize = maxInsertSize - 1;
+	      ++fMinus[iSize];
+	      break;
+	    default:
+	      std::cerr << "False orientation." << std::endl;
+	      return -1;
 	    }
 	  }
-	  // Collect all paired-end mapped reads
-	  if (al.AlignmentFlag & 0x0040) {
-	    PairedMapping pM;
-	    if (al.Position < al.MatePosition) {
-	      pM.Position = al.Position;
-	      pM.MatePosition = al.MatePosition;
-	      pM.RefID = al.RefID;
-	      pM.MateRefID = al.MateRefID;
-	    } else {
-	      pM.Position = al.MatePosition;
-	      pM.MatePosition = al.Position;
-	      pM.RefID = al.MateRefID;
-	      pM.MateRefID = al.RefID;
-	    }
-	    vecPairM.push_back(pM);
+	}
+	
+	// Collect all paired-end mapped reads
+	if (rec->core.flag & BAM_FREAD1) {
+	  PairedMapping pM;
+	  if (rec->core.pos < rec->core.mpos) {
+	    pM.Position = rec->core.pos;
+	    pM.MatePosition = rec->core.mpos;
+	    pM.RefID = rec->core.tid;
+	    pM.MateRefID = rec->core.mtid;
+	  } else {
+	    pM.Position = rec->core.mpos;
+	    pM.MatePosition = rec->core.pos;
+	    pM.RefID = rec->core.mtid;
+	    pM.MateRefID = rec->core.tid;
 	  }
+	  vecPairM.push_back(pM);
 	}
       }
     }
   }
+
   // Get translocated redundant pairs and counts for the last chromosome
   sort(vecPairM.begin(), vecPairM.end(), SortPairedMapping());
   TVecPaired::const_iterator pBeg = vecPairM.begin();
@@ -320,48 +302,8 @@ inline int run(Config const& c) {
   TCount nonredundantCount = ((pairedReadMappedCount / 2) - redundantPairs) * 2; 
   TCount nonChromRedundantCount = ((pairedReadSameChr / 2) - chromRedundantPairs) * 2; 
 
-  // Output statistics
-  ofile << "Single-end statistics" << std::endl;
-  ofile << "Total number of reads: " << totalReadCount << std::endl;  
-  ofile << "Number of mapped reads: " << mappedReadCount << std::endl;  
-  ofile << "Number of mapped reads (percentage): " << (mappedReadCount * 100 / (double) totalReadCount) << "%" << std::endl;  
-  ofile << "Number of unmapped reads: " << (totalReadCount - mappedReadCount) << std::endl;  
-  ofile << "Number of unmapped reads (percentage): " << ((totalReadCount - mappedReadCount) * 100 / (double) totalReadCount) << "%" << std::endl;  
-  ofile << "Total number of read 1: " << totalRead1 << std::endl;  
-  ofile << "Number of mapped reads 1: " << totalMappedRead1 << std::endl;  
-  ofile << "Number of mapped reads 1 (percentage): " << (totalMappedRead1 * 100 / (double) totalRead1) << "%" << std::endl;  
-  ofile << "Number of unmapped reads 1: " << (totalRead1 - totalMappedRead1) << std::endl;  
-  ofile << "Number of unmapped reads 1 (percentage): " << ((totalRead1 - totalMappedRead1) * 100 / (double) totalRead1) << "%" << std::endl;  
-  ofile << "Total number of read 2: " << totalRead2 << std::endl;  
-  ofile << "Number of mapped reads 2: " << totalMappedRead2 << std::endl;  
-  ofile << "Number of mapped reads 2 (percentage): " << (totalMappedRead2 * 100 / (double) totalRead2) << "%" << std::endl;
-  ofile << "Number of unmapped reads 2: " << (totalRead2 - totalMappedRead2) << std::endl;  
-  ofile << "Number of unmapped reads 2 (percentage): " << ((totalRead2 - totalMappedRead2) * 100 / (double) totalRead2) << "%" << std::endl;  
-  ofile << std::endl;
-
-  // Mapped read statistics
-  ofile << "Mapped read statistics (" << mappedReadCount << " reads)" << std::endl;
-  ofile << "Minimum read length: " << minReadLength  << std::endl;
-  ofile << "Mean read length: " << (sumReadLength / mappedReadCount)  << std::endl;
-  ofile << "Maximum read length: " << maxReadLength  << std::endl;
-  ofile << "Haploid sequencing coverage: " << (sumReadLength) / (double) genomeLen << std::endl;
-  ofile << "Diploid sequencing coverage: " << (sumReadLength) / (double) genomeDiploidLen << std::endl;
-  ofile << std::endl;
-
-  ofile << "Paired-end statistics" << std::endl;
-  ofile << "Total number of reads paired in sequencing: " << pairedReadCount << std::endl;
-  ofile << "Total number of reads where both reads of a pair mapped: " << pairedReadMappedCount << std::endl;
-  ofile << "Total number of reads where both reads of a pair mapped (percentage): " << (pairedReadMappedCount * 100 / (double) pairedReadCount) << "%" << std::endl;
-  ofile << "Total number of reads where both reads of a pair mapped onto the same chromosome: "<< pairedReadSameChr << std::endl;
-  ofile << "Total number of reads where both reads of a pair mapped onto the same chromosome (percentage): " << (pairedReadSameChr * 100 / (double) pairedReadCount) << "%" << std::endl;
-  ofile << "Total number of non-redundant reads paired in sequencing: " << nonredundantCount << std::endl;
-  ofile << "Total number of non-redundant reads paired in sequencing (percentage): " << (nonredundantCount * 100 / (double) pairedReadCount) << "%" << std::endl;
-  ofile << "Total number of non-redundant reads paired in sequencing and mapped to same chromosome: " << nonChromRedundantCount << std::endl;
-  ofile << "Total number of non-redundant reads paired in sequencing and mapped to same chromosome (percentage): " << (nonChromRedundantCount * 100 / (double) pairedReadCount) << "%" << std::endl;
-  ofile << std::endl;
 
   // Get insert size statistics
-  ofile << "Insert size statistics of all paired reads mapped onto the same chromosome (" << pairedReadSameChr << " reads, " << pairedReadSameChr / 2 << " pairs)" << std::endl;
   TCount totalISizeCount = 0;
   for (TVecSize::const_iterator itI = fPlus.begin(); itI != fPlus.end(); ++itI) totalISizeCount+=*itI;
   for (TVecSize::const_iterator itI = fMinus.begin(); itI != fMinus.end(); ++itI) totalISizeCount+=*itI;
@@ -392,17 +334,14 @@ inline int run(Config const& c) {
     }
     if ((status==1) && (totalISizeCount>=lowQIndex)) {
       lowQISize = iSize;
-      ofile << "Insert size (lower quartile): " << lowQISize << std::endl;
       ++status;
     }
     if ((status==2) && (totalISizeCount>=medianIndex)) {
       medianISize = iSize;
-      ofile << "Insert size (median): " << medianISize << std::endl;
       ++status;
     }
     if ((status==3) && (totalISizeCount>=upperQIndex)) {
       upperQISize = iSize;
-      ofile << "Insert size (upper quartile): " << upperQISize << std::endl;
       ++status;
     }
     if ((status==4) && (totalISizeCount>=upper99QIndex)) {
@@ -411,27 +350,160 @@ inline int run(Config const& c) {
     }
     if (status==5) break;
   }
-  ofile << "Haploid insert coverage: " << (medianISize * (pairedReadSameChr / 2)) / (double) genomeLen << std::endl;
-  ofile << "Diploid insert coverage: " << (medianISize * (pairedReadSameChr / 2)) / (double) genomeDiploidLen << std::endl;
-  ofile << std::endl;
 
-  // Print orientations
-  ofile << "Strand specific orientations" << std::endl;
-  ofile << "FF+ (0): " << strandOrient[0] << std::endl; 
-  ofile << "FF- (1): " << strandOrient[1] << std::endl; 
-  ofile << "FR+ (2): " << strandOrient[2] << std::endl; 
-  ofile << "FR- (3): " << strandOrient[3] << std::endl; 
-  ofile << "RF+ (4): " << strandOrient[4] << std::endl; 
-  ofile << "RF- (5): " << strandOrient[5] << std::endl; 
-  ofile << "RR+ (6): " << strandOrient[6] << std::endl; 
-  ofile << "RR- (7): " << strandOrient[7] << std::endl; 
-  ofile << std::endl;
-  ofile << "Strand independent orientations" << std::endl;
-  ofile << "F+ (0): " << orient[0] << std::endl; 
-  ofile << "F- (1): " << orient[1] << std::endl; 
-  ofile << "R+ (2): " << orient[2] << std::endl; 
-  ofile << "R- (3): " << orient[3] << std::endl; 
-  ofile << std::endl;
+
+  // Open output file
+  std::ofstream ofile(c.outfile.string().c_str());
+
+  // Output statistics
+  if (c.text_flag) {
+    ofile << "SAM file: " << c.bam.string() << std::endl;
+    ofile << "Haploid genome length: " << genomeLen << std::endl;
+    ofile << "Diploid genome length: " << genomeDiploidLen << std::endl;
+    ofile << std::endl;
+    ofile << "Single-end statistics" << std::endl;
+    ofile << "Total number of reads: " << totalReadCount << std::endl;  
+    ofile << "Number of mapped reads: " << mappedReadCount << std::endl;  
+    ofile << "Number of mapped reads (percentage): " << (mappedReadCount * 100 / (double) totalReadCount) << "%" << std::endl;  
+    ofile << "Number of unmapped reads: " << (totalReadCount - mappedReadCount) << std::endl;  
+    ofile << "Number of unmapped reads (percentage): " << ((totalReadCount - mappedReadCount) * 100 / (double) totalReadCount) << "%" << std::endl;  
+    ofile << "Total number of read 1: " << totalRead1 << std::endl;  
+    ofile << "Number of mapped reads 1: " << totalMappedRead1 << std::endl;  
+    ofile << "Number of mapped reads 1 (percentage): " << (totalMappedRead1 * 100 / (double) totalRead1) << "%" << std::endl;  
+    ofile << "Number of unmapped reads 1: " << (totalRead1 - totalMappedRead1) << std::endl;  
+    ofile << "Number of unmapped reads 1 (percentage): " << ((totalRead1 - totalMappedRead1) * 100 / (double) totalRead1) << "%" << std::endl;  
+    ofile << "Total number of read 2: " << totalRead2 << std::endl;  
+    ofile << "Number of mapped reads 2: " << totalMappedRead2 << std::endl;  
+    ofile << "Number of mapped reads 2 (percentage): " << (totalMappedRead2 * 100 / (double) totalRead2) << "%" << std::endl;
+    ofile << "Number of unmapped reads 2: " << (totalRead2 - totalMappedRead2) << std::endl;  
+    ofile << "Number of unmapped reads 2 (percentage): " << ((totalRead2 - totalMappedRead2) * 100 / (double) totalRead2) << "%" << std::endl;  
+    ofile << std::endl;
+    
+    // Mapped read statistics
+    ofile << "Mapped read statistics (" << mappedReadCount << " reads)" << std::endl;
+    ofile << "Minimum read length: " << minReadLength  << std::endl;
+    ofile << "Mean read length: " << (sumReadLength / mappedReadCount)  << std::endl;
+    ofile << "Maximum read length: " << maxReadLength  << std::endl;
+    ofile << "Haploid sequencing coverage: " << (sumReadLength) / (double) genomeLen << std::endl;
+    ofile << "Diploid sequencing coverage: " << (sumReadLength) / (double) genomeDiploidLen << std::endl;
+    ofile << std::endl;
+    
+    ofile << "Paired-end statistics" << std::endl;
+    ofile << "Total number of reads paired in sequencing: " << pairedReadCount << std::endl;
+    ofile << "Total number of reads where both reads of a pair mapped: " << pairedReadMappedCount << std::endl;
+    ofile << "Total number of reads where both reads of a pair mapped (percentage): " << (pairedReadMappedCount * 100 / (double) pairedReadCount) << "%" << std::endl;
+    ofile << "Total number of reads where both reads of a pair mapped onto the same chromosome: "<< pairedReadSameChr << std::endl;
+    ofile << "Total number of reads where both reads of a pair mapped onto the same chromosome (percentage): " << (pairedReadSameChr * 100 / (double) pairedReadCount) << "%" << std::endl;
+    ofile << "Total number of non-redundant reads paired in sequencing: " << nonredundantCount << std::endl;
+    ofile << "Total number of non-redundant reads paired in sequencing (percentage): " << (nonredundantCount * 100 / (double) pairedReadCount) << "%" << std::endl;
+    ofile << "Total number of non-redundant reads paired in sequencing and mapped to same chromosome: " << nonChromRedundantCount << std::endl;
+    ofile << "Total number of non-redundant reads paired in sequencing and mapped to same chromosome (percentage): " << (nonChromRedundantCount * 100 / (double) pairedReadCount) << "%" << std::endl;
+    ofile << std::endl;
+    
+    
+    ofile << "Insert size statistics of all paired reads mapped onto the same chromosome (" << pairedReadSameChr << " reads, " << pairedReadSameChr / 2 << " pairs)" << std::endl;
+    ofile << "Insert size (lower quartile): " << lowQISize << std::endl;
+    ofile << "Insert size (median): " << medianISize << std::endl;
+    ofile << "Insert size (upper quartile): " << upperQISize << std::endl;
+    ofile << "Haploid insert coverage: " << (medianISize * (pairedReadSameChr / 2)) / (double) genomeLen << std::endl;
+    ofile << "Diploid insert coverage: " << (medianISize * (pairedReadSameChr / 2)) / (double) genomeDiploidLen << std::endl;
+    ofile << std::endl;
+
+    // Print orientations
+    ofile << "Strand specific orientations" << std::endl;
+    ofile << "FF+ (0): " << strandOrient[0] << std::endl; 
+    ofile << "FF- (1): " << strandOrient[1] << std::endl; 
+    ofile << "FR+ (2): " << strandOrient[2] << std::endl; 
+    ofile << "FR- (3): " << strandOrient[3] << std::endl; 
+    ofile << "RF+ (4): " << strandOrient[4] << std::endl; 
+    ofile << "RF- (5): " << strandOrient[5] << std::endl; 
+    ofile << "RR+ (6): " << strandOrient[6] << std::endl; 
+    ofile << "RR- (7): " << strandOrient[7] << std::endl; 
+    ofile << std::endl;
+    ofile << "Strand independent orientations" << std::endl;
+    ofile << "F+ (0): " << orient[0] << std::endl; 
+    ofile << "F- (1): " << orient[1] << std::endl; 
+    ofile << "R+ (2): " << orient[2] << std::endl; 
+    ofile << "R- (3): " << orient[3] << std::endl; 
+    ofile << std::endl;
+  } else {
+    ofile << "[Input]" << std::endl;
+    ofile << "BamFile = " << c.bam.string() << std::endl;
+    ofile << "HapGenomeLen = " << genomeLen << std::endl;
+    ofile << "DipGenomeLen = " << genomeDiploidLen << std::endl;
+    ofile << std::endl;
+
+    ofile << "[Reads]" << std::endl;
+    ofile << "MinReadLength = " << minReadLength  << std::endl;
+    ofile << "MeanReadLength = " << (sumReadLength / mappedReadCount)  << std::endl;
+    ofile << "MaxReadLength = " << maxReadLength  << std::endl;
+    ofile << std::endl;
+
+    ofile << "[Mapping]" << std::endl;
+    ofile << "NumReads = " << totalReadCount << std::endl;  
+    ofile << "NumMappedReads = " << mappedReadCount << std::endl;  
+    ofile << "NumMappedReadsPerc = " << (mappedReadCount * 100 / (double) totalReadCount) << std::endl;  
+    ofile << "NumUnmappedReads = " << (totalReadCount - mappedReadCount) << std::endl;  
+    ofile << "NumUnmappedReadsPerc = " << ((totalReadCount - mappedReadCount) * 100 / (double) totalReadCount) << std::endl;  
+    ofile << "NumReads1 = " << totalRead1 << std::endl;  
+    ofile << "NumMappedReads1 = " << totalMappedRead1 << std::endl;  
+    ofile << "NumMappedReads1Perc = " << (totalMappedRead1 * 100 / (double) totalRead1) << std::endl;  
+    ofile << "NumUnmappedReads1 = " << (totalRead1 - totalMappedRead1) << std::endl;  
+    ofile << "NumUnmappedReads1Perc = " << ((totalRead1 - totalMappedRead1) * 100 / (double) totalRead1) << std::endl;  
+    ofile << "NumReads2 = " << totalRead2 << std::endl;  
+    ofile << "NumMappedReads2 = " << totalMappedRead2 << std::endl;  
+    ofile << "NumMappedReads2Perc = " << (totalMappedRead2 * 100 / (double) totalRead2) << std::endl;
+    ofile << "NumUnmappedReads2 = " << (totalRead2 - totalMappedRead2) << std::endl;  
+    ofile << "NumUnmappedReads2Perc = " << ((totalRead2 - totalMappedRead2) * 100 / (double) totalRead2) << std::endl;  
+    ofile << std::endl;
+    
+    // Mapped read statistics
+    ofile << "[Paired]" << std::endl;
+    ofile << "NumMappedInPairs = " << pairedReadMappedCount << std::endl;
+    ofile << "NumMappedInPairsPerc = " << (pairedReadMappedCount * 100 / (double) pairedReadCount) << std::endl;
+    ofile << "NumMappedInPairsSameChr = " << pairedReadSameChr << std::endl;
+    ofile << "NumMappedInPairsSameChrPerc = " << (pairedReadSameChr * 100 / (double) pairedReadCount) << std::endl;
+    ofile << std::endl;
+
+    ofile << "[Redundancy]" << std::endl;
+    ofile << "NonRedundantReads = " << nonredundantCount << std::endl;
+    ofile << "NonRedundantReadsPerc = " << (nonredundantCount * 100 / (double) pairedReadCount) << std::endl;
+    ofile << "NonRedundantReadsSameChr = " << nonChromRedundantCount << std::endl;
+    ofile << "NonRedundantReadsSameChrPerc = " << (nonChromRedundantCount * 100 / (double) pairedReadCount) << std::endl;
+    ofile << std::endl;
+    
+    ofile << "[Insertsize]" << std::endl;
+    ofile << "InsertSizeLowerQuartile = " << lowQISize << std::endl;
+    ofile << "InsertSizeMedian = " << medianISize << std::endl;
+    ofile << "InsertSizeUpperQuartile = " << upperQISize << std::endl;
+    ofile << std::endl;
+
+    ofile << "[Coverage]" << std::endl;
+    ofile << "HapSeqCoverage = " << (sumReadLength) / (double) genomeLen << std::endl;
+    ofile << "DipSeqCoverage = " << (sumReadLength) / (double) genomeDiploidLen << std::endl;
+    ofile << "HapInsertCoverage = " << (medianISize * (pairedReadSameChr / 2)) / (double) genomeLen << std::endl;
+    ofile << "DipInsertCoverage = " << (medianISize * (pairedReadSameChr / 2)) / (double) genomeDiploidLen << std::endl;
+    ofile << std::endl;
+
+    // Print orientations
+    ofile << "[Orientation]" << std::endl;
+    ofile << "F+ = " << orient[0] << std::endl; 
+    ofile << "F- = " << orient[1] << std::endl; 
+    ofile << "R+ = " << orient[2] << std::endl; 
+    ofile << "R- = " << orient[3] << std::endl; 
+    ofile << std::endl;
+    
+    ofile << "[Strandorientation]" <<std::endl;
+    ofile << "FF+ = " << strandOrient[0] << std::endl; 
+    ofile << "FF- = " << strandOrient[1] << std::endl; 
+    ofile << "FR+ = " << strandOrient[2] << std::endl; 
+    ofile << "FR- = " << strandOrient[3] << std::endl; 
+    ofile << "RF+ = " << strandOrient[4] << std::endl; 
+    ofile << "RF- = " << strandOrient[5] << std::endl; 
+    ofile << "RR+ = " << strandOrient[6] << std::endl; 
+    ofile << "RR- = " << strandOrient[7] << std::endl; 
+    ofile << std::endl;
+  }
 
   // Close statistics file
   ofile.close();
@@ -477,6 +549,11 @@ inline int run(Config const& c) {
   insfile << lastBound << "\t" << binRM << "\tR-" << std::endl;      
   insfile.close();
 
+  bam_destroy1(rec);
+  bam_hdr_destroy(hdr);
+  sam_close(samfile);
+
+
 #ifdef PROFILE
   ProfilerStop();
 #endif
@@ -498,6 +575,7 @@ int main(int argc, char **argv) {
   boost::program_options::options_description generic("Generic options");
   generic.add_options()
     ("help,?", "show help message")
+    ("key,k", "use key-value output")
     ("outfile,o", boost::program_options::value<boost::filesystem::path>(&c.outfile)->default_value("stat.txt"), "statistics output file")
     ("max-insert,m", boost::program_options::value<unsigned int>(&c.maxsize)->default_value(15000), "max. plotting insert size")
     ("ifile,i", boost::program_options::value<boost::filesystem::path>(&c.insertfile)->default_value("ins.txt"), "insert size histogram")
@@ -537,6 +615,8 @@ int main(int argc, char **argv) {
     }
     return 1; 
   }
+  if (vm.count("key")) c.text_flag = false;
+  else c.text_flag = true;
   
   // Show cmd
   boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();

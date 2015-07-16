@@ -1,8 +1,8 @@
-[submodule "src/bamtools"]
-	path = src/bamtools
-	url = https://github.com/pezmaster31/bamtools.git
-	ignore = dirty
 [submodule "src/htslib"]
 	path = src/htslib
 	url = https://github.com/samtools/htslib.git
+	ignore = dirty
+[submodule "src/modular-boost"]
+	path = src/modular-boost
+	url = https://github.com/boostorg/boost.git
 	ignore = dirty

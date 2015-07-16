@@ -24,6 +24,9 @@ Contact: Tobias Rausch (rausch@embl.de)
 #ifndef UTIL_H
 #define UTIL_H
 
+#include <boost/unordered_map.hpp>
+#include <boost/algorithm/string.hpp>
+#include <htslib/sam.h>
 #include <math.h>
 #include "tags.h"
 
@@ -31,29 +34,57 @@ Contact: Tobias Rausch (rausch@embl.de)
 namespace torali
 {
 
-
   struct LibraryInfo {
     int median;
     int mad;
     int percentileCutoff;
     int minNormalISize;
+    int minISizeCutoff;
     int maxNormalISize;
+    int maxISizeCutoff;
     int defaultOrient;
     unsigned int non_unique_abnormal_pairs;
     unsigned int abnormal_pairs;
-
-    
-  LibraryInfo() : median(0), mad(0), percentileCutoff(0), maxNormalISize(0), defaultOrient(0), non_unique_abnormal_pairs(0), abnormal_pairs(0) {}
   };
 
 
   struct _LibraryParams {
     unsigned int processedNumPairs;
     unsigned int orient[4];
-    std::vector<unsigned int> vecISize;
+    int defaultOrient;
+    double median;
+    double mad;
+    double percentileCutoff;
+    std::vector<int32_t> vecISize;
   };
 
   
+  inline unsigned int halfAlignmentLength(bam1_t* rec) {
+    uint32_t* cigar = bam_get_cigar(rec);
+    unsigned int alen = 0;
+    for (unsigned int i = 0; i < rec->core.n_cigar; ++i)
+      if (bam_cigar_op(cigar[i]) == BAM_CMATCH) alen+=bam_cigar_oplen(cigar[i]);
+    return (alen/2);
+  }
+  
+  inline std::size_t hash_pair(bam1_t* rec) {
+    std::size_t seed = 0;
+    boost::hash_combine(seed, rec->core.tid);
+    boost::hash_combine(seed, rec->core.pos);
+    boost::hash_combine(seed, rec->core.mtid);
+    boost::hash_combine(seed, rec->core.mpos);
+    return seed;
+  }
+
+  inline std::size_t hash_pair_mate(bam1_t* rec) {
+    std::size_t seed = 0;
+    boost::hash_combine(seed, rec->core.mtid);
+    boost::hash_combine(seed, rec->core.mpos);
+    boost::hash_combine(seed, rec->core.tid);
+    boost::hash_combine(seed, rec->core.pos);
+    return seed;
+  }
+
   template<typename TAlphabet>
     inline void
     reverseComplement(std::vector<TAlphabet>& seq) 
@@ -80,6 +111,21 @@ namespace torali
 	} while (++itF <= --itB);
       }
     }
+
+
+  template<typename TSVId>
+    inline unsigned int
+    parseSVid(TSVId id) 
+    {
+      for(unsigned int i=3; i<id.size();++i) {
+	if (id[i]!='0') {
+	  id=id.substr(i);
+	  break;
+	}
+      }
+      return boost::lexical_cast<unsigned int>(id);
+    }
+
 
   template<typename TIterator, typename TValue>
   inline
@@ -141,118 +187,164 @@ namespace torali
     }
 
 
-  template<typename TLibraryMap>
-  inline void getLibraryParams(boost::filesystem::path const& path, TLibraryMap& libInfo, double const percentile, unsigned short const madCutoff) {
-    // Minimum and maximum number of pairs used to estimate library parameters for each RG library
-    unsigned int maxNumPairs=5000000;
-    unsigned int minNumPairs=1000;
+  template<typename TFiles, typename TSampleLibrary>
+    inline void getLibraryParams(TFiles const& files, TSampleLibrary& sampleLib, double const percentile, unsigned short const madCutoff) {
+    typedef typename TSampleLibrary::mapped_type TLibraryMap;
 
-    // Store the counts in an object for each RG librar
-    typedef std::map<std::string, _LibraryParams> TParams;
-    TParams params;
-
-    // Create SAM Object
-    BamTools::BamReader reader;
-    if ( ! reader.Open(path.string()) ) {
-      std::cerr << "Could not open input bam file: " << path.c_str() << std::endl;
-      return;
+    // Open file handles
+    typedef std::vector<samFile*> TSamFile;
+    TSamFile samfile;
+    samfile.resize(files.size());
+    for(unsigned int file_c = 0; file_c < files.size(); ++file_c) {
+      samfile[file_c] = sam_open(files[file_c].string().c_str(), "r");
+      std::string sampleName(files[file_c].stem().string());
+      sampleLib.insert(std::make_pair(sampleName, TLibraryMap()));
     }
 
-    // Get read groups
-    BamTools::SamHeader samHeader = reader.GetHeader();
-    if (samHeader.HasReadGroups()) {
-      BamTools::SamReadGroupConstIterator rgIter = samHeader.ReadGroups.ConstBegin();
-      BamTools::SamReadGroupConstIterator rgIterEnd = samHeader.ReadGroups.ConstEnd();
-      for(;rgIter!=rgIterEnd;++rgIter) {
-	libInfo.insert(std::make_pair(rgIter->ID, LibraryInfo()));
-	params.insert(std::make_pair(rgIter->ID, _LibraryParams()));
-      }
-    } else {
-      libInfo.insert(std::make_pair("DefaultLib", LibraryInfo()));
-      params.insert(std::make_pair("DefaultLib", _LibraryParams()));
-    }
+#pragma omp parallel for default(shared)
+    for(unsigned int file_c = 0; file_c < files.size(); ++file_c) {
+      // Minimum and maximum number of pairs used to estimate library parameters for each RG library
+      unsigned int maxNumPairs=5000000;
+      unsigned int minNumPairs=1000;
 
-    // Initialize arrays
-    for(TParams::iterator paramIt = params.begin(); paramIt!=params.end(); ++paramIt) {
-      paramIt->second.processedNumPairs=0;
-      for(unsigned int i=0;i<4;++i) paramIt->second.orient[i]=0;
-      paramIt->second.vecISize.clear();
-    }
+      // Store the counts in an object for each RG librar
+      typedef boost::unordered_map<std::string, _LibraryParams> TParams;
+      TParams params;
 
-    // Collect insert sizes
-    bool missingPairs=true;
-    BamTools::BamAlignment al;
-    while ((reader.GetNextAlignmentCore(al)) && (missingPairs)) {
-      if ((al.AlignmentFlag & 0x0001) && !(al.AlignmentFlag & 0x0004) && !(al.AlignmentFlag & 0x0008) && (al.AlignmentFlag & 0x0040) && (al.RefID==al.MateRefID) && !(al.AlignmentFlag & 0x0100) && !(al.AlignmentFlag & 0x0200)  && !(al.AlignmentFlag & 0x0400) && !(al.AlignmentFlag & 0x0800)) {
-	al.BuildCharData();
-	std::string rG = "DefaultLib";
-	al.GetTag("RG", rG);
-	TParams::iterator paramIt= params.find(rG);
-	++paramIt->second.processedNumPairs;
-	if (paramIt->second.processedNumPairs>=maxNumPairs) {
-	  // Check every now and then if we have a good estimate of the library complexity
-	  if (paramIt->second.processedNumPairs % minNumPairs == 0) {
-	    TParams::const_iterator paramIter = params.begin();
-	    missingPairs=false;
-	    for(;paramIter!=params.end();++paramIter) {
-	      if (paramIter->second.processedNumPairs<maxNumPairs) {
-		missingPairs=true;
-		break;
+      // Create SAM Object
+      bam_hdr_t* hdr = sam_hdr_read(samfile[file_c]);
+
+      // Get read groups
+      std::string header(hdr->text);
+      std::string delimiters("\n");
+      typedef std::vector<std::string> TStrParts;
+      TStrParts lines;
+      boost::split(lines, header, boost::is_any_of(delimiters));
+      TStrParts::const_iterator itH = lines.begin();
+      TStrParts::const_iterator itHEnd = lines.end();
+      bool rgPresent = false;
+      for(;itH!=itHEnd; ++itH) {
+	if (itH->find("@RG")==0) {
+	  std::string delim("\t ");
+	  TStrParts keyval;
+	  boost::split(keyval, *itH, boost::is_any_of(delim));
+	  TStrParts::const_iterator itKV = keyval.begin();
+	  TStrParts::const_iterator itKVEnd = keyval.end();
+	  for(;itKV != itKVEnd; ++itKV) {
+	    size_t sp = itKV->find(":");
+	    if (sp != std::string::npos) {
+	      std::string field = itKV->substr(0, sp);
+	      if (field == "ID") {
+		rgPresent = true;
+		std::string rgID = itKV->substr(sp+1);
+		params.insert(std::make_pair(rgID, _LibraryParams()));
 	      }
 	    }
 	  }
-	  continue;
 	}
-	paramIt->second.vecISize.push_back(abs(al.InsertSize));
-	++paramIt->second.orient[getStrandIndependentOrientation(al)];
       }
-    }
+      if (!rgPresent) params.insert(std::make_pair("DefaultLib", _LibraryParams()));
 
-    // Set library parameters
-    typename TLibraryMap::iterator libInfoIt = libInfo.begin();
-    for(;libInfoIt!=libInfo.end();++libInfoIt) {
-      TParams::iterator paramIt= params.find(libInfoIt->first);
-
-      // Get default orientation
-      libInfoIt->second.defaultOrient=0;
-      unsigned int maxOrient=paramIt->second.orient[0];
-      for(unsigned int i=1;i<4;++i) {
-	if (paramIt->second.orient[i]>maxOrient) {
-	  maxOrient=paramIt->second.orient[i];
-	  libInfoIt->second.defaultOrient=i;
+      // Initialize arrays
+      for(TParams::iterator paramIt = params.begin(); paramIt!=params.end(); ++paramIt) {
+	paramIt->second.processedNumPairs=0;
+	for(unsigned int i=0;i<4;++i) paramIt->second.orient[i]=0;
+	paramIt->second.vecISize.clear();
+      }
+      
+      // Collect insert sizes
+      bool missingPairs=true;
+      bam1_t* rec = bam_init1();
+      while ((sam_read1(samfile[file_c], hdr, rec) >=0) && (missingPairs)) {
+	if ((rec->core.flag & BAM_FPAIRED) && !(rec->core.flag & BAM_FUNMAP) && !(rec->core.flag & BAM_FMUNMAP) && (rec->core.flag & BAM_FREAD1) && (rec->core.tid==rec->core.mtid) && !(rec->core.flag & BAM_FSECONDARY) && !(rec->core.flag & BAM_FQCFAIL)  && !(rec->core.flag & BAM_FDUP) && !(rec->core.flag & BAM_FSUPPLEMENTARY)) {
+	  std::string rG = "DefaultLib";
+	  uint8_t *rgptr = bam_aux_get(rec, "RG");
+	  if (rgptr) {
+	    char* rg = (char*) (rgptr + 1);
+	    rG = std::string(rg);
+	  }
+	  TParams::iterator paramIt= params.find(rG);
+	  ++paramIt->second.processedNumPairs;
+	  if (paramIt->second.processedNumPairs>=maxNumPairs) {
+	    // Check every now and then if we have a good estimate of the library complexity
+	    if (paramIt->second.processedNumPairs % minNumPairs == 0) {
+	      TParams::const_iterator paramIter = params.begin();
+	      missingPairs=false;
+	      for(;paramIter!=params.end();++paramIter) {
+		if (paramIter->second.processedNumPairs<maxNumPairs) {
+		  missingPairs=true;
+		  break;
+		}
+	      }
+	    }
+	    continue;
+	  }
+	  paramIt->second.vecISize.push_back(abs(rec->core.isize));
+	  ++paramIt->second.orient[getStrandIndependentOrientation(rec->core)];
 	}
       }
       
-      // Mate-pair library (If yes, trim off the chimera peak < 1000bp)
-      if (libInfoIt->second.defaultOrient==3) {
-	typedef std::vector<unsigned int> TVecISize;
-	TVecISize vecISizeTmp;
-	typename TVecISize::const_iterator iSizeBeg = paramIt->second.vecISize.begin();
-	typename TVecISize::const_iterator iSizeEnd = paramIt->second.vecISize.end();
-	for(;iSizeBeg<iSizeEnd;++iSizeBeg)
-	  if (*iSizeBeg >= 1000) vecISizeTmp.push_back(*iSizeBeg);
-	paramIt->second.vecISize = vecISizeTmp;
+      // Clean-up
+      bam_destroy1(rec);
+
+      // Get default library orientation
+      for(TParams::iterator paramIt=params.begin(); paramIt != params.end(); ++paramIt) {
+	paramIt->second.defaultOrient=0;
+	unsigned int maxOrient=paramIt->second.orient[0];
+	for(unsigned int i=1;i<4;++i) {
+	  if (paramIt->second.orient[i]>maxOrient) {
+	    maxOrient=paramIt->second.orient[i];
+	    paramIt->second.defaultOrient=i;
+	  }
+	}
+	
+	// Mate-pair library (If yes, trim off the chimera peak < 1000bp)
+	if (paramIt->second.defaultOrient==3) {
+	  typedef std::vector<int32_t> TVecISize;
+	  TVecISize vecISizeTmp;
+	  typename TVecISize::const_iterator iSizeBeg = paramIt->second.vecISize.begin();
+	  typename TVecISize::const_iterator iSizeEnd = paramIt->second.vecISize.end();
+	  for(;iSizeBeg<iSizeEnd;++iSizeBeg)
+	    if (*iSizeBeg >= 1000) vecISizeTmp.push_back(*iSizeBeg);
+	  paramIt->second.vecISize = vecISizeTmp;
+	}
+	
+	// Check that this is a proper paired-end library
+	if (paramIt->second.vecISize.size()>=minNumPairs) {
+	  // Get library stats
+	  getLibraryStats(paramIt->second.vecISize.begin(), paramIt->second.vecISize.end(), percentile, paramIt->second.median, paramIt->second.mad, paramIt->second.percentileCutoff);
+	}
       }
-      
-      // Check that this is a proper paired-end library
-      if (paramIt->second.vecISize.size()>=minNumPairs) {
-	// Get library stats
-	double median;
-	double mad;
-	double percentileCutoff;
-	getLibraryStats(paramIt->second.vecISize.begin(), paramIt->second.vecISize.end(), percentile, median, mad, percentileCutoff);
-	if ((median >= 50) && (median<=100000)) {
-	  libInfoIt->second.median = (int) median;
-	  libInfoIt->second.mad = (int) mad;
-	  libInfoIt->second.percentileCutoff = (int) percentileCutoff;
-	  if (percentile!=0) libInfoIt->second.maxNormalISize = libInfoIt->second.percentileCutoff;
-	  else libInfoIt->second.maxNormalISize = libInfoIt->second.median + (madCutoff * libInfoIt->second.mad);
-	  libInfoIt->second.minNormalISize = libInfoIt->second.median - (madCutoff * libInfoIt->second.mad);
-	  if (libInfoIt->second.minNormalISize < 1) libInfoIt->second.minNormalISize=1;
+      bam_hdr_destroy(hdr);
+
+#pragma omp critical
+      {
+	std::string sampleName(files[file_c].stem().string());
+	typename TSampleLibrary::iterator sampleIt=sampleLib.find(sampleName);
+	for(TParams::iterator paramIt=params.begin(); paramIt != params.end(); ++paramIt) {
+	  typename TLibraryMap::iterator libInfoIt = sampleIt->second.insert(std::make_pair(paramIt->first, LibraryInfo())).first;
+	  if ((paramIt->second.median >= 50) && (paramIt->second.median<=100000)) {
+	    libInfoIt->second.defaultOrient = paramIt->second.defaultOrient;
+	    libInfoIt->second.median = (int) paramIt->second.median;
+	    libInfoIt->second.mad = (int) paramIt->second.mad;
+	    libInfoIt->second.percentileCutoff = (int) paramIt->second.percentileCutoff;
+	    libInfoIt->second.maxNormalISize = libInfoIt->second.median + (5 * libInfoIt->second.mad);
+	    libInfoIt->second.minNormalISize = libInfoIt->second.median - (5 * libInfoIt->second.mad);
+	    if (libInfoIt->second.minNormalISize < 0) libInfoIt->second.minNormalISize=0;
+	    if (percentile!=0) libInfoIt->second.maxISizeCutoff = libInfoIt->second.percentileCutoff;
+	    else libInfoIt->second.maxISizeCutoff = libInfoIt->second.median + (madCutoff * libInfoIt->second.mad);
+	    libInfoIt->second.minISizeCutoff = libInfoIt->second.median - (madCutoff * libInfoIt->second.mad);
+	    if (libInfoIt->second.minISizeCutoff < 0) libInfoIt->second.minISizeCutoff=0;
+	  }
 	}
       }
     }
+
+    // Clean-up
+    for(unsigned int file_c = 0; file_c < files.size(); ++file_c) sam_close(samfile[file_c]);
   }
+
+
 
 }
 

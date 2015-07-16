@@ -24,7 +24,9 @@ Contact: Tobias Rausch (rausch@embl.de)
 #ifndef SPANNING_H
 #define SPANNING_H
 
+#include <boost/container/flat_set.hpp>
 #include <boost/unordered_map.hpp>
+#include <htslib/sam.h>
 #include "tags.h"
 
 namespace torali {
@@ -52,31 +54,25 @@ namespace torali {
     }
   }   
 
-  template<typename TRef, typename TQuality>
-    inline TQuality
-    _pairQuality(TRef const RefID, TRef const MateRefID, TQuality const q1, TQuality const q2, SVType<TranslocationTag>) {
-    if (RefID==MateRefID) return q2;
-    else return std::min(q1, q2);
-  }
-
-  template<typename TRef, typename TQuality, typename TTag>
-    inline TQuality
-    _pairQuality(TRef const, TRef const, TQuality const q1, TQuality const q2, SVType<TTag>) {
-    return std::min(q1, q2);
-  }
-
   template<typename TFiles, typename TSampleLibrary, typename TSVs, typename TCountMap, typename TSVType>
     inline void
-    annotateSpanningCoverage(TFiles const& files, uint16_t const minMapQual, TSampleLibrary& sampleLib, TSVs& svs, TCountMap& spanCountMap, TSVType svType)
+    annotateSpanningCoverage(TFiles const& files, uint8_t const minMapQual, TSampleLibrary& sampleLib, TSVs& svs, TCountMap& spanCountMap, TSVType svType)
   {
     typedef typename TCountMap::key_type TSampleSVPair;
     typedef typename TCountMap::mapped_type TCountPair;
     typedef typename TSampleLibrary::mapped_type TLibraryMap;
 
-    // References
-    BamTools::BamReader readerRef;
-    if ( ! readerRef.Open(files[0].string()) ) return;
-    BamTools::RefVector references = readerRef.GetReferenceData();
+    // Open file handles
+    typedef std::vector<samFile*> TSamFile;
+    typedef std::vector<hts_idx_t*> TIndex;
+    TSamFile samfile;
+    TIndex idx;
+    samfile.resize(files.size());
+    idx.resize(files.size());
+    for(unsigned int file_c = 0; file_c < files.size(); ++file_c) {
+      samfile[file_c] = sam_open(files[file_c].string().c_str(), "r");
+      idx[file_c] = sam_index_load(samfile[file_c], files[file_c].string().c_str());
+    }
 
     // Get maximum insert size
     int maxInsertSize = 0;
@@ -111,11 +107,6 @@ namespace torali {
       std::string sampleName(files[file_c].stem().string());
       typename TSampleLibrary::iterator sampleIt=sampleLib.find(sampleName);
 
-      // Initialize bam file
-      BamTools::BamReader reader;
-      reader.Open(files[file_c].string());
-      reader.LocateIndex();
-	
       // Read alignments
       typename TSVs::const_iterator itSV = svs.begin();
       typename TSVs::const_iterator itSVEnd = svs.end();
@@ -128,137 +119,166 @@ namespace torali {
 	svSample = std::make_pair(sampleName, itSV->id);
 	typename TCountMap::iterator rightIt = spanCountMap.find(svSample);
 
-	// Processed reads
-	typedef std::set<std::string> TProcessedReads;
-	TProcessedReads procReads;
-
 	// Qualities
-	typedef boost::unordered_map<unsigned int, uint16_t> TQualities;
+	typedef boost::unordered_map<std::size_t, uint8_t> TQualities;
 	TQualities qualities;
 
 	// Unique pairs for the given sample
-	typedef std::set<Hit> TUniquePairs;
+	typedef boost::container::flat_set<int32_t> TUniquePairs;
 	TUniquePairs unique_pairs;
 
+	// Pre-compute regions
+	unsigned int maxBp = 2;
+	int32_t regionChr1 = itSV->chr;
+	int regionStart1 = std::max(0, (int) itSV->svStart - (int) maxInsertSize);
+	int regionEnd1 = itSV->svStart + maxInsertSize;
+	int32_t regionChr2 = itSV->chr2;
+	int regionStart2 = std::max(0, (int) itSV->svEnd - (int) maxInsertSize);
+	int regionEnd2 = itSV->svEnd + maxInsertSize;
+	if ((regionChr1 == regionChr2) && (regionEnd1 + maxInsertSize >= regionStart2)) {
+	  // Small SV, scan area only once
+	  maxBp = 1;
+	  regionEnd1 = regionEnd2;
+	}
+
 	// Scan left and right breakpoint
-	BamTools::BamAlignment al;
-	for (unsigned int bpPoint = 0; bpPoint<2; ++bpPoint) {
+	for (unsigned int bpPoint = 0; bpPoint < maxBp; ++bpPoint) {
 	  int32_t regionChr;
 	  int regionStart;
 	  int regionEnd;
 	  if (bpPoint==(unsigned int)(itSV->chr==itSV->chr2)) {
-	    regionChr = itSV->chr2;
-	    regionStart = std::max(0, (int) itSV->svEnd - (int) maxInsertSize);
-	    regionEnd = itSV->svEnd + maxInsertSize;
+	    regionChr = regionChr2;
+	    regionStart = regionStart2;
+	    regionEnd = regionEnd2;
 	  } else {
-	    regionChr = itSV->chr;
-	    regionStart = std::max(0, (int) itSV->svStart - (int) maxInsertSize);
-	    regionEnd = itSV->svStart + maxInsertSize;
+	    regionChr = regionChr1;
+	    regionStart = regionStart1;
+	    regionEnd = regionEnd1;
 	  }
-	  if (reader.SetRegion(regionChr, regionStart, regionChr, regionEnd)) {
-	    while( reader.GetNextAlignmentCore(al) ) {
-	      if (!(al.AlignmentFlag & 0x0001) || (al.AlignmentFlag & 0x0004) || (al.AlignmentFlag & 0x0008) || (al.AlignmentFlag & 0x0100) || (al.AlignmentFlag & 0x0200) || (al.AlignmentFlag & 0x0400) || (al.AlignmentFlag & 0x0800) || (al.MapQuality < minMapQual)) continue;
+	  int32_t oldAlignPos=-1;
+	  hts_itr_t* iter = sam_itr_queryi(idx[file_c], regionChr, regionStart, regionEnd);
+	  bam1_t* rec = bam_init1();
+	  while (sam_itr_next(samfile[file_c], iter, rec) >= 0) {
+	    if (rec->core.flag & (BAM_FSECONDARY | BAM_FQCFAIL | BAM_FDUP | BAM_FSUPPLEMENTARY | BAM_FUNMAP | BAM_FMUNMAP)) continue;
+	    if (!(rec->core.flag & BAM_FPAIRED) || (rec->core.qual < minMapQual)) continue;
 
-	      // Mapping positions valid?
-	      if (_mappingPosGeno(al.RefID, al.MateRefID, al.Position, al.MatePosition, svType)) continue;
+	    // Mapping positions valid?
+	    if (_mappingPosGeno(rec->core.tid, rec->core.mtid, rec->core.pos, rec->core.mpos, svType)) continue;
 
-	      // Get the library information
-	      al.BuildCharData();
-	      std::string rG = "DefaultLib";
-	      al.GetTag("RG", rG);
-	      typename TLibraryMap::iterator libIt=sampleIt->second.find(rG);
-	      if (libIt->second.median == 0) continue; // Single-end library
-	      int outerISize = std::abs(al.Position - al.MatePosition) + al.Length;
+	    // Get the library information
+	    std::string rG = "DefaultLib";
+	    uint8_t *rgptr = bam_aux_get(rec, "RG");
+	    if (rgptr) {
+	      char* rg = (char*) (rgptr + 1);
+	      rG = std::string(rg);
+	    }
+	    typename TLibraryMap::iterator libIt=sampleIt->second.find(rG);
+	    if (libIt->second.median == 0) continue; // Single-end library
+	    int outerISize = std::abs(rec->core.pos - rec->core.mpos) + rec->core.l_qseq;
 	      
-	      // Have we processed this read already?
-	      std::string readId = al.Name;
-	      if (al.AlignmentFlag & 0x0040) readId.append("First");
-	      else readId.append("Second");
-	      typename TProcessedReads::const_iterator procReadPos = procReads.begin();
-	      bool inserted;
-	      boost::tie(procReadPos, inserted) = procReads.insert(readId);
-	      if (!inserted) continue;
-	      
-	      // Abnormal paired-end
-	      if ((getStrandIndependentOrientation(al) != libIt->second.defaultOrient) || (outerISize > libIt->second.maxNormalISize) || (al.RefID!=al.MateRefID)) {
-		if (_acceptedInsertSize(libIt->second.maxNormalISize, libIt->second.median, abs(al.InsertSize), svType)) continue;  // Normal paired-end (for deletions only)
-		if (_acceptedOrientation(libIt->second.defaultOrient, getStrandIndependentOrientation(al), svType)) continue;  // Orientation disagrees with SV type
-		
-		// Does the pair confirm the SV
-		int32_t const minPos = _minCoord(al.Position, al.MatePosition, svType);
-		int32_t const maxPos = _maxCoord(al.Position, al.MatePosition, svType);
-		
-		bool validSize = true;
-		if (al.RefID==itSV->chr) {
-		  if (minPos < itSV->svStart) {
-		    validSize = (!_pairsDisagree(minPos, maxPos, al.Length, libIt->second.maxNormalISize, itSV->svStart, itSV->svEnd, al.Length, libIt->second.maxNormalISize, _getSpanOrientation(al, libIt->second.defaultOrient, svType), itSV->ct, svType));
-		  } else {
-		    validSize = (!_pairsDisagree(itSV->svStart, itSV->svEnd, al.Length, libIt->second.maxNormalISize, minPos, maxPos, al.Length, libIt->second.maxNormalISize, itSV->ct, _getSpanOrientation(al, libIt->second.defaultOrient, svType), svType));
-		  }
+	    // Abnormal paired-end
+	    if ((getStrandIndependentOrientation(rec->core) != libIt->second.defaultOrient) || (outerISize < libIt->second.minNormalISize) || (outerISize > libIt->second.maxNormalISize) || (rec->core.tid!=rec->core.mtid)) {
+	      if (_acceptedInsertSize(libIt->second, abs(rec->core.isize), svType)) continue;  // Normal paired-end (for deletions, insertions only - this uses minISizeCutoff and maxISizeCutoff)
+	      if (_acceptedOrientation(libIt->second.defaultOrient, getStrandIndependentOrientation(rec->core), svType)) continue;  // Orientation disagrees with SV type
+	      if (!(((itSV->chr == rec->core.tid) && (itSV->chr2 == rec->core.mtid)) || ((itSV->chr == rec->core.mtid) && (itSV->chr2 == rec->core.tid)))) continue;
+
+	      // Does the pair confirm the SV
+	      int32_t const minPos = _minCoord(rec->core.pos, rec->core.mpos, svType);
+	      int32_t const maxPos = _maxCoord(rec->core.pos, rec->core.mpos, svType);
+
+	      bool validSize = true;
+	      if (rec->core.tid==itSV->chr) {
+		if (minPos < itSV->svStart) {
+		  validSize = (!_pairsDisagree(minPos, maxPos, rec->core.l_qseq, libIt->second.maxNormalISize, itSV->svStart, itSV->svEnd, rec->core.l_qseq, libIt->second.maxNormalISize, _getSpanOrientation(rec->core, libIt->second.defaultOrient, svType), itSV->ct, svType));
+		} else {
+		  validSize = (!_pairsDisagree(itSV->svStart, itSV->svEnd, rec->core.l_qseq, libIt->second.maxNormalISize, minPos, maxPos, rec->core.l_qseq, libIt->second.maxNormalISize, itSV->ct, _getSpanOrientation(rec->core, libIt->second.defaultOrient, svType), svType));
 		}
-		if (!validSize) continue;
 	      }
+	      if (!validSize) continue;
+	    }
 		    
-	      // Get or store the mapping quality for the partner
-	      if (_firstPairObs(al.RefID, al.MateRefID, al.Position, al.MatePosition, svType)) {
-		// Hash the quality
-		unsigned int index=((al.Position % (int)boost::math::pow<14>(2))<<14) + (al.MatePosition % (int)boost::math::pow<14>(2));
-		qualities[index]=al.MapQuality;
-	      } else {
-		// Get the two mapping qualities
-		unsigned int index=((al.MatePosition % (int)boost::math::pow<14>(2))<<14) + (al.Position % (int)boost::math::pow<14>(2));
-		uint16_t pairQuality = _pairQuality(al.RefID, al.MateRefID, qualities[index], al.MapQuality, svType);
-		qualities[index]=0;
-		
-		// Pair quality
-		if (pairQuality < minMapQual) continue;
+	    // Get or store the mapping quality for the partner
+	    if (_firstPairObs(rec->core.tid, rec->core.mtid, rec->core.pos, rec->core.mpos, svType)) {
+	      uint8_t r2Qual = rec->core.qual;
+	      uint8_t* ptr = bam_aux_get(rec, "AS");
+	      if (ptr) {
+		int score = std::abs((int) bam_aux2i(ptr));
+		r2Qual = std::min(r2Qual, (uint8_t) ( (score<255) ? score : 255 ));
+	      }
+	      qualities[hash_pair(rec)] = r2Qual;
+	    } else {
+	      // Get the two mapping qualities
+	      uint8_t r2Qual = rec->core.qual;
+	      uint8_t* ptr = bam_aux_get(rec, "AS");
+	      if (ptr) {
+		int score = std::abs((int) bam_aux2i(ptr));
+		r2Qual = std::min(r2Qual, (uint8_t) ( (score<255) ? score : 255 ));
+	      }
+	      uint8_t pairQuality = std::min(qualities[hash_pair_mate(rec)], r2Qual);
 
-		// Is it a unique pair
-		Hit hitPos(al);
-		typename TUniquePairs::const_iterator pos = unique_pairs.begin();
-		boost::tie(pos, inserted) = unique_pairs.insert(hitPos);
-		if (inserted) {
-		  // Insert the interval
-		  if ((getStrandIndependentOrientation(al) == libIt->second.defaultOrient) && (outerISize >= libIt->second.minNormalISize) && (outerISize <= libIt->second.maxNormalISize) && (al.RefID==al.MateRefID)) {
-		    // Normal spanning coverage
-		    //normalSpan.push_back(THitInterval(std::min(al.Position, al.MatePosition), std::max(al.Position, al.MatePosition) + al.Length, pairQuality));
-		    int32_t sPos = std::min(al.Position, al.MatePosition);
-		    int32_t ePos = std::max(al.Position, al.MatePosition) + al.Length;
-		    int32_t midPoint = sPos+(ePos-sPos)/2;
-		    sPos=std::max(sPos, midPoint - al.Length);
-		    ePos=std::min(ePos, midPoint + al.Length);
-		    int32_t innerSPos = std::min(al.Position, al.MatePosition) + al.Length;
-		    int32_t innerEPos = std::max(al.Position, al.MatePosition);
-		    if ((innerSPos<innerEPos) && ((innerEPos - innerSPos) > (ePos-sPos))) {
-		      if ((itSV->svStart>=innerSPos) && (itSV->svStart<=innerEPos)) leftIt->second.first.push_back(pairQuality);
-		      if ((itSV->svEnd>=innerSPos) && (itSV->svEnd<=innerEPos)) rightIt->second.first.push_back(pairQuality);
-		    } else {
-		      if ((itSV->svStart>=sPos) && (itSV->svStart<=ePos)) leftIt->second.first.push_back(pairQuality);
-		      if ((itSV->svEnd>=sPos) && (itSV->svEnd<=ePos)) rightIt->second.first.push_back(pairQuality);
-		    }		      
-		  } else if ((getStrandIndependentOrientation(al) != libIt->second.defaultOrient) || (outerISize > libIt->second.maxNormalISize) || (al.RefID!=al.MateRefID)) {
-		    // Missing spanning coverage
-		    if (_mateIsUpstream(libIt->second.defaultOrient, (al.AlignmentFlag & 0x0040), (al.AlignmentFlag & 0x0010))) {
-		      if ((itSV->chr==al.RefID) && (itSV->svStart>=al.Position) && (itSV->svStart<=(al.Position + libIt->second.maxNormalISize))) leftIt->second.second.push_back(pairQuality);
-		      if ((itSV->chr2==al.RefID) && (itSV->svEnd>=al.Position) && (itSV->svEnd<=(al.Position + libIt->second.maxNormalISize))) rightIt->second.second.push_back(pairQuality);
-		    } else {
-		      if ((itSV->chr==al.RefID) && (itSV->svStart>=std::max(0, al.Position + al.Length - libIt->second.maxNormalISize)) && (itSV->svStart<=(al.Position + al.Length))) leftIt->second.second.push_back(pairQuality);
-		      if ((itSV->chr2==al.RefID) && (itSV->svEnd>=std::max(0, al.Position + al.Length - libIt->second.maxNormalISize)) && (itSV->svEnd<=(al.Position + al.Length))) rightIt->second.second.push_back(pairQuality);
-		    }
-		    if (_mateIsUpstream(libIt->second.defaultOrient, !(al.AlignmentFlag & 0x0040), (al.AlignmentFlag & 0x0020))) {
-		      if ((itSV->chr==al.MateRefID) && (itSV->svStart>=al.MatePosition) && (itSV->svStart<=(al.MatePosition + libIt->second.maxNormalISize))) leftIt->second.second.push_back(pairQuality);
-		      if ((itSV->chr2==al.MateRefID) && (itSV->svEnd>=al.MatePosition) && (itSV->svEnd<=(al.MatePosition + libIt->second.maxNormalISize))) rightIt->second.second.push_back(pairQuality);
-		    } else {
-		      if ((itSV->chr==al.MateRefID) && (itSV->svStart>=std::max(0, al.MatePosition + al.Length - libIt->second.maxNormalISize)) && (itSV->svStart<=(al.MatePosition + al.Length))) leftIt->second.second.push_back(pairQuality);
-		      if ((itSV->chr2==al.MateRefID) && (itSV->svEnd>=std::max(0, al.MatePosition + al.Length - libIt->second.maxNormalISize)) && (itSV->svEnd<=(al.MatePosition + al.Length))) rightIt->second.second.push_back(pairQuality);
-		    }
+	      // Pair quality
+	      if (pairQuality < minMapQual) continue;
+	      
+	      // Is it a unique pair
+	      if (rec->core.pos!=oldAlignPos) {
+		oldAlignPos=rec->core.pos;
+		unique_pairs.clear();
+	      }
+	      if (unique_pairs.insert(rec->core.mpos).second) {
+		// Insert the interval
+		if ((getStrandIndependentOrientation(rec->core) == libIt->second.defaultOrient) && (outerISize >= libIt->second.minNormalISize) && (outerISize <= libIt->second.maxNormalISize) && (rec->core.tid==rec->core.mtid)) {
+		  // Normal spanning coverage, take inner insert-size
+		  //int32_t sPosStart = std::min(rec->core.pos, rec->core.mpos);
+		  //int32_t ePosStart = std::min(rec->core.pos, rec->core.mpos) + rec->core.l_qseq;
+		  //int32_t sPosEnd = std::max(rec->core.pos, rec->core.mpos);
+		  //int32_t ePosEnd = std::max(rec->core.pos, rec->core.mpos) + rec->core.l_qseq;
+		  //if ((itSV->chr==rec->core.tid) && (itSV->svStart>=sPosStart) && (itSV->svStart<=ePosStart)) leftIt->second.first.push_back(pairQuality);
+		  //if ((itSV->chr2==rec->core.tid) && (itSV->svEnd>=sPosEnd) && (itSV->svEnd<=ePosEnd)) rightIt->second.first.push_back(pairQuality);
+		  int32_t sPos = std::min(rec->core.pos, rec->core.mpos);
+		  int32_t ePos = std::max(rec->core.pos, rec->core.mpos) + rec->core.l_qseq;
+		  int32_t midPoint = sPos+(ePos-sPos)/2;
+		  sPos=std::max(sPos, midPoint - rec->core.l_qseq);
+		  ePos=std::min(ePos, midPoint + rec->core.l_qseq);
+		  int32_t innerSPos = std::min(rec->core.pos, rec->core.mpos) + rec->core.l_qseq;
+		  int32_t innerEPos = std::max(rec->core.pos, rec->core.mpos);
+		  if ((innerSPos<innerEPos) && ((innerEPos - innerSPos) > (ePos-sPos))) {
+		    sPos = innerSPos;
+		    ePos = innerEPos;
+		  }
+		  if (std::abs(midPoint - itSV->svStart) < std::abs(itSV->svEnd - midPoint)) {
+		    if ((itSV->chr==rec->core.tid) && (itSV->svStart>=sPos) && (itSV->svStart<=ePos)) leftIt->second.first.push_back(pairQuality);
+		  } else {
+		    if ((itSV->chr2==rec->core.tid) && (itSV->svEnd>=sPos) && (itSV->svEnd<=ePos)) rightIt->second.first.push_back(pairQuality);
+		  }
+		} else if ((getStrandIndependentOrientation(rec->core) != libIt->second.defaultOrient) || (outerISize < libIt->second.minNormalISize) || (outerISize > libIt->second.maxNormalISize) || (rec->core.tid!=rec->core.mtid)) {
+		  // Missing spanning coverage
+		  if (_mateIsUpstream(libIt->second.defaultOrient, (rec->core.flag & BAM_FREAD1), (rec->core.flag & BAM_FREVERSE))) {
+		    if ((itSV->chr==rec->core.tid) && (itSV->svStart>=rec->core.pos) && (itSV->svStart<=(rec->core.pos + libIt->second.maxNormalISize))) leftIt->second.second.push_back(pairQuality);
+		    if ((itSV->chr2==rec->core.tid) && (itSV->svEnd>=rec->core.pos) && (itSV->svEnd<=(rec->core.pos + libIt->second.maxNormalISize))) rightIt->second.second.push_back(pairQuality);
+		  } else {
+		    if ((itSV->chr==rec->core.tid) && (itSV->svStart>=std::max(0, rec->core.pos + rec->core.l_qseq - libIt->second.maxNormalISize)) && (itSV->svStart<=(rec->core.pos + rec->core.l_qseq))) leftIt->second.second.push_back(pairQuality);
+		    if ((itSV->chr2==rec->core.tid) && (itSV->svEnd>=std::max(0, rec->core.pos + rec->core.l_qseq - libIt->second.maxNormalISize)) && (itSV->svEnd<=(rec->core.pos + rec->core.l_qseq))) rightIt->second.second.push_back(pairQuality);
+		  }
+		  if (_mateIsUpstream(libIt->second.defaultOrient, !(rec->core.flag & BAM_FREAD1), (rec->core.flag & BAM_FMREVERSE))) {
+		    if ((itSV->chr==rec->core.mtid) && (itSV->svStart>=rec->core.mpos) && (itSV->svStart<=(rec->core.mpos + libIt->second.maxNormalISize))) leftIt->second.second.push_back(pairQuality);
+		    if ((itSV->chr2==rec->core.mtid) && (itSV->svEnd>=rec->core.mpos) && (itSV->svEnd<=(rec->core.mpos + libIt->second.maxNormalISize))) rightIt->second.second.push_back(pairQuality);
+		  } else {
+		    if ((itSV->chr==rec->core.mtid) && (itSV->svStart>=std::max(0, rec->core.mpos + rec->core.l_qseq - libIt->second.maxNormalISize)) && (itSV->svStart<=(rec->core.mpos + rec->core.l_qseq))) leftIt->second.second.push_back(pairQuality);
+		    if ((itSV->chr2==rec->core.mtid) && (itSV->svEnd>=std::max(0,rec->core.mpos + rec->core.l_qseq - libIt->second.maxNormalISize)) && (itSV->svEnd<=(rec->core.mpos + rec->core.l_qseq))) rightIt->second.second.push_back(pairQuality);
 		  }
 		}
 	      }
 	    }
 	  }
+	  bam_destroy1(rec);
+	  hts_itr_destroy(iter);
 	}
       }
+    }
+    // Clean-up
+    for(unsigned int file_c = 0; file_c < files.size(); ++file_c) {
+      hts_idx_destroy(idx[file_c]);
+      sam_close(samfile[file_c]);
     }
   }
 

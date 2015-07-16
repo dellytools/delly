@@ -168,10 +168,17 @@ var maze = function () {
 
     $('#control-btn-left').removeClass('hide');
     $('#control-btn-right').removeClass('hide');
+    $('#control-btn-breakpoints').off('click');
+
+    $('#control-btn-breakpoints:not(disabled)').click(function () { // currently never disabled
+        console.log('open new window for ' + dataIdx)
+        var wnd = window.open("breakpoints");
+        wnd.transferData = { data: data, query: my.query[dataIdx], ref: my.ref[0]}; // Todo(meiers): Change ref[0] in the future
+      });
 
     if (dataIdx > 0) {
       $('#control-btn-left').removeClass('disabled');
-      $('#control-btn-left:not(disabled)').click(function () {
+      $('#control-btn-left:not(disabled)').one('click', function () {
         my.vis(selector, dataIdx-1);
       });
     } else {
@@ -180,7 +187,7 @@ var maze = function () {
 
     if (dataIdx < my.data.length - 1) {
       $('#control-btn-right').removeClass('disabled');
-      $('#control-btn-right:not(disabled)').click(function () {
+      $('#control-btn-right:not(disabled)').one('click', function () {
         my.vis(selector, dataIdx+1);
       });
     } else {

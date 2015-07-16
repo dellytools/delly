@@ -26,10 +26,6 @@ Contact: Tobias Rausch (rausch@embl.de)
 
 namespace torali {
 
-  // Constants
-  #define MAX_CHROM_SIZE 250000000
-
-
   // Tags
   struct DeletionTag;
   struct DuplicationTag;
@@ -49,6 +45,13 @@ namespace torali {
     struct CoverageType {
     };
 
+  struct BpLevelCount;
+  struct NoBpLevelCount;
+  
+  template<typename BpLevelTag>
+    struct BpLevelType {
+    };
+
   // F+ 0
   // F- 1
   // R+ 2
@@ -57,21 +60,21 @@ namespace torali {
   template<typename TBamRecord>
   inline int
     getStrandIndependentOrientation(TBamRecord const& al) {
-    if (al.AlignmentFlag & 0x0040) {
-      if (!(al.AlignmentFlag & 0x0010)) {
-	if (!(al.AlignmentFlag & 0x0020)) return (al.Position < al.MatePosition) ? 0 : 1;
-	else return (al.Position < al.MatePosition) ? 2 : 3;
+    if (al.flag & BAM_FREAD1) {
+      if (!(al.flag & BAM_FREVERSE)) {
+	if (!(al.flag & BAM_FMREVERSE)) return (al.pos < al.mpos) ? 0 : 1;
+	else return (al.pos < al.mpos) ? 2 : 3;
       } else {
-	if (!(al.AlignmentFlag & 0x0020)) return (al.Position > al.MatePosition) ? 2 : 3;
-	else return (al.Position > al.MatePosition) ? 0 : 1;
+	if (!(al.flag & BAM_FMREVERSE)) return (al.pos > al.mpos) ? 2 : 3;
+	else return (al.pos > al.mpos) ? 0 : 1;
       }
     } else {
-      if (!(al.AlignmentFlag & 0x0010)) {
-	if (!(al.AlignmentFlag & 0x0020)) return (al.Position < al.MatePosition) ? 1 : 0;
-	else return (al.Position < al.MatePosition) ? 2 : 3;
+      if (!(al.flag & BAM_FREVERSE)) {
+	if (!(al.flag & BAM_FMREVERSE)) return (al.pos < al.mpos) ? 1 : 0;
+	else return (al.pos < al.mpos) ? 2 : 3;
       } else {
-	if (!(al.AlignmentFlag & 0x0020)) return (al.Position > al.MatePosition) ? 2 : 3;
-	else return (al.Position > al.MatePosition) ? 1 : 0;
+	if (!(al.flag & BAM_FMREVERSE)) return (al.pos > al.mpos) ? 2 : 3;
+	else return (al.pos > al.mpos) ? 1 : 0;
       }
     }
   }
@@ -88,17 +91,17 @@ namespace torali {
   template<typename TBamRecord>
   inline int
     getStrandSpecificOrientation(TBamRecord const& al) {
-    if (!(al.AlignmentFlag  & 0x0010)) {
-      if (!(al.AlignmentFlag & 0x0020)) {
-        return (al.Position < al.MatePosition) ? 0 : 1;
+    if (!(al.flag  & BAM_FREVERSE)) {
+      if (!(al.flag & BAM_FMREVERSE)) {
+        return (al.pos < al.mpos) ? 0 : 1;
       } else {
-        return (al.Position < al.MatePosition) ? 2 : 3;
+        return (al.pos < al.mpos) ? 2 : 3;
       }
     } else {
-      if (!(al.AlignmentFlag & 0x0020)) {
-        return (al.Position > al.MatePosition) ? 4 : 5;
+      if (!(al.flag & BAM_FMREVERSE)) {
+        return (al.pos > al.mpos) ? 4 : 5;
       } else {
-        return (al.Position > al.MatePosition) ? 6 : 7;
+        return (al.pos > al.mpos) ? 6 : 7;
       }
     }
   }
@@ -123,26 +126,26 @@ namespace torali {
     inline int 
     _getSpanOrientation(TBamRecord const& al, int const defaultOrient, SVType<InversionTag>) {
     int orient = getStrandIndependentOrientation(al);
-    if (al.AlignmentFlag & 0x0040) {
+    if (al.flag & BAM_FREAD1) {
       if (defaultOrient == 0) {
-	if (((orient==2) && (al.Position < al.MatePosition)) || ((orient == 3) && (al.Position > al.MatePosition))) return 1;
+	if (((orient==2) && (al.pos < al.mpos)) || ((orient == 3) && (al.pos > al.mpos))) return 1;
       } else if (defaultOrient == 1) {
-	if (((orient==2) && (al.Position > al.MatePosition)) || ((orient == 3) && (al.Position < al.MatePosition))) return 1;
+	if (((orient==2) && (al.pos > al.mpos)) || ((orient == 3) && (al.pos < al.mpos))) return 1;
       } else if (defaultOrient == 2) {
-	if (((orient==0) && (al.Position < al.MatePosition)) || ((orient == 1) && (al.Position > al.MatePosition))) return 1;
+	if (((orient==0) && (al.pos < al.mpos)) || ((orient == 1) && (al.pos > al.mpos))) return 1;
       } else if (defaultOrient == 3) {
-	if (((orient==0) && (al.Position > al.MatePosition)) || ((orient == 1) && (al.Position < al.MatePosition))) return 1;
+	if (((orient==0) && (al.pos > al.mpos)) || ((orient == 1) && (al.pos < al.mpos))) return 1;
       }
       return 0;
     } else {
       if (defaultOrient == 0) {
-	if (((orient==2) && (al.Position > al.MatePosition)) || ((orient == 3) && (al.Position < al.MatePosition))) return 1;
+	if (((orient==2) && (al.pos > al.mpos)) || ((orient == 3) && (al.pos < al.mpos))) return 1;
       } else if (defaultOrient == 1) {
-	if (((orient==2) && (al.Position < al.MatePosition)) || ((orient == 3) && (al.Position > al.MatePosition))) return 1;
+	if (((orient==2) && (al.pos < al.mpos)) || ((orient == 3) && (al.pos > al.mpos))) return 1;
       } else if (defaultOrient == 2) {
-	if (((orient==0) && (al.Position > al.MatePosition)) || ((orient == 1) && (al.Position < al.MatePosition))) return 1;
+	if (((orient==0) && (al.pos > al.mpos)) || ((orient == 1) && (al.pos < al.mpos))) return 1;
       } else if (defaultOrient == 3) {
-	if (((orient==0) && (al.Position < al.MatePosition)) || ((orient == 1) && (al.Position > al.MatePosition))) return 1;
+	if (((orient==0) && (al.pos < al.mpos)) || ((orient == 1) && (al.pos > al.mpos))) return 1;
       }
       return 0;
     }
@@ -155,29 +158,29 @@ namespace torali {
     inline int 
     _inOrderAssign(TBamRecord const& al, bool flipped) {
     if (!flipped) {
-      if (!(al.AlignmentFlag & 0x0010)) {
-	if (!(al.AlignmentFlag & 0x0020)) {
-	  return (al.AlignmentFlag & 0x0040) ? 0 : 1;
+      if (!(al.flag & BAM_FREVERSE)) {
+	if (!(al.flag & BAM_FMREVERSE)) {
+	  return (al.flag & BAM_FREAD1) ? 0 : 1;
 	} else {
 	  return 2;
 	}
       } else {
-	if (!(al.AlignmentFlag & 0x0020)) {
+	if (!(al.flag & BAM_FMREVERSE)) {
 	  return 3;
 	} else {
-	  return (al.AlignmentFlag & 0x0040) ? 1 : 0;
+	  return (al.flag & BAM_FREAD1) ? 1 : 0;
 	}
       }
     } else {
-      if (!(al.AlignmentFlag & 0x0010)) {
-	if (!(al.AlignmentFlag & 0x0020)) {
+      if (!(al.flag & BAM_FREVERSE)) {
+	if (!(al.flag & BAM_FMREVERSE)) {
 	  return 2;
 	} else {
-	  return (al.AlignmentFlag & 0x0040) ? 0 : 1;
+	  return (al.flag & BAM_FREAD1) ? 0 : 1;
 	}
       } else {
-	if (!(al.AlignmentFlag & 0x0020)) {
-	  return (al.AlignmentFlag & 0x0040) ? 1 : 0;
+	if (!(al.flag & BAM_FMREVERSE)) {
+	  return (al.flag & BAM_FREAD1) ? 1 : 0;
 	} else {
 	  return 3;
 	}
@@ -208,19 +211,6 @@ namespace torali {
     return 1;
   }
 
-  // Unique paired-end data structure for single chromosome only
-  struct Hit {
-    int32_t minPos;
-    int32_t maxPos;
-  
-    template<typename TBamRecord>
-  Hit(TBamRecord const& al) : minPos(std::min(al.Position, al.MatePosition)), maxPos(std::max(al.Position, al.MatePosition)) {}
-
-    bool operator <(Hit const& other) const {
-      return ((minPos<other.minPos) || ((minPos==other.minPos) && (maxPos<other.maxPos)));
-    }
-  };
-
   // Reduced structural variant record for cov
   struct CovRecord {
     int32_t chr;
@@ -243,11 +233,12 @@ namespace torali {
     int peSupport;
     int srSupport;
     int wiggle;
+    int insLen;
     double srAlignQuality;
     unsigned int id;
     bool precise;
     int ct;
-    uint16_t peMapQuality;
+    uint8_t peMapQuality;
     int32_t chr;
     int32_t chr2;
     std::string consensus;
@@ -268,7 +259,7 @@ namespace torali {
 
   // SV Paired-end checks
 
-  // Deletions, duplications and inversions
+  // Deletions, insertions, duplications and inversions
   template<typename TPos, typename TTag>
     inline TPos
     _minCoord(TPos const position, TPos const matePosition, SVType<TTag>) {
@@ -282,7 +273,7 @@ namespace torali {
     return position;
   }
 
-  // Deletions, duplications and inversions
+  // Deletions, insertions, duplications and inversions
   template<typename TPos, typename TTag>
     inline TPos
     _maxCoord(TPos const position, TPos const matePosition, SVType<TTag>) {
@@ -369,29 +360,36 @@ namespace torali {
   // Translocations
   template<typename TRef, typename TPos>
     inline bool
-    _firstPairObs(TRef const refID, TRef const mateRefID, TPos const, TPos const, SVType<TranslocationTag>) {
-    return (refID<mateRefID);
+    _firstPairObs(TRef const refID, TRef const mateRefID, TPos const position, TPos const matePosition, SVType<TranslocationTag>) {
+    return ((refID<mateRefID) || ((refID==mateRefID) && (position<matePosition)));
   }
 
   // Deletions
-  template<typename TISize>
+  template<typename TISize, typename TLibInfo>
     inline bool
-    _acceptedInsertSize(TISize const maxNormalISize, TISize const, TISize const iSize, SVType<DeletionTag>) {
-    return (maxNormalISize > iSize);
+    _acceptedInsertSize(TLibInfo& libInfo, TISize const iSize, SVType<DeletionTag>) {
+    return (libInfo.maxISizeCutoff > iSize);
+  }
+
+  // Insertions
+  template<typename TISize, typename TLibInfo>
+    inline bool
+    _acceptedInsertSize(TLibInfo& libInfo, TISize const iSize, SVType<InsertionTag>) {
+    return (libInfo.minISizeCutoff <= iSize);
   }
 
   // Duplications
-  template<typename TISize>
+  template<typename TISize, typename TLibInfo>
     inline bool
-    _acceptedInsertSize(TISize const, TISize const median, TISize const iSize, SVType<DuplicationTag>) {
+    _acceptedInsertSize(TLibInfo& libInfo, TISize const iSize, SVType<DuplicationTag>) {
     // Exclude the chimeras in mate-pair libraries
-    return !((median<1000) || ((median>=1000) && (iSize >=1000)));
+    return !((libInfo.median<1000) || ((libInfo.median>=1000) && (iSize >=1000)));
   }
 
   // Other SV Types
-  template<typename TISize, typename TTag>
+  template<typename TISize, typename TLibInfo, typename TTag>
     inline bool
-    _acceptedInsertSize(TISize const, TISize const, TISize const, SVType<TTag>) {
+    _acceptedInsertSize(TLibInfo&, TISize const, SVType<TTag>) {
     return false;
   }
 
@@ -399,6 +397,13 @@ namespace torali {
   template<typename TOrientation>
   inline bool
     _acceptedOrientation(TOrientation const def, TOrientation const lib, SVType<DeletionTag>) {
+    return (def != lib);
+  }
+
+  // Insertions
+  template<typename TOrientation>
+  inline bool
+    _acceptedOrientation(TOrientation const def, TOrientation const lib, SVType<InsertionTag>) {
     return (def != lib);
   }
 
@@ -436,8 +441,22 @@ namespace torali {
     if ((pair2Min + pair2ReadLength - pair1Min) > pair1maxNormalISize) return true;
     if ((pair2Max < pair1Max) && ((pair1Max + pair1ReadLength - pair2Max) > pair1maxNormalISize)) return true;
     if ((pair2Max >= pair1Max) && ((pair2Max + pair2ReadLength - pair1Max) > pair2maxNormalISize)) return true;
+    if ((pair1Max < pair2Min) || (pair2Max < pair1Min)) return true;
     return false;
   }
+
+  // Insertions
+  template<typename TSize, typename TISize>
+    inline bool
+    _pairsDisagree(TSize const pair1Min, TSize const pair1Max, TSize const pair1ReadLength, TISize const pair1maxNormalISize, TSize const pair2Min, TSize const pair2Max, TSize const pair2ReadLength, TISize const pair2maxNormalISize, int const, int const, SVType<InsertionTag>) {
+    //std::cout << pair1Min << ',' << pair1Max << ',' << pair1ReadLength << ',' << pair1maxNormalISize << ',' << pair2Min << ',' << pair2Max << ',' << pair2ReadLength << ',' << pair2maxNormalISize << std::endl;
+    if ((pair2Min + pair2ReadLength - pair1Min) > pair1maxNormalISize) return true;
+    if ((pair2Max < pair1Max) && ((pair1Max + pair1ReadLength - pair2Max) > pair1maxNormalISize)) return true;
+    if ((pair2Max >= pair1Max) && ((pair2Max + pair2ReadLength - pair1Max) > pair2maxNormalISize)) return true;
+    if ((pair1Max < pair2Min) || (pair2Max < pair1Min)) return true;
+    return false;
+  }
+
 
   // Duplications
   template<typename TSize, typename TISize>
@@ -514,14 +533,6 @@ namespace torali {
   }
 
 
-  // Insertions
-  template<typename TSize, typename TISize>
-    inline bool
-    _pairsDisagree(TSize const, TSize const, TSize const, TISize const, TSize const, TSize const, TSize const, TISize const, int const, int const, SVType<InsertionTag>) {
-    // ToDo
-    return false;
-  }
-
 
 
 
@@ -530,6 +541,13 @@ template<typename TSeq, typename TSVRecord, typename TRef>
 inline std::string
 _getSVRef(TSeq const* const ref, TSVRecord const& svRec, TRef const, SVType<DeletionTag>) {
   return boost::to_upper_copy(std::string(ref + svRec.svStartBeg, ref + svRec.svStartEnd)) + boost::to_upper_copy(std::string(ref + svRec.svEndBeg, ref + svRec.svEndEnd));
+}
+
+// Insertions
+template<typename TSeq, typename TSVRecord, typename TRef>
+inline std::string
+_getSVRef(TSeq const* const ref, TSVRecord const& svRec, TRef const, SVType<InsertionTag>) {
+  return boost::to_upper_copy(std::string(ref + svRec.svStartBeg, ref + svRec.svEndEnd));
 }
 
 // Duplications
@@ -625,16 +643,6 @@ _getSVRef(TSeq const* const ref, TSVRecord const& svRec, TRef const refIndex, SV
   }
   return "";
 }
-
-// Insertions
-template<typename TSeq, typename TSVRecord, typename TRef>
-inline std::string
-_getSVRef(TSeq const* const ref, TSVRecord const& svRec, TRef const, SVType<InsertionTag>) {
-  return boost::to_upper_copy(std::string(ref + svRec.svStartBeg, ref + svRec.svStartEnd)) + boost::to_upper_copy(std::string(ref + svRec.svEndBeg, ref + svRec.svEndEnd));
-}
-
-
-
 
 
 
