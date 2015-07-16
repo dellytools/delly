@@ -62,8 +62,8 @@ many entries you will trigger a pairwise comparison between the sequences.
 There is a helper script in the `maze` folder that can generate these
 reference slices for you. All you need to provide is the FASTA file
 with your assemblies/long reads and the coordinates where they stem from. 
-These coordinates can for instance be written directly in the fasta files 
-behind each fasta header, separated by a space from the actual name, e.g.
+These coordinates can for instance be written directly in the FASTA files 
+behind each header separated by a space, e.g.
 
     >assembly1 chr2:1234567-1239999
     ACTCATGCAT...
@@ -75,7 +75,7 @@ Then run
 Replace `hg19.fa` with the refernce genome you are using and `assemblies.fa`
 with your reads/assemblies. In case the coordinates are not included in the
 fasta header you can also specify them as a table in BED format. Just make 
-sure that the table has the same order as the reads/assemblies in your fasta
+sure that the table has the same order as the reads/assemblies in your FASTA
 file. The command is 
 
     $ ./extract_reference_slices.py -r hg19.fa -f assemblies.fa -c coordinates.bed > assemblies.reference.fa 
