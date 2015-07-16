@@ -37,7 +37,8 @@ def get_coords(f_fasta, f_bed=None):
                     break
     if len(coords) != numSequences:
         raise Exception("Number of coordinates provided does not match number "
-                        "of reads. Please specify coordinates in BED format.")
+                        "of reads. Please specify coordinates in BED format "
+                        "or behind fasta headers.")
     return coords
 
 
