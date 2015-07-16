@@ -44,26 +44,31 @@ Both, raw and gzip files are supported.
 Change the match type and length if you want to and you're ready to go.
 
 ## Coming from Delly2
-Delly2 currently ships with a beta version of an assembly pipeline (see
-respective README).
-This pipeline assembles reads around SV calls using `spades` and outputs
-a list of contigs for each locus into a FASTA file. If you have `samtools`
-installed, the same pipeline will also output the corresponding refernece
-slices.  Simply drag these two files into maze to inspect your assemblies.
+Delly2 currently ships with a beta version of an assembly pipeline. This 
+pipeline assembles reads around SV calls using `spades` and outputs
+a contigs for each locus into FASTA files. See the respective readme for
+more information.
+
+If you have `samtools` installed, the pipeline will also provide you a
+second FASTA per locus, which contains the reference allele. Simply drag 
+these two files into maze and you're there.
 
 ## Inspecting several different loci
-`maze` works with two FASTA files, one containing your assemblies or long 
-reads and the other one containing the piece of reference to compare them 
-to. However, if you specify two FASTA files with equally many entries you
-will trigger a pairwise comparison. Corresponding entries must be in the 
-same order. 
+As said before, `maze` works with two FASTA files, the one containing your 
+assemblies/long reads and the other one containing the piece of reference 
+to compare them to. However, if you specify two FASTA files with equally 
+many entries you will trigger a pairwise comparison between the sequences. 	
 
 There is a helper script in the `maze` folder that can generate these
-reference slices for you. All you need to provide is the fasta file
-with your assemblies/long reads and the coordinates. These coordinates can
-for instance be written directly in the fasta files behind each fasta
-header in the format `chrom:start-end` (separated from the actual name by
-spaces). Then run
+reference slices for you. All you need to provide is the FASTA file
+with your assemblies/long reads and the coordinates where they stem from. 
+These coordinates can for instance be written directly in the fasta files 
+behind each fasta header, separated by a space from the actual name, e.g.
+
+    >assembly1 chr2:1234567-1239999
+    ACTCATGCAT...
+
+Then run
 
     $ ./extract_reference_slices.py -r hg19.fa -f assemblies.fa > assemblies.reference.fa
 
