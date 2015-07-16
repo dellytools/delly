@@ -1,3 +1,5 @@
+#! /usr/bin/env python
+
 from __future__ import print_function
 import argparse, gzip, pysam, re, sys
 
@@ -88,7 +90,7 @@ if __name__=='__main__':
                         help="Bed file with coordinates.")
     parser.add_argument("-f", "--fasta", metavar='FA',
                         type=argparse.FileType('rb'), required=True,
-                        help="Bed file with coordinates.")
+                        help="Fasta containing assemblies/long reads.")
     parser.add_argument("-r", "--ref", metavar='FA', 
                         type=pysam.FastaFile, required=True,
                         help='Reference genome; index required.')

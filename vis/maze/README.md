@@ -42,3 +42,38 @@ multiple sequences, the reference file should only contain one sequence
 Both, raw and gzip files are supported.
 
 Change the match type and length if you want to and you're ready to go.
+
+## Coming from Delly2
+Delly2 currently ships with a beta version of an assembly pipeline (see
+respective README).
+This pipeline assembles reads around SV calls using `spades` and outputs
+a list of contigs for each locus into a FASTA file. If you have `samtools`
+installed, the same pipeline will also output the corresponding refernece
+slices.  Simply drag these two files into maze to inspect your assemblies.
+
+## Inspecting several different loci
+`maze` works with two FASTA files, one containing your assemblies or long 
+reads and the other one containing the piece of reference to compare them 
+to. However, if you specify two FASTA files with equally many entries you
+will trigger a pairwise comparison. Corresponding entries must be in the 
+same order. 
+
+There is a helper script in the `maze` folder that can generate these
+reference slices for you. All you need to provide is the fasta file
+with your assemblies/long reads and the coordinates. These coordinates can
+for instance be written directly in the fasta files behind each fasta
+header in the format `chrom:start-end` (separated from the actual name by
+spaces). Then run
+
+    $ ./extract_reference_slices.py -r hg19.fa -f assemblies.fa > assemblies.reference.fa
+
+Replace `hg19.fa` with the refernce genome you are using and `assemblies.fa`
+with your reads/assemblies. In case the coordinates are not included in the
+fasta header you can also specify them as a table in BED format. Just make 
+sure that the table has the same order as the reads/assemblies in your fasta
+file. The command is 
+
+    $ ./extract_reference_slices.py -r hg19.fa -f assemblies.fa -c coordinates.bed > assemblies.reference.fa 
+
+Finally, drag the two files `assemblies.fa` and `assemblies.reference.fa`
+into the setup menu of `maze`.
