@@ -40,7 +40,6 @@ var maze = function () {
     $('#drop-ref').on('dragover', dropZoneOver);
     $('#drop-ref').on('drop', function (e) {
       $(this).removeClass('dropzone-hover');
-      // TODO possible to removeClass "fa-*"?
       $('#ref-icon-chosen').removeClass('fa-times');
       $('#ref-icon-chosen').removeClass('fa-check');
       $('#ref-icon-chosen').addClass('fa-spinner').addClass('fa-pulse');
@@ -168,6 +167,8 @@ var maze = function () {
 
     $('#control-btn-left').removeClass('hide');
     $('#control-btn-right').removeClass('hide');
+    $('#control-btn-right').off('click');
+    $('#control-btn-left').off('click');
     $('#control-btn-breakpoints').off('click');
 
     $('#control-btn-breakpoints:not(disabled)').click(function () { // currently never disabled
@@ -178,7 +179,7 @@ var maze = function () {
 
     if (dataIdx > 0) {
       $('#control-btn-left').removeClass('disabled');
-      $('#control-btn-left:not(disabled)').one('click', function () {
+      $('#control-btn-left:not(disabled)').click(function () {
         my.vis(selector, dataIdx-1);
       });
     } else {
@@ -187,7 +188,7 @@ var maze = function () {
 
     if (dataIdx < my.data.length - 1) {
       $('#control-btn-right').removeClass('disabled');
-      $('#control-btn-right:not(disabled)').one('click', function () {
+      $('#control-btn-right:not(disabled)').click(function () {
         my.vis(selector, dataIdx+1);
       });
     } else {
