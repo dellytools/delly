@@ -140,7 +140,7 @@ namespace torali {
 	      if (++posIt==posItEnd) break;
 	      unsigned int end = *posIt; 
 	      if (start <= end) {
-		std::string fasta = std::string(seq->seq.s + start, seq->seq.s + std::min((unsigned int) seq->seq.l, end + (int) c.closed));
+		std::string fasta = boost::to_upper_copy(std::string(seq->seq.s + start, seq->seq.s + std::min((unsigned int) seq->seq.l, end + (int) c.closed)));
 		std::string::iterator itF = fasta.begin();
 		std::string::iterator itFEnd = fasta.end();
 		for (; itF!=itFEnd; ++itF, ++count) {
@@ -148,7 +148,7 @@ namespace torali {
 		  if (count % c.linesize == 0) ofile << std::endl;
 		}
 	      } else {
-		std::string fasta = std::string(seq->seq.s + end, seq->seq.s + std::min((unsigned int) seq->seq.l, start + (int) c.closed));
+		std::string fasta = boost::to_upper_copy(std::string(seq->seq.s + end, seq->seq.s + std::min((unsigned int) seq->seq.l, start + (int) c.closed)));
 		std::string::reverse_iterator itR = fasta.rbegin();
 		std::string::reverse_iterator itREnd = fasta.rend();
 		for(; itR!=itREnd; ++itR, ++count) {
