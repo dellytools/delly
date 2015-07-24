@@ -97,19 +97,20 @@ struct Config {
 
 // Reduced bam alignment record data structure
 struct BamAlignRecord {
-  int32_t l_qseq;
   int32_t tid;         
-  int32_t pos;      
+  int32_t pos;
   int32_t mtid; 
   int32_t mpos;
-  uint8_t MapQuality;
+  int32_t alen;
+  int32_t malen;
   int32_t Median;
   int32_t Mad;
   int32_t maxNormalISize;
   int libOrient;
-  uint32_t flag; 
-
-  BamAlignRecord(bam1_t* rec, uint8_t pairQuality, int32_t median, int32_t mad, int32_t maxISize, int lO) : l_qseq(rec->core.l_qseq), tid(rec->core.tid), pos(rec->core.pos), mtid(rec->core.mtid), mpos(rec->core.mpos), MapQuality(pairQuality), Median(median), Mad(mad), maxNormalISize(maxISize), libOrient(lO), flag(rec->core.flag) {}
+  uint32_t flag;
+  uint8_t MapQuality;
+  
+  BamAlignRecord(bam1_t* rec, uint8_t pairQuality, uint16_t a, uint16_t ma, int32_t median, int32_t mad, int32_t maxISize, int lO) : tid(rec->core.tid), pos(rec->core.pos), mtid(rec->core.mtid), mpos(rec->core.mpos), alen(a), malen(ma), Median(median), Mad(mad), maxNormalISize(maxISize), libOrient(lO), flag(rec->core.flag), MapQuality(pairQuality) {}
 };
 
 // Sort reduced bam alignment records
@@ -904,40 +905,6 @@ void searchSplit(TConfig const& c, TStructuralVariantRecord& sv, std::string con
 
 
 // Deletions
-inline int
-_decodeOrientation(std::string const, SVType<DeletionTag>) {
-  return 1;
-}
-
-// Duplications
-inline int
-_decodeOrientation(std::string const, SVType<DuplicationTag>) {
-  return 1;
-}
-
-// Inversions
-inline int
-_decodeOrientation(std::string const ct, SVType<InversionTag>) {
-  if (ct=="3to3") return 1;
-  else return 0;
-}
-
-// Translocations
-inline int
-_decodeOrientation(std::string const ct, SVType<TranslocationTag>) {
-  if (ct=="3to3") return 0;
-  else if (ct=="5to5") return 1;
-  else if (ct=="3to5") return 2;
-  else return 3;
-}
-
-// Insertions
-inline int
-_decodeOrientation(std::string const, SVType<InsertionTag>) {
-  return 4;
-}
-
-// Deletions
 inline std::string
 _addID(SVType<DeletionTag>) {
   return "DEL";
@@ -965,6 +932,26 @@ _addID(SVType<TranslocationTag>) {
 inline std::string
 _addID(SVType<InsertionTag>) {
   return "INS";
+}
+
+// Decode Orientation
+inline int
+_decodeOrientation(std::string const& value) {
+  if (value=="3to3") return 0;
+  else if (value=="5to5") return 1;
+  else if (value=="3to5") return 2;
+  else if (value=="5to3") return 3;
+  else return 4;
+}
+
+// Add Orientation
+inline std::string
+_addOrientation(int const ct) {
+  if (ct==0) return "3to3";
+  else if (ct==1) return "5to5";
+  else if (ct==2) return "3to5";
+  else if (ct==3) return "5to3";
+  else return "NtoN";
 }
 
 // Parse Delly vcf file
@@ -1045,7 +1032,7 @@ vcfParse(TConfig const& c, TRefNames const& refnames, TRefLen const& reflen, TSi
 		if (abs(endOff1)>svRec.wiggle) svRec.wiggle=abs(endOff1);
 		if (abs(endOff2)>svRec.wiggle) svRec.wiggle=abs(endOff2);
 	      }
-	      else if (key == "CT") svRec.ct = _decodeOrientation(value, svType);
+	      else if (key == "CT") svRec.ct = _decodeOrientation(value);
 	      else continue;
 	    }
 	    svRec.svStartBeg = std::max(svRec.svStart - 1 - overallMaxISize, 0);
@@ -1066,40 +1053,6 @@ vcfParse(TConfig const& c, TRefNames const& refnames, TRefLen const& reflen, TSi
   }
 }
 
-
-// Deletions
-inline std::string
-_addOrientation(int, SVType<DeletionTag>) {
-  return "3to5";
-}
-
-// Duplications
-inline std::string
-_addOrientation(int, SVType<DuplicationTag>) {
-  return "5to3";
-}
-
-// Inversions
-inline std::string
-_addOrientation(int ct, SVType<InversionTag>) {
-  if (ct==1) return "3to3";
-  else return "5to5";
-}
-
-// Translocations
-inline std::string
-_addOrientation(int ct, SVType<TranslocationTag>) {
-  if (ct==0) return "3to3";
-  else if (ct==1) return "5to5";
-  else if (ct==2) return "3to5";
-  else return "5to3";
-}
-
-// Insertion
-inline std::string
-_addOrientation(int, SVType<InsertionTag>) {
-  return "NtoN";
-}
 
 // Insertion length
 template<typename TSize, typename TTag>
@@ -1210,7 +1163,7 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
     ofile << "SVMETHOD=EMBL.DELLYv" << dellyVersionNumber << ";";
     ofile << "CHR2=" << refnames[svIter->chr2] << ";";
     ofile << "END=" << svIter->svEnd << ";";
-    ofile << "CT=" << _addOrientation(svIter->ct, svType) << ";";
+    ofile << "CT=" << _addOrientation(svIter->ct) << ";";
     ofile << "INSLEN=" << _addInsertionLength(svIter->insLen, svType) << ";";
     ofile << "PE=" << svIter->peSupport << ";";
     ofile << "MAPQ=" << (int) svIter->peMapQuality;
@@ -1456,17 +1409,17 @@ findPutativeSplitReads(TConfig const& c, std::vector<TStructuralVariantRecord>& 
 template<typename TBamRecordIterator, typename TSize>
 inline void
 _initClique(TBamRecordIterator const& el, TSize& svStart, TSize& svEnd, TSize& wiggle, SVType<DeletionTag>) {
-  svStart = std::min(el->pos + el->l_qseq, el->mpos + el->l_qseq);
-  svEnd = std::max(el->pos, el->mpos);
-  wiggle =  abs(el->pos - el->mpos) + el->l_qseq - el->maxNormalISize -(svEnd -svStart);
+  svStart = el->mpos + el->malen;
+  svEnd = el->pos;
+  wiggle =  -el->maxNormalISize;
 }
 
 // Initialize clique, insertions
 template<typename TBamRecordIterator, typename TSize>
 inline void
 _initClique(TBamRecordIterator const& el, TSize& svStart, TSize& svEnd, TSize& wiggle, SVType<InsertionTag>) {
-  svStart = std::min(el->pos + el->l_qseq, el->mpos + el->l_qseq);
-  svEnd = std::max(el->pos, el->mpos);
+  svStart = el->mpos + el->malen;
+  svEnd = el->pos;
   wiggle = -(svEnd - svStart);
 }
 
@@ -1474,9 +1427,9 @@ _initClique(TBamRecordIterator const& el, TSize& svStart, TSize& svEnd, TSize& w
 template<typename TBamRecordIterator, typename TSize>
 inline void
 _initClique(TBamRecordIterator const& el, TSize& svStart, TSize& svEnd, TSize& wiggle, SVType<DuplicationTag>) {
-  svStart = std::min(el->pos, el->mpos);
-  svEnd = std::max(el->pos + el->l_qseq, el->mpos + el->l_qseq);
-  wiggle =  abs(el->pos - el->mpos) - el->l_qseq + el->maxNormalISize -(svEnd -svStart);
+  svStart = el->mpos;
+  svEnd = el->pos + el->alen;
+  wiggle = el->maxNormalISize;
 }
 
 // Initialize clique, inversions
@@ -1484,14 +1437,14 @@ template<typename TBamRecordIterator, typename TSize>
 inline void
 _initClique(TBamRecordIterator const& el, TSize& svStart, TSize& svEnd, TSize& wiggle, SVType<InversionTag>) {
   int ct=_getSpanOrientation(*el, el->libOrient, SVType<InversionTag>());
-  if (ct==1) {
-    svStart = std::min(el->pos, el->mpos) + el->l_qseq;
-    svEnd = std::max(el->pos, el->mpos) + el->l_qseq;
+  if (!ct) {
+    svStart = el->mpos + el->malen;
+    svEnd = el->pos + el->alen;
   } else {
-    svStart = std::min(el->pos, el->mpos);
-    svEnd = std::max(el->pos, el->mpos);
+    svStart = el->mpos;
+    svEnd = el->pos;
   }
-  wiggle=el->maxNormalISize - el->l_qseq;
+  wiggle = el->maxNormalISize - std::max(el->alen, el->malen);
 }
 
 // Initialize clique, translocations
@@ -1500,15 +1453,15 @@ inline void
 _initClique(TBamRecordIterator const& el, TSize& svStart, TSize& svEnd, TSize& wiggle, SVType<TranslocationTag>) {
   int ct=_getSpanOrientation(*el, el->libOrient, SVType<TranslocationTag>());
   if (ct%2==0) {
-    svStart = el->pos + el->l_qseq;
+    svStart = el->pos + el->alen;
     if (ct>=2) svEnd = el->mpos;
-    else svEnd = el->mpos + el->l_qseq;
+    else svEnd = el->mpos + el->malen;
   } else {
     svStart = el->pos;
-    if (ct>=2) svEnd = el->mpos + el->l_qseq;
+    if (ct>=2) svEnd = el->mpos + el->malen;
     else svEnd = el->mpos;
   }
-  wiggle=el->maxNormalISize - el->l_qseq;
+  wiggle=el->maxNormalISize;
 }
 
 
@@ -1517,9 +1470,9 @@ template<typename TBamRecordIterator, typename TSize>
 inline bool 
 _updateClique(TBamRecordIterator const& el, TSize& svStart, TSize& svEnd, TSize& wiggle, SVType<DeletionTag>) 
 {
-  TSize newSvStart = std::max(svStart, std::min(el->pos + el->l_qseq, el->mpos + el->l_qseq));
-  TSize newSvEnd = std::min(svEnd, std::max(el->pos, el->mpos));
-  TSize newWiggle = abs(el->pos - el->mpos) + el->l_qseq - el->maxNormalISize -(newSvEnd - newSvStart);
+  TSize newSvStart = std::max(svStart, el->mpos + el->malen);
+  TSize newSvEnd = std::min(svEnd, el->pos);
+  TSize newWiggle = el->pos + el->alen - el->mpos - el->maxNormalISize - (newSvEnd - newSvStart);
   TSize wiggleChange = wiggle + (svEnd-svStart) - (newSvEnd - newSvStart);
   if (wiggleChange > newWiggle) newWiggle=wiggleChange;
 
@@ -1538,8 +1491,8 @@ template<typename TBamRecordIterator, typename TSize>
 inline bool 
 _updateClique(TBamRecordIterator const& el, TSize& svStart, TSize& svEnd, TSize& wiggle, SVType<InsertionTag>) 
 {
-  TSize newSvStart = std::max(svStart, std::min(el->pos + el->l_qseq, el->mpos + el->l_qseq));
-  TSize newSvEnd = std::min(svEnd, std::max(el->pos, el->mpos));
+  TSize newSvStart = std::max(svStart, el->mpos + el->malen);
+  TSize newSvEnd = std::min(svEnd, el->pos);
   TSize newWiggle = -(newSvEnd - newSvStart);
 
   // Does the new insertion size agree with all pairs
@@ -1557,11 +1510,11 @@ template<typename TBamRecordIterator, typename TSize>
 inline bool 
 _updateClique(TBamRecordIterator const& el, TSize& svStart, TSize& svEnd, TSize& wiggle, SVType<DuplicationTag>) 
 {
-  TSize newSvStart = std::min(svStart, std::min(el->pos, el->mpos));
-  TSize newSvEnd = std::max(svEnd, std::max(el->pos + el->l_qseq, el->mpos + el->l_qseq));
-  TSize newWiggle = abs(el->pos - el->mpos) - el->l_qseq + el->maxNormalISize -(newSvEnd - newSvStart);
+  TSize newSvStart = std::min(svStart, el->mpos);
+  TSize newSvEnd = std::max(svEnd, el->pos + el->alen);
+  TSize newWiggle = el->pos - (el->mpos + el->malen) + el->maxNormalISize - (newSvEnd - newSvStart);
   TSize wiggleChange = wiggle - ((newSvEnd - newSvStart) - (svEnd-svStart));
-  if (wiggleChange < newWiggle) newWiggle=wiggleChange;
+  if (wiggleChange < newWiggle) newWiggle = wiggleChange;
 
   // Does the new duplication size agree with all pairs
   if ((newSvStart < newSvEnd) && (newWiggle>=0)) {
@@ -1583,15 +1536,16 @@ _updateClique(TBamRecordIterator const& el, TSize& svStart, TSize& svEnd, TSize&
   TSize newSvEnd;
   TSize newWiggle;
   TSize wiggleChange;
-  if (ct==1) {
-    newSvStart = std::max(svStart, std::min(el->pos, el->mpos) + el->l_qseq);
-    newSvEnd = std::max(svEnd, std::max(el->pos, el->mpos) + el->l_qseq);
-    newWiggle = std::min(el->maxNormalISize - (newSvStart - std::min(el->pos, el->mpos)), el->maxNormalISize - (newSvEnd - std::max(el->pos, el->mpos)));
+  if (!ct) {
+    newSvStart = std::max(svStart, el->mpos + el->malen);
+    newSvEnd = std::max(svEnd, el->pos + el->alen);
+    newWiggle = std::min(el->maxNormalISize - (newSvStart - el->mpos), el->maxNormalISize - (newSvEnd - el->pos));
     wiggleChange = wiggle - std::max(newSvStart - svStart, newSvEnd - svEnd);
   } else {
-    newSvStart = std::min(svStart, std::min(el->pos, el->mpos));
-    newSvEnd = std::min(svEnd, std::max(el->pos, el->mpos));
-    newWiggle = std::min(el->maxNormalISize - (std::min(el->pos, el->mpos) + el->l_qseq - newSvStart), el->maxNormalISize - (std::max(el->pos, el->mpos) + el->l_qseq - newSvEnd));
+    newSvStart = std::min(svStart, el->mpos);
+    newSvEnd = std::min(svEnd, el->pos);
+    newWiggle = el->pos  + el->alen - (el->mpos + el->malen) + el->maxNormalISize - (newSvEnd - newSvStart);
+    newWiggle = std::min(el->maxNormalISize - (el->mpos + el->malen - newSvStart), el->maxNormalISize - (el->pos + el->alen - newSvEnd));
     wiggleChange = wiggle - std::max(svStart - newSvStart, svEnd - newSvEnd);
   }
   if (wiggleChange < newWiggle) newWiggle=wiggleChange;
@@ -1617,20 +1571,20 @@ _updateClique(TBamRecordIterator const& el, TSize& svStart, TSize& svEnd, TSize&
   TSize newSvEnd;
   TSize newWiggle = wiggle;
   if (ct%2==0) {
-    newSvStart = std::max(svStart, el->pos + el->l_qseq);
+    newSvStart = std::max(svStart, el->pos + el->alen);
     newWiggle -= (newSvStart - svStart);
     if (ct>=2) {
       newSvEnd = std::min(svEnd, el->mpos);
       newWiggle -= (svEnd - newSvEnd);
     } else  {
-      newSvEnd = std::max(svEnd, el->mpos + el->l_qseq);
+      newSvEnd = std::max(svEnd, el->mpos + el->malen);
       newWiggle -= (newSvEnd - svEnd);
     }
   } else {
     newSvStart = std::min(svStart, el->pos);
     newWiggle -= (svStart - newSvStart);
     if (ct>=2) {
-      newSvEnd = std::max(svEnd, el->mpos + el->l_qseq);
+      newSvEnd = std::max(svEnd, el->mpos + el->malen);
       newWiggle -= (newSvEnd - svEnd);
     } else {
       newSvEnd = std::min(svEnd, el->mpos);
@@ -1904,6 +1858,9 @@ inline int run(Config const& c, TSVType svType) {
   typedef boost::unordered_map<std::size_t, uint8_t> TQualities;
   std::vector<TQualities> qualities;
   qualities.resize(c.files.size());
+  typedef boost::unordered_map<std::size_t, int32_t> TAlignmentLength;
+  std::vector<TAlignmentLength> alen;
+  alen.resize(c.files.size());
 
   // Process chromosome by chromosome
   boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
@@ -1969,7 +1926,9 @@ inline int run(Config const& c, TSVType svType) {
 	      int score = std::abs((int) bam_aux2i(ptr));
 	      r2Qual = std::min(r2Qual, (uint8_t) ( (score<255) ? score : 255 ));
 	    }
-	    qualities[file_c][hash_pair(rec)]= r2Qual;
+	    std::size_t hv = hash_pair(rec);
+	    qualities[file_c][hv]= r2Qual;
+	    alen[file_c][hv]= alignmentLength(rec);
 	  } else {
 	    // Get the two mapping qualities
 	    uint8_t r2Qual = rec->core.qual;
@@ -1978,9 +1937,9 @@ inline int run(Config const& c, TSVType svType) {
 	      int score = std::abs((int) bam_aux2i(ptr));
 	      r2Qual = std::min(r2Qual, (uint8_t) ( (score<255) ? score : 255 ));
 	    }
-	    std::size_t index=hash_pair_mate(rec);
-	    uint8_t pairQuality = std::min(qualities[file_c][index], r2Qual);
-	    qualities[file_c][index]= (uint8_t) 0;
+	    std::size_t hv=hash_pair_mate(rec);
+	    uint8_t pairQuality = std::min(qualities[file_c][hv], r2Qual);
+	    qualities[file_c][hv]= (uint8_t) 0;
 	    
 	    // Pair quality
 	    if (pairQuality < c.minMapQual) continue;
@@ -1993,7 +1952,7 @@ inline int run(Config const& c, TSVType svType) {
 	    if (unique_pairs.insert(rec->core.mpos).second) {
 #pragma omp critical
 	      {
-		bamRecord.push_back(BamAlignRecord(rec, pairQuality, libIt->second.median, libIt->second.mad, libIt->second.maxNormalISize, libIt->second.defaultOrient));
+		bamRecord.push_back(BamAlignRecord(rec, pairQuality, alignmentLength(rec), alen[file_c][hv], libIt->second.median, libIt->second.mad, libIt->second.maxNormalISize, libIt->second.defaultOrient));
 	      }
 	      ++libIt->second.abnormal_pairs;
 	    } else {
@@ -2003,7 +1962,7 @@ inline int run(Config const& c, TSVType svType) {
 	}
       }
       // Clean-up qualities
-      _resetQualities(qualities[file_c], svType);
+      _resetQualities(qualities[file_c], alen[file_c], svType);
 
       bam_destroy1(rec);
       hts_itr_destroy(iter);
@@ -2011,7 +1970,7 @@ inline int run(Config const& c, TSVType svType) {
     
     // Sort BAM records according to position
     std::sort(bamRecord.begin(), bamRecord.end(), SortBamRecords<BamAlignRecord>());
-    //for(TBamRecord::const_iterator bamIt = bamRecord.begin(); bamIt!=bamRecord.end(); ++bamIt) std::cerr << bamIt->Position << ',' << bamIt->MatePosition << ',' << bamIt->maxNormalISize << ',' << bamIt->Length << ',' << bamIt->Median << ',' << bamIt->Mad << ',' << bamIt->libOrient << ',' << bamIt->AlignmentFlag << std::endl;
+    //for(TBamRecord::const_iterator bamIt = bamRecord.begin(); bamIt!=bamRecord.end(); ++bamIt) std::cerr << bamIt->tid << ',' << bamIt->pos << ',' << bamIt->mtid << ',' << bamIt->mpos << std::endl;
 
     // Define an undirected graph g
     typedef boost::adjacency_list<boost::vecS, boost::vecS, boost::undirectedS, TBamRecord::const_iterator, boost::property<boost::edge_weight_t, unsigned short> > Graph;
@@ -2033,12 +1992,12 @@ inline int run(Config const& c, TSVType svType) {
       int32_t const minCoord = _minCoord(vecBeg->pos, vecBeg->mpos, svType);
       int32_t const maxCoord = _maxCoord(vecBeg->pos, vecBeg->mpos, svType);
       TBamRecord::const_iterator vecNext = vecBeg + 1;
-      for(; ((vecNext != vecEnd) && (abs(_minCoord(vecNext->pos, vecNext->mpos, svType) + vecNext->l_qseq - minCoord) <= overallMaxISize)) ; ++vecNext) {
+      for(; ((vecNext != vecEnd) && (abs(_minCoord(vecNext->pos, vecNext->mpos, svType) + vecNext->alen - minCoord) <= overallMaxISize)) ; ++vecNext) {
 	// Check that mate chr agree (only for translocations)
 	if (vecBeg->mtid!=vecNext->mtid) continue;
 
 	// Check combinability of pairs
-	if (_pairsDisagree(minCoord, maxCoord, vecBeg->l_qseq, vecBeg->maxNormalISize, _minCoord(vecNext->pos, vecNext->mpos, svType), _maxCoord(vecNext->pos, vecNext->mpos, svType), vecNext->l_qseq, vecNext->maxNormalISize, _getSpanOrientation(*vecBeg, vecBeg->libOrient, svType), _getSpanOrientation(*vecNext, vecNext->libOrient, svType), svType)) continue;
+	if (_pairsDisagree(minCoord, maxCoord, vecBeg->alen, vecBeg->maxNormalISize, _minCoord(vecNext->pos, vecNext->mpos, svType), _maxCoord(vecNext->pos, vecNext->mpos, svType), vecNext->alen, vecNext->maxNormalISize, _getSpanOrientation(*vecBeg, vecBeg->libOrient, svType), _getSpanOrientation(*vecNext, vecNext->libOrient, svType), svType)) continue;
 
 	TNameVertexMap::iterator pos;
 	bool inserted;
@@ -2172,7 +2131,7 @@ inline int run(Config const& c, TSVType svType) {
 	svRec.precise=false;
 	svRec.ct=connectionType;
 	std::vector<int32_t> inslenV;
-	for(typename TCliqueMembers::const_iterator itC = clique.begin(); itC!=clique.end(); ++itC) inslenV.push_back(g[*itC]->Median - (abs(g[*itC]->pos - g[*itC]->mpos) + g[*itC]->l_qseq));
+	for(typename TCliqueMembers::const_iterator itC = clique.begin(); itC!=clique.end(); ++itC) inslenV.push_back(g[*itC]->Median - (abs(g[*itC]->pos - g[*itC]->mpos) + g[*itC]->alen));
 	std::sort(inslenV.begin(), inslenV.end());
 	svRec.insLen = inslenV[inslenV.size()/2];
 #pragma omp critical
@@ -2311,7 +2270,7 @@ int main(int argc, char **argv) {
     ("pe-fraction,c", boost::program_options::value<float>(&c.percentAbnormal)->default_value(0.0), "fixed fraction c of discordant PEs, for c=0 MAD cutoff is used")
     ("num-split,n", boost::program_options::value<unsigned int>(&c.minimumSplitRead)->default_value(2), "minimum number of splitted reads")
     ("flanking,f", boost::program_options::value<unsigned int>(&c.flankQuality)->default_value(80), "quality of the aligned flanking region")
-    ("pruning,j", boost::program_options::value<unsigned int>(&c.graphPruning)->default_value(100), "PE graph pruning cutoff")
+    ("pruning,j", boost::program_options::value<unsigned int>(&c.graphPruning)->default_value(500), "PE graph pruning cutoff")
     ("warranty,w", "show warranty")
     ("license,l", "show license")
     ;

@@ -111,14 +111,14 @@ namespace torali {
   template<typename TBamRecord>
     inline int 
     _getSpanOrientation(TBamRecord const&, int const, SVType<DeletionTag>) {
-    return 1;
+    return 2;
   }
 
   // Duplications
   template<typename TBamRecord>
     inline int 
     _getSpanOrientation(TBamRecord const&, int const, SVType<DuplicationTag>) {
-    return 1;
+    return 3;
   }
 
   // Left- or right-spanning
@@ -128,26 +128,26 @@ namespace torali {
     int orient = getStrandIndependentOrientation(al);
     if (al.flag & BAM_FREAD1) {
       if (defaultOrient == 0) {
-	if (((orient==2) && (al.pos < al.mpos)) || ((orient == 3) && (al.pos > al.mpos))) return 1;
+	if (((orient==2) && (al.pos < al.mpos)) || ((orient == 3) && (al.pos > al.mpos))) return 0;
       } else if (defaultOrient == 1) {
-	if (((orient==2) && (al.pos > al.mpos)) || ((orient == 3) && (al.pos < al.mpos))) return 1;
+	if (((orient==2) && (al.pos > al.mpos)) || ((orient == 3) && (al.pos < al.mpos))) return 0;
       } else if (defaultOrient == 2) {
-	if (((orient==0) && (al.pos < al.mpos)) || ((orient == 1) && (al.pos > al.mpos))) return 1;
+	if (((orient==0) && (al.pos < al.mpos)) || ((orient == 1) && (al.pos > al.mpos))) return 0;
       } else if (defaultOrient == 3) {
-	if (((orient==0) && (al.pos > al.mpos)) || ((orient == 1) && (al.pos < al.mpos))) return 1;
+	if (((orient==0) && (al.pos > al.mpos)) || ((orient == 1) && (al.pos < al.mpos))) return 0;
       }
-      return 0;
+      return 1;
     } else {
       if (defaultOrient == 0) {
-	if (((orient==2) && (al.pos > al.mpos)) || ((orient == 3) && (al.pos < al.mpos))) return 1;
+	if (((orient==2) && (al.pos > al.mpos)) || ((orient == 3) && (al.pos < al.mpos))) return 0;
       } else if (defaultOrient == 1) {
-	if (((orient==2) && (al.pos < al.mpos)) || ((orient == 3) && (al.pos > al.mpos))) return 1;
+	if (((orient==2) && (al.pos < al.mpos)) || ((orient == 3) && (al.pos > al.mpos))) return 0;
       } else if (defaultOrient == 2) {
-	if (((orient==0) && (al.pos > al.mpos)) || ((orient == 1) && (al.pos < al.mpos))) return 1;
+	if (((orient==0) && (al.pos > al.mpos)) || ((orient == 1) && (al.pos < al.mpos))) return 0;
       } else if (defaultOrient == 3) {
-	if (((orient==0) && (al.pos < al.mpos)) || ((orient == 1) && (al.pos > al.mpos))) return 1;
+	if (((orient==0) && (al.pos < al.mpos)) || ((orient == 1) && (al.pos > al.mpos))) return 0;
       }
-      return 0;
+      return 1;
     }
   }
 
@@ -208,7 +208,7 @@ namespace torali {
   template<typename TBamRecord>
     inline int 
     _getSpanOrientation(TBamRecord const&, int const, SVType<InsertionTag>) {
-    return 1;
+    return 4;
   }
 
   // Reduced structural variant record for cov
@@ -288,16 +288,17 @@ namespace torali {
   }
 
   // Deletions, duplications and inversions
-  template<typename TQualities, typename TTag>
+  template<typename TQualities, typename TAlen, typename TTag>
     inline void
-    _resetQualities(TQualities& qualities, SVType<TTag>) {
+    _resetQualities(TQualities& qualities, TAlen& alen, SVType<TTag>) {
     qualities.clear();
+    alen.clear();
   }
 
   // Translocations
-  template<typename TQualities>
+  template<typename TQualities, typename TAlen>
     inline void
-    _resetQualities(TQualities&, SVType<TranslocationTag>) {
+    _resetQualities(TQualities&, TAlen&, SVType<TranslocationTag>) {
     // Nop
   }
 
@@ -475,7 +476,7 @@ namespace torali {
     _pairsDisagree(TSize const pair1Min, TSize const pair1Max, TSize const pair1ReadLength, TISize const pair1maxNormalISize, TSize const pair2Min, TSize const pair2Max, TSize const pair2ReadLength, TISize const pair2maxNormalISize, int const ct1, int const ct2, SVType<InversionTag>) {
     // Do both pairs support the same inversion type (left- or right-spanning)
     if (ct1 != ct2) return true;
-    if (ct1==1) {
+    if (!ct1) {
       // Left-spanning inversions
       if ((pair2Min + pair2ReadLength - pair1Min) > pair1maxNormalISize) return true;
       if ((pair2Max < pair1Max) && ((pair1Max + pair1ReadLength - pair2Max) > pair2maxNormalISize)) return true;
@@ -561,7 +562,7 @@ _getSVRef(TSeq const* const ref, TSVRecord const& svRec, TRef const, SVType<Dupl
 template<typename TSeq, typename TSVRecord, typename TRef>
 inline std::string
 _getSVRef(TSeq const* const ref, TSVRecord const& svRec, TRef const, SVType<InversionTag>) {
-  if (svRec.ct==1) {
+  if (!svRec.ct) {
     std::string strEnd=boost::to_upper_copy(std::string(ref + svRec.svEndBeg, ref + svRec.svEndEnd));
     std::string strRevComp=strEnd;
     std::string::reverse_iterator itR = strEnd.rbegin();
