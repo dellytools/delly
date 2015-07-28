@@ -1758,6 +1758,127 @@ _annotateSpanningCoverage(TConfig const& c, TSampleLibrary& sampleLib, TSVs& svs
 }
 
 
+template<typename TGraph, typename TWeightMap, typename TDumpFile, typename TRefLength, typename TRefNames, typename TSVs, typename TSVType>
+inline void
+_searchCliques(TGraph const& g, TWeightMap const& weightMap, bool const dumpPe, TDumpFile& dumpPeFile, TRefLength const& reflen, TRefNames const& refnames, TSVs& svs, unsigned int& clique_count, int const overallMaxISize, TSVType svType) {
+  // Compute the connected components
+  std::vector<int> my_comp(num_vertices(g));
+  int numComp = boost::connected_components(g, &my_comp[0]);
+    
+  // Count the number of vertices for each component
+  typedef std::vector<unsigned int> TCompSize;
+  TCompSize compSize(numComp);
+  std::fill(compSize.begin(), compSize.end(), 0);
+  typename boost::graph_traits<TGraph>::vertex_iterator vIt, vItEnd;
+  for(boost::tie(vIt, vItEnd) = boost::vertices(g); vIt != vItEnd; ++vIt) ++compSize[my_comp[*vIt]];
+
+  // Iterate each component
+#pragma omp parallel for default(shared)
+  for(int compIt = 0; compIt < numComp; ++compIt) {
+    if (compSize[compIt]<2) continue;
+    typedef typename boost::graph_traits<TGraph>::vertex_descriptor TVertexDescriptor;
+    typedef EdgeRecord<unsigned short, TVertexDescriptor> TEdgeRecord;
+    typedef std::vector<TEdgeRecord> TWeightEdge;
+    TWeightEdge wEdge;
+    typename boost::graph_traits<TGraph>::edge_iterator eIt, eItEnd;
+    for(boost::tie(eIt, eItEnd) = boost::edges(g); eIt != eItEnd; ++eIt) {
+      if ((my_comp[boost::source(*eIt, g)] == compIt) && (my_comp[boost::source(*eIt, g)] == my_comp[boost::target(*eIt,g)])) {
+	wEdge.push_back(TEdgeRecord(boost::source(*eIt, g), boost::target(*eIt, g), weightMap[*eIt]));
+      }
+    }
+    
+    // Sort edges by weight
+    std::sort(wEdge.begin(), wEdge.end(), SortEdgeRecords<TEdgeRecord>());
+    //for(TWeightEdge::const_iterator itWEdge = wEdge.begin(); itWEdge!=wEdge.end(); ++itWEdge) std::cerr << refIndex << ',' << compIt << ',' << itWEdge->source << ',' << itWEdge->target << ',' << itWEdge->weight << std::endl;
+      
+    // Find a large clique
+    typename TWeightEdge::const_iterator itWEdge = wEdge.begin();
+    typename TWeightEdge::const_iterator itWEdgeEnd = wEdge.end();
+    typedef std::set<TVertexDescriptor> TCliqueMembers;
+    TCliqueMembers clique;
+    TCliqueMembers incompatible;
+    int svStart, svEnd, wiggle;
+    int32_t clusterRefID=g[itWEdge->source]->tid;
+    int32_t clusterMateRefID=g[itWEdge->source]->mtid;
+    _initClique(g[itWEdge->source], svStart, svEnd, wiggle, svType);
+    int connectionType = _getSpanOrientation(*g[itWEdge->source], g[itWEdge->source]->libOrient, svType);
+    if ((clusterRefID==clusterMateRefID) && (svStart >= svEnd))  continue;
+    clique.insert(itWEdge->source);
+    
+    // Grow the clique from the seeding edge
+    bool cliqueGrow=true;
+    while ((cliqueGrow) && (clique.size() < compSize[compIt])) {
+      itWEdge = wEdge.begin();
+      cliqueGrow = false;
+      for(;(!cliqueGrow) && (itWEdge != itWEdgeEnd);++itWEdge) {
+	TVertexDescriptor v;
+	if ((clique.find(itWEdge->source) == clique.end()) && (clique.find(itWEdge->target) != clique.end())) v = itWEdge->source;
+	else if ((clique.find(itWEdge->source) != clique.end()) && (clique.find(itWEdge->target) == clique.end())) v = itWEdge->target;
+	else continue;
+	if (incompatible.find(v) != incompatible.end()) continue;
+	typename boost::graph_traits<TGraph>::adjacency_iterator vi, vi_end;
+	unsigned int cliqSize = 0;
+	for(boost::tie(vi, vi_end) = boost::adjacent_vertices(v, g); vi != vi_end; ++vi)
+	  if (clique.find(*vi) != clique.end()) ++cliqSize;
+	if (cliqSize == clique.size()) {
+	  //std::cerr << refIndex << ',' << compIt << ',' << v << ',' << svStart << ',' << svEnd << ',' << wiggle << std::endl;
+	  cliqueGrow = _updateClique(g[v], svStart, svEnd, wiggle, svType);
+	  if (cliqueGrow) clique.insert(v);
+	  else incompatible.insert(v);
+	}
+      }
+    }
+
+    if ((clique.size()>1) && (_svSizeCheck(svStart, svEnd, svType))) {
+      StructuralVariantRecord svRec;
+      svRec.chr = clusterRefID;
+      svRec.chr2 = clusterMateRefID;
+      svRec.svStartBeg = std::max((int) svStart - overallMaxISize, 0);
+      svRec.svStart = std::min((uint32_t) svStart + 1, reflen[clusterRefID]);
+      svRec.svStartEnd = std::min((uint32_t) svStart + overallMaxISize, reflen[clusterRefID]);
+      svRec.svEndBeg = std::max((int) svEnd - overallMaxISize, 0);
+      svRec.svEnd = std::min((uint32_t) svEnd+1, reflen[clusterMateRefID]);
+      svRec.svEndEnd = std::min((uint32_t) svEnd + overallMaxISize, reflen[clusterMateRefID]);
+      svRec.peSupport = clique.size();
+      svRec.wiggle = abs(wiggle);
+      std::vector<uint8_t> mapQV;
+      for(typename TCliqueMembers::const_iterator itC = clique.begin(); itC!=clique.end(); ++itC) mapQV.push_back(g[*itC]->MapQuality);
+      std::sort(mapQV.begin(), mapQV.end());
+      svRec.peMapQuality = mapQV[mapQV.size()/2];
+      if ((clusterRefID==clusterMateRefID) && (svRec.svStartEnd > svRec.svEndBeg)) {
+	unsigned int midPointDel = ((svRec.svEnd - svRec.svStart) / 2) + svRec.svStart;
+	svRec.svStartEnd = midPointDel -1;
+	svRec.svEndBeg = midPointDel;
+      }
+      svRec.srSupport=0;
+      svRec.srAlignQuality=0;
+      svRec.precise=false;
+      svRec.ct=connectionType;
+      std::vector<int32_t> inslenV;
+      for(typename TCliqueMembers::const_iterator itC = clique.begin(); itC!=clique.end(); ++itC) inslenV.push_back(g[*itC]->Median - (abs(g[*itC]->pos - g[*itC]->mpos) + g[*itC]->alen));
+      std::sort(inslenV.begin(), inslenV.end());
+      svRec.insLen = inslenV[inslenV.size()/2];
+#pragma omp critical
+      {
+	svRec.id = clique_count++;
+	svs.push_back(svRec);
+      }
+      
+      // Dump PEs
+      if (dumpPe) {
+#pragma omp critical
+	{
+	  for(typename TCliqueMembers::const_iterator itC=clique.begin(); itC!=clique.end(); ++itC) {
+	    std::stringstream id;
+	    id << _addID(svType) << std::setw(8) << std::setfill('0') << svRec.id;
+	    dumpPeFile << id.str() << "\t" << refnames[g[*itC]->tid] << "\t" << g[*itC]->pos << "\t" <<  refnames[g[*itC]->mtid] << "\t" << g[*itC]->mpos << "\t" << (unsigned int) g[*itC]->MapQuality << std::endl;
+	  }
+	}
+      }
+    }
+  }
+}
+
 template<typename TSVType>
 inline int run(Config const& c, TSVType svType) {
 #ifdef PROFILE
@@ -1972,6 +2093,7 @@ inline int run(Config const& c, TSVType svType) {
     std::sort(bamRecord.begin(), bamRecord.end(), SortBamRecords<BamAlignRecord>());
     //for(TBamRecord::const_iterator bamIt = bamRecord.begin(); bamIt!=bamRecord.end(); ++bamIt) std::cerr << bamIt->tid << ',' << bamIt->pos << ',' << bamIt->mtid << ',' << bamIt->mpos << std::endl;
 
+
     // Define an undirected graph g
     typedef boost::adjacency_list<boost::vecS, boost::vecS, boost::undirectedS, TBamRecord::const_iterator, boost::property<boost::edge_weight_t, unsigned short> > Graph;
     Graph g;
@@ -1986,9 +2108,18 @@ inline int run(Config const& c, TSVType svType) {
     edge_map_t weightMap = get(boost::edge_weight, g);
       
     // Iterate the chromosome range
+    unsigned int lastConnectedNode = 0;
     TBamRecord::const_iterator vecBeg = bamRecord.begin();
     TBamRecord::const_iterator vecEnd = bamRecord.end();
     for(;vecBeg!=vecEnd; ++vecBeg) {
+      // Safe to clean the graph?
+      if ( (vecBeg-bamRecord.begin()) > lastConnectedNode) {
+	if (boost::num_vertices(g)) {
+	  _searchCliques(g, weightMap, dumpPe, dumpPeFile, reflen, refnames, svs, clique_count, overallMaxISize, svType);
+	  g.clear();
+	  nameFrag.clear();
+	}
+      }
       int32_t const minCoord = _minCoord(vecBeg->pos, vecBeg->mpos, svType);
       int32_t const maxCoord = _maxCoord(vecBeg->pos, vecBeg->mpos, svType);
       TBamRecord::const_iterator vecNext = vecBeg + 1;
@@ -1998,6 +2129,9 @@ inline int run(Config const& c, TSVType svType) {
 
 	// Check combinability of pairs
 	if (_pairsDisagree(minCoord, maxCoord, vecBeg->alen, vecBeg->maxNormalISize, _minCoord(vecNext->pos, vecNext->mpos, svType), _maxCoord(vecNext->pos, vecNext->mpos, svType), vecNext->alen, vecNext->maxNormalISize, _getSpanOrientation(*vecBeg, vecBeg->libOrient, svType), _getSpanOrientation(*vecNext, vecNext->libOrient, svType), svType)) continue;
+
+	// Update last connected node
+	if ( (vecNext-bamRecord.begin()) > lastConnectedNode ) lastConnectedNode = vecNext-bamRecord.begin();
 
 	TNameVertexMap::iterator pos;
 	bool inserted;
@@ -2035,125 +2169,12 @@ inline int run(Config const& c, TSVType svType) {
 	}
       }
     }
-    nameFrag.clear();
-  
-    // Compute the connected components
-    std::vector<int> my_comp(num_vertices(g));
-    int numComp = boost::connected_components(g, &my_comp[0]);
-    
-    // Count the number of vertices for each component
-    typedef std::vector<unsigned int> TCompSize;
-    TCompSize compSize(numComp);
-    std::fill(compSize.begin(), compSize.end(), 0);
-    boost::graph_traits<Graph>::vertex_iterator vIt, vItEnd;
-    for(boost::tie(vIt, vItEnd) = boost::vertices(g); vIt != vItEnd; ++vIt) ++compSize[my_comp[*vIt]];
-
-    // Iterate each component
-#pragma omp parallel for default(shared)
-    for(int compIt = 0; compIt < numComp; ++compIt) {
-      if (compSize[compIt]<2) continue;
-      typedef boost::graph_traits<Graph>::vertex_descriptor TVertexDescriptor;
-      typedef EdgeRecord<unsigned short, TVertexDescriptor> TEdgeRecord;
-      typedef std::vector<TEdgeRecord> TWeightEdge;
-      TWeightEdge wEdge;
-      boost::graph_traits<Graph>::edge_iterator eIt, eItEnd;
-      for(boost::tie(eIt, eItEnd) = boost::edges(g); eIt != eItEnd; ++eIt) {
-	if ((my_comp[boost::source(*eIt, g)] == compIt) && (my_comp[boost::source(*eIt, g)] == my_comp[boost::target(*eIt,g)])) {
-	  wEdge.push_back(TEdgeRecord(boost::source(*eIt, g), boost::target(*eIt, g), weightMap[*eIt]));
-	}
-      }
-
-      // Sort edges by weight
-      std::sort(wEdge.begin(), wEdge.end(), SortEdgeRecords<TEdgeRecord>());
-      //for(TWeightEdge::const_iterator itWEdge = wEdge.begin(); itWEdge!=wEdge.end(); ++itWEdge) std::cerr << refIndex << ',' << compIt << ',' << itWEdge->source << ',' << itWEdge->target << ',' << itWEdge->weight << std::endl;
-      
-      // Find a large clique
-      TWeightEdge::const_iterator itWEdge = wEdge.begin();
-      TWeightEdge::const_iterator itWEdgeEnd = wEdge.end();
-      typedef std::set<TVertexDescriptor> TCliqueMembers;
-      TCliqueMembers clique;
-      TCliqueMembers incompatible;
-      int svStart, svEnd, wiggle;
-      int32_t clusterRefID=g[itWEdge->source]->tid;
-      int32_t clusterMateRefID=g[itWEdge->source]->mtid;
-      _initClique(g[itWEdge->source], svStart, svEnd, wiggle, svType);
-      int connectionType = _getSpanOrientation(*g[itWEdge->source], g[itWEdge->source]->libOrient, svType);
-      if ((clusterRefID==clusterMateRefID) && (svStart >= svEnd))  continue;
-      clique.insert(itWEdge->source);
-      
-      // Grow the clique from the seeding edge
-      bool cliqueGrow=true;
-      while ((cliqueGrow) && (clique.size() < compSize[compIt])) {
-	itWEdge = wEdge.begin();
-	cliqueGrow = false;
-	for(;(!cliqueGrow) && (itWEdge != itWEdgeEnd);++itWEdge) {
-	  TVertexDescriptor v;
-	  if ((clique.find(itWEdge->source) == clique.end()) && (clique.find(itWEdge->target) != clique.end())) v = itWEdge->source;
-	  else if ((clique.find(itWEdge->source) != clique.end()) && (clique.find(itWEdge->target) == clique.end())) v = itWEdge->target;
-	  else continue;
-	  if (incompatible.find(v) != incompatible.end()) continue;
-	  boost::graph_traits<Graph>::adjacency_iterator vi, vi_end;
-	  unsigned int cliqSize = 0;
-	  for(boost::tie(vi, vi_end) = boost::adjacent_vertices(v, g); vi != vi_end; ++vi)
-	    if (clique.find(*vi) != clique.end()) ++cliqSize;
-	  if (cliqSize == clique.size()) {
-	    //std::cerr << refIndex << ',' << compIt << ',' << v << ',' << svStart << ',' << svEnd << ',' << wiggle << std::endl;
-	    cliqueGrow = _updateClique(g[v], svStart, svEnd, wiggle, svType);
-	    if (cliqueGrow) clique.insert(v);
-	    else incompatible.insert(v);
-	  }
-	}
-      }
-
-      if ((clique.size()>1) && (_svSizeCheck(svStart, svEnd, svType))) {
-	StructuralVariantRecord svRec;
-	svRec.chr = refIndex;
-	svRec.chr2 = clusterMateRefID;
-	svRec.svStartBeg = std::max((int) svStart - overallMaxISize, 0);
-	svRec.svStart = std::min((uint32_t) svStart + 1, reflen[refIndex]);
-	svRec.svStartEnd = std::min((uint32_t) svStart + overallMaxISize, reflen[refIndex]);
-	svRec.svEndBeg = std::max((int) svEnd - overallMaxISize, 0);
-	svRec.svEnd = std::min((uint32_t) svEnd+1, reflen[clusterMateRefID]);
-	svRec.svEndEnd = std::min((uint32_t) svEnd + overallMaxISize, reflen[clusterMateRefID]);
-	svRec.peSupport = clique.size();
-	svRec.wiggle = abs(wiggle);
-	std::vector<uint8_t> mapQV;
-	for(typename TCliqueMembers::const_iterator itC = clique.begin(); itC!=clique.end(); ++itC) mapQV.push_back(g[*itC]->MapQuality);
-	std::sort(mapQV.begin(), mapQV.end());
-	svRec.peMapQuality = mapQV[mapQV.size()/2];
-	if ((refIndex==clusterMateRefID) && (svRec.svStartEnd > svRec.svEndBeg)) {
-	  unsigned int midPointDel = ((svRec.svEnd - svRec.svStart) / 2) + svRec.svStart;
-	  svRec.svStartEnd = midPointDel -1;
-	  svRec.svEndBeg = midPointDel;
-	}
-	svRec.srSupport=0;
-	svRec.srAlignQuality=0;
-	svRec.precise=false;
-	svRec.ct=connectionType;
-	std::vector<int32_t> inslenV;
-	for(typename TCliqueMembers::const_iterator itC = clique.begin(); itC!=clique.end(); ++itC) inslenV.push_back(g[*itC]->Median - (abs(g[*itC]->pos - g[*itC]->mpos) + g[*itC]->alen));
-	std::sort(inslenV.begin(), inslenV.end());
-	svRec.insLen = inslenV[inslenV.size()/2];
-#pragma omp critical
-	{
-	  svRec.id = clique_count++;
-	  svs.push_back(svRec);
-	}
-	
-	// Dump PEs
-	if (dumpPe) {
-#pragma omp critical
-	  {
-	    for(typename TCliqueMembers::const_iterator itC=clique.begin(); itC!=clique.end(); ++itC) {
-	      std::stringstream id;
-	      id << _addID(svType) << std::setw(8) << std::setfill('0') << svRec.id;
-	      dumpPeFile << id.str() << "\t" << refnames[g[*itC]->tid] << "\t" << g[*itC]->pos << "\t" <<  refnames[g[*itC]->mtid] << "\t" << g[*itC]->mpos << "\t" << (unsigned int) g[*itC]->MapQuality << std::endl;
-	    }
-	  }
-	}
-      }
+    if (boost::num_vertices(g)) {
+      _searchCliques(g, weightMap, dumpPe, dumpPeFile, reflen, refnames, svs, clique_count, overallMaxISize, svType);
+      g.clear();
+      nameFrag.clear();
     }
-  }
+  }  
   
   // Close dump PE file
   if (dumpPe) dumpPeFile.close();
