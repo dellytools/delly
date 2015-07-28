@@ -9,7 +9,7 @@ BOOST_ROOT = ${PWD}/src/modular-boost
 
 # Flags
 CXX=g++
-CXXFLAGS += -isystem ${SEQTK_ROOT} -isystem ${BOOST_ROOT} -pedantic -W -Wall -Wno-unknown-pragmas -Wno-maybe-uninitialized
+CXXFLAGS += -isystem ${SEQTK_ROOT} -isystem ${BOOST_ROOT} -pedantic -W -Wall -Wno-unknown-pragmas
 LDFLAGS += -L${SEQTK_ROOT} -L${BOOST_ROOT}/stage/lib -lboost_iostreams -lboost_filesystem -lboost_system -lboost_program_options -lboost_date_time 
 
 # Additional flags for release/debug
