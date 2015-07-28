@@ -2095,7 +2095,7 @@ inline int run(Config const& c, TSVType svType) {
 
 
     // Define an undirected graph g
-    typedef boost::adjacency_list<boost::vecS, boost::vecS, boost::undirectedS, TBamRecord::const_iterator, boost::property<boost::edge_weight_t, unsigned short> > Graph;
+    typedef boost::adjacency_list<boost::vecS, boost::vecS, boost::undirectedS, TBamRecord::const_iterator, boost::property<boost::edge_weight_t, unsigned int> > Graph;
     Graph g;
       
     // Define the reverse map
@@ -2162,10 +2162,7 @@ inline int run(Config const& c, TSVType svType) {
 	if ((out_degree(u, g) <= c.graphPruning) || (out_degree(v, g) <= c.graphPruning)) {
 	  boost::graph_traits<Graph>::edge_descriptor e;
 	  tie(e, inserted) = add_edge(u,v, g);
-	  if (inserted) {
-	    int locEdgeWeight=abs( abs( (_minCoord(vecNext->pos, vecNext->mpos, svType) - minCoord) - (_maxCoord(vecNext->pos, vecNext->mpos, svType) - maxCoord) ) - abs(vecBeg->Median - vecNext->Median) );
-	    weightMap[e] = (locEdgeWeight > 30000) ? 30000 : locEdgeWeight;
-	  }
+	  if (inserted) weightMap[e] = abs( abs( (_minCoord(vecNext->pos, vecNext->mpos, svType) - minCoord) - (_maxCoord(vecNext->pos, vecNext->mpos, svType) - maxCoord) ) - abs(vecBeg->Median - vecNext->Median) );
 	}
       }
     }
