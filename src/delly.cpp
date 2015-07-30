@@ -1385,20 +1385,20 @@ findPutativeSplitReads(TConfig const& c, std::vector<TStructuralVariantRecord>& 
 	    TSplitPoints spp1;
 
 	    // Find putative split reads in all samples
+	    for (unsigned int bpPoint = 0; bpPoint<2; ++bpPoint) {
+	      int32_t regionChr = svIt->chr;
+	      int regionStart = (svIt->svStartBeg + svIt->svStart)/2;
+	      int regionEnd = (svIt->svStart + svIt->svStartEnd)/2;
+	      if (bpPoint) {
+		regionChr = svIt->chr2;
+		regionStart = (svIt->svEndBeg + svIt->svEnd)/2;
+		regionEnd = (svIt->svEnd + svIt->svEndEnd)/2;
+		spp1.resize(regionEnd-regionStart, 0);
+	      } else {
+		spp0.resize(regionEnd-regionStart, 0);
+	      }
 #pragma omp parallel for default(shared)
-	    for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
-	      for (unsigned int bpPoint = 0; bpPoint<2; ++bpPoint) {
-		int32_t regionChr = svIt->chr;
-		int regionStart = (svIt->svStartBeg + svIt->svStart)/2;
-		int regionEnd = (svIt->svStart + svIt->svStartEnd)/2;
-		if (bpPoint) {
-		  regionChr = svIt->chr2;
-		  regionStart = (svIt->svEndBeg + svIt->svEnd)/2;
-		  regionEnd = (svIt->svEnd + svIt->svEndEnd)/2;
-		  spp1.resize(regionEnd-regionStart, 0);
-		} else {
-		  spp0.resize(regionEnd-regionStart, 0);
-		}
+	      for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
 		hts_itr_t* iter = sam_itr_queryi(idx[file_c], regionChr, regionStart, regionEnd);
 		bam1_t* rec = bam_init1();
 		while (sam_itr_next(samfile[file_c], iter, rec) >= 0) {
