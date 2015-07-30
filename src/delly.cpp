@@ -1258,11 +1258,63 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
   ofile.close();
 }
 
-template<typename TClipSizes>
-inline void _clips(bam1_t* rec, TClipSizes& csizes) {
+
+inline bool _validSoftClip(bam1_t* rec, int& clipSize, int& splitPoint) {
+  // Check read-length
+  if (rec->core.l_qseq < 35) return false;
+
+  // Check for soft-clips
+  bool hasSoftClip = false;
   uint32_t* cigar = bam_get_cigar(rec);
   for (unsigned int i = 0; i < rec->core.n_cigar; ++i) 
-    if (bam_cigar_op(cigar[i]) == BAM_CSOFT_CLIP) csizes.push_back(bam_cigar_oplen(cigar[i]));
+    if (bam_cigar_op(cigar[i]) == BAM_CSOFT_CLIP) hasSoftClip = true;
+  if (!hasSoftClip) return false;
+
+  // Get quality vector
+  typedef std::vector<uint8_t> TQuality;
+  TQuality quality;
+  quality.resize(rec->core.l_qseq);
+  uint8_t* qualptr = bam_get_qual(rec);
+  for (int i = 0; i < rec->core.l_qseq; ++i) quality[i] = qualptr[i];
+
+  // Get soft-clips
+  unsigned int alen = 0;
+  unsigned int numSoftClip = 0;
+  unsigned int meanQuality = 0;
+  for (unsigned int i = 0; i < rec->core.n_cigar; ++i) {
+    if ((bam_cigar_op(cigar[i]) == BAM_CMATCH) || (bam_cigar_op(cigar[i]) == BAM_CINS)) alen += bam_cigar_oplen(cigar[i]);
+    else if (bam_cigar_op(cigar[i]) == BAM_CSOFT_CLIP) {
+      ++numSoftClip;
+      clipSize = bam_cigar_oplen(cigar[i]);
+      splitPoint = rec->core.pos + alen;
+      unsigned int qualSum = 0;
+      for(unsigned int i = alen; i < (alen+clipSize); ++i) qualSum += quality[i];
+      meanQuality = qualSum / clipSize;
+    }
+  }
+  //std::cerr << numSoftClip << ',' << clipSize << ',' << meanQuality << ',' << splitPoint << std::endl;
+  return ((numSoftClip==1) && (meanQuality>=20));
+}
+
+template<typename TValue, typename TPosition>
+inline void
+_movingAverage(std::vector<TValue> const& spp, TPosition const windowSize, TValue& movingAverage, TPosition& lowerBound, TPosition& upperBound) {
+  movingAverage = 0;
+  for(TPosition i = 0; (i<windowSize) && (i < spp.size()); ++i) movingAverage += spp[i];
+  TValue bestAverage = movingAverage;
+  TValue bestAverageIndex = windowSize - 1;
+  for(TPosition i = windowSize; i < spp.size() ; ++i) {
+    movingAverage -= spp[i-windowSize];
+    movingAverage += spp[i];
+    if (movingAverage>bestAverage) {
+      bestAverage = movingAverage;
+      bestAverageIndex = i;
+    }
+  }
+  movingAverage = bestAverage;
+  upperBound = bestAverageIndex + 1;
+  if (upperBound > windowSize) lowerBound = upperBound - windowSize;
+  else lowerBound = 0;
 }
 
 
@@ -1325,8 +1377,12 @@ findPutativeSplitReads(TConfig const& c, std::vector<TStructuralVariantRecord>& 
 	    // Get the SV reference
 	    std::string svRefStr = _getSVRef(seq->seq.s, *svIt, refIndex, svType);
 	    svIt->consensus = "";
-	    typedef std::set<std::string> TSplitReadSet;
-	    TSplitReadSet splitReadSet;
+	    typedef std::vector<std::pair<int, std::string> > TOffsetSplit;
+	    typedef std::vector<int> TSplitPoints;
+	    TOffsetSplit osp0;
+	    TSplitPoints spp0;
+	    TOffsetSplit osp1;
+	    TSplitPoints spp1;
 
 	    // Find putative split reads in all samples
 #pragma omp parallel for default(shared)
@@ -1335,33 +1391,47 @@ findPutativeSplitReads(TConfig const& c, std::vector<TStructuralVariantRecord>& 
 		int32_t regionChr = svIt->chr;
 		int regionStart = (svIt->svStartBeg + svIt->svStart)/2;
 		int regionEnd = (svIt->svStart + svIt->svStartEnd)/2;
-		if (bpPoint == 1) {
+		if (bpPoint) {
 		  regionChr = svIt->chr2;
 		  regionStart = (svIt->svEndBeg + svIt->svEnd)/2;
 		  regionEnd = (svIt->svEnd + svIt->svEndEnd)/2;
+		  spp1.resize(regionEnd-regionStart, 0);
+		} else {
+		  spp0.resize(regionEnd-regionStart, 0);
 		}
 		hts_itr_t* iter = sam_itr_queryi(idx[file_c], regionChr, regionStart, regionEnd);
 		bam1_t* rec = bam_init1();
 		while (sam_itr_next(samfile[file_c], iter, rec) >= 0) {
 		  if (rec->core.flag & (BAM_FSECONDARY | BAM_FQCFAIL | BAM_FDUP | BAM_FSUPPLEMENTARY | BAM_FUNMAP)) continue;
 
-		  // Clipped read
-		  typedef std::vector<int> TIntVector;
-		  TIntVector clipSizes;
-		  _clips(rec, clipSizes);
-		  // Exactly one soft clip
-		  if (clipSizes.size()==1) {
-		    // Get the sequence
-		    std::string sequence;
-		    sequence.resize(rec->core.l_qseq);
-		    uint8_t* seqptr = bam_get_seq(rec);
-		    for (int i = 0; i < rec->core.l_qseq; ++i) sequence[i] = "=ACMGRSVTWYHKDBN"[bam_seqi(seqptr, i)];
-		    
-		    // Minimum clip size length fulfilled?
-		    int minClipSize = (int) (log10(rec->core.l_qseq) * 10);
+		  // Valid soft clip?
+		  int clipSize = 0;
+		  int splitPoint = 0;
+		  if (_validSoftClip(rec, clipSize, splitPoint)) {
+		    if ((splitPoint >= regionStart) && (splitPoint < regionEnd)) {
+		      splitPoint -= regionStart;
+		      // Minimum clip size
+		      int minClipSize = (int) (log10(rec->core.l_qseq) * 10);
+		      if (clipSize > minClipSize) {
+			// Get the sequence
+			std::string sequence;
+			sequence.resize(rec->core.l_qseq);
+			uint8_t* seqptr = bam_get_seq(rec);
+			for (int i = 0; i < rec->core.l_qseq; ++i) sequence[i] = "=ACMGRSVTWYHKDBN"[bam_seqi(seqptr, i)];
+			if (bpPoint) {
 #pragma omp critical
-		    {
-		      if (clipSizes[0]>=minClipSize) splitReadSet.insert(sequence);
+			  {
+			    ++spp1[splitPoint];
+			    osp1.push_back(std::make_pair(splitPoint, sequence));
+			  } 
+			} else {
+#pragma omp critical
+			  {
+			    ++spp0[splitPoint];
+			    osp0.push_back(std::make_pair(splitPoint, sequence));
+			  } 
+			}
+		      }
 		    }
 		  }
 		}
@@ -1369,24 +1439,25 @@ findPutativeSplitReads(TConfig const& c, std::vector<TStructuralVariantRecord>& 
 		hts_itr_destroy(iter);		
 	      }
 	    }
-	    //std::cout << "Num. split reads: " << splitReadSet.size() << std::endl;
-
-	    // Compare the split-reads against the SV reference
-	    if (!splitReadSet.empty()) {
-	      // Limit to at most 1000 split reads
-	      std::vector<std::string> splitCandidates;
-	      typename TSplitReadSet::const_iterator itSplit=splitReadSet.begin();
-	      typename TSplitReadSet::const_iterator itSplitEnd=splitReadSet.end();
-	      for(unsigned int splitCount=0; ((itSplit!=itSplitEnd) && (splitCount<1000));++itSplit, ++splitCount) {
-		// Minimum read-length
-		if (itSplit->size()>=35) splitCandidates.push_back(*itSplit);
-	      }
-	      
-	      totalSplitReadsAligned += splitCandidates.size();
-
-	      // Search true split in candidates
-	      searchSplit(c, *svIt, svRefStr, splitCandidates, svType);
+	    // Collect candidate split reads
+	    typedef std::set<std::string> TSplitReadSet;
+	    TSplitReadSet splitReadSet;
+	    int mvAvg, lBound, uBound;
+	    _movingAverage(spp0, 5, mvAvg, lBound, uBound);
+	    if (mvAvg > 0) 
+	      for(typename TOffsetSplit::const_iterator itOS = osp0.begin(); itOS != osp0.end(); ++itOS) 
+		if ((itOS->first >= lBound) && (itOS->first < uBound)) 
+		  if (splitReadSet.size() < 1000) splitReadSet.insert(itOS->second); // Limit to at most 1000 split reads
+	    _movingAverage(spp1, 5, mvAvg, lBound, uBound);
+	    if (mvAvg > 0) {
+	      for(typename TOffsetSplit::const_iterator itOS = osp1.begin(); itOS != osp1.end(); ++itOS) 
+		if ((itOS->first >= lBound) && (itOS->first < uBound)) 
+		  if (splitReadSet.size() < 1000) splitReadSet.insert(itOS->second); // Limit to at most 1000 split reads
 	    }
+	    totalSplitReadsAligned += splitReadSet.size();
+
+	    // Search true split in candidates
+	    searchSplit(c, *svIt, svRefStr, splitReadSet, svType);
 	  }
 	}
       }
