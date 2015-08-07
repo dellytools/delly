@@ -44,13 +44,12 @@ namespace torali
     } else {
       typedef typename TProfile::index TPIndex;
       double score = 0;
-      for(TPIndex k1 = 0; k1<6; ++k1) 
-	for(TPIndex k2 = 0; k2<6; ++k2) 
+      for(TPIndex k1 = 0; k1<5; ++k1) 
+	for(TPIndex k2 = 0; k2<5; ++k2) 
 	  score += p1[k1][row] * p2[k2][col] * ((k1 == k2) ? match : mismatch);
       return ((int) score);
     }
   }
-
 
   template<typename TAlign1, typename TAlign2, typename TAlign>
   inline int
@@ -58,7 +57,7 @@ namespace torali
   {
     typedef typename TAlign::index TAIndex;
     typedef int TScoreValue;
-    TScoreValue inf = 100000;
+    TScoreValue inf = 1000000;
     TScoreValue go = -10;
     TScoreValue ge = -1;
 
@@ -111,17 +110,19 @@ namespace torali
     }
 
     // Initialization
-    for(std::size_t col = 0; col <= n; ++col) {
+    for(std::size_t col = 1; col <= n; ++col) {
       v[0][col] = -inf;
-      s[0][col] = go + col * ge;
-      h[0][col] = go + col * ge;
+      s[0][col] = go/2 + col * ge;
+      h[0][col] = go/2 + col * ge;
     }
-    for(std::size_t row = 0; row <= m; ++row) {
+    for(std::size_t row = 1; row <= m; ++row) {
       h[row][0] = -inf;
-      s[row][0] = go + row * ge;
-      v[row][0] = go + row * ge;
+      s[row][0] = go/2 + row * ge;
+      v[row][0] = go/2 + row * ge;
     }
     s[0][0] = 0;
+    v[0][0] = -inf;
+    h[0][0] = -inf;
 
     // Recursion
     for(std::size_t col = 1; col <= n; ++col) {

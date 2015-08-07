@@ -124,6 +124,60 @@ namespace torali {
     }
   }
 
+  template<typename TAlign>
+  inline void
+  sprealign(TAlign& align) {
+    typedef typename TAlign::index TAIndex;
+    for(TAIndex i = 0; i<align.shape()[0]; ++i) {
+      // Precompute sub-alignment shapes
+      int seqLength = 0;
+      std::set<TAIndex> gaps;
+      for(TAIndex j = 0; j<align.shape()[1]; ++j) {	
+	if (align[i][j] != '-') {
+	  ++seqLength;
+	  bool gapOnly = true;
+	  for(TAIndex k = 0; k<align.shape()[0]; ++k) {
+	    if ((k!=i) && (align[k][j] != '-')) {
+	      gapOnly = false;
+	      break;
+	    }
+	  }
+	  if (gapOnly) gaps.insert(j);
+	}
+      }
+
+      // Create sub-alignments
+      TAlign align1;
+      TAIndex aind1 = 0;
+      align1.resize(boost::extents[1][seqLength]);
+      TAlign align2;
+      TAIndex aind2 = 0;
+      align2.resize(boost::extents[align.shape()[0] - 1][align.shape()[1] - gaps.size()]);
+      for(TAIndex j = 0; j<align.shape()[1]; ++j) {
+	if (align[i][j] != '-') align1[0][aind1++] = align[i][j];
+	if (gaps.find(j) == gaps.end()) {
+	  TAIndex kr = 0;
+	  for(TAIndex k = 0; k<align.shape()[0]; ++k)
+	    if (k!=i) align2[kr++][aind2] = align[k][j];
+	  ++aind2;
+	}
+      }
+      
+      // Re-align sequence to profile
+      gotoh(align1, align2, align);
+
+
+      std::cerr << i << std::endl;
+      for(TAIndex ii = 0; ii<align.shape()[0]; ++ii) {
+	for(TAIndex jj = 0; jj<align.shape()[1]; ++jj) {
+	  std::cerr << align[ii][jj];
+	}
+	std::cerr << std::endl;
+      }
+      std::cerr << std::endl;
+    }
+  }
+
 
   template<typename TSplitReadSet>
   inline void
@@ -172,6 +226,9 @@ namespace torali {
       std::cerr << std::endl;
     }
     std::cerr << std::endl;
+
+    // Sequence to profile re-alignment
+    //sprealign(align);
   }
 
 }
