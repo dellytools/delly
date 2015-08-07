@@ -64,7 +64,6 @@ Contact: Tobias Rausch (rausch@embl.de)
 #include "spanning.h"
 #include "coverage.h"
 #include "junction.h"
-#include "fasta_reader.h"
 #include "msa.h"
 
 #include <sys/types.h>
@@ -1458,7 +1457,7 @@ findPutativeSplitReads(TConfig const& c, std::vector<TStructuralVariantRecord>& 
 	    totalSplitReadsAligned += splitReadSet.size();
 
 	    // MSA
-	    //msa(splitReadSet);
+	    //if (splitReadSet.size() > 1) msa(splitReadSet);
 
 	    // Search true split in candidates
 	    searchSplit(c, *svIt, svRefStr, splitReadSet, svType);
