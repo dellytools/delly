@@ -2363,7 +2363,7 @@ int main(int argc, char **argv) {
     ("pe-fraction,c", boost::program_options::value<float>(&c.percentAbnormal)->default_value(0.0), "fixed fraction c of discordant PEs, for c=0 MAD cutoff is used")
     ("num-split,n", boost::program_options::value<unsigned int>(&c.minimumSplitRead)->default_value(2), "minimum number of splitted reads")
     ("flanking,f", boost::program_options::value<unsigned int>(&c.flankQuality)->default_value(80), "quality of the aligned flanking region")
-    ("pruning,j", boost::program_options::value<unsigned int>(&c.graphPruning)->default_value(500), "PE graph pruning cutoff")
+    ("pruning,j", boost::program_options::value<unsigned int>(&c.graphPruning)->default_value(250), "PE graph pruning cutoff")
     ("warranty,w", "show warranty")
     ("license,l", "show license")
     ;
