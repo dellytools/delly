@@ -28,7 +28,6 @@ namespace torali
 {
 
   // Align Config
-
   template<bool TTop = false, bool TLeft = false, bool TRight = false, bool TBottom = false>
     class AlignConfig;
 
@@ -98,10 +97,7 @@ namespace torali
 
 
 
-
-
   // Functions
-
   template<bool TTop, bool TRight, bool TBottom, typename TElement, typename TCost>
     inline void
     _initFirstColumn(AlignConfig<TTop, false, TRight, TBottom> const, TElement& element, TCost const cost)
@@ -213,5 +209,3 @@ namespace torali
 }
 
 #endif
-
-

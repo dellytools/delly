@@ -25,6 +25,7 @@ Contact: Tobias Rausch (rausch@embl.de)
 #define MSA_H
 
 #include <boost/multi_array.hpp>
+#include "gotoh.h"
 
 namespace torali {
 
@@ -88,9 +89,10 @@ namespace torali {
   }
 
   template<typename TDistArray, typename TPhylogeny, typename TDIndex>
-  inline void
+  inline TDIndex
   upgma(TDistArray& d, TPhylogeny& p, TDIndex num) {
-    for(TDIndex nn = num; nn<2*num+1; ++nn) {
+    TDIndex nn = num;
+    for(;nn<2*num+1; ++nn) {
       TDIndex dI = 0;
       TDIndex dJ = 0;
       if (closestPair(d, nn, dI, dJ) == -1) break;
@@ -100,7 +102,28 @@ namespace torali {
       p[nn][2] = dJ;
       updateDistanceMatrix(d, p, nn, dI, dJ);
     }
+    return (nn > 0) ? (nn - 1) : 0;
   }
+
+  template<typename TSplitReadSet, typename TPhylogeny, typename TDIndex, typename TAlign>
+  inline void
+  palign(TSplitReadSet const& sps, TPhylogeny const& p, TDIndex root, TAlign& align) {
+    typedef typename TAlign::index TAIndex;
+    if ((p[root][1] == -1) && (p[root][2] == -1)) {
+      typename TSplitReadSet::const_iterator sIt = sps.begin();
+      if (root) std::advance(sIt, root);
+      align.resize(boost::extents[1][sIt->size()]);
+      TAIndex ind = 0;
+      for(typename std::string::const_iterator str = sIt->begin(); str != sIt->end(); ++str) align[0][ind++] = *str;
+    } else {
+      TAlign align1;
+      palign(sps, p, p[root][1], align1);
+      TAlign align2;
+      palign(sps, p, p[root][2], align2);
+      gotoh(align1, align2, align);
+    }
+  }
+
 
   template<typename TSplitReadSet>
   inline void
@@ -120,18 +143,35 @@ namespace torali {
     TPhylogeny p(boost::extents[2*num+1][3]);
     for(TDIndex i = 0; i<(2*num+1); ++i) 
       for (TDIndex j = 0; j<3; ++j) p[i][j] = -1;
-    upgma(d, p, num);
+    TDIndex root = upgma(d, p, num);
+
+    // Debug guide tree
+    //std::cerr << "Phylogeny" << std::endl;
+    //std::cerr << "#Sequences: " << sps.size() << std::endl;
+    //std::cerr << "Root: " << root << std::endl;
+    //std::cerr << "Node:Parent\tLeftChild\tRightChild" << std::endl;
+    //for(TDIndex i = 0; i<(2*num+1); ++i) {
+    //std::cerr << i << ':' << '\t';
+    //for (TDIndex j = 0; j<3; ++j) {
+    //std::cerr << p[i][j] << '\t';
+    //}
+    //std::cerr << std::endl;
+    //}
     
-    // Debug
-    std::cerr << "Phylogeny" << std::endl;
-    for(TDIndex i = 0; i<(2*num+1); ++i) {
-      std::cerr << i << ':' << '\t';
-      for (TDIndex j = 0; j<3; ++j) {
-	std::cerr << p[i][j] << '\t';
+    // Progressive Alignment
+    typedef boost::multi_array<char, 2> TAlign;
+    TAlign align;
+    palign(sps, p, root, align);
+
+    // Debug MSA
+    typedef typename TAlign::index TAIndex;
+    for(TAIndex i = 0; i<align.shape()[0]; ++i) {
+      for(TAIndex j = 0; j<align.shape()[1]; ++j) {
+	std::cerr << align[i][j];
       }
       std::cerr << std::endl;
     }
-
+    std::cerr << std::endl;
   }
 
 }
