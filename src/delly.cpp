@@ -1257,7 +1257,7 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
 }
 
 
-inline bool _validSoftClip(bam1_t* rec, int& clipSize, int& splitPoint) {
+inline bool _validSoftClip(bam1_t* rec, int& clipSize, int& splitPoint, bool& leadingSC) {
   // Check read-length
   if (rec->core.l_qseq < 35) return false;
 
@@ -1282,6 +1282,8 @@ inline bool _validSoftClip(bam1_t* rec, int& clipSize, int& splitPoint) {
   for (unsigned int i = 0; i < rec->core.n_cigar; ++i) {
     if ((bam_cigar_op(cigar[i]) == BAM_CMATCH) || (bam_cigar_op(cigar[i]) == BAM_CINS)) alen += bam_cigar_oplen(cigar[i]);
     else if (bam_cigar_op(cigar[i]) == BAM_CSOFT_CLIP) {
+      if (!alen) leadingSC = true;
+      else leadingSC = false;
       ++numSoftClip;
       clipSize = bam_cigar_oplen(cigar[i]);
       splitPoint = rec->core.pos + alen;
@@ -1292,6 +1294,99 @@ inline bool _validSoftClip(bam1_t* rec, int& clipSize, int& splitPoint) {
   }
   //std::cerr << numSoftClip << ',' << clipSize << ',' << meanQuality << ',' << splitPoint << std::endl;
   return ((numSoftClip==1) && (meanQuality>=20));
+}
+
+template<typename TBPoint, typename TCT>
+inline bool
+_validSCOrientation(TBPoint bpPoint, bool leadingSC, TCT, SVType<DeletionTag>) 
+{
+  if (((!bpPoint) && (!leadingSC)) || ((bpPoint) && (leadingSC))) return true;
+  else return false;
+}
+
+template<typename TBPoint, typename TCT>
+inline bool
+_validSCOrientation(TBPoint bpPoint, bool leadingSC, TCT, SVType<DuplicationTag>) 
+{
+  if (((!bpPoint) && (leadingSC)) || ((bpPoint) && (!leadingSC))) return true;
+  else return false;
+}
+
+template<typename TBPoint, typename TCT>
+inline bool
+_validSCOrientation(TBPoint, bool leadingSC, TCT ct, SVType<InversionTag>) 
+{
+  return (ct ? leadingSC : (!leadingSC));
+}
+
+template<typename TBPoint, typename TCT>
+inline bool
+_validSCOrientation(TBPoint bpPoint, bool leadingSC, TCT ct, SVType<TranslocationTag>) 
+{
+  if (ct == 0) return (!leadingSC);
+  else if (ct == 1) return leadingSC;
+  else if (ct == 2) {
+    if (((!bpPoint) && (!leadingSC)) || ((bpPoint) && (leadingSC))) return true;
+    else return false;
+  } 
+  else if (ct == 3) {
+    if (((!bpPoint) && (leadingSC)) || ((bpPoint) && (!leadingSC))) return true;
+    else return false;
+  } else return false;
+}
+
+template<typename TBPoint, typename TCT>
+inline void
+_adjustOrientation(std::string&, TBPoint, TCT, SVType<DeletionTag>) 
+{
+  //Nop
+}
+
+template<typename TBPoint, typename TCT>
+inline void
+_adjustOrientation(std::string&, TBPoint, TCT, SVType<DuplicationTag>) 
+{
+  //Nop
+}
+
+template<typename TBPoint, typename TCT>
+inline void
+_adjustOrientation(std::string& sequence, TBPoint bpPoint, TCT ct, SVType<InversionTag>) 
+{
+  if (((!ct) && (bpPoint)) || ((ct) && (!bpPoint))) {
+    std::string rev = boost::to_upper_copy(std::string(sequence.rbegin(), sequence.rend()));
+    std::size_t i = 0;
+    for(std::string::iterator revIt = rev.begin(); revIt != rev.end(); ++revIt, ++i) {
+      switch (*revIt) {
+      case 'A': sequence[i]='T'; break;
+      case 'C': sequence[i]='G'; break;
+      case 'G': sequence[i]='C'; break;
+      case 'T': sequence[i]='A'; break;
+      case 'N': sequence[i]='N'; break;
+      default: break;
+      }
+    }
+  }
+}
+
+template<typename TBPoint, typename TCT>
+inline void
+_adjustOrientation(std::string& sequence, TBPoint bpPoint, TCT ct, SVType<TranslocationTag>) 
+{
+  if (((ct==0) && (bpPoint)) || ((ct==1) && (!bpPoint))) {
+    std::string rev = boost::to_upper_copy(std::string(sequence.rbegin(), sequence.rend()));
+    std::size_t i = 0;
+    for(std::string::iterator revIt = rev.begin(); revIt != rev.end(); ++revIt, ++i) {
+      switch (*revIt) {
+      case 'A': sequence[i]='T'; break;
+      case 'C': sequence[i]='G'; break;
+      case 'G': sequence[i]='C'; break;
+      case 'T': sequence[i]='A'; break;
+      case 'N': sequence[i]='N'; break;
+      default: break;
+      }
+    }
+  }
 }
 
 template<typename TValue, typename TPosition>
@@ -1405,29 +1500,37 @@ findPutativeSplitReads(TConfig const& c, std::vector<TStructuralVariantRecord>& 
 		  // Valid soft clip?
 		  int clipSize = 0;
 		  int splitPoint = 0;
-		  if (_validSoftClip(rec, clipSize, splitPoint)) {
+		  bool leadingSoftClip = false;
+		  if (_validSoftClip(rec, clipSize, splitPoint, leadingSoftClip)) {
 		    if ((splitPoint >= regionStart) && (splitPoint < regionEnd)) {
 		      splitPoint -= regionStart;
 		      // Minimum clip size
 		      int minClipSize = (int) (log10(rec->core.l_qseq) * 10);
 		      if (clipSize > minClipSize) {
-			// Get the sequence
-			std::string sequence;
-			sequence.resize(rec->core.l_qseq);
-			uint8_t* seqptr = bam_get_seq(rec);
-			for (int i = 0; i < rec->core.l_qseq; ++i) sequence[i] = "=ACMGRSVTWYHKDBN"[bam_seqi(seqptr, i)];
-			if (bpPoint) {
+			// Leading or trailing softclip?
+			if (_validSCOrientation(bpPoint, leadingSoftClip, svIt->ct, svType)) {
+			  // Get the sequence
+			  std::string sequence;
+			  sequence.resize(rec->core.l_qseq);
+			  uint8_t* seqptr = bam_get_seq(rec);
+			  for (int i = 0; i < rec->core.l_qseq; ++i) sequence[i] = "=ACMGRSVTWYHKDBN"[bam_seqi(seqptr, i)];
+			  
+			  // Reverse complement iff necesssary
+			  _adjustOrientation(sequence, bpPoint, svIt->ct, svType);
+			  
+			  if (bpPoint) {
 #pragma omp critical
-			  {
-			    ++spp1[splitPoint];
-			    osp1.push_back(std::make_pair(splitPoint, sequence));
-			  } 
-			} else {
+			    {
+			      ++spp1[splitPoint];
+			      osp1.push_back(std::make_pair(splitPoint, sequence));
+			    } 
+			  } else {
 #pragma omp critical
-			  {
-			    ++spp0[splitPoint];
-			    osp0.push_back(std::make_pair(splitPoint, sequence));
-			  } 
+			    {
+			      ++spp0[splitPoint];
+			      osp0.push_back(std::make_pair(splitPoint, sequence));
+			    } 
+			  }
 			}
 		      }
 		    }
@@ -1455,12 +1558,12 @@ findPutativeSplitReads(TConfig const& c, std::vector<TStructuralVariantRecord>& 
 	    totalSplitReadsAligned += splitReadSet.size();
 
 	    // MSA
-	    //if (splitReadSet.size() > 1) svIt->srSupport = msa(splitReadSet, svIt->consensus);
+	    if (splitReadSet.size() > 1) svIt->srSupport = msa(splitReadSet, svIt->consensus);
 
 	    // Search true split in candidates
-	    //if (!alignConsensus(c, *svIt, svRefStr, svType)) { svIt->consensus = ""; svIt->srSupport = 0; }
+	    if (!alignConsensus(c, *svIt, svRefStr, svType)) { svIt->consensus = ""; svIt->srSupport = 0; }
 
-	    searchSplit(c, *svIt, svRefStr, splitReadSet, svType);
+	    //searchSplit(c, *svIt, svRefStr, splitReadSet, svType);
 	  }
 	}
       }

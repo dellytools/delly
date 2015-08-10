@@ -263,21 +263,21 @@ namespace torali {
     palign(sps, p, root, align);
 
     // Debug MSA
-    typedef typename TAlign::index TAIndex;
-    for(TAIndex i = 0; i<align.shape()[0]; ++i) {
-      for(TAIndex j = 0; j<align.shape()[1]; ++j) {
-	std::cerr << align[i][j];
-      }
-      std::cerr << std::endl;
-    }
+    //typedef typename TAlign::index TAIndex;
+    //for(TAIndex i = 0; i<align.shape()[0]; ++i) {
+    //  for(TAIndex j = 0; j<align.shape()[1]; ++j) {
+    //	std::cerr << align[i][j];
+    //  }
+    //  std::cerr << std::endl;
+    // }
 
     // Sequence to profile re-alignment
     //sprealign(align);
 
     // Consensus calling
     consensus(align, cs);
-    std::cerr << cs << std::endl;
-    std::cerr << std::endl;
+    //std::cerr << cs << std::endl;
+    //std::cerr << std::endl;
     
     // Return split-read support
     return align.shape()[0];
