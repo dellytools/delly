@@ -225,7 +225,7 @@ namespace torali {
 
 
   template<typename TSplitReadSet>
-  inline void
+  inline int
   msa(TSplitReadSet const& sps, std::string& cs) {
     // Compute distance matrix
     typedef boost::multi_array<int, 2> TDistArray;
@@ -278,6 +278,9 @@ namespace torali {
     consensus(align, cs);
     std::cerr << cs << std::endl;
     std::cerr << std::endl;
+    
+    // Return split-read support
+    return align.shape()[0];
   }
 
 }

@@ -30,18 +30,17 @@ Contact: Tobias Rausch (rausch@embl.de)
 namespace torali
 {
 
-  template<typename TAlign1, typename TAlign2, typename TAlign>
+  template<typename TAlign1, typename TAlign2, typename TAlign, typename TMatrix>
   inline int
-  needle(TAlign1 const& a1, TAlign2 const& a2, TAlign& align)
+  _needle(TAlign1 const& a1, TAlign2 const& a2, TAlign& align, TMatrix& mat)
   {
     typedef int TScoreValue;
     TScoreValue gap = -1;
 
     // DP Matrix
-    typedef boost::multi_array<TScoreValue, 2> TMatrix;
     std::size_t m = a1.shape()[1];
     std::size_t n = a2.shape()[1];
-    TMatrix mat(boost::extents[m+1][n+1]);
+    mat.resize(boost::extents[m+1][n+1]);
 
     // Create profile
     typedef boost::multi_array<double, 2> TProfile;
@@ -86,6 +85,16 @@ namespace torali
 
     // Score
     return mat[m][n];
+  }
+
+
+  template<typename TAlign1, typename TAlign2, typename TAlign>
+  inline int
+  needle(TAlign1 const& a1, TAlign2 const& a2, TAlign& align)
+  {
+    typedef boost::multi_array<int, 2> TMatrix;
+    TMatrix mat;
+    return _needle(a1, a2, align, mat);
   }
 
 }

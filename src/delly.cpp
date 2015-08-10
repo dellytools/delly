@@ -65,6 +65,7 @@ Contact: Tobias Rausch (rausch@embl.de)
 #include "coverage.h"
 #include "junction.h"
 #include "msa.h"
+#include "split.h"
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -249,9 +250,6 @@ _betterSplit(TUSize, TUSize, TUSize, TSize, TUSize, TUSize, TUSize, double, TUSi
   //ToDo
   return false;
 }
-
-
-
 
 // Deletions
 template<typename TUSize, typename TSize, typename TBamRecord>
@@ -1457,10 +1455,11 @@ findPutativeSplitReads(TConfig const& c, std::vector<TStructuralVariantRecord>& 
 	    totalSplitReadsAligned += splitReadSet.size();
 
 	    // MSA
-	    //std::string cs;
-	    //if (splitReadSet.size() > 1) msa(splitReadSet, cs);
+	    //if (splitReadSet.size() > 1) svIt->srSupport = msa(splitReadSet, svIt->consensus);
 
 	    // Search true split in candidates
+	    //if (!alignConsensus(c, *svIt, svRefStr, svType)) { svIt->consensus = ""; svIt->srSupport = 0; }
+
 	    searchSplit(c, *svIt, svRefStr, splitReadSet, svType);
 	  }
 	}
