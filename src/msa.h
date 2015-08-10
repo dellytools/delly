@@ -182,10 +182,10 @@ namespace torali {
     typedef std::vector<int> TCoverage;
     TCoverage cov;
     cov.resize(align.shape()[1], 0);
-    for(TAIndex i = 0; i<align.shape()[0]; ++i) {
+    for(TAIndex i = 0; i < (TAIndex) align.shape()[0]; ++i) {
       int start = 0;
       int end = -1;
-      for(TAIndex j = 0; j<align.shape()[1]; ++j) {
+      for(TAIndex j = 0; j < (TAIndex) align.shape()[1]; ++j) {
 	fl[i][j] = false;
 	if (align[i][j] != '-') end = j;
 	else if (end == -1) start = j + 1;
@@ -206,7 +206,7 @@ namespace torali {
 	int countC = 0;
 	int countG = 0;
 	int countT = 0;
-	for(TAIndex i = 0; i<align.shape()[0]; ++i) {
+	for(TAIndex i = 0; i < (TAIndex) align.shape()[0]; ++i) {
 	  if (fl[i][j]) {
 	    if ((align[i][j] == 'A') || (align[i][j] == 'a')) ++countA;
 	    else if ((align[i][j] == 'C') || (align[i][j] == 'c')) ++countC;

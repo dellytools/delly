@@ -56,10 +56,10 @@ namespace torali
     typedef typename TAlign::index TAIndex;
     typedef typename TProfile::index TPIndex;
     p.resize(boost::extents[6][a.shape()[1]]);   // 'A', 'C', 'G', 'T', 'N', '-'
-    for (TAIndex j = 0; j<a.shape()[1]; ++j) {
-      for(TPIndex k = 0; k<6; ++k) p[k][j] = 0;
+    for (TAIndex j = 0; j < (TAIndex) a.shape()[1]; ++j) {
+      for(TPIndex k = 0; k < 6; ++k) p[k][j] = 0;
       int sum = 0;
-      for(TAIndex i = 0; i<a.shape()[0]; ++i) {
+      for(TAIndex i = 0; i < (TAIndex) a.shape()[0]; ++i) {
 	++sum;
 	if ((a[i][j] == 'A') || (a[i][j] == 'a')) p[0][j] += 1;
 	else if ((a[i][j] == 'C') || (a[i][j] == 'c')) p[1][j] += 1;

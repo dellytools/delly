@@ -230,7 +230,7 @@ namespace torali
     TAIndex gapStartVarIndex=0;
     TAIndex gapEndVarIndex=0;
     bool inGap=false;
-    for(TAIndex j = 0; j<align.shape()[1]; ++j) {
+    for(TAIndex j = 0; j < (TAIndex) align.shape()[1]; ++j) {
       if (align[0][j] != '-') ++varIndex;
       if (align[1][j] != '-') ++refIndex;
       // Internal gap?

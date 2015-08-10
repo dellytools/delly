@@ -695,10 +695,10 @@ template<typename TValue, typename TPosition>
 inline void
 _movingAverage(std::vector<TValue> const& spp, TPosition const windowSize, TValue& movingAverage, TPosition& lowerBound, TPosition& upperBound) {
   movingAverage = 0;
-  for(TPosition i = 0; (i<windowSize) && (i < spp.size()); ++i) movingAverage += spp[i];
+  for(TPosition i = 0; (i<windowSize) && (i < (TPosition) spp.size()); ++i) movingAverage += spp[i];
   TValue bestAverage = movingAverage;
   TValue bestAverageIndex = windowSize - 1;
-  for(TPosition i = windowSize; i < spp.size() ; ++i) {
+  for(std::size_t i = windowSize; i < spp.size() ; ++i) {
     movingAverage -= spp[i-windowSize];
     movingAverage += spp[i];
     if (movingAverage>bestAverage) {
