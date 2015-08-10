@@ -1457,7 +1457,8 @@ findPutativeSplitReads(TConfig const& c, std::vector<TStructuralVariantRecord>& 
 	    totalSplitReadsAligned += splitReadSet.size();
 
 	    // MSA
-	    //if (splitReadSet.size() > 1) msa(splitReadSet);
+	    //std::string cs;
+	    //if (splitReadSet.size() > 1) msa(splitReadSet, cs);
 
 	    // Search true split in candidates
 	    searchSplit(c, *svIt, svRefStr, splitReadSet, svType);

@@ -165,23 +165,67 @@ namespace torali {
       
       // Re-align sequence to profile
       gotoh(align1, align2, align);
-
-
-      std::cerr << i << std::endl;
-      for(TAIndex ii = 0; ii<align.shape()[0]; ++ii) {
-	for(TAIndex jj = 0; jj<align.shape()[1]; ++jj) {
-	  std::cerr << align[ii][jj];
-	}
-	std::cerr << std::endl;
-      }
-      std::cerr << std::endl;
     }
+  }
+
+
+  template<typename TAlign>
+  inline void
+  consensus(TAlign const& align, std::string& cs) {
+    typedef typename TAlign::index TAIndex;
+
+    // Calculate coverage
+    typedef boost::multi_array<bool, 2> TFlag;
+    TFlag fl;
+    fl.resize(boost::extents[align.shape()[0]][align.shape()[1]]);
+    typedef std::vector<int> TCoverage;
+    TCoverage cov;
+    cov.resize(align.shape()[1], 0);
+    for(TAIndex i = 0; i<align.shape()[0]; ++i) {
+      int start = 0;
+      int end = -1;
+      for(TAIndex j = 0; j<align.shape()[1]; ++j) {
+	fl[i][j] = false;
+	if (align[i][j] != '-') end = j;
+	else if (end == -1) start = j + 1;
+      }
+      for(TAIndex j = start; j<=end; ++j) {
+	++cov[j];
+	fl[i][j] = true;
+      }
+    }
+    
+    int covThreshold = 3;
+    TAIndex j = 0;
+    std::vector<char> cons;
+    for(typename TCoverage::const_iterator itCov = cov.begin(); itCov != cov.end(); ++itCov, ++j) {
+      if (*itCov >= covThreshold) {
+	// Get consensus letter
+	int countA = 0;
+	int countC = 0;
+	int countG = 0;
+	int countT = 0;
+	for(TAIndex i = 0; i<align.shape()[0]; ++i) {
+	  if (fl[i][j]) {
+	    if ((align[i][j] == 'A') || (align[i][j] == 'a')) ++countA;
+	    else if ((align[i][j] == 'C') || (align[i][j] == 'c')) ++countC;
+	    else if ((align[i][j] == 'G') || (align[i][j] == 'g')) ++countG;
+	    else if ((align[i][j] == 'T') || (align[i][j] == 't')) ++countT;
+	  }
+	}
+	if (countA > (*itCov / 2)) cons.push_back('A');
+	else if (countC > (*itCov / 2)) cons.push_back('C');
+	else if (countG > (*itCov / 2)) cons.push_back('G');
+	else if (countT > (*itCov / 2)) cons.push_back('T');
+      }
+    }
+    cs = std::string(cons.begin(), cons.end());
   }
 
 
   template<typename TSplitReadSet>
   inline void
-  msa(TSplitReadSet const& sps) {
+  msa(TSplitReadSet const& sps, std::string& cs) {
     // Compute distance matrix
     typedef boost::multi_array<int, 2> TDistArray;
     typedef typename TDistArray::index TDIndex;
@@ -225,10 +269,14 @@ namespace torali {
       }
       std::cerr << std::endl;
     }
-    std::cerr << std::endl;
 
     // Sequence to profile re-alignment
     //sprealign(align);
+
+    // Consensus calling
+    consensus(align, cs);
+    std::cerr << cs << std::endl;
+    std::cerr << std::endl;
   }
 
 }
