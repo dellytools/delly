@@ -25,6 +25,7 @@ Contact: Tobias Rausch (rausch@embl.de)
 #define MSA_H
 
 #include <boost/multi_array.hpp>
+#include "needle.h"
 #include "gotoh.h"
 
 namespace torali {

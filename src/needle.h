@@ -21,8 +21,8 @@ Contact: Tobias Rausch (rausch@embl.de)
 ============================================================================
 */
 
-#ifndef GOTOH_H
-#define GOTOH_H
+#ifndef NEEDLE_H
+#define NEEDLE_H
 
 #include <iostream>
 #include "align.h"
@@ -32,20 +32,16 @@ namespace torali
 
   template<typename TAlign1, typename TAlign2, typename TAlign>
   inline int
-  gotoh(TAlign1 const& a1, TAlign2 const& a2, TAlign& align)
+  needle(TAlign1 const& a1, TAlign2 const& a2, TAlign& align)
   {
     typedef int TScoreValue;
-    TScoreValue inf = 1000000;
-    TScoreValue go = -10;
-    TScoreValue ge = -1;
+    TScoreValue gap = -1;
 
     // DP Matrix
     typedef boost::multi_array<TScoreValue, 2> TMatrix;
     std::size_t m = a1.shape()[1];
     std::size_t n = a2.shape()[1];
-    TMatrix s(boost::extents[m+1][n+1]);
-    TMatrix h(boost::extents[m+1][n+1]);
-    TMatrix v(boost::extents[m+1][n+1]);
+    TMatrix mat(boost::extents[m+1][n+1]);
 
     // Create profile
     typedef boost::multi_array<double, 2> TProfile;
@@ -57,55 +53,31 @@ namespace torali
     }
 
     // Initialization
-    for(std::size_t col = 1; col <= n; ++col) {
-      v[0][col] = -inf;
-      s[0][col] = go/2 + col * ge;
-      h[0][col] = go/2 + col * ge;
-    }
-    for(std::size_t row = 1; row <= m; ++row) {
-      h[row][0] = -inf;
-      s[row][0] = go/2 + row * ge;
-      v[row][0] = go/2 + row * ge;
-    }
-    s[0][0] = 0;
-    v[0][0] = -inf;
-    h[0][0] = -inf;
+    mat[0][0] = 0;
+    for(std::size_t col = 1; col <= n; ++col) mat[0][col] = mat[0][col-1] + gap;
+    for(std::size_t row = 1; row <= m; ++row) mat[row][0] = mat[row-1][0] + gap;
 
     // Recursion
-    for(std::size_t col = 1; col <= n; ++col) {
-      for(std::size_t row = 1; row <= m; ++row) {
-	h[row][col] = std::max(s[row][col-1] + go + ge, h[row][col-1] + ge);
-	v[row][col] = std::max(s[row-1][col] + go + ge, v[row-1][col] + ge);
-	s[row][col] = std::max(std::max(s[row-1][col-1] + _score(a1, a2, p1, p2, row-1, col-1), h[row][col]), v[row][col]);
-      }
-    }
+    for(std::size_t col = 1; col <= n; ++col) 
+      for(std::size_t row = 1; row <= m; ++row) 
+	mat[row][col] = std::max(std::max(mat[row-1][col-1] + _score(a1, a2, p1, p2, row-1, col-1), mat[row-1][col] + gap), mat[row][col-1] + gap);
 
     // Trace-back
     std::size_t row = m;
     std::size_t col = n;
-    char lastMatrix = 's';
     typedef std::vector<char> TTrace;
     TTrace trace;
     while ((row>0) || (col>0)) {
-      if (lastMatrix == 's') {
-	if (s[row][col] == h[row][col]) lastMatrix = 'h';
-	else if (s[row][col] == v[row][col]) lastMatrix = 'v';
-	else {
-	  --row;
-	  --col;
-	  trace.push_back('s');
-	  //std::cerr << a1[0][row] << a2[0][col] << std::endl;
-	}
-      } else if (lastMatrix == 'h') {
-	if (h[row][col] != h[row][col-1] + ge) lastMatrix = 's';
-	--col;
-	trace.push_back('h');
-	//std::cerr << '-' << a2[0][col] << std::endl;
-      } else if (lastMatrix == 'v') {
-	if (v[row][col] != v[row-1][col] + ge) lastMatrix = 's';
+      if ((row>0) && (mat[row][col] == mat[row-1][col] + gap)) {
 	--row;
 	trace.push_back('v');
-	//std::cerr << a1[0][row] << '-' << std::endl;
+      } else if ((col>0) && (mat[row][col] == mat[row][col-1] + gap)) {
+	--col;
+	trace.push_back('h');
+      } else {
+	--row;
+	--col;
+	trace.push_back('s');
       }
     }
 
@@ -113,7 +85,7 @@ namespace torali
     _createAlignment(trace, a1, a2, align);
 
     // Score
-    return s[m][n];
+    return mat[m][n];
   }
 
 }
