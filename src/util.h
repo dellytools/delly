@@ -42,7 +42,7 @@ namespace torali
     int minISizeCutoff;
     int maxNormalISize;
     int maxISizeCutoff;
-    int defaultOrient;
+    uint8_t defaultOrient;
     unsigned int non_unique_abnormal_pairs;
     unsigned int abnormal_pairs;
   };
@@ -51,7 +51,7 @@ namespace torali
   struct _LibraryParams {
     unsigned int processedNumPairs;
     unsigned int orient[4];
-    int defaultOrient;
+    uint8_t defaultOrient;
     double median;
     double mad;
     double percentileCutoff;
@@ -298,7 +298,7 @@ namespace torali
 	for(unsigned int i=1;i<4;++i) {
 	  if (paramIt->second.orient[i]>maxOrient) {
 	    maxOrient=paramIt->second.orient[i];
-	    paramIt->second.defaultOrient=i;
+	    paramIt->second.defaultOrient=(uint8_t) i;
 	  }
 	}
 	

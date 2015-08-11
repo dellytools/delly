@@ -58,7 +58,7 @@ namespace torali {
   // R- 3
 
   template<typename TBamRecord>
-  inline int
+  inline uint8_t
     getStrandIndependentOrientation(TBamRecord const& al) {
     if (al.flag & BAM_FREAD1) {
       if (!(al.flag & BAM_FREVERSE)) {
@@ -89,7 +89,7 @@ namespace torali {
   //RR- 7
 
   template<typename TBamRecord>
-  inline int
+  inline uint8_t
     getStrandSpecificOrientation(TBamRecord const& al) {
     if (!(al.flag  & BAM_FREVERSE)) {
       if (!(al.flag & BAM_FMREVERSE)) {
@@ -109,23 +109,23 @@ namespace torali {
 
   // Deletions
   template<typename TBamRecord>
-    inline int 
-    _getSpanOrientation(TBamRecord const&, int const, SVType<DeletionTag>) {
+    inline uint8_t
+    _getSpanOrientation(TBamRecord const&, uint8_t const, SVType<DeletionTag>) {
     return 2;
   }
 
   // Duplications
   template<typename TBamRecord>
-    inline int 
-    _getSpanOrientation(TBamRecord const&, int const, SVType<DuplicationTag>) {
+    inline uint8_t 
+    _getSpanOrientation(TBamRecord const&, uint8_t const, SVType<DuplicationTag>) {
     return 3;
   }
 
   // Left- or right-spanning
   template<typename TBamRecord>
-    inline int 
-    _getSpanOrientation(TBamRecord const& al, int const defaultOrient, SVType<InversionTag>) {
-    int orient = getStrandIndependentOrientation(al);
+    inline uint8_t 
+    _getSpanOrientation(TBamRecord const& al, uint8_t const defaultOrient, SVType<InversionTag>) {
+    uint8_t orient = getStrandIndependentOrientation(al);
     if (al.flag & BAM_FREAD1) {
       if (defaultOrient == 0) {
 	if (((orient==2) && (al.pos < al.mpos)) || ((orient == 3) && (al.pos > al.mpos))) return 0;
@@ -155,7 +155,7 @@ namespace torali {
 
 
   template<typename TBamRecord>
-    inline int 
+    inline uint8_t 
     _inOrderAssign(TBamRecord const& al, bool flipped) {
     if (!flipped) {
       if (!(al.flag & BAM_FREVERSE)) {
@@ -190,9 +190,9 @@ namespace torali {
 
 
   template<typename TBamRecord>
-    inline int 
-    _getSpanOrientation(TBamRecord const& al, int const defaultOrient, SVType<TranslocationTag>) {
-    int orient = getStrandIndependentOrientation(al);
+    inline uint8_t 
+    _getSpanOrientation(TBamRecord const& al, uint8_t const defaultOrient, SVType<TranslocationTag>) {
+    uint8_t orient = getStrandIndependentOrientation(al);
     bool flipped = ( ((defaultOrient<2) && (orient>=2)) || ((defaultOrient>=2) && (orient<2)) );
     bool inOrder = (_inOrderAssign(al, flipped) == defaultOrient);
     if (flipped) {
@@ -206,8 +206,8 @@ namespace torali {
 
   // Insertion
   template<typename TBamRecord>
-    inline int 
-    _getSpanOrientation(TBamRecord const&, int const, SVType<InsertionTag>) {
+    inline uint8_t 
+    _getSpanOrientation(TBamRecord const&, uint8_t const, SVType<InsertionTag>) {
     return 4;
   }
 
@@ -237,7 +237,7 @@ namespace torali {
     double srAlignQuality;
     unsigned int id;
     bool precise;
-    int ct;
+    uint8_t ct;
     uint8_t peMapQuality;
     int32_t chr;
     int32_t chr2;
@@ -437,7 +437,7 @@ namespace torali {
   // Deletions
   template<typename TSize, typename TISize>
     inline bool
-    _pairsDisagree(TSize const pair1Min, TSize const pair1Max, TSize const pair1ReadLength, TISize const pair1maxNormalISize, TSize const pair2Min, TSize const pair2Max, TSize const pair2ReadLength, TISize const pair2maxNormalISize, int const, int const, SVType<DeletionTag>) {
+    _pairsDisagree(TSize const pair1Min, TSize const pair1Max, TSize const pair1ReadLength, TISize const pair1maxNormalISize, TSize const pair2Min, TSize const pair2Max, TSize const pair2ReadLength, TISize const pair2maxNormalISize, uint8_t const, uint8_t const, SVType<DeletionTag>) {
     //std::cout << pair1Min << ',' << pair1Max << ',' << pair1ReadLength << ',' << pair1maxNormalISize << ',' << pair2Min << ',' << pair2Max << ',' << pair2ReadLength << ',' << pair2maxNormalISize << std::endl;
     if ((pair2Min + pair2ReadLength - pair1Min) > pair1maxNormalISize) return true;
     if ((pair2Max < pair1Max) && ((pair1Max + pair1ReadLength - pair2Max) > pair1maxNormalISize)) return true;
@@ -449,7 +449,7 @@ namespace torali {
   // Insertions
   template<typename TSize, typename TISize>
     inline bool
-    _pairsDisagree(TSize const pair1Min, TSize const pair1Max, TSize const pair1ReadLength, TISize const pair1maxNormalISize, TSize const pair2Min, TSize const pair2Max, TSize const pair2ReadLength, TISize const pair2maxNormalISize, int const, int const, SVType<InsertionTag>) {
+    _pairsDisagree(TSize const pair1Min, TSize const pair1Max, TSize const pair1ReadLength, TISize const pair1maxNormalISize, TSize const pair2Min, TSize const pair2Max, TSize const pair2ReadLength, TISize const pair2maxNormalISize, uint8_t const, uint8_t const, SVType<InsertionTag>) {
     //std::cout << pair1Min << ',' << pair1Max << ',' << pair1ReadLength << ',' << pair1maxNormalISize << ',' << pair2Min << ',' << pair2Max << ',' << pair2ReadLength << ',' << pair2maxNormalISize << std::endl;
     if ((pair2Min + pair2ReadLength - pair1Min) > pair1maxNormalISize) return true;
     if ((pair2Max < pair1Max) && ((pair1Max + pair1ReadLength - pair2Max) > pair1maxNormalISize)) return true;
@@ -462,7 +462,7 @@ namespace torali {
   // Duplications
   template<typename TSize, typename TISize>
     inline bool
-    _pairsDisagree(TSize const pair1Min, TSize const pair1Max, TSize const pair1ReadLength, TISize const pair1maxNormalISize, TSize const pair2Min, TSize const pair2Max, TSize const pair2ReadLength, TISize const pair2maxNormalISize, int const, int const, SVType<DuplicationTag>) {
+    _pairsDisagree(TSize const pair1Min, TSize const pair1Max, TSize const pair1ReadLength, TISize const pair1maxNormalISize, TSize const pair2Min, TSize const pair2Max, TSize const pair2ReadLength, TISize const pair2maxNormalISize, uint8_t const, uint8_t const, SVType<DuplicationTag>) {
     if ((pair2Min + pair2ReadLength - pair1Min) > pair2maxNormalISize) return true;
     if ((pair2Max < pair1Max) && ((pair1Max + pair1ReadLength - pair2Max) > pair2maxNormalISize)) return true;
     if ((pair2Max >= pair1Max) && ((pair2Max + pair2ReadLength - pair1Max) > pair1maxNormalISize)) return true;
@@ -473,7 +473,7 @@ namespace torali {
   // Inversions
   template<typename TSize, typename TISize>
     inline bool
-    _pairsDisagree(TSize const pair1Min, TSize const pair1Max, TSize const pair1ReadLength, TISize const pair1maxNormalISize, TSize const pair2Min, TSize const pair2Max, TSize const pair2ReadLength, TISize const pair2maxNormalISize, int const ct1, int const ct2, SVType<InversionTag>) {
+    _pairsDisagree(TSize const pair1Min, TSize const pair1Max, TSize const pair1ReadLength, TISize const pair1maxNormalISize, TSize const pair2Min, TSize const pair2Max, TSize const pair2ReadLength, TISize const pair2maxNormalISize, uint8_t const ct1, uint8_t const ct2, SVType<InversionTag>) {
     // Do both pairs support the same inversion type (left- or right-spanning)
     if (ct1 != ct2) return true;
     if (!ct1) {
@@ -494,7 +494,7 @@ namespace torali {
   // Translocations
   template<typename TSize, typename TISize>
     inline bool
-    _pairsDisagree(TSize const pair1Min, TSize const pair1Max, TSize const pair1ReadLength, TISize const pair1maxNormalISize, TSize const pair2Min, TSize const pair2Max, TSize const pair2ReadLength, TISize const pair2maxNormalISize, int const ct1, int const ct2, SVType<TranslocationTag>) {
+    _pairsDisagree(TSize const pair1Min, TSize const pair1Max, TSize const pair1ReadLength, TISize const pair1maxNormalISize, TSize const pair2Min, TSize const pair2Max, TSize const pair2ReadLength, TISize const pair2maxNormalISize, uint8_t const ct1, uint8_t const ct2, SVType<TranslocationTag>) {
     // Do both pairs support the same translocation type
     if (ct1 != ct2) return true;
 

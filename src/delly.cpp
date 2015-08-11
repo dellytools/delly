@@ -235,7 +235,7 @@ _addID(SVType<InsertionTag>) {
 }
 
 // Decode Orientation
-inline int
+inline uint8_t
 _decodeOrientation(std::string const& value) {
   if (value=="3to3") return 0;
   else if (value=="5to5") return 1;
@@ -246,7 +246,7 @@ _decodeOrientation(std::string const& value) {
 
 // Add Orientation
 inline std::string
-_addOrientation(int const ct) {
+_addOrientation(uint8_t const ct) {
   if (ct==0) return "3to3";
   else if (ct==1) return "5to5";
   else if (ct==2) return "3to5";
@@ -1280,7 +1280,7 @@ _searchCliques(TGraph const& g, TWeightMap const& weightMap, bool const dumpPe, 
     int32_t clusterRefID=g[itWEdge->source]->tid;
     int32_t clusterMateRefID=g[itWEdge->source]->mtid;
     _initClique(g[itWEdge->source], svStart, svEnd, wiggle, svType);
-    int connectionType = _getSpanOrientation(*g[itWEdge->source], g[itWEdge->source]->libOrient, svType);
+    uint8_t connectionType = _getSpanOrientation(*g[itWEdge->source], g[itWEdge->source]->libOrient, svType);
     if ((clusterRefID==clusterMateRefID) && (svStart >= svEnd))  continue;
     clique.insert(itWEdge->source);
     
