@@ -1574,7 +1574,7 @@ inline int run(Config const& c, TSVType svType) {
     // Define an undirected graph g
     typedef boost::adjacency_list<boost::vecS, boost::vecS, boost::undirectedS, TBamRecord::const_iterator, boost::property<boost::edge_weight_t, uint8_t> > Graph;
     Graph g;
-      
+
     // Define the reverse map
     typedef boost::graph_traits<Graph>::vertex_descriptor Vertex;
     typedef boost::unordered_map<unsigned int, Vertex> TNameVertexMap;
