@@ -77,10 +77,8 @@ struct Config {
   unsigned short minGenoQual;
   unsigned short madCutoff;
   unsigned int minimumFlankSize;
-  unsigned int minimumSplitRead;
   unsigned int flankQuality;
   unsigned int graphPruning;
-  float epsilon;
   float percentAbnormal;
   std::string svType;
   boost::filesystem::path outfile;
