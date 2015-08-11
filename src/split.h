@@ -143,7 +143,7 @@ namespace torali
   _coordTransform(TString const&, TSvRecord const& sv, TAIndex rStart, TAIndex rEnd, TPosition& finalGapStart, TPosition& finalGapEnd, SVType<DeletionTag>) {
     TAIndex annealed = sv.svStartEnd - sv.svStartBeg;
     if ((rStart >= annealed) || (rEnd < annealed)) return false;
-    finalGapStart = sv.svStartBeg + rStart;
+    finalGapStart = sv.svStartBeg + rStart - 1;
     finalGapEnd = sv.svEndBeg + (rEnd - annealed);
     return true;
   }
@@ -155,7 +155,7 @@ namespace torali
     TAIndex annealed = sv.svEndEnd - sv.svEndBeg;
     if ((rStart >= annealed) || (rEnd < annealed)) return false;
     finalGapStart = sv.svStartBeg + (rEnd - annealed);
-    finalGapEnd = sv.svEndBeg + rStart;
+    finalGapEnd = sv.svEndBeg + rStart - 1;
     return true;
   }
 
@@ -166,10 +166,10 @@ namespace torali
     TAIndex annealed = sv.svStartEnd - sv.svStartBeg;
     if ((rStart >= annealed) || (rEnd < annealed)) return false;
     if (!sv.ct) {
-      finalGapStart = sv.svStartBeg + rStart;
-      finalGapEnd = sv.svEndBeg + (ref.size() - rEnd);
+      finalGapStart = sv.svStartBeg + rStart - 1;
+      finalGapEnd = sv.svEndBeg + (ref.size() - rEnd) + 1;
     } else {
-      finalGapStart = sv.svStartBeg + (annealed - rStart);
+      finalGapStart = sv.svStartBeg + (annealed - rStart) + 2;
       finalGapEnd = sv.svEndBeg + (rEnd - annealed);
     } 
     return true;
@@ -182,25 +182,25 @@ namespace torali
     if (sv.ct == 0) {
       TAIndex annealed = sv.svStartEnd - sv.svStartBeg;
       if ((rStart >= annealed) || (rEnd < annealed)) return false;
-      finalGapStart = sv.svStartBeg + rStart;
-      finalGapEnd = sv.svEndBeg + (ref.size() - rEnd);
-    }  
+      finalGapStart = sv.svStartBeg + rStart -1;
+      finalGapEnd = sv.svEndBeg + (ref.size() - rEnd) + 1;
+    }
     else if (sv.ct == 1) {
       TAIndex annealed = sv.svStartEnd - sv.svStartBeg;
-      finalGapStart = sv.svStartBeg + (annealed - rStart);
+      finalGapStart = sv.svStartBeg + (annealed - rStart) + 2;
       finalGapEnd = sv.svEndBeg + (rEnd - annealed);
     }
     else if (sv.ct == 2) {
       TAIndex annealed = sv.svStartEnd - sv.svStartBeg;
       if ((rStart >= annealed) || (rEnd < annealed)) return false;
-      finalGapStart = sv.svStartBeg + rStart;
+      finalGapStart = sv.svStartBeg + rStart - 1;
       finalGapEnd = sv.svEndBeg + (rEnd - annealed);
     } 
     else if (sv.ct == 3) {
       TAIndex annealed = sv.svEndEnd - sv.svEndBeg;
       if ((rStart >= annealed) || (rEnd < annealed)) return false;
       finalGapStart = sv.svStartBeg + (rEnd - annealed);
-      finalGapEnd = sv.svEndBeg + rStart;
+      finalGapEnd = sv.svEndBeg + rStart - 1;
     }
     else return false;
     return true;
