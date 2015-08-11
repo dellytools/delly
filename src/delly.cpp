@@ -1253,8 +1253,10 @@ _searchCliques(TGraph const& g, TWeightMap const& weightMap, bool const dumpPe, 
 #pragma omp parallel for default(shared)
   for(int compIt = 0; compIt < numComp; ++compIt) {
     if (compSize[compIt]<2) continue;
+    typedef typename boost::property_map<TGraph, boost::edge_weight_t> edge_map_t;
+    typedef typename edge_map_t::value_type TWeightType;
     typedef typename boost::graph_traits<TGraph>::vertex_descriptor TVertexDescriptor;
-    typedef EdgeRecord<unsigned short, TVertexDescriptor> TEdgeRecord;
+    typedef EdgeRecord<TWeightType, TVertexDescriptor> TEdgeRecord;
     typedef std::vector<TEdgeRecord> TWeightEdge;
     TWeightEdge wEdge;
     typename boost::graph_traits<TGraph>::edge_iterator eIt, eItEnd;
@@ -1572,7 +1574,7 @@ inline int run(Config const& c, TSVType svType) {
 
 
     // Define an undirected graph g
-    typedef boost::adjacency_list<boost::vecS, boost::vecS, boost::undirectedS, TBamRecord::const_iterator, boost::property<boost::edge_weight_t, unsigned int> > Graph;
+    typedef boost::adjacency_list<boost::vecS, boost::vecS, boost::undirectedS, TBamRecord::const_iterator, boost::property<boost::edge_weight_t, uint8_t> > Graph;
     Graph g;
       
     // Define the reverse map
@@ -1582,6 +1584,7 @@ inline int run(Config const& c, TSVType svType) {
       
     // Define the edge property map
     typedef boost::property_map<Graph, boost::edge_weight_t>::type edge_map_t;
+    typedef typename edge_map_t::value_type TWeightType;
     edge_map_t weightMap = get(boost::edge_weight, g);
       
     // Iterate the chromosome range
@@ -1639,7 +1642,7 @@ inline int run(Config const& c, TSVType svType) {
 	if ((out_degree(u, g) <= c.graphPruning) || (out_degree(v, g) <= c.graphPruning)) {
 	  boost::graph_traits<Graph>::edge_descriptor e;
 	  tie(e, inserted) = add_edge(u,v, g);
-	  if (inserted) weightMap[e] = abs( abs( (_minCoord(vecNext->pos, vecNext->mpos, svType) - minCoord) - (_maxCoord(vecNext->pos, vecNext->mpos, svType) - maxCoord) ) - abs(vecBeg->Median - vecNext->Median) );
+	  if (inserted) weightMap[e] = (TWeightType) ( std::log((float) abs( abs( (_minCoord(vecNext->pos, vecNext->mpos, svType) - minCoord) - (_maxCoord(vecNext->pos, vecNext->mpos, svType) - maxCoord) ) - abs(vecBeg->Median - vecNext->Median) ) + 1 ) / std::log(2) );
 	}
       }
     }
