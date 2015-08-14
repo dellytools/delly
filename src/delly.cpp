@@ -487,47 +487,30 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
       int leftRC = 0;
       int rcCount = 0;
       int rightRC = 0;
+      if (spanLeftIt->second.first.size()<spanRightIt->second.first.size()) {
+	drCount=spanLeftIt->second.first.size();
+	dvCount=spanLeftIt->second.second.size();
+      } else {
+	drCount=spanRightIt->second.first.size();
+	dvCount=spanRightIt->second.second.size();
+      }
+      if (jctCountMapIt!=jctCountMap.end()) {
+	rrCount = jctCountMapIt->second.first.size();
+	rvCount = jctCountMapIt->second.second.size();
+      }
 
       // Compute GLs
       double gl[3];
       int gqVal;
       std::string gtype;
       bool trGL;
-      if (svIter->precise) {
-	trGL = _computeGLs(jctCountMapIt->second.first, jctCountMapIt->second.second, &gl[0], gqVal, gtype);
-	if (jctCountMapIt!=jctCountMap.end()) {
-	  rrCount = jctCountMapIt->second.first.size();
-	  rvCount = jctCountMapIt->second.second.size();
-	}
-      } else {
-	double glLeft[3];
-	int gqValLeft;
-	std::string gtypeLeft;
-	bool trGLLeft;
-	trGLLeft = _computeGLs(spanLeftIt->second.first, spanLeftIt->second.second, &glLeft[0], gqValLeft, gtypeLeft);
-	double glRight[3];
-	int gqValRight;
-	std::string gtypeRight;
-	bool trGLRight;
-	trGLRight = _computeGLs(spanRightIt->second.first, spanRightIt->second.second, &glRight[0], gqValRight, gtypeRight);
-	//if (gqValLeft > gqValRight) {
-	if (spanLeftIt->second.first.size()<spanRightIt->second.first.size()) {
-	  trGL = trGLLeft;
-	  gl[0] = glLeft[0]; gl[1] = glLeft[1]; gl[2] = glLeft[2];
-	  gqVal = gqValLeft;
-	  gtype = gtypeLeft;
-	  drCount=spanLeftIt->second.first.size();
-	  dvCount=spanLeftIt->second.second.size();
-	} else {
-	  trGL = trGLRight;
-	  gl[0] = glRight[0]; gl[1] = glRight[1]; gl[2] = glRight[2];
-	  gqVal = gqValRight;
-	  gtype = gtypeRight;
-	  drCount=spanRightIt->second.first.size();
-	  dvCount=spanRightIt->second.second.size();
-	}
-	//std::cerr << id.str() << "\t" << sampleName << "\tGTLeft:" << gtypeLeft << "\tGLLeft:" << glLeft[2] << "," << glLeft[1] << "," << glLeft[0] << "\tGQLeft:" << gqValLeft << "\tDRLeft:" << spanLeftIt->second.first.size() << "\tDVLeft:" << spanLeftIt->second.second.size() << "\tGTRight:" << gtypeRight << "\tGLRight:" << glRight[2] << "," << glRight[1] << "," << glRight[0] << "\tGQRight:" << gqValRight << "\tDRRight:" << spanRightIt->second.first.size() << "\tDVRight:" << spanRightIt->second.second.size() << std::endl;
+      if (svIter->precise) trGL = _computeGLs(jctCountMapIt->second.first, jctCountMapIt->second.second, &gl[0], gqVal, gtype);
+      else {  // Imprecise SVs
+	if (spanLeftIt->second.first.size()<spanRightIt->second.first.size()) trGL = _computeGLs(spanLeftIt->second.first, spanLeftIt->second.second, &gl[0], gqVal, gtype);
+	else trGL = _computeGLs(spanRightIt->second.first, spanRightIt->second.second, &gl[0], gqVal, gtype);
       }
+
+      // Compute RCs
       typename TReadCountMap::const_iterator readCountMapIt=readCountMap.find(sampleSVPairLeft);
       if (readCountMapIt!=readCountMap.end()) {
 	leftRC = readCountMapIt->second.leftRC;
@@ -536,7 +519,7 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
       }	
       int cnEst = -1;
       if ((leftRC + rightRC) > 0) cnEst = boost::math::iround( 2.0 * (double) rcCount / (double) (leftRC + rightRC) );
-
+      
       // Output genotypes
       if (trGL) {
 	ofile << "\t" << gtype << ":" << gl[2] << "," << gl[1] << "," << gl[0] << ":" << gqVal << ":";
