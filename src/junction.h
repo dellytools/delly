@@ -188,8 +188,8 @@ namespace torali {
 		  while (sam_itr_next(samfile[file_c], iter, rec) >= 0) {
 		    if (rec->core.flag & (BAM_FSECONDARY | BAM_FQCFAIL | BAM_FDUP | BAM_FSUPPLEMENTARY | BAM_FUNMAP)) continue;
 		    
-		    // Check read length
-		    if (rec->core.l_qseq < 35) continue;
+		    // Check read length & quality
+		    if ((rec->core.l_qseq < 35) || (rec->core.qual < c.minGenoQual)) continue;
 	 
 		    // Check position
 		    int pos = rec->core.pos;
