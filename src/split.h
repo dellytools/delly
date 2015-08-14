@@ -31,6 +31,130 @@ Contact: Tobias Rausch (rausch@embl.de)
 namespace torali
 {
 
+  template<typename TBPoint, typename TCT>
+  inline void
+  _adjustOrientation(std::string&, TBPoint, TCT, SVType<DeletionTag>) 
+  {
+    //Nop
+  }
+
+  template<typename TBPoint, typename TCT>
+  inline void
+  _adjustOrientation(std::string&, TBPoint, TCT, SVType<InsertionTag>) 
+  {
+    //Nop
+  }
+
+  template<typename TBPoint, typename TCT>
+  inline void
+  _adjustOrientation(std::string&, TBPoint, TCT, SVType<DuplicationTag>) 
+  {
+    //Nop
+  }
+
+  template<typename TBPoint, typename TCT>
+  inline void
+  _adjustOrientation(std::string& sequence, TBPoint bpPoint, TCT ct, SVType<InversionTag>) 
+  {
+    if (((!ct) && (bpPoint)) || ((ct) && (!bpPoint))) reverseComplement(sequence);
+  }
+
+  template<typename TBPoint, typename TCT>
+  inline void
+  _adjustOrientation(std::string& sequence, TBPoint bpPoint, TCT ct, SVType<TranslocationTag>) 
+  {
+    if (((ct==0) && (bpPoint)) || ((ct==1) && (!bpPoint))) reverseComplement(sequence);
+  }
+
+
+  inline bool 
+  _validSoftClip(bam1_t* rec, int& clipSize, int& splitPoint, bool& leadingSC) {
+    // Check read-length
+    if (rec->core.l_qseq < 35) return false;
+
+    // Check for soft-clips
+    bool hasSoftClip = false;
+    uint32_t* cigar = bam_get_cigar(rec);
+    for (unsigned int i = 0; i < rec->core.n_cigar; ++i) 
+      if (bam_cigar_op(cigar[i]) == BAM_CSOFT_CLIP) hasSoftClip = true;
+    if (!hasSoftClip) return false;
+    
+    // Get quality vector
+    typedef std::vector<uint8_t> TQuality;
+    TQuality quality;
+    quality.resize(rec->core.l_qseq);
+    uint8_t* qualptr = bam_get_qual(rec);
+    for (int i = 0; i < rec->core.l_qseq; ++i) quality[i] = qualptr[i];
+    
+    // Get soft-clips
+    unsigned int alen = 0;
+    unsigned int numSoftClip = 0;
+    unsigned int meanQuality = 0;
+    for (unsigned int i = 0; i < rec->core.n_cigar; ++i) {
+      if ((bam_cigar_op(cigar[i]) == BAM_CMATCH) || (bam_cigar_op(cigar[i]) == BAM_CINS)) alen += bam_cigar_oplen(cigar[i]);
+      else if (bam_cigar_op(cigar[i]) == BAM_CSOFT_CLIP) {
+	if (!alen) leadingSC = true;
+	else leadingSC = false;
+	++numSoftClip;
+	clipSize = bam_cigar_oplen(cigar[i]);
+	splitPoint = rec->core.pos + alen;
+	unsigned int qualSum = 0;
+	for(unsigned int i = alen; i < (alen+clipSize); ++i) qualSum += quality[i];
+	meanQuality = qualSum / clipSize;
+      }
+    }
+    //std::cerr << numSoftClip << ',' << clipSize << ',' << meanQuality << ',' << splitPoint << std::endl;
+    return ((numSoftClip==1) && (meanQuality>=20));
+  }
+
+  template<typename TBPoint, typename TCT>
+  inline bool
+  _validSCOrientation(TBPoint bpPoint, bool leadingSC, TCT, SVType<DeletionTag>) 
+  {
+    if (((!bpPoint) && (!leadingSC)) || ((bpPoint) && (leadingSC))) return true;
+    else return false;
+  }
+
+  template<typename TBPoint, typename TCT>
+  inline bool
+  _validSCOrientation(TBPoint, bool, TCT, SVType<InsertionTag>) 
+  {
+    // ToDo
+    return false;
+  }
+
+  template<typename TBPoint, typename TCT>
+  inline bool
+  _validSCOrientation(TBPoint bpPoint, bool leadingSC, TCT, SVType<DuplicationTag>) 
+  {
+    if (((!bpPoint) && (leadingSC)) || ((bpPoint) && (!leadingSC))) return true;
+    else return false;
+  }
+
+  template<typename TBPoint, typename TCT>
+  inline bool
+  _validSCOrientation(TBPoint, bool leadingSC, TCT ct, SVType<InversionTag>) 
+  {
+    return (ct ? leadingSC : (!leadingSC));
+  }
+
+  template<typename TBPoint, typename TCT>
+  inline bool
+  _validSCOrientation(TBPoint bpPoint, bool leadingSC, TCT ct, SVType<TranslocationTag>) 
+  {
+    if (ct == 0) return (!leadingSC);
+    else if (ct == 1) return leadingSC;
+    else if (ct == 2) {
+      if (((!bpPoint) && (!leadingSC)) || ((bpPoint) && (leadingSC))) return true;
+      else return false;
+    } 
+    else if (ct == 3) {
+      if (((!bpPoint) && (leadingSC)) || ((bpPoint) && (!leadingSC))) return true;
+      else return false;
+    } else return false;
+  }
+
+
   // Deletions
   template<typename TSeq, typename TSVRecord, typename TRef>
   inline std::string
@@ -315,7 +439,7 @@ namespace torali
     sv.svStart=finalGapStart;
     sv.svEnd=finalGapEnd;
     sv.srAlignQuality=quality;
-
+    sv.csBp = (cStart + cEnd) / 2;
     return true;
   }
 

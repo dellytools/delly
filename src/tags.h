@@ -234,6 +234,7 @@ namespace torali {
     int srSupport;
     int wiggle;
     int insLen;
+    int csBp;
     double srAlignQuality;
     unsigned int id;
     bool precise;

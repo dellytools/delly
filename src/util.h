@@ -89,30 +89,20 @@ namespace torali
     return seed;
   }
 
-  template<typename TAlphabet>
     inline void
-    reverseComplement(std::vector<TAlphabet>& seq) 
+    reverseComplement(std::string& sequence) 
     {
-      typedef std::vector<TAlphabet> TSequence;
-      typename TSequence::iterator itF = seq.begin();
-      typename TSequence::iterator itB = seq.end();
-      if (itF != itB) {
-	--itB;
-	do {
-	  TAlphabet tmp = *itF;
-	  switch((unsigned int) *itB) {
-	  case 0: *itF = 3; break;
-	  case 1: *itF = 2; break;
-	  case 2: *itF = 1; break;
-	  case 3: *itF = 0; break;
-	  }
-	  switch((unsigned int) tmp) {
-	  case 0: *itB = 3; break;
-	  case 1: *itB = 2; break;
-	  case 2: *itB = 1; break;
-	  case 3: *itB = 0; break;
-	  }
-	} while (++itF <= --itB);
+      std::string rev = boost::to_upper_copy(std::string(sequence.rbegin(), sequence.rend()));
+      std::size_t i = 0;
+      for(std::string::iterator revIt = rev.begin(); revIt != rev.end(); ++revIt, ++i) {
+	switch (*revIt) {
+	case 'A': sequence[i]='T'; break;
+	case 'C': sequence[i]='G'; break;
+	case 'G': sequence[i]='C'; break;
+	case 'T': sequence[i]='A'; break;
+	case 'N': sequence[i]='N'; break;
+	default: break;
+	}
       }
     }
 

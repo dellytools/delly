@@ -33,7 +33,7 @@ namespace torali
     void printTitle(std::string const& title) 
     {
       std::cout << "**********************************************************************" << std::endl;
-      std::cout << "DELLY Copyright (C) 2012-2014 Tobias Rausch" << std::endl;
+      std::cout << "Program: Delly" << std::endl;
       std::cout << "This is free software, and you are welcome to redistribute it under" << std::endl;
       std::cout << "certain conditions (GPL); for license details use '-l'." << std::endl;
       std::cout << "This program comes with ABSOLUTELY NO WARRANTY; for details use '-w'." << std::endl;

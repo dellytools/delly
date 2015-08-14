@@ -29,9 +29,19 @@ Contact: Tobias Rausch (rausch@embl.de)
 namespace torali
 {
 
-  template<typename TAlign1, typename TAlign2, typename TProfile, typename TAIndex>
+  template<typename TProfile, typename TAIndex>
   inline int
-  _score(TAlign1 const& a1, TAlign2 const& a2, TProfile const& p1, TProfile const& p2, TAIndex row, TAIndex col)
+  _score(std::string const& s1, std::string const& s2, TProfile const&, TProfile const&, TAIndex row, TAIndex col)
+  {
+    typedef int TScoreValue;
+    TScoreValue match = 5;
+    TScoreValue mismatch = -4;
+    return (s1[row] == s2[col] ? match : mismatch);
+  }
+
+  template<typename TChar, typename TProfile, typename TAIndex>
+  inline int
+  _score(boost::multi_array<TChar, 2> const& a1, boost::multi_array<TChar, 2> const& a2, TProfile const& p1, TProfile const& p2, TAIndex row, TAIndex col)
   {
     typedef int TScoreValue;
     TScoreValue match = 5;
@@ -49,11 +59,29 @@ namespace torali
     }
   }
 
-  template<typename TAlign, typename TProfile>
+
+  template<typename TProfile>
   inline void
-  _createProfile(TAlign const& a, TProfile& p)
+  _createProfile(std::string const& s, TProfile& p)
   {
-    typedef typename TAlign::index TAIndex;
+    typedef typename TProfile::index TPIndex;
+    p.resize(boost::extents[6][s.size()]);   // 'A', 'C', 'G', 'T', 'N', '-'
+    for (std::size_t j = 0; j < s.size(); ++j) {
+      for(TPIndex k = 0; k < 6; ++k) p[k][j] = 0;
+      if ((s[j] == 'A') || (s[j] == 'a')) p[0][j] += 1;
+      else if ((s[j] == 'C') || (s[j] == 'c')) p[1][j] += 1;
+      else if ((s[j] == 'G') || (s[j] == 'g')) p[2][j] += 1;
+      else if ((s[j] == 'T') || (s[j] == 't')) p[3][j] += 1;
+      else if ((s[j] == 'N') || (s[j] == 'n')) p[4][j] += 1;
+      else if (s[j] == '-') p[5][j] += 1;
+    }
+  }
+
+  template<typename TChar, typename TProfile>
+  inline void
+  _createProfile(boost::multi_array<TChar, 2> const& a, TProfile& p)
+  {
+    typedef typename boost::multi_array<TChar, 2>::index TAIndex;
     typedef typename TProfile::index TPIndex;
     p.resize(boost::extents[6][a.shape()[1]]);   // 'A', 'C', 'G', 'T', 'N', '-'
     for (TAIndex j = 0; j < (TAIndex) a.shape()[1]; ++j) {
@@ -73,9 +101,40 @@ namespace torali
     }
   }
 
-  template<typename TTrace, typename TAlign1, typename TAlign2, typename TAlign>
+
+  template<typename TTrace, typename TAlign>
   inline void
-  _createAlignment(TTrace const& trace, TAlign1 const& a1, TAlign2 const& a2, TAlign& align)
+  _createAlignment(TTrace const& trace, std::string const& s1, std::string const& s2, TAlign& align)
+  {
+    align.resize(boost::extents[2][trace.size()]);
+    std::size_t row = 0;
+    std::size_t col = 0;
+    std::size_t ai = 0;
+    for(typename TTrace::const_reverse_iterator itT = trace.rbegin(); itT != trace.rend(); ++itT, ++ai) {
+      if (*itT == 's') {
+	align[0][ai] = s1[row];
+	align[1][ai] = s2[col];
+	//std::cerr << s1[row] << s2[col] << std::endl;
+	++row;
+	++col;
+      } else if (*itT =='h') {
+	align[0][ai] = '-';
+	align[1][ai] = s2[col];
+	//std::cerr << '-' << s2[col] << std::endl;
+	++col;
+      } else {
+	align[0][ai] = s1[row];
+	align[1][ai] = '-';
+	//std::cerr << s1[row] << '-' << std::endl;
+	++row;
+      }
+    }
+  }
+
+
+  template<typename TTrace, typename TChar, typename TAlign>
+  inline void
+  _createAlignment(TTrace const& trace, boost::multi_array<TChar, 2> const& a1, boost::multi_array<TChar, 2> const& a2, TAlign& align)
   {
     typedef typename TAlign::index TAIndex;
     TAIndex numN = a1.shape()[0];

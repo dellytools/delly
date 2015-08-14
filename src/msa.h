@@ -31,7 +31,7 @@ Contact: Tobias Rausch (rausch@embl.de)
 namespace torali {
 
   inline int
-  lcs(std::string s1, std::string s2) {
+  lcs(std::string const& s1, std::string const& s2) {
     int m = s1.size();
     int n = s2.size();
     typedef boost::multi_array<int, 2> T2DArray;
@@ -265,11 +265,11 @@ namespace torali {
     // Debug MSA
     //typedef typename TAlign::index TAIndex;
     //for(TAIndex i = 0; i<align.shape()[0]; ++i) {
-    //  for(TAIndex j = 0; j<align.shape()[1]; ++j) {
+    //for(TAIndex j = 0; j<align.shape()[1]; ++j) {
     //	std::cerr << align[i][j];
     //  }
-    //  std::cerr << std::endl;
-    // }
+    //std::cerr << std::endl;
+    //}
 
     // Sequence to profile re-alignment
     //sprealign(align);

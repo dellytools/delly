@@ -29,6 +29,19 @@ Contact: Tobias Rausch (rausch@embl.de)
 
 namespace torali
 {
+  
+  template<typename TChar, typename TIndex>
+  inline std::size_t
+  _size(boost::multi_array<TChar, 2> const& a, TIndex const i) {
+    return a.shape()[i];
+  }
+
+  template<typename TIndex>
+  inline std::size_t
+  _size(std::string const& s, TIndex const i) {
+    if (i) return s.size();
+    return 1;
+  }
 
   template<typename TAlign1, typename TAlign2, typename TAlign>
   inline int
@@ -41,8 +54,8 @@ namespace torali
 
     // DP Matrix
     typedef boost::multi_array<TScoreValue, 2> TMatrix;
-    std::size_t m = a1.shape()[1];
-    std::size_t n = a2.shape()[1];
+    std::size_t m = _size(a1, 1);
+    std::size_t n = _size(a2, 1);
     TMatrix s(boost::extents[m+1][n+1]);
     TMatrix h(boost::extents[m+1][n+1]);
     TMatrix v(boost::extents[m+1][n+1]);
@@ -51,7 +64,7 @@ namespace torali
     typedef boost::multi_array<double, 2> TProfile;
     TProfile p1;
     TProfile p2;
-    if ((a1.shape()[0] != 1) || (a2.shape()[0] != 1)) {
+    if ((_size(a1, 0) != 1) || (_size(a2, 0) != 1)) {
       _createProfile(a1, p1);
       _createProfile(a2, p2);
     }
