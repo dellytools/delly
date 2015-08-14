@@ -29,32 +29,40 @@ Contact: Tobias Rausch (rausch@embl.de)
 namespace torali
 {
 
+  template<typename TChar, typename TDimension>
+  inline std::size_t
+  _size(boost::multi_array<TChar, 2> const& a, TDimension const i) {
+    return a.shape()[i];
+  }
+
+  template<typename TDimension>
+  inline std::size_t
+  _size(std::string const& s, TDimension const i) {
+    if (i) return s.size();
+    return 1;
+  }
+
+
   template<typename TProfile, typename TAIndex>
   inline int
   _score(std::string const& s1, std::string const& s2, TProfile const&, TProfile const&, TAIndex row, TAIndex col)
   {
-    typedef int TScoreValue;
-    TScoreValue match = 5;
-    TScoreValue mismatch = -4;
-    return (s1[row] == s2[col] ? match : mismatch);
+    return (s1[row] == s2[col] ? 5 : -4 );
   }
 
   template<typename TChar, typename TProfile, typename TAIndex>
   inline int
   _score(boost::multi_array<TChar, 2> const& a1, boost::multi_array<TChar, 2> const& a2, TProfile const& p1, TProfile const& p2, TAIndex row, TAIndex col)
   {
-    typedef int TScoreValue;
-    TScoreValue match = 5;
-    TScoreValue mismatch = -4;
     if ((a1.shape()[0] == 1) && (a2.shape()[0] == 1)) {
-      if (a1[0][row] == a2[0][col]) return match;
-      else return mismatch;
+      if (a1[0][row] == a2[0][col]) return 5;
+      else return -4;
     } else {
       typedef typename TProfile::index TPIndex;
       double score = 0;
       for(TPIndex k1 = 0; k1<5; ++k1) 
 	for(TPIndex k2 = 0; k2<5; ++k2) 
-	  score += p1[k1][row] * p2[k2][col] * ((k1 == k2) ? match : mismatch);
+	  score += p1[k1][row] * p2[k2][col] * ( (k1 == k2) ? 5 : -4 );
       return ((int) score);
     }
   }
@@ -112,21 +120,14 @@ namespace torali
     std::size_t ai = 0;
     for(typename TTrace::const_reverse_iterator itT = trace.rbegin(); itT != trace.rend(); ++itT, ++ai) {
       if (*itT == 's') {
-	align[0][ai] = s1[row];
-	align[1][ai] = s2[col];
-	//std::cerr << s1[row] << s2[col] << std::endl;
-	++row;
-	++col;
+	align[0][ai] = s1[row++];
+	align[1][ai] = s2[col++];
       } else if (*itT =='h') {
 	align[0][ai] = '-';
-	align[1][ai] = s2[col];
-	//std::cerr << '-' << s2[col] << std::endl;
-	++col;
+	align[1][ai] = s2[col++];
       } else {
-	align[0][ai] = s1[row];
+	align[0][ai] = s1[row++];
 	align[1][ai] = '-';
-	//std::cerr << s1[row] << '-' << std::endl;
-	++row;
       }
     }
   }
@@ -140,8 +141,8 @@ namespace torali
     TAIndex numN = a1.shape()[0];
     TAIndex numM = a2.shape()[0];
     align.resize(boost::extents[numN + numM][trace.size()]);
-    TAIndex row=0;
-    TAIndex col=0;
+    TAIndex row = 0;
+    TAIndex col = 0;
     TAIndex ai = 0;
     for(typename TTrace::const_reverse_iterator itT = trace.rbegin(); itT != trace.rend(); ++itT, ++ai) {
       if (*itT == 's') {

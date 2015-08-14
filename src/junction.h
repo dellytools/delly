@@ -43,7 +43,7 @@ namespace torali {
 
   template<typename TAlign, typename TAIndex>
   inline int
-    _coreAlignScore(TAlign const& align, TAIndex& consStart, TAIndex& consEnd) {
+  _coreAlignScore(TAlign const& align, TAIndex& consStart, TAIndex& consEnd) {
     // Ignore leading and trailing gaps
     bool leadingGap = true;
     int score = 0;

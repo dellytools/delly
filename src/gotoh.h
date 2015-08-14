@@ -30,19 +30,6 @@ Contact: Tobias Rausch (rausch@embl.de)
 namespace torali
 {
   
-  template<typename TChar, typename TIndex>
-  inline std::size_t
-  _size(boost::multi_array<TChar, 2> const& a, TIndex const i) {
-    return a.shape()[i];
-  }
-
-  template<typename TIndex>
-  inline std::size_t
-  _size(std::string const& s, TIndex const i) {
-    if (i) return s.size();
-    return 1;
-  }
-
   template<typename TAlign1, typename TAlign2, typename TAlign>
   inline int
   gotoh(TAlign1 const& a1, TAlign2 const& a2, TAlign& align)
