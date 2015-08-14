@@ -176,8 +176,8 @@ namespace torali {
 	 
 		    // Check position
 		    int pos = rec->core.pos;
-		    if ((!bpPoint) && ((pos >= (itSV->svStart - c.minimumFlankSize)) || (pos + rec->core.l_qseq < itSV->svStart + c.minimumFlankSize))) continue;
-		    if ((bpPoint) && ((pos >= (itSV->svEnd - c.minimumFlankSize)) || (pos + rec->core.l_qseq < itSV->svEnd + c.minimumFlankSize))) continue;
+		    if ((!bpPoint) && ((pos >= (int) (itSV->svStart - c.minimumFlankSize)) || ((int) (pos + rec->core.l_qseq) < (int) (itSV->svStart + c.minimumFlankSize)))) continue;
+		    if ((bpPoint) && ((pos >= (int) (itSV->svEnd - c.minimumFlankSize)) || ((int) (pos + rec->core.l_qseq) < (int) (itSV->svEnd + c.minimumFlankSize)))) continue;
 		    
 		    // Valid soft clip or no soft-clip read?
 		    bool hasSoftClip = false;
