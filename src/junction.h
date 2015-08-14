@@ -41,30 +41,47 @@ KSEQ_INIT(gzFile, gzread)
 namespace torali {
 
 
-  template<typename TAlign>
+  template<typename TAlign, typename TAIndex>
   inline int
-  _coreAlignScore(TAlign const& align) {
-    typedef typename TAlign::index TAIndex;
+    _coreAlignScore(TAlign const& align, TAIndex& consStart, TAIndex& consEnd) {
     // Ignore leading and trailing gaps
     bool leadingGap = true;
     int score = 0;
     int savedScore = 0;
+    consStart = 0;
+    TAIndex runningEnd = 0;
     for(TAIndex j = 0; j< (TAIndex) align.shape()[1]; ++j) {
       if (leadingGap) {
+	if (align[1][j] != '-') {
+	  ++consStart;
+	  ++runningEnd;
+	}
 	if ((align[0][j] == '-') || (align[1][j] == '-')) continue;
 	else leadingGap = false;
       }
-      if ((align[0][j] == '-') || (align[1][j] == '-')) {
+      if ((align[0][j] == '-') && (align[1][j] != '-')) {
+	score += -4;
+	++runningEnd;
+      } else if ((align[0][j] != '-') && (align[1][j] == '-')) {
 	score += -4;
       } else {
 	if (align[0][j] == align[1][j]) score += 5;
 	else score += -4;
+	++runningEnd;
 	savedScore = score;
+	consEnd = runningEnd;
       }
     }
     return savedScore;
   }
 
+  template<typename TAlign>
+  inline int
+  _coreAlignScore(TAlign const& align) {
+    typedef typename TAlign::index TAIndex;
+    TAIndex consStart, consEnd;
+    return _coreAlignScore(align, consStart, consEnd);
+  }
 
   template<typename TConfig, typename TSampleLibrary, typename TSVs, typename TCountMap, typename TTag>
   inline void
@@ -176,8 +193,8 @@ namespace torali {
 	 
 		    // Check position
 		    int pos = rec->core.pos;
-		    if ((!bpPoint) && ((pos >= (int) (itSV->svStart - c.minimumFlankSize)) || ((int) (pos + rec->core.l_qseq) < (int) (itSV->svStart + c.minimumFlankSize)))) continue;
-		    if ((bpPoint) && ((pos >= (int) (itSV->svEnd - c.minimumFlankSize)) || ((int) (pos + rec->core.l_qseq) < (int) (itSV->svEnd + c.minimumFlankSize)))) continue;
+		    if ((!bpPoint) && ((pos > itSV->svStart) || ((pos + rec->core.l_qseq) < itSV->svStart))) continue;
+		    if ((bpPoint) && ((pos > itSV->svEnd) || ((pos + rec->core.l_qseq) < itSV->svEnd))) continue;
 		    
 		    // Valid soft clip or no soft-clip read?
 		    bool hasSoftClip = false;
@@ -199,12 +216,19 @@ namespace torali {
 			
 			  // Compute alignment to alternative haplotype
 			  typedef boost::multi_array<char, 2> TAlign;
+			  typedef typename TAlign::index TAIndex;
 			  TAlign align;
 			  gotoh(sequence, itSV->consensus, align);
-			  int altScore = _coreAlignScore(align);
+			  TAIndex consStart = 0;
+			  TAIndex consEnd = 0;
+			  int altScore = _coreAlignScore(align, consStart, consEnd);
+			  consStart += c.minimumFlankSize;
+			  if (c.minimumFlankSize <= consEnd) consEnd -= c.minimumFlankSize;
+
+			  // Is the breakpoint spanned by this read?
+			  if ((consStart > itSV->csBp) || (consEnd < itSV->csBp)) continue;
 
 			  // Debug alignment to ALT
-			  //typedef typename TAlign::index TAIndex;
 			  //std::cerr << "Alt: " << altScore << std::endl;
 			  //for(TAIndex i = 0; i< (TAIndex) align.shape()[0]; ++i) {
 			  //for(TAIndex j = 0; j< (TAIndex) align.shape()[1]; ++j) {
