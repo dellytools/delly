@@ -121,7 +121,8 @@ namespace torali {
       palign(sps, p, p[root][1], align1);
       TAlign align2;
       palign(sps, p, p[root][2], align2);
-      gotoh(align1, align2, align);
+      AlignConfig<true, true> endFreeAlign;
+      gotoh(align1, align2, align, endFreeAlign);
     }
   }
 
@@ -165,7 +166,8 @@ namespace torali {
       }
       
       // Re-align sequence to profile
-      gotoh(align1, align2, align);
+      AlignConfig<true, true> endFreeAlign;
+      gotoh(align1, align2, align, endFreeAlign);
     }
   }
 
@@ -266,8 +268,8 @@ namespace torali {
     //typedef typename TAlign::index TAIndex;
     //for(TAIndex i = 0; i<align.shape()[0]; ++i) {
     //for(TAIndex j = 0; j<align.shape()[1]; ++j) {
-    //	std::cerr << align[i][j];
-    //  }
+    //std::cerr << align[i][j];
+    //}
     //std::cerr << std::endl;
     //}
 

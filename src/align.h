@@ -29,6 +29,52 @@ Contact: Tobias Rausch (rausch@embl.de)
 namespace torali
 {
 
+  // Configure the DP matrix
+  template<bool THorizontal = false, bool TVertical = false>
+    class AlignConfig;
+
+  template<>
+    class AlignConfig<false, false> {};
+
+  template<>
+    class AlignConfig<false, true> {};
+  
+  template<>
+    class AlignConfig<true, false> {};
+  
+  template<>
+    class AlignConfig<true, true> {};
+
+  template<bool THorizontal, typename TPos1, typename TPos2, typename TCost>
+    inline TCost
+    _verticalGap(AlignConfig<THorizontal, false> const&, TPos1 const, TPos2 const, TCost const cost) 
+  {
+    return cost;
+  }
+  
+  template<bool THorizontal, typename TPos1, typename TPos2, typename TCost>
+    inline TCost
+    _verticalGap(AlignConfig<THorizontal, true> const&, TPos1 const i, TPos2 const iend, TCost const cost) 
+  {
+    if ((i == 0) || (i == iend)) return 0;
+    else return cost;
+  }
+
+  template<bool TVertical, typename TPos1, typename TPos2, typename TCost>
+    inline TCost
+    _horizontalGap(AlignConfig<false, TVertical> const&, TPos1 const, TPos2 const, TCost const cost)
+  {
+    return cost;
+  }
+  
+  template<bool TVertical, typename TPos1, typename TPos2, typename TCost>
+    inline TCost
+    _horizontalGap(AlignConfig<true, TVertical> const&, TPos1 const i, TPos2 const iend, TCost const cost)
+  {
+    if ((i == 0) || (i == iend)) return 0;
+    else return cost;
+  }
+
   template<typename TChar, typename TDimension>
   inline std::size_t
   _size(boost::multi_array<TChar, 2> const& a, TDimension const i) {

@@ -439,7 +439,6 @@ namespace torali
     sv.svStart=finalGapStart;
     sv.svEnd=finalGapEnd;
     sv.srAlignQuality=quality;
-    sv.csBp = (cStart + cEnd) / 2;
     return true;
   }
 
