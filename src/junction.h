@@ -273,7 +273,7 @@ namespace torali {
 			  
 		    // Any confident alignment?
 		    if ((refScore > scoreThresholdRef) || (altScore > scoreThresholdAlt)) {
-		      if (refScore > altScore) {
+		      if ( (double) refScore / (double) scoreThresholdRef > (double) altScore / (double) scoreThresholdAlt) {
 			if (rCoreEnd - rCoreStart < 35) continue;
 			if ((!bpPoint) &&  ( ( (rCoreStart + c.minimumFlankSize) > rStart) || ((rCoreEnd - c.minimumFlankSize) < rStart) ) ) continue;
 			if ((bpPoint) &&  ( ( (rCoreStart + c.minimumFlankSize) > rEnd) || ((rCoreEnd - c.minimumFlankSize) < rEnd) ) ) continue;
