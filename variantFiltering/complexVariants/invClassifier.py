@@ -179,6 +179,10 @@ if args.complexVCF:
                 svEnd = max(e1, e2)
                 svType = "INV"
                 sv2info = None
+            else:
+                # Need to deal with the case that validRdRatio returns None
+                # but I don't know what that means but I get an error here.
+                continue
 
             # output VCF
             info = "IMPRECISE;"
