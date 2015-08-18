@@ -40,6 +40,30 @@ KSEQ_INIT(gzFile, gzread)
 
 namespace torali {
 
+  template<typename TBP, typename TPos, typename TSize, typename TSVBp, typename TTag>
+  inline bool
+  _overlapsSVBreakpoint(TBP const bpPoint, TPos const pStart, TSize const pEnd, TSVBp const start, TSVBp const end, SVType<TTag>) 
+  {
+    if (bpPoint) {
+      if ((pStart > end) || (pEnd < end)) return false;
+    } else {
+      if ((pStart > start) || (pEnd < start)) return false;
+    }
+    return true;
+  }
+
+  template<typename TBP, typename TPos, typename TSize, typename TSVBp>
+  inline bool
+  _overlapsSVBreakpoint(TBP const bpPoint, TPos const pStart, TSize const pEnd, TSVBp const start, TSVBp const end, SVType<DuplicationTag>) 
+  {
+    if (!bpPoint) {
+      if ((pStart > end) || (pEnd < end)) return false;
+    } else {
+      if ((pStart > start) || (pEnd < start)) return false;
+    }
+    return true;
+  }
+
 
   template<typename TAlign, typename TAIndex>
   inline int
@@ -225,9 +249,11 @@ namespace torali {
 		      if (!_validSCOrientation(bpPoint, leadingSoftClip, itSV->ct, svType)) continue;
 		    } else {
 		      // Check position
-		      int pos = rec->core.pos;
-		      if ((!bpPoint) && ((pos > itSV->svStart) || ((pos + rec->core.l_qseq) < itSV->svStart))) continue;
-		      if ((bpPoint) && ((pos > itSV->svEnd) || ((pos + rec->core.l_qseq) < itSV->svEnd))) continue;
+		      if (bpPoint) {
+			if ((rec->core.pos > itSV->svEnd) || (rec->core.pos + rec->core.l_qseq < itSV->svEnd)) continue;
+		      } else {
+			if ((rec->core.pos > itSV->svStart) || (rec->core.pos + rec->core.l_qseq < itSV->svStart)) continue;
+		      }
 		    }
 
 		    // Get sequence
@@ -275,8 +301,7 @@ namespace torali {
 		    if ((refScore > scoreThresholdRef) || (altScore > scoreThresholdAlt)) {
 		      if ( (double) refScore / (double) scoreThresholdRef > (double) altScore / (double) scoreThresholdAlt) {
 			if (rCoreEnd - rCoreStart < 35) continue;
-			if ((!bpPoint) &&  ( ( (rCoreStart + c.minimumFlankSize) > rStart) || ((rCoreEnd - c.minimumFlankSize) < rStart) ) ) continue;
-			if ((bpPoint) &&  ( ( (rCoreStart + c.minimumFlankSize) > rEnd) || ((rCoreEnd - c.minimumFlankSize) < rEnd) ) ) continue;
+			if (!_overlapsSVBreakpoint(bpPoint, rCoreStart + c.minimumFlankSize, rCoreEnd - c.minimumFlankSize, rStart, rEnd, svType)) continue;
 			
 			//std::cerr << sampleName << ',' << altScore << ',' << refScore << ':' << scoreThresholdAlt << ',' << scoreThresholdRef << std::endl;
 			// Take only every second read because we sample both breakpoints
