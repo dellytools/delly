@@ -69,14 +69,8 @@ if args.vcfFile:
                                 rcRef.append(call['RC'])
                     if (args.nameTumor and call.sample == args.nameTumor) or ((args.nameTumor is None) and (re.search(r"[Tt]umo[ur]", call.sample) != None)):
                         tCount += 1
-                        if call.gt_type != 0:  # Misses subclonal SVs with call['DV']>0 and GT=0/0
-                            if ((not precise) and (call['DV'] >= 2) and (float(call['DV'])/float(call['DV']+call['DR']) >= altAF)) or ((precise) and (call['RV'] >= 2) and (float(call['RV'])/float(call['RR'] + call['RV']) >= altAF)):
-                                rcAlt.append(call['RC'])
-                else:
-                    if (args.nameNormal and call.sample == args.nameNormal and precise) or ((args.nameNormal is None) and (re.search(r"[Nn]ormal", call.sample) != None) and (precise)):
-                        if (call['DR'] > 2) and (call['DV'] == 0):
-                            nCount += 1
-                            rcRef.append(call['RC'])
+                        if ((not precise) and (call['DV'] >= 2) and (float(call['DV'])/float(call['DV']+call['DR']) >= altAF)) or ((precise) and (call['RV'] >= 2) and (float(call['RV'])/float(call['RR'] + call['RV']) >= altAF)):
+                            rcAlt.append(call['RC'])
             genotypeRatio = float(nCount + tCount) /  float(len(record.samples))
             if (nCount > 0) and (tCount > 0) and (len(rcRef) == nCount) and (len(rcAlt) > 0) and (genotypeRatio >= ratioGeno):
                 rdRatio = 1
