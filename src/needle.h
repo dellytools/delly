@@ -30,36 +30,36 @@ Contact: Tobias Rausch (rausch@embl.de)
 namespace torali
 {
 
-  template<typename TAlign1, typename TAlign2, typename TAlign, typename TMatrix>
+  template<typename TAlign1, typename TAlign2, typename TAlign, typename TAlignConfig, typename TScoreObject>
   inline int
-  _needle(TAlign1 const& a1, TAlign2 const& a2, TAlign& align, TMatrix& mat)
+  needle(TAlign1 const& a1, TAlign2 const& a2, TAlign& align, TAlignConfig const& ac, TScoreObject const& sc)
   {
-    typedef int TScoreValue;
-    TScoreValue gap = -1;
+    typedef typename TScoreObject::TValue TScoreValue;
 
     // DP Matrix
-    std::size_t m = a1.shape()[1];
-    std::size_t n = a2.shape()[1];
-    mat.resize(boost::extents[m+1][n+1]);
+    typedef boost::multi_array<TScoreValue, 2> TMatrix;
+    std::size_t m = _size(a1, 1);
+    std::size_t n = _size(a2, 1);
+    TMatrix mat(boost::extents[m+1][n+1]);
 
     // Create profile
     typedef boost::multi_array<double, 2> TProfile;
     TProfile p1;
     TProfile p2;
-    if ((a1.shape()[0] != 1) || (a2.shape()[0] != 1)) {
+    if ((_size(a1, 0) != 1) || (_size(a2, 0) != 1)) {
       _createProfile(a1, p1);
       _createProfile(a2, p2);
     }
 
     // Initialization
     mat[0][0] = 0;
-    for(std::size_t col = 1; col <= n; ++col) mat[0][col] = mat[0][col-1] + gap;
-    for(std::size_t row = 1; row <= m; ++row) mat[row][0] = mat[row-1][0] + gap;
+    for(std::size_t col = 1; col <= n; ++col) mat[0][col] = mat[0][col-1] + _horizontalGap(ac, 0, m, sc.ge);
+    for(std::size_t row = 1; row <= m; ++row) mat[row][0] = mat[row-1][0] + _verticalGap(ac, 0, n, sc.ge);
 
     // Recursion
     for(std::size_t col = 1; col <= n; ++col) 
       for(std::size_t row = 1; row <= m; ++row) 
-	mat[row][col] = std::max(std::max(mat[row-1][col-1] + _score(a1, a2, p1, p2, row-1, col-1), mat[row-1][col] + gap), mat[row][col-1] + gap);
+	mat[row][col] = std::max(std::max(mat[row-1][col-1] + _score(a1, a2, p1, p2, row-1, col-1, sc), mat[row-1][col] + _verticalGap(ac, col, n, sc.ge)), mat[row][col-1] + _horizontalGap(ac, row, m, sc.ge));
 
     // Trace-back
     std::size_t row = m;
@@ -67,10 +67,10 @@ namespace torali
     typedef std::vector<char> TTrace;
     TTrace trace;
     while ((row>0) || (col>0)) {
-      if ((row>0) && (mat[row][col] == mat[row-1][col] + gap)) {
+      if ((row>0) && (mat[row][col] == mat[row-1][col] + _verticalGap(ac, col, n, sc.ge))) {
 	--row;
 	trace.push_back('v');
-      } else if ((col>0) && (mat[row][col] == mat[row][col-1] + gap)) {
+      } else if ((col>0) && (mat[row][col] == mat[row][col-1] + _horizontalGap(ac, row, m, sc.ge))) {
 	--col;
 	trace.push_back('h');
       } else {
@@ -87,14 +87,20 @@ namespace torali
     return mat[m][n];
   }
 
+  template<typename TAlign1, typename TAlign2, typename TAlign, typename TAlignConfig>
+  inline int
+  needle(TAlign1 const& a1, TAlign2 const& a2, TAlign& align, TAlignConfig const& ac)
+  {
+    DnaScore<int> dnasc;
+    return needle(a1, a2, align, ac, dnasc);
+  }
 
   template<typename TAlign1, typename TAlign2, typename TAlign>
   inline int
   needle(TAlign1 const& a1, TAlign2 const& a2, TAlign& align)
   {
-    typedef boost::multi_array<int, 2> TMatrix;
-    TMatrix mat;
-    return _needle(a1, a2, align, mat);
+    AlignConfig<false, false> ac;
+    return needle(a1, a2, align, ac);
   }
 
 }
