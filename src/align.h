@@ -29,6 +29,31 @@ Contact: Tobias Rausch (rausch@embl.de)
 namespace torali
 {
 
+  template<typename TScoreValue>
+  struct DnaScore {
+    typedef TScoreValue TValue;
+
+    TScoreValue match;
+    TScoreValue mismatch;
+    TScoreValue go;
+    TScoreValue ge;
+    TScoreValue inf;
+
+    DnaScore() {
+      match = 5;
+      mismatch = -4;
+      go = -10;
+      ge = -1;
+      inf = 1000000;
+    }
+
+    DnaScore(TScoreValue m, TScoreValue mm, TScoreValue gapopen, TScoreValue gapextension) : match(m), mismatch(mm), go(gapopen), ge(gapextension) {
+      inf = 1000000;
+    }
+  };
+
+  
+
   // Configure the DP matrix
   template<bool THorizontal = false, bool TVertical = false>
     class AlignConfig;
@@ -89,26 +114,26 @@ namespace torali
   }
 
 
-  template<typename TProfile, typename TAIndex>
+  template<typename TProfile, typename TAIndex, typename TScore>
   inline int
-  _score(std::string const& s1, std::string const& s2, TProfile const&, TProfile const&, TAIndex row, TAIndex col)
+    _score(std::string const& s1, std::string const& s2, TProfile const&, TProfile const&, TAIndex row, TAIndex col, TScore const& sc)
   {
-    return (s1[row] == s2[col] ? 5 : -4 );
+    return (s1[row] == s2[col] ? sc.match : sc.mismatch );
   }
 
-  template<typename TChar, typename TProfile, typename TAIndex>
+  template<typename TChar, typename TProfile, typename TAIndex, typename TScore>
   inline int
-  _score(boost::multi_array<TChar, 2> const& a1, boost::multi_array<TChar, 2> const& a2, TProfile const& p1, TProfile const& p2, TAIndex row, TAIndex col)
+  _score(boost::multi_array<TChar, 2> const& a1, boost::multi_array<TChar, 2> const& a2, TProfile const& p1, TProfile const& p2, TAIndex row, TAIndex col, TScore const& sc)
   {
     if ((a1.shape()[0] == 1) && (a2.shape()[0] == 1)) {
-      if (a1[0][row] == a2[0][col]) return 5;
-      else return -4;
+      if (a1[0][row] == a2[0][col]) return sc.match;
+      else return sc.mismatch;
     } else {
       typedef typename TProfile::index TPIndex;
       double score = 0;
       for(TPIndex k1 = 0; k1<5; ++k1) 
 	for(TPIndex k2 = 0; k2<5; ++k2) 
-	  score += p1[k1][row] * p2[k2][col] * ( (k1 == k2) ? 5 : -4 );
+	  score += p1[k1][row] * p2[k2][col] * ( (k1 == k2) ? sc.match : sc.mismatch );
       return ((int) score);
     }
   }

@@ -30,14 +30,11 @@ Contact: Tobias Rausch (rausch@embl.de)
 namespace torali
 {
   
-  template<typename TAlign1, typename TAlign2, typename TAlign, typename TAlignConfig>
+  template<typename TAlign1, typename TAlign2, typename TAlign, typename TAlignConfig, typename TScoreObject>
   inline int
-  gotoh(TAlign1 const& a1, TAlign2 const& a2, TAlign& align, TAlignConfig& ac)
+    gotoh(TAlign1 const& a1, TAlign2 const& a2, TAlign& align, TAlignConfig const& ac, TScoreObject const& sc)
   {
-    typedef int TScoreValue;
-    TScoreValue inf = 1000000;
-    TScoreValue go = -10;
-    TScoreValue ge = -1;
+    typedef typename TScoreObject::TValue TScoreValue;
 
     // DP Matrix
     typedef boost::multi_array<TScoreValue, 2> TMatrix;
@@ -58,25 +55,25 @@ namespace torali
 
     // Initialization
     for(std::size_t col = 1; col <= n; ++col) {
-      v[0][col] = -inf;
-      s[0][col] = _horizontalGap(ac, 0, m, go + col * ge);
-      h[0][col] = _horizontalGap(ac, 0, m, go + col * ge);
+      v[0][col] = -sc.inf;
+      s[0][col] = _horizontalGap(ac, 0, m, sc.go + col * sc.ge);
+      h[0][col] = _horizontalGap(ac, 0, m, sc.go + col * sc.ge);
     }
     for(std::size_t row = 1; row <= m; ++row) {
-      h[row][0] = -inf;
-      s[row][0] = _verticalGap(ac, 0, n, go + row * ge);
-      v[row][0] = _verticalGap(ac, 0, n, go + row * ge);
+      h[row][0] = -sc.inf;
+      s[row][0] = _verticalGap(ac, 0, n, sc.go + row * sc.ge);
+      v[row][0] = _verticalGap(ac, 0, n, sc.go + row * sc.ge);
     }
     s[0][0] = 0;
-    v[0][0] = -inf;
-    h[0][0] = -inf;
+    v[0][0] = -sc.inf;
+    h[0][0] = -sc.inf;
 
     // Recursion
     for(std::size_t col = 1; col <= n; ++col) {
       for(std::size_t row = 1; row <= m; ++row) {
-	h[row][col] = std::max(s[row][col-1] + _horizontalGap(ac, row, m, go + ge), h[row][col-1] + _horizontalGap(ac, row, m, ge));
-	v[row][col] = std::max( s[row-1][col] + _verticalGap(ac, col, n, go + ge), v[row-1][col] + _verticalGap(ac, col, n, ge));
-	s[row][col] = std::max(std::max(s[row-1][col-1] + _score(a1, a2, p1, p2, row-1, col-1), h[row][col]), v[row][col]);
+	h[row][col] = std::max(s[row][col-1] + _horizontalGap(ac, row, m, sc.go + sc.ge), h[row][col-1] + _horizontalGap(ac, row, m, sc.ge));
+	v[row][col] = std::max( s[row-1][col] + _verticalGap(ac, col, n, sc.go + sc.ge), v[row-1][col] + _verticalGap(ac, col, n, sc.ge));
+	s[row][col] = std::max(std::max(s[row-1][col-1] + _score(a1, a2, p1, p2, row-1, col-1, sc), h[row][col]), v[row][col]);
       }
     }
 
@@ -97,12 +94,12 @@ namespace torali
 	  //std::cerr << a1[0][row] << a2[0][col] << std::endl;
 	}
       } else if (lastMatrix == 'h') {
-	if (h[row][col] != h[row][col-1] + _horizontalGap(ac, row, m, ge)) lastMatrix = 's';
+	if (h[row][col] != h[row][col-1] + _horizontalGap(ac, row, m, sc.ge)) lastMatrix = 's';
 	--col;
 	trace.push_back('h');
 	//std::cerr << '-' << a2[0][col] << std::endl;
       } else if (lastMatrix == 'v') {
-	if (v[row][col] != v[row-1][col] + _verticalGap(ac, col, n, ge)) lastMatrix = 's';
+	if (v[row][col] != v[row-1][col] + _verticalGap(ac, col, n, sc.ge)) lastMatrix = 's';
 	--row;
 	trace.push_back('v');
 	//std::cerr << a1[0][row] << '-' << std::endl;
@@ -116,6 +113,13 @@ namespace torali
     return s[m][n];
   }
 
+  template<typename TAlign1, typename TAlign2, typename TAlign, typename TAlignConfig>
+  inline int
+  gotoh(TAlign1 const& a1, TAlign2 const& a2, TAlign& align, TAlignConfig const& ac) 
+  {
+    DnaScore<int> dnasc;    
+    return gotoh(a1, a2, align, ac, dnasc);
+  }
 
   template<typename TAlign1, typename TAlign2, typename TAlign>
   inline int

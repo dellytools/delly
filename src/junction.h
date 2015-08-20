@@ -195,16 +195,16 @@ namespace torali {
 	      typedef boost::multi_array<char, 2> TAlign;
 	      typedef typename TAlign::index TAIndex;
 	      TAlign alignFwd;
-	      gotoh(itSV->consensus, svRefStr, alignFwd);
+	      AlignConfig<true, false> semiglobal;
+	      DnaScore<int> sc(5, -4, -5 * c.minimumFlankSize, 0);
+	      gotoh(itSV->consensus, svRefStr, alignFwd, semiglobal, sc);
 	      TAIndex cStart, cEnd, rStart, rEnd;
 	      _findSplit(alignFwd, cStart, cEnd, rStart, rEnd);
 	      int csBp = (cStart + cEnd) / 2;
 	      
 	      // Debug consensus to reference alignment
 	      //for(TAIndex i = 0; i<alignFwd.shape()[0]; ++i) {
-	      //for(TAIndex j = 0; j<alignFwd.shape()[1]; ++j) {
-	      //std::cerr << alignFwd[i][j];
-	      //}
+	      //for(TAIndex j = 0; j<alignFwd.shape()[1]; ++j) std::cerr << alignFwd[i][j];
 	      //std::cerr << std::endl;
 	      //}
 	      //std::cerr << cStart << ',' << cEnd << ':' << rStart << ',' << rEnd << std::endl;
@@ -275,9 +275,7 @@ namespace torali {
 		    // Debug alignment ALT
 		    //std::cerr << "Alt: " << altScore << std::endl;
 		    //for(TAIndex i = 0; i< (TAIndex) align.shape()[0]; ++i) {
-		    //for(TAIndex j = 0; j< (TAIndex) align.shape()[1]; ++j) {
-		    //std::cerr << align[i][j];
-		    //}
+		    //for(TAIndex j = 0; j< (TAIndex) align.shape()[1]; ++j) std::cerr << align[i][j];
 		    //std::cerr << std::endl;
 		    //}
 		    
@@ -291,9 +289,7 @@ namespace torali {
 		    // Debug alignment REF
 		    //std::cerr << "Ref: " << refScore << std::endl;
 		    //for(TAIndex i = 0; i< (TAIndex) align.shape()[0]; ++i) {
-		    //for(TAIndex j = 0; j< (TAIndex) align.shape()[1]; ++j) {
-		    //std::cerr << align[i][j];
-		    //}
+		    //for(TAIndex j = 0; j< (TAIndex) align.shape()[1]; ++j) std::cerr << align[i][j];
 		    //std::cerr << std::endl;
 		    //}
 			  

@@ -400,24 +400,12 @@ namespace torali
 
     // Consensus to reference alignment
     TAlign alignFwd;
-    int score = gotoh(cons, ref, alignFwd);
-
-    // Scoring - deduce leading, trailing and one internal gap (assuming go=10, ge=1, match=5)
-    score += (alignFwd.shape()[1] - sv.consensus.size()) + 3 * 10;
-    int maxScore = sv.consensus.size() * 5;
-    if (score < 0) score = 0;
-    double quality = 1;
-    if (score < maxScore) quality = (double) score / (double) maxScore;
-
-    // Debug consensus to reference alignment
-    //for(TAIndex i = 0; i<alignFwd.shape()[0]; ++i) {
-    // for(TAIndex j = 0; j<alignFwd.shape()[1]; ++j) {
-    //	std::cerr << alignFwd[i][j];
-    //}
-    //std::cerr << std::endl;
-    //}
-    //std::cerr << "Alignment score: " << score << " (Quality: " << quality << ")" << std::endl;
-    //std::cerr << std::endl;
+    AlignConfig<true, false> semiglobal;
+    DnaScore<int> sc(5, -4, -5 * c.minimumFlankSize, 0); // Don't penalize the split, ge=0 and make sure we have aligned segments > c.minimumFlankSize
+    int score = gotoh(cons, ref, alignFwd, semiglobal, sc);
+    score += 5 * c.minimumFlankSize; // Increase the score by allowing one internal gap
+    double quality = (double) ((score < 0) ? 0 : score ) / (double) (sv.consensus.size() * 5);
+    if (quality > 1) quality = 1;
 
     // Check quality
     if (quality < ((double) c.flankQuality / 100.0)) return false;
@@ -425,6 +413,16 @@ namespace torali
     // Check breakpoint
     TAIndex cStart, cEnd, rStart, rEnd;
     if (!_findSplit(alignFwd, cStart, cEnd, rStart, rEnd)) return false;
+
+    // Debug consensus to reference alignment
+    //for(TAIndex i = 0; i<alignFwd.shape()[0]; ++i) {
+    //for(TAIndex j = 0; j<alignFwd.shape()[1]; ++j) {
+    //std::cerr << alignFwd[i][j];
+    //}
+    //std::cerr << std::endl;
+    //}
+    //std::cerr << "Alignment score: " << score << " (Quality: " << quality << ")" << std::endl;
+    //std::cerr << std::endl;
 
     // Check flanking alignment length
     if ((cStart < c.minimumFlankSize) || ((sv.consensus.size() - cEnd) < c.minimumFlankSize)) return false;
