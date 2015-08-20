@@ -81,7 +81,7 @@ namespace torali
     inline TCost
     _verticalGap(AlignConfig<THorizontal, true> const&, TPos1 const i, TPos2 const iend, TCost const cost) 
   {
-    if ((i == 0) || (i == iend)) return 0;
+    if ((i == (TPos1) 0) || (i == (TPos1) iend)) return 0;
     else return cost;
   }
 
@@ -96,7 +96,7 @@ namespace torali
     inline TCost
     _horizontalGap(AlignConfig<true, TVertical> const&, TPos1 const i, TPos2 const iend, TCost const cost)
   {
-    if ((i == 0) || (i == iend)) return 0;
+    if ((i == (TPos1) 0) || (i == (TPos1) iend)) return 0;
     else return cost;
   }
 
