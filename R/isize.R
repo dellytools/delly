@@ -23,6 +23,7 @@ txtFontSize=10; axisFontSize=16; axisTtlFontSize=18; lgdTtlFontSize=18; lgdFontS
 sth=theme(panel.grid.major=element_blank(), panel.grid.minor=element_blank(), legend.key=element_blank(), legend.background=element_blank(), panel.background = element_blank(), panel.border=element_blank(), strip.background = element_blank(), axis.line=element_line(size=0.7, color="black"), axis.text.x=element_text(size=axisFontSize), axis.text.y=element_text(size=axisFontSize), axis.title.x=element_text(size=axisTtlFontSize), axis.title.y=element_text(size=axisTtlFontSize), legend.title=element_text(size=lgdTtlFontSize, face="bold"), legend.text=element_text(size=lgdFontSize), text=element_text(size=txtFontSize), plot.title=element_text(size=axisTtlFontSize), strip.text.x=element_text(size=axisTtlFontSize))
 
 png(paste(args[1], "png", sep="."), height=800, width=800)
+#pdf(paste(args[1], "pdf", sep="."), height=8, width=8)
 grid.newpage()
 pushViewport(viewport(layout=grid.layout(4,2)))
 p1=ggplot(data=ins, aes(x=Size, y=Count)) + geom_freqpoly(aes(colour=Orientation), size=1.2, stat="identity") + scale_y_continuous(labels=comma) + xlim(0, maxSize) + ggtitle(titleVal) + sth
