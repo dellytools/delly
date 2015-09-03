@@ -138,7 +138,7 @@ def depth(s1, s2, c):
             y_sum = np.sum(np.split(y, n_chunks), axis=1)
 
         d['ratios'] = [r if np.isfinite(r) else None
-                       for r in np.log2((x_sum+1) / (y_sum+1) / cfg['norm'])
+                       for r in np.log2(x_sum / y_sum / cfg['norm'])
                        .tolist()]
 
     return json.dumps(d)
