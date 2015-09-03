@@ -1,5 +1,4 @@
-urgent
-------
+# high priority
 - [x] fix zoom out on brushing
     - get rid of padding then?
 - [ ] prevent zooming/panning past boundaries
@@ -7,10 +6,9 @@ urgent
 - [ ] parse / display translocations as well
     - need to adjust tooltip too
     - new color palette (colorbrewer?)
-- [ ] normalize cov ratios with genomewide counts
+- [x] normalize cov ratios with genomewide counts
 
-other
------
+# low priority
 - [ ] minimal y-axis range
 - [ ] y-axis needs to update dynamically (min/max can change)
     - as quick fix maybe always use some amount of axis padding?
