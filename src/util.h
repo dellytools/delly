@@ -294,13 +294,17 @@ namespace torali
 	
 	// Mate-pair library (If yes, trim off the chimera peak < 1000bp)
 	if (paramIt->second.defaultOrient==3) {
-	  typedef std::vector<int32_t> TVecISize;
-	  TVecISize vecISizeTmp;
-	  typename TVecISize::const_iterator iSizeBeg = paramIt->second.vecISize.begin();
-	  typename TVecISize::const_iterator iSizeEnd = paramIt->second.vecISize.end();
-	  for(;iSizeBeg<iSizeEnd;++iSizeBeg)
-	    if (*iSizeBeg >= 1000) vecISizeTmp.push_back(*iSizeBeg);
-	  paramIt->second.vecISize = vecISizeTmp;
+	  double libmed = 0;
+	  getMedian(paramIt->second.vecISize.begin(), paramIt->second.vecISize.end(), libmed);
+	  if (libmed >= 1000) {
+	    typedef std::vector<int32_t> TVecISize;
+	    TVecISize vecISizeTmp;
+	    typename TVecISize::const_iterator iSizeBeg = paramIt->second.vecISize.begin();
+	    typename TVecISize::const_iterator iSizeEnd = paramIt->second.vecISize.end();
+	    for(;iSizeBeg<iSizeEnd;++iSizeBeg)
+	      if (*iSizeBeg >= 1000) vecISizeTmp.push_back(*iSizeBeg);
+	    paramIt->second.vecISize = vecISizeTmp;
+	  }
 	}
 	
 	// Check that this is a proper paired-end library
