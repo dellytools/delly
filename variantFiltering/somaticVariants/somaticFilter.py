@@ -62,7 +62,7 @@ if args.vcfFile:
             tCount = 0
             for call in record.samples:
                 if call.called:
-                    if (args.nameNormal and call.sample == args.nameNormal) or ((args.nameNormal is None) and (re.search(r"[Nn]ormal", call.sample) != None)):
+                    if (args.nameNormal and call.sample == args.nameNormal) or ((args.nameNormal is None) and ((re.search(r"[Nn]ormal", call.sample) != None) or (re.search(r"[Cc]ontrol", call.sample) != None))):
                         nCount += 1
                         if call.gt_type == 0:
                             if ((not precise) and (call['DV'] == 0)) or ((precise) and (call['RV'] == 0)):
