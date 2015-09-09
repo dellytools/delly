@@ -1532,7 +1532,6 @@ inline int run(Config const& c, TSVType svType) {
     vcfOutput(c, svs, junctionCountMap, rcMap, spanCountMap, svType);
   }
 
-
   // Output library statistics
   now = boost::posix_time::second_clock::local_time();
   std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Library statistics" << std::endl;
@@ -1541,10 +1540,9 @@ inline int run(Config const& c, TSVType svType) {
     std::cout << "Sample: " << sampleIt->first << std::endl;
     TLibraryMap::const_iterator libIt=sampleIt->second.begin();
     for(;libIt!=sampleIt->second.end();++libIt) {
-      std::cout << "RG: ID=" << libIt->first << ",Median=" << libIt->second.median << ",MAD=" << libIt->second.mad << ",Orientation=" << (int) libIt->second.defaultOrient << ",InsertSizeCutoff=" << libIt->second.maxNormalISize << ",DuplicateDiscordantPairs=" << libIt->second.non_unique_abnormal_pairs << ",UniqueDiscordantPairs=" << libIt->second.abnormal_pairs << std::endl;
+      std::cout << "RG: ID=" << libIt->first << ",Median=" << libIt->second.median << ",MAD=" << libIt->second.mad << ",LibLayout=" << (int) libIt->second.defaultOrient << ",MaxSizeCut=" << libIt->second.maxISizeCutoff << ",MinSizeCut=" << libIt->second.minISizeCutoff << ",DuplicateDiscordantPairs=" << libIt->second.non_unique_abnormal_pairs << ",UniqueDiscordantPairs=" << libIt->second.abnormal_pairs << std::endl;
     }
   }
-  
 #ifdef PROFILE
   ProfilerStop();
 #endif
