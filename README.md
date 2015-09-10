@@ -81,7 +81,7 @@ Run Delly jointly on the cancer data and the matched control sequencing data. Id
 * Are non-unique alignments, multi-mappings and/or multiple split-read alignments allowed?  
 Delly expects two alignment records in the bam file for every paired-end, one for the first and one for the second read. Multiple split-read alignment records of a given read are allowed if and only if one of them (e.g. the longest split alignment) is a primary alignment whereas all others are marked as secondary or supplementary (flag 0x0100 or flag 0x0800).
 
-* What pre-processing of bam files is required?
+* What pre-processing of bam files is required?    
 Bam files need to be sorted and index. If multiple libraries are present for a single sample (e.g., a long-insert mate-pair library and a short-insert paired-end library) these need to be merged in a single bam file with unique ReadGroup tags. A prior marking of duplicates is not necessary but also does not harm because Delly has its own duplicate filter and is aware of the duplicate flag.
 
 * Usage/discussion mailing list?         
