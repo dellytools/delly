@@ -4,15 +4,11 @@ from __future__ import print_function
 import sys, os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from varpkg.overlap import overlapValid
-from varpkg.concordance import carrierConcordance
-from varpkg.rd import altRefReadDepthRatio
 import vcf
 import argparse
 import numpy
 import banyan
 import networkx
-import collections
-import re
 
 # Parse command line
 parser = argparse.ArgumentParser(description='Deletion/Duplication filter.')
@@ -36,10 +32,11 @@ if args.cnvVCF:
             for call in record.samples:
                 if call.called:
                     hap = [int(gVal) for gVal in call['GT'].split('/')]
-                    if (sum(hap) == 0):
-                        rc.append(call['RC'])
-                        if call['RCL'] + call['RCR'] > 0:
-                            refRC.append(float(call['RC'])/float(call['RCL'] + call['RCR']))
+                    if sum(hap) == 0:
+                        if call['RC'] > 0:
+                            rc.append(call['RC'])
+                            if call['RCL'] + call['RCR'] > 0:
+                                refRC.append(float(call['RC'])/float(call['RCL'] + call['RCR']))
                     else:
                         gqAlt.append(call['GQ'])
                         peCount += call['DV']
