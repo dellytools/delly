@@ -56,7 +56,7 @@ these two files into maze and you're there.
 ## Inspecting several different loci
 As said before, `maze` works with two FASTA files, the one containing your 
 assemblies/long reads and the other one containing the piece of reference 
-to compare them to. However, if you specify two FASTA files with equally 
+to compare them to. However, if you supply two FASTA files with equally 
 many entries you will trigger a pairwise comparison between the sequences. 	
 
 There is a helper script in the `maze` folder that can generate these
@@ -74,7 +74,7 @@ Then run
 
 Replace `hg19.fa` with the refernce genome you are using and `assemblies.fa`
 with your reads/assemblies. In case the coordinates are not included in the
-fasta header you can also specify them as a table in BED format. Just make 
+fasta header you can also input them as a table in BED format. Just make 
 sure that the table has the same order as the reads/assemblies in your FASTA
 file. The command is 
 
