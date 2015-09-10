@@ -54,15 +54,15 @@ If you omit the reference sequence Delly skips the split-read analysis. The vcf 
 
 Delly ships with python scripts to filter somatic variants for tumor/normal comparisons and to filter confident polymorphic SV sites in population-scale SV calling.
 
-`python somaticFilter.py -v del.vcf -o del.somatic.vcf -t DEL -f`
+`python somaticFilter.py -t DEL -v del.vcf -o del.somatic.vcf -f`
 
 Copy-number variable polymorphic SV sites:
 
-`python cnvClassifier.py -v del.vcf -o del.sites.vcf`
+`python cnvClassifier.py -v del.vcf -o del.sites.vcf -f`
 
 Balanced, polymorphic SV sites (inversions):
 
-`python populationFilter.py -v del.vcf -o del.sites.vcf`
+`python populationFilter.py -v del.vcf -o del.sites.vcf -f`
 
 These python scripts are primarily meant as an example of how you can filter and annotate the final Delly vcf file further. They may require some fine-tuning depending on your application.
 
