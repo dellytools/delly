@@ -117,6 +117,12 @@ namespace torali
 	  break;
 	}
       }
+      for(unsigned int i=0; i<id.size();++i) {
+	if (((int) id[i] < 48) || ((int) id[i] > 57)) {
+	  id=id.substr(0,i);
+	  break;
+	}
+      }
       return boost::lexical_cast<unsigned int>(id);
     }
 
