@@ -17,7 +17,8 @@ parser = argparse.ArgumentParser(description='Filter for somatic SVs.')
 parser.add_argument('-v', '--vcf', metavar='variants.vcf', required=True, dest='vcfFile', help='input vcf file (required)')
 parser.add_argument('-o', '--out', metavar='out.vcf', required=True, dest='outFile', help='output vcf file (required)')
 parser.add_argument('-t', '--type', metavar='DEL', required=True, dest='svType', help='SV type [DEL, DUP, INV, INS, TRA] (required)')
-parser.add_argument('-a', '--altaf', metavar='0.1', required=False, dest='altAF', help='min. alt. AF (optional)')
+parser.add_argument('-a', '--altaf', metavar='0.2', required=False, dest='altAF', help='min. alt. AF (optional)')
+parser.add_argument('-c', '--mincov', metavar='10', required=False, dest='minCov', help='min. coverage (optional)')
 parser.add_argument('-m', '--minsize', metavar='500', required=False, dest='minSize', help='min. size (optional)')
 parser.add_argument('-n', '--maxsize', metavar='500000000', required=False, dest='maxSize', help='max. size (optional)')
 parser.add_argument('-r', '--ratioGeno', metavar='0.75', required=False, dest='ratioGeno', help='min. fraction of genotyped samples (optional)')
@@ -34,9 +35,12 @@ if args.minSize:
 maxSize = 500000000
 if args.maxSize:
     maxSize = int(args.maxSize)
-altAF = 0.1
+altAF = 0.2
 if args.altAF:
     altAF = float(args.altAF)
+minCov = 10
+if args.minCov:
+    minCov = int(args.minCov)
 ratioGeno = 0.75
 if args.ratioGeno:
     ratioGeno = float(args.ratioGeno)
@@ -65,12 +69,24 @@ if args.vcfFile:
                     if (args.nameNormal and call.sample == args.nameNormal) or ((args.nameNormal is None) and ((re.search(r"[Nn]ormal", call.sample) != None) or (re.search(r"[Cc]ontrol", call.sample) != None))):
                         nCount += 1
                         if call.gt_type == 0:
-                            if ((not precise) and (call['DV'] == 0)) or ((precise) and (call['RV'] == 0)):
-                                rcRef.append(call['RC'])
+                            if not precise:
+                                if (call['DV'] == 0) and (call['DR'] >= minCov):
+                                    rcRef.append(call['RC'])
+                            else:
+                                if (call['RV'] == 0) and (call['RR'] >= minCov):
+                                    rcRef.append(call['RC'])
                     if (args.nameTumor and call.sample == args.nameTumor) or ((args.nameTumor is None) and (re.search(r"[Tt]umo[ur]", call.sample) != None)):
                         tCount += 1
-                        if ((not precise) and (call['DV'] >= 2) and (float(call['DV'])/float(call['DV']+call['DR']) >= altAF)) or ((precise) and (call['RV'] >= 2) and (float(call['RV'])/float(call['RR'] + call['RV']) >= altAF)):
-                            rcAlt.append(call['RC'])
+                        if not precise:
+                            cov = float(call['DV']+call['DR'])
+                            if (call['DV'] >= 2) and (cov >= minCov) and (float(call['DV'])/cov >= altAF):
+                                if (record.INFO['SVTYPE'] != "TRA") or (call['DV'] >= 5):
+                                    rcAlt.append(call['RC'])
+                        else:
+                            cov = float(call['RV']+call['RR'])
+                            if (call['RV'] >= 2) and (cov >= minCov) and (float(call['RV'])/cov >= altAF):
+                                if (record.INFO['SVTYPE'] != "TRA") or (call['RV'] >= 5):
+                                    rcAlt.append(call['RC'])
             genotypeRatio = float(nCount + tCount) /  float(len(record.samples))
             if (nCount > 0) and (tCount > 0) and (len(rcRef) == nCount) and (len(rcAlt) > 0) and (genotypeRatio >= ratioGeno):
                 rdRatio = 1
