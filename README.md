@@ -62,7 +62,7 @@ Copy-number variable polymorphic SV sites:
 
 Balanced, polymorphic SV sites (inversions):
 
-`python populationFilter.py -v del.vcf -o del.sites.vcf -f`
+`python populationFilter.py -v inv.vcf -o inv.sites.vcf -f`
 
 These python scripts are primarily meant as an example of how you can filter and annotate the final Delly vcf file further. They may require some fine-tuning depending on your application.
 
