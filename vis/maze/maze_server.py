@@ -25,27 +25,50 @@ def data():
     args = request.form
     length = int(args['length'])
     match_type = args['matches']
-    ref = json.loads(args['ref'])
+    refs = json.loads(args['ref'])
     queries = json.loads(args['query'])
 
     m = []
-    with NamedTemporaryFile(delete=False) as f_ref:
-        fn_ref = f_ref.name
-        print('>{}'.format(ref['name']), file=f_ref)
-        print(ref['seq'], file=f_ref)
-    for query in queries:
-        with NamedTemporaryFile(delete=False) as f_query:
-            fn_query = f_query.name
-            print('>{}'.format(query['name']), file=f_query)
-            print(query['seq'], file=f_query)
-        matches = maze.mummer_matches(fn_ref,
-                                      fn_query,
-                                      length,
-                                      match_type,
-                                      cfg['debug'])
-        m.append(matches)
-        os.remove(fn_query)
-    os.remove(fn_ref)
+    # pairwise mode:
+    if len(queries) == len(refs):
+        for ref, query in zip(refs, queries):
+            with NamedTemporaryFile(delete=False) as f_ref, \
+                 NamedTemporaryFile(delete=False) as f_query:
+                fn_ref = f_ref.name
+                print('>{}'.format(ref['name']), file=f_ref)
+                print(ref['seq'], file=f_ref)
+                fn_query = f_query.name
+                print('>{}'.format(query['name']), file=f_query)
+                print(query['seq'], file=f_query)        
+            # close file. Otherwise an error occurs from time to time
+            matches = maze.mummer_matches(fn_ref,
+                                          fn_query,
+                                          length,
+                                          match_type,
+                                          cfg['debug'])
+            m.append(matches)
+            os.remove(fn_query)    
+            os.remove(fn_ref)
+
+    # classical mode
+    else:
+        with NamedTemporaryFile(delete=False) as f_ref:
+            fn_ref = f_ref.name
+            print('>{}'.format(refs[0]['name']), file=f_ref)
+            print(refs[0]['seq'], file=f_ref)
+        for query in queries:
+            with NamedTemporaryFile(delete=False) as f_query:
+                fn_query = f_query.name
+                print('>{}'.format(query['name']), file=f_query)
+                print(query['seq'], file=f_query)
+            matches = maze.mummer_matches(fn_ref,
+                                          fn_query,
+                                          length,
+                                          match_type,
+                                          cfg['debug'])
+            m.append(matches)
+            os.remove(fn_query)
+        os.remove(fn_ref)
     return json.dumps(m)
 
 
