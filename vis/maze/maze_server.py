@@ -4,7 +4,7 @@
 
 from __future__ import print_function, division
 import click
-from flask import Flask, render_template, request
+from flask import Flask, render_template, request, make_response
 from tempfile import NamedTemporaryFile
 import os
 import gzip
@@ -12,6 +12,8 @@ import json
 from readfq import readfq
 import maze
 import maze_breakpoints
+import re
+
 
 app = Flask(__name__)
 cfg = {}
@@ -84,6 +86,21 @@ def compute_breakpoints():
     query = json.loads(args['query'])
     return maze_breakpoints.breakpoints(ref, query)
 
+@app.route('/save', methods=['POST'])
+def save_svg():
+    svg_xml = request.form['content']
+    # include CSS into SVG
+    embed_css = '<defs><style type="text/css"><![CDATA[ '
+    with open('static/maze.css') as f_css:
+        for line in f_css:
+            embed_css += line.strip() + ' '
+    embed_css += ']]></style></defs>'
+    beg,end = tuple(re.split(r'>\s*<', svg_xml, 1))
+    response = make_response(beg + '>' + embed_css + '<' + end)
+    response.headers["Content-Disposition"] = "attachment; filename=maze.svg"
+    response.headers['Content-Description'] = 'File Transfer'
+    response.headers['Content-Type'] = 'image/svg+xml' # response.headers['Cache-Control'] = 'no-cache' # ?
+    return response
 
 @click.command()
 @click.option('-p', '--port', default=5000, help='port number')

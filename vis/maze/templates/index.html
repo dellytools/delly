@@ -18,12 +18,20 @@ maze: match visualizer
     <div class="container-fluid">
       <button type="button" class="pull-left button-header" data-toggle="modal" data-target="#config-modal">
         <span class="glyphicon glyphicon-menu-hamburger"></span>
+        setup
       </button>
-      <div class="pull-left">setup</div>
+      <button id="control-btn-save" type="button" class="pull-right button-header" 
+              data-toggle="tooltip" data-original-title="Save as SVG" data-placement="bottom">
+        <span class="glyphicon glyphicon-save"></span>
+      </button>
+          <form id="form-save" method="post" action="/save">
+           <input type="hidden" name="content" value="">
+          </form>
       <button id="control-btn-breakpoints" type="button" class="pull-right button-header">
+        breakpoints
         <span class="glyphicon glyphicon-new-window"></span>
       </button>
-      <div class="pull-right">breakpoints</div>
+
       <div class="header-title">maze</div>
     </div>
   </header>

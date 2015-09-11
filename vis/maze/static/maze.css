@@ -28,7 +28,7 @@ header {
   border: none;
 }
 
-.button-header:hover {
+.button-header:hover:enabled {
   color: DodgerBlue;
 }
 

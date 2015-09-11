@@ -21,7 +21,9 @@ var maze = function () {
     // remove focus after being clicked
     $('.button-header').focus(function () {
       this.blur();
-    }); 
+    });
+
+    $('#control-btn-save, #control-btn-breakpoints').prop('disabled', true);
 
     $('#match-info').click(function () {
       $('#matches-info').toggleClass('hide');
@@ -53,8 +55,7 @@ var maze = function () {
       $(this).removeClass('dropzone-hover');
       $('#query-icon-chosen').removeClass('fa-times');
       $('#query-icon-chosen').removeClass('fa-check');
-      $('#query-icon-chosen').addClass('fa-spinner').addClass('fa-pulse')
-;
+      $('#query-icon-chosen').addClass('fa-spinner').addClass('fa-pulse');
       getDroppedFasta(e, 'query');
     });
 
@@ -161,22 +162,39 @@ var maze = function () {
   my.vis = function (selector, dataIdx) {
     var refIdx = my.ref.length == my.query.length ? dataIdx : 0;
     var data = my.data[dataIdx]
-    var l1 = my.ref[refIdx].seq.length; // todo(meiers): adapt
+    var l1 = my.ref[refIdx].seq.length;
     var l2 = my.query[dataIdx].seq.length;
 
     $(selector).empty();
 
-    $('#control-btn-left').removeClass('hide');
-    $('#control-btn-right').removeClass('hide');
-    $('#control-btn-right').off('click');
-    $('#control-btn-left').off('click');
+    // header buttons
+    $('#control-btn-breakpoints').prop('disabled', false);
     $('#control-btn-breakpoints').off('click');
-
-    $('#control-btn-breakpoints:not(disabled)').click(function () { // currently never disabled
+    $('#control-btn-breakpoints').click(function () {
         console.log('open new window for ' + dataIdx)
         var wnd = window.open("breakpoints");
         wnd.transferData = { data: data, query: my.query[dataIdx], ref: my.ref[refIdx]}; 
       });
+
+    $('#control-btn-save').prop('disabled', false);
+    $('#control-btn-save').off('click');
+    $('#control-btn-save').tooltip();
+    $('#control-btn-save').click(function () {
+        // Extract the data as SVG text string
+        var svg_elem =  document.getElementsByTagName("svg")[0];
+        var svg_xml = (new XMLSerializer).serializeToString(svg_elem);
+        var form = document.getElementById("form-save");
+        form['content'].value = svg_xml;
+        form.submit();
+
+      });
+
+
+    // control (left/right) buttons
+    $('#control-btn-left').removeClass('hide');
+    $('#control-btn-right').removeClass('hide');
+    $('#control-btn-right').off('click');
+    $('#control-btn-left').off('click');
 
     if (dataIdx > 0) {
       $('#control-btn-left').removeClass('disabled');
