@@ -95,3 +95,41 @@ command is
 
 Finally, drag the two files `assemblies.fa` and `assemblies.reference.fa`
 into the setup menu of `maze`.
+
+## Use case
+A possible use case for `maze` is to view the breakpoints of precise SVs
+that have a consesus sequence reported by Delly. To do so, all you need is
+a Delly VCF, some `awk` and `maze`.
+
+In this example we will extract duplication breakpoints of events <50kb.
+First, we need to parse the information from the VCF (DUP.vcf.gz) and 
+reformat it into FASTA, for example using the following `awk` script (vcf2fa.awk):
+
+```awk
+$0!~/^#/ && $8!~/IMPRECISE/ {
+	split($8,x,";");                  /* split the info field */
+	for (i in x) { 
+		n=split(x[i],y,"=");          /* get key=value pairs */
+		if(n==2) {INFO[y[1]] = y[2];} /* save them in variable INFO */
+	} 
+	if (INFO["END"] - $2 <= 50000) {  /* limit to 50kb */
+		print ">" $3 " "$1 ":" $2-1000 "-" INFO["END"]+1000 "\n" INFO["CONSENSUS"]
+	}
+}
+```
+
+The script can be applied like this
+
+    $ zcat DUP.vcf.gz | awk -f vcf2fa.awk > DUP.fa
+
+Note that FASTA headers contain the genomic coordinates behind
+the FASTA ID. We added 1kb of flanking sequence on both sides.
+Next, extract the reference slices belonging to these duplication breakpoints.
+
+    $ ./extract_reference_slices.py -r hg19.fa -f DUP.fa > DUP.ref.fa
+
+Finally drag'n'drop the two FASTA files (DUP.fa and DUP.ref.fa) into 
+the setup menu of maze. A typical tandem duplication should align
+the first half of the breakpoint sequence further to the right and the
+2nd half further to the left. Click the breakpoint button to check for
+microhomologies around the breakpoint!
