@@ -31,11 +31,7 @@ although these haven't been tested.
 `maze` uses `MUMmer3` to compute matches, thus you need the
 `mummer` binary in your `$PATH`. For breakpoint analysis, you
 will also need the `lastdb`, `lastal` and `last-split` binaries 
-from the [LAST](http://last.cbrc.jp/) package.
-
-
-For the breakpoint module to work, you additionally need the `last` and 
-`last-split` binaries in a version >= 584.
+from the [LAST](http://last.cbrc.jp/) package version >= 584.
 
 ## Running the app
 First off, start the server:
@@ -101,7 +97,7 @@ A possible use case for `maze` is to view the breakpoints of precise SVs
 that have a consesus sequence reported by Delly. To do so, all you need is
 a Delly VCF, some `awk` and `maze`.
 
-In this example we will extract duplication breakpoints of events <50kb.
+In this example we will extract duplication breakpoints of events <=50kb.
 First, we need to parse the information from the VCF (DUP.vcf.gz) and 
 reformat it into FASTA, for example using the following `awk` script (vcf2fa.awk):
 
