@@ -118,6 +118,8 @@ if args.invVCF:
                                 if (record.INFO['SVTYPE'] != 'INV') and (updSVType != "DUP"):
                                     continue
                                 if (updSVType != 'DUP') or (maxBpOffset > minDuplicationLength):
+                                    print((s1,e1), nonRefHap, rc)
+                                    print((s2,e2), inv3to3['hap'], inv3to3['rc'])
                                     score = float(min(support, inv3to3['sup'])) * float(cc)
                                     if score > invInfo['score']:
                                         invInfo = {'id': inv3to3['id'], 'start': min(s1, s2), 'end': max(e1, e2), 'score': score}
@@ -185,6 +187,8 @@ if args.complexVCF:
             ((s1, e1), (s2, e2)) = ((selectedSVs[id1]['start'], selectedSVs[id1]['end']), (selectedSVs[id2]['start'], selectedSVs[id2]['end']))
             (recO, nestedO, recUnion, bpOffset, oLen) = overlapMetrics((s1, e1), (s2, e2))
             rdRatio = rdAltRefRatio(((s1, e1), (s2, e2)), (selectedSVs[id1]['nonRefHap'], selectedSVs[id2]['nonRefHap']), (selectedSVs[id1]['rc'], selectedSVs[id2]['rc']))
+            print((s1,e1), selectedSVs[id1]['nonRefHap'], selectedSVs[id1]['rc'])
+            print((s2,e2), selectedSVs[id2]['nonRefHap'], selectedSVs[id2]['rc'])
             updSVType = validRdRatio(recO/nestedO, rdRatio)[1]
 
             # Separate the 2 SVs
