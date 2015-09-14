@@ -24,7 +24,6 @@ parser.add_argument('-i', '--insOffset', metavar='170', required=False, dest='ma
 parser.add_argument('-d', '--dupLength', metavar='150', required=False, dest='minDuplicationLength', help='min. duplication length (optional)')
 parser.add_argument('-m', '--carrierConcordance', metavar='0.5', required=False, dest='minCarrierConcordance', help='min. carrier concordance (optional)')
 parser.add_argument('-n', '--nestedOverlap', metavar='0.75', required=False, dest='minNestedOverlap', help='min. required nested overlap (optional)')
-parser.add_argument('-r', '--readDepth', dest='readDepth', action='store_true', help='Filter sites according to read-depth')
 parser.add_argument('-f', '--filter', dest='siteFilter', action='store_true', help='Filter sites for PASS')
 args = parser.parse_args()
 
@@ -104,7 +103,7 @@ if args.delVCF:
                         cc = carrierConcordance(nonRefHap, dup5to3['hap'])
                         if (nestedO >= minNestedOverlap) and (minBpOffset < maxInsertionOffset) and (maxBpOffset > minDuplicationLength) and (cc >= minCarrierConcordance):
                             rdRatio = rdAltRefRatio(((s1, e1), (s2, e2)), (nonRefHap, dup5to3['hap']), (rc, dup5to3['rc']))
-                            if validRdRatio(recO/nestedO, rdRatio, args.readDepth)[0]:
+                            if validRdRatio(recO/nestedO, rdRatio)[0]:
                                 score = float(min(peCount, dup5to3['pe'])) * float(cc)
                                 if score > dupInfo['score']:
                                     dupInfo = {'id': dup5to3['id'], 'start': min(s1, s2), 'end': max(e1, e2), 'score': score}
@@ -182,7 +181,7 @@ if args.complexVCF:
             ((s1, e1), (s2, e2)) = ((selectedSVs[id1]['start'], selectedSVs[id1]['end']), (selectedSVs[id2]['start'], selectedSVs[id2]['end']))
             (recO, nestedO, recUnion, bpOffset, oLen) = overlapMetrics((s1, e1), (s2, e2))
             rdRatio = rdAltRefRatio(((s1, e1), (s2, e2)), (selectedSVs[id1]['nonRefHap'], selectedSVs[id2]['nonRefHap']), (selectedSVs[id1]['rc'], selectedSVs[id2]['rc']))
-            updSVType = validRdRatio(recO/nestedO, rdRatio, args.readDepth)[1]
+            updSVType = validRdRatio(recO/nestedO, rdRatio)[1]
             if updSVType != "DUP":
                 continue
             if abs(s1-s2) > abs(e1-e2):

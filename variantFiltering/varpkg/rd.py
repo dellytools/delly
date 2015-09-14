@@ -43,9 +43,7 @@ def rdAltRefRatio(((start1, end1), (start2, end2)), (sv1hap, sv2hap), (sv1RC, sv
 
 
 
-def validRdRatio(ro, readDepthRatio, checkReadDepth):
-    if not checkReadDepth:
-        return (True, None)
+def validRdRatio(ro, readDepthRatio):
     if readDepthRatio is not None:
         if ((ro < 0.9) and (readDepthRatio <= 0.925)) or ((ro < 0.95) and (readDepthRatio >= 1.025)) or ((ro >= 0.9) and (readDepthRatio < 1.025)) or (ro > 0.95):
             if (ro < 0.9) and (readDepthRatio <= 0.925):

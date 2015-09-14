@@ -15,14 +15,14 @@ import operator
 
 
 # Parse command line
-parser = argparse.ArgumentParser(description='Inversion classification.')
-parser.add_argument('-v', '--vcf', metavar='inv.vcf', required=True, dest='invVCF', help='inversion vcf file (required)')
+parser = argparse.ArgumentParser(description='Inversion & proximal duplication classification.')
+parser.add_argument('-v', '--vcf', metavar='inv.vcf', required=True, dest='invVCF', help='inversion or merged deletion/duplication vcf file (required)')
 parser.add_argument('-o', '--outVCF', metavar='out.vcf', required=True, dest='outVCF', help='output vcf file (required)')
 parser.add_argument('-c', '--complexSV', metavar='complexSV.vcf', required=False, dest='complexVCF', help='complex SV vcf file (optional)')
 parser.add_argument('-i', '--insOffset', metavar='170', required=False, dest='maxInsertionOffset', help='max. insertion offset (optional)')
+parser.add_argument('-d', '--dupLength', metavar='150', required=False, dest='minDuplicationLength', help='min. duplication length (optional)')
 parser.add_argument('-m', '--carrierConcordance', metavar='0.5', required=False, dest='minCarrierConcordance', help='min. carrier concordance (optional)')
 parser.add_argument('-n', '--nestedOverlap', metavar='0.75', required=False, dest='minNestedOverlap', help='min. required nested overlap (optional)')
-parser.add_argument('-r', '--readDepth', dest='readDepth', action='store_true', help='Filter sites according to read-depth')
 parser.add_argument('-f', '--filter', dest='siteFilter', action='store_true', help='Filter sites for PASS')
 args = parser.parse_args()
 
@@ -30,13 +30,16 @@ args = parser.parse_args()
 maxInsertionOffset = 170
 if args.maxInsertionOffset:
     maxInsertionOffset = int(args.maxInsertionOffset)
+minDuplicationLength = 150
+if args.minDuplicationLength:
+    minDuplicationLength = int(args.minDuplicationLength)
 minNestedOverlap = 0.75
 if args.minNestedOverlap:
     minNestedOverlap = float(args.minNestedOverlap)
 minCarrierConcordance = 0.5
 if args.minCarrierConcordance:
     minCarrierConcordance = float(args.minCarrierConcordance)
-maxInvSize = 50000
+maxSvSize = 50000
 
 # Parse 3to3 inversions
 sv = dict()
@@ -44,23 +47,32 @@ svDups = collections.defaultdict(list)
 if args.invVCF:
     vcf_reader = vcf.Reader(open(args.invVCF), 'r', compressed=True) if args.invVCF.endswith('.gz') else vcf.Reader(open(args.invVCF), 'r', compressed=False)
     for record in vcf_reader:
-        if (record.INFO['CT'] == '3to3') and ((not args.siteFilter) or (len(record.FILTER) == 0)) and ((record.INFO['END']-record.POS+1) <= maxInvSize):
+        if ((record.INFO['CT'] == '3to3') or (record.INFO['SVTYPE'] == 'DUP')) and ((not args.siteFilter) or (len(record.FILTER) == 0)) and ((record.INFO['END']-record.POS+1) <= maxSvSize):
+            precise = False
+            if 'PRECISE' in record.INFO.keys():
+                precise = record.INFO['PRECISE']
             nonRefHap = dict()
-            peCount = 0
+            support = 0
             rc = dict()
             for call in record.samples:
                 if call.called:
                     rc[call.sample] = call['RC']
-                    if (call.gt_type != 0) and (call['DV'] > 0):
-                        nonRefHap[call.sample] = [int(gVal) for gVal in call['GT'].split('/')]
-                        peCount += call['DV']
+                    if call.gt_type != 0:
+                        if precise:
+                            if call['RV'] >= 2:
+                                nonRefHap[call.sample] = [int(gVal) for gVal in call['GT'].split('/')]
+                                support += call['RV']
+                        else:
+                            if call['DV'] >= 2:
+                                nonRefHap[call.sample] = [int(gVal) for gVal in call['GT'].split('/')]
+                                support += call['DV']
             if len(nonRefHap):
                 if not sv.has_key(record.CHROM):
                     sv[record.CHROM] = banyan.SortedDict(key_type=(int, int), alg=banyan.RED_BLACK_TREE, updator=banyan.OverlappingIntervalsUpdator)
                 if (record.POS, record.INFO['END']) not in sv[record.CHROM]:
-                    sv[record.CHROM][(record.POS, record.INFO['END'])] = {'id': record.ID, 'pe': peCount, 'hap': nonRefHap, 'rc': rc}
+                    sv[record.CHROM][(record.POS, record.INFO['END'])] = {'id': record.ID, 'sup': support, 'hap': nonRefHap, 'rc': rc}
                 else:
-                    svDups[(record.CHROM, record.POS, record.INFO['END'])].append({'id': record.ID, 'pe': peCount, 'hap': nonRefHap, 'rc': rc})
+                    svDups[(record.CHROM, record.POS, record.INFO['END'])].append({'id': record.ID, 'sup': support, 'hap': nonRefHap, 'rc': rc})
 
 
 # Parse 5to5 inversions
@@ -69,16 +81,25 @@ G = networkx.Graph()
 if args.invVCF:
     vcf_reader = vcf.Reader(open(args.invVCF), 'r', compressed=True) if args.invVCF.endswith('.gz') else vcf.Reader(open(args.invVCF), 'r', compressed=False)
     for record in vcf_reader:
-        if (record.INFO['CT'] == '5to5') and ((not args.siteFilter) or (len(record.FILTER) == 0)) and (sv.has_key(record.CHROM)) and ((record.INFO['END']-record.POS+1) <= maxInvSize):
+        if ((record.INFO['CT'] == '5to5') or (record.INFO['SVTYPE'] == 'DEL')) and ((not args.siteFilter) or (len(record.FILTER) == 0)) and (sv.has_key(record.CHROM)) and ((record.INFO['END']-record.POS+1) <= maxSvSize):
+            precise = False
+            if 'PRECISE' in record.INFO.keys():
+                precise = record.INFO['PRECISE']
             nonRefHap = dict()
-            peCount = 0
+            support = 0
             rc = dict()
             for call in record.samples:
                 if call.called:
                     rc[call.sample] = call['RC']
-                    if (call.gt_type != 0) and (call['DV'] > 0):
-                        nonRefHap[call.sample] = [int(gVal) for gVal in call['GT'].split('/')]
-                        peCount += call['DV']
+                    if call.gt_type != 0:
+                        if precise:
+                            if call['RV'] >= 2:
+                                nonRefHap[call.sample] = [int(gVal) for gVal in call['GT'].split('/')]
+                                support += call['RV']
+                        else:
+                            if call['DV'] >= 2:
+                                nonRefHap[call.sample] = [int(gVal) for gVal in call['GT'].split('/')]
+                                support += call['DV']
             if len(nonRefHap):
                 # Collect overlapping calls
                 s1 = record.POS
@@ -88,13 +109,18 @@ if args.invVCF:
                     for inv3to3 in svDups[(record.CHROM, s2, e2)] + [sv[record.CHROM][(s2, e2)]]:
                         (recO, nestedO, recUnion, bpOffset, oLen) = overlapMetrics((s1, e1), (s2, e2))
                         minBpOffset = min(abs(s2-s1), abs(e2-e1))
+                        maxBpOffset = max(abs(s2-s1), abs(e2-e1))
                         cc = carrierConcordance(nonRefHap, inv3to3['hap'])
                         if (nestedO >= minNestedOverlap) and (minBpOffset < maxInsertionOffset) and (cc >= minCarrierConcordance):
                             rdRatio = rdAltRefRatio(((s1, e1), (s2, e2)), (nonRefHap, inv3to3['hap']), (rc, inv3to3['rc']))
-                            if validRdRatio(recO/nestedO, rdRatio, args.readDepth)[0]:
-                                score = float(min(peCount, inv3to3['pe'])) * float(cc)
-                                if score > invInfo['score']:
-                                    invInfo = {'id': inv3to3['id'], 'start': min(s1, s2), 'end': max(e1, e2), 'score': score}
+                            valid, updSVType = validRdRatio(recO/nestedO, rdRatio)
+                            if valid:
+                                if (record.INFO['SVTYPE'] != 'INV') and (updSVType != "DUP"):
+                                    continue
+                                if (updSVType != 'DUP') or (maxBpOffset > minDuplicationLength):
+                                    score = float(min(support, inv3to3['sup'])) * float(cc)
+                                    if score > invInfo['score']:
+                                        invInfo = {'id': inv3to3['id'], 'start': min(s1, s2), 'end': max(e1, e2), 'score': score}
                 if invInfo['score'] >= 0:
                     if not invRegion.has_key(record.CHROM):
                         invRegion[record.CHROM] = banyan.SortedDict(key_type=(int, int), alg=banyan.RED_BLACK_TREE, updator=banyan.OverlappingIntervalsUpdator)
@@ -119,6 +145,7 @@ for H in networkx.connected_component_subgraphs(G):
 # Extract selected calls
 selectedSVs = dict()
 svm = "NA"
+svtinv = "NA"
 if args.invVCF:
     vcf_reader = vcf.Reader(open(args.invVCF), 'r', compressed=True) if args.invVCF.endswith('.gz') else vcf.Reader(open(args.invVCF), 'r', compressed=False)
     vcf_writer = vcf.Writer(open(args.outVCF, 'w'), vcf_reader, lineterminator='\n')
@@ -126,14 +153,20 @@ if args.invVCF:
         if record.ID in set(reduce(operator.add, map(list, idPairs.keys()))):
             ci = max(abs(record.INFO['CIEND'][0]), abs(record.INFO['CIEND'][1]), abs(record.INFO['CIPOS'][0]), abs(record.INFO['CIPOS'][1]))
             svm = record.INFO['SVMETHOD']
+            svtinv = record.INFO['SVTYPE']
             gtl = list()
             rc = dict()
             nonRefHap = dict()
             for call in record.samples:
                 if call.called:
                     rc[call.sample] = call['RC']
-                    if (call.gt_type != 0) and (call['DV'] > 0):
-                        nonRefHap[call.sample] = [int(gVal) for gVal in call['GT'].split('/')]
+                    if call.gt_type != 0:
+                        if precise:
+                            if call['RV'] >= 2:
+                                nonRefHap[call.sample] = [int(gVal) for gVal in call['GT'].split('/')]
+                        else:
+                            if call['DV'] >= 2:
+                                nonRefHap[call.sample] = [int(gVal) for gVal in call['GT'].split('/')]
                 gtl.append(call['GT'])
             selectedSVs[record.ID] = {'chr': record.CHROM, 'start': record.POS, 'end': record.INFO['END'], 'pe': record.INFO['PE'], 'mapq': record.INFO['MAPQ'], 'ci': ci, 'gt': gtl, 'rc': rc, 'nonRefHap': nonRefHap}
             vcf_writer.write_record(record)
@@ -152,8 +185,7 @@ if args.complexVCF:
             ((s1, e1), (s2, e2)) = ((selectedSVs[id1]['start'], selectedSVs[id1]['end']), (selectedSVs[id2]['start'], selectedSVs[id2]['end']))
             (recO, nestedO, recUnion, bpOffset, oLen) = overlapMetrics((s1, e1), (s2, e2))
             rdRatio = rdAltRefRatio(((s1, e1), (s2, e2)), (selectedSVs[id1]['nonRefHap'], selectedSVs[id2]['nonRefHap']), (selectedSVs[id1]['rc'], selectedSVs[id2]['rc']))
-            updSVType = validRdRatio(recO/nestedO, rdRatio, args.readDepth)[1]
-            #print(selectedSVs[id1]['chr'], min(s1,s2), max(e1,e2), updSVType, nestedO, recO, recO/nestedO, rdRatio, max(max(s1, s2) - min(s1, s2), max(e1, e2) - min(e1, e2)), sep='\t')
+            updSVType = validRdRatio(recO/nestedO, rdRatio)[1]
 
             # Separate the 2 SVs
             if updSVType == "DUP":
@@ -163,7 +195,9 @@ if args.complexVCF:
                     (insStart, insEnd, dupStart, dupEnd) = (min(s1, s2), max(s1, s2), min(e1, e2), max(e1, e2))
                 svPos = dupStart
                 svEnd = dupEnd
-                svType = "INVDUP"
+                svType = "PDUP"
+                if svtinv == "INV":
+                    svType = "INVDUP"
                 sv2info = {'start': insStart, 'end': insEnd, 'type': "INS"}
             elif updSVType == "DEL":
                 if abs(s1-s2) > abs(e1-e2):
