@@ -4,8 +4,8 @@ STATIC ?= 0
 
 # Submodules
 PWD = $(shell pwd)
-SEQTK_ROOT = ${PWD}/src/htslib/
-BOOST_ROOT = ${PWD}/src/modular-boost
+SEQTK_ROOT ?= ${PWD}/src/htslib/
+BOOST_ROOT ?= ${PWD}/src/modular-boost
 
 # Flags
 CXX=g++
