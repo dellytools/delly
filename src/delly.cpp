@@ -86,6 +86,25 @@ struct Config {
   std::vector<boost::filesystem::path> files;
 };
 
+// Reduced split alignment record
+struct SplitAlignRecord {
+  int32_t alignbeg;
+  int32_t splitbeg;
+  int32_t splitend;
+  int32_t alignend;
+  uint8_t MapQuality;
+  
+  SplitAlignRecord(int32_t ab, int32_t sb, int32_t se, int32_t ae, uint8_t mq) : alignbeg(ab), splitbeg(sb), splitend(se), alignend(ae), MapQuality(mq) {}
+};
+
+// Sort split alignment records
+template<typename TRecord>
+struct SortSplitRecords : public std::binary_function<TRecord, TRecord, bool>
+{
+  inline bool operator()(TRecord const& s1, TRecord const& s2) const {
+    return ((s1.splitbeg < s2.splitbeg) || ((s1.splitbeg == s2.splitbeg) && (s1.splitend < s2.splitend)) || ((s1.splitbeg == s2.splitbeg) && (s1.splitend == s2.splitend) && (s1.alignbeg < s2.alignbeg)));
+  }
+};
 
 // Reduced bam alignment record data structure
 struct BamAlignRecord {
@@ -228,6 +247,38 @@ inline std::string
 _addID(SVType<InsertionTag>) {
   return "INS";
 }
+
+
+// Deletions
+inline uint8_t
+_getCT(SVType<DeletionTag>) {
+  return 2;
+}
+
+// Duplications
+inline uint8_t
+_getCT(SVType<DuplicationTag>) {
+  return 3;
+}
+
+// Inversions
+inline uint8_t
+_getCT(SVType<InversionTag>) {
+  return 0;
+}
+
+// Translocations
+inline uint8_t
+_getCT(SVType<TranslocationTag>) {
+  return 0;
+}
+
+// Insertion
+inline uint8_t
+_getCT(SVType<InsertionTag>) {
+  return 4;
+}
+
 
 // Decode Orientation
 inline uint8_t
@@ -395,7 +446,7 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
   ofile << "##ALT=<ID=INV,Description=\"Inversion\">" << std::endl;
   ofile << "##ALT=<ID=TRA,Description=\"Translocation\">" << std::endl;
   ofile << "##ALT=<ID=INS,Description=\"Insertion\">" << std::endl;
-  ofile << "##FILTER=<ID=LowQual,Description=\"PE support below 3 or mapping quality below 20.\">" << std::endl;
+  ofile << "##FILTER=<ID=LowQual,Description=\"PE/SR support below 3 or mapping quality below 20.\">" << std::endl;
   ofile << "##INFO=<ID=CIEND,Number=2,Type=Integer,Description=\"PE confidence interval around END\">" << std::endl;
   ofile << "##INFO=<ID=CIPOS,Number=2,Type=Integer,Description=\"PE confidence interval around POS\">" << std::endl;
   ofile << "##INFO=<ID=CHR2,Number=1,Type=String,Description=\"Chromosome for END coordinate in case of a translocation\">" << std::endl;
@@ -442,8 +493,10 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
 
     // Output main vcf fields
     std::string filterField="PASS";
-    if ((svIter->peSupport < 3) || (svIter->peMapQuality < 20) || ( (svIter->chr != svIter->chr2) && (svIter->peSupport < 5) ) ) {
-      filterField="LowQual";
+    if ((svIter->precise) && (svIter->chr == svIter->chr2)) {
+      if ((svIter->srSupport < 3) || (svIter->peMapQuality < 20)) filterField="LowQual";
+    } else {
+      if ((svIter->peSupport < 3) || (svIter->peMapQuality < 20) || ( (svIter->chr != svIter->chr2) && (svIter->peSupport < 5) ) ) filterField="LowQual";
     }
     
     std::stringstream id;
@@ -1080,6 +1133,19 @@ _annotateSpanningCoverage(TConfig const& c, TSampleLibrary& sampleLib, TSVs& svs
   annotateSpanningCoverage(c.files, c.minGenoQual, sampleLib, svs, spanCountMap, svType);
 }
 
+template<typename TTag>
+inline bool
+_smallIndelDetection(SVType<TTag>)
+{
+  return false;
+}
+
+inline bool
+_smallIndelDetection(SVType<DeletionTag>)
+{
+  return true;
+}
+
 
 template<typename TCompEdgeList, typename TBamRecord, typename TDumpFile, typename TRefLength, typename TRefNames, typename TSVs, typename TSVType>
 inline void
@@ -1168,6 +1234,98 @@ _searchCliques(TCompEdgeList& compEdge, TBamRecord const& bamRecord, bool const 
   }
 }
 
+template<typename TIterator, typename TRefLength, typename TSVs, typename TSVType>
+inline void
+_processSRCluster(TIterator itInit, TIterator itEnd, int32_t refIndex, int32_t bpWindowLen, TRefLength const& reflen, TSVs& svs, TSVs& splitSVs, unsigned int& clique_count, TSVType svType) 
+{
+  typedef typename TSVs::value_type TStructuralVariant;
+
+  int32_t bestDistance = bpWindowLen;
+  TIterator bestSplit = itEnd;
+  for (TIterator itBeg = itInit; itBeg != itEnd; ++itBeg) {
+    TIterator itNext = itBeg;
+    ++itNext;
+    for(; itNext != itEnd; ++itNext) {
+      int32_t distance = std::abs(itNext->splitbeg - itBeg->splitbeg) + std::abs(itNext->splitend - itBeg->splitend);
+      if (distance < bestDistance) {
+	bestDistance = distance;
+	bestSplit = itBeg;
+      }
+    }
+  }
+  if (bestDistance < bpWindowLen) {
+    int32_t svStart = bestSplit->splitbeg;
+    int32_t svEnd = bestSplit->splitend;
+    int32_t svStartBeg = bestSplit->alignbeg;
+    int32_t svEndEnd = bestSplit->alignend;
+    std::vector<uint8_t> mapQV;
+    for (TIterator itBeg = itInit; itBeg != itEnd; ++itBeg) {
+      if ( (std::abs(itBeg->splitbeg - svStart) + std::abs(itBeg->splitend - svEnd)) < bpWindowLen ) {
+	mapQV.push_back(itBeg->MapQuality);
+	if (itBeg->alignbeg < svStartBeg) svStartBeg = itBeg->alignbeg;
+	if (itBeg->alignend > svEndEnd) svEndEnd = itBeg->alignend;
+      }
+    }
+
+    // Augment existing SV call or create a new record
+    int32_t searchWindow = 50;
+    bool svExists = false;
+    typename TSVs::iterator itSV = std::lower_bound(svs.begin(), svs.end(), TStructuralVariant(refIndex, std::max(0, svStart - searchWindow), svEnd), SortSVs<TStructuralVariant>());
+    for(; ((itSV != svs.end()) && (std::abs(itSV->svStart - svStart) < searchWindow)); ++itSV) {
+      if ((!itSV->precise) && ((std::abs(itSV->svStart - svStart) + std::abs(itSV->svEnd - svEnd)) < searchWindow) && (itSV->chr == refIndex) && (itSV->chr2 == refIndex)) {
+	if ((itSV->svEnd < svStart) || (svEnd < itSV->svStart)) continue;
+	// Augment existing SV call
+	itSV->svStartBeg = svStartBeg;
+	itSV->svStart = svStart;
+	itSV->svStartEnd = std::min((uint32_t) svStart + bpWindowLen, reflen[itSV->chr]);
+	itSV->svEndBeg = std::max((int32_t) svEnd - bpWindowLen, 0);
+	itSV->svEnd = svEnd;
+	itSV->svEndEnd = std::min((uint32_t) svEndEnd, reflen[itSV->chr2]);
+	if ((itSV->chr == itSV->chr2) && (itSV->svStartEnd > itSV->svEndBeg)) {
+	  unsigned int midPointDel = ((itSV->svEnd - itSV->svStart) / 2) + itSV->svStart;
+	  itSV->svStartEnd = midPointDel -1;
+	  itSV->svEndBeg = midPointDel;
+	}
+
+	// Found match
+	svExists = true;
+	break;
+      }
+    }
+    if (!svExists) {
+      // Create SV record
+      StructuralVariantRecord svRec;
+      svRec.chr = refIndex;
+      svRec.chr2 = refIndex;
+      svRec.svStartBeg = svStartBeg;
+      svRec.svStart = svStart;
+      svRec.svStartEnd = std::min((uint32_t) svStart + bpWindowLen, reflen[svRec.chr]);
+      svRec.svEndBeg = std::max((int32_t) svEnd - bpWindowLen, 0);
+      svRec.svEnd = svEnd;
+      svRec.svEndEnd = std::min((uint32_t) svEndEnd, reflen[svRec.chr2]);
+      svRec.peSupport = 0;
+      svRec.wiggle = bpWindowLen;
+      std::sort(mapQV.begin(), mapQV.end());
+      svRec.peMapQuality = mapQV[mapQV.size()/2];
+      if ((svRec.chr == svRec.chr2) && (svRec.svStartEnd > svRec.svEndBeg)) {
+	unsigned int midPointDel = ((svRec.svEnd - svRec.svStart) / 2) + svRec.svStart;
+	svRec.svStartEnd = midPointDel -1;
+	svRec.svEndBeg = midPointDel;
+      }
+      svRec.srSupport=mapQV.size();
+      svRec.srAlignQuality=0;
+      svRec.precise=true;
+      svRec.ct=_getCT(svType);
+      svRec.insLen = 0;
+      svRec.id = clique_count++;
+      splitSVs.push_back(svRec);
+    }
+  }
+}
+
+
+
+
 template<typename TSVType>
 inline int run(Config const& c, TSVType svType) {
 #ifdef PROFILE
@@ -1180,6 +1338,9 @@ inline int run(Config const& c, TSVType svType) {
 
   // Clique id counter
   unsigned int clique_count = 1;
+
+  // Quality threshold
+  double qualityThres = (double) (c.flankQuality) / 100.0;
 
   // Create library objects
   typedef boost::unordered_map<std::string, LibraryInfo> TLibraryMap;
@@ -1272,213 +1433,338 @@ inline int run(Config const& c, TSVType svType) {
   std::vector<TAlignmentLength> alen;
   alen.resize(c.files.size());
 
-  // Process chromosome by chromosome
+  // Parse genome, process chromosome by chromosome
+  kseq_t *seq;
+  int l;
+  gzFile fp = gzopen(c.genome.string().c_str(), "r");
+  seq = kseq_init(fp);
   boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
   std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Paired-end clustering" << std::endl;
   boost::progress_display show_progress( refnames.size() );
-  for(int refIndex=0; (refIndex < (int) refnames.size()) && (peMapping); ++refIndex) {
-    ++show_progress;
-    if (!validChr[refIndex]) continue;
+  while ((l = kseq_read(seq)) >= 0) {
+    for(int32_t refIndex=0; refIndex < (int32_t) refnames.size(); ++refIndex) {
+      if (seq->name.s == refnames[refIndex]) {
+	++show_progress;
+	if (!validChr[refIndex]) continue;
       
-    // Create bam alignment record vector
-    typedef std::vector<BamAlignRecord> TBamRecord;
-    TBamRecord bamRecord;
+	// Create bam alignment record vector
+	typedef std::vector<BamAlignRecord> TBamRecord;
+	TBamRecord bamRecord;
 
-    // Iterate all samples
+	// Create split alignment record vector
+	typedef std::vector<SplitAlignRecord> TSplitRecord;
+	TSplitRecord splitRecord;
+
+	// Iterate all samples
 #pragma omp parallel for default(shared)
-    for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
-      // Get a sample name
-      std::string sampleName(c.files[file_c].stem().string());
-      TSampleLibrary::iterator sampleIt=sampleLib.find(sampleName);
+	for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
+	  // Get a sample name
+	  std::string sampleName(c.files[file_c].stem().string());
+	  TSampleLibrary::iterator sampleIt=sampleLib.find(sampleName);
 
-      // Unique pairs for the given sample
-      typedef boost::container::flat_set<int32_t> TUniquePairs;
-      TUniquePairs unique_pairs;
+	  // Unique pairs for the given sample
+	  typedef boost::container::flat_set<int32_t> TUniquePairs;
+	  TUniquePairs unique_pairs;
 
-      // Read alignments
-      int32_t oldAlignPos=-1;
-      hts_itr_t* iter = sam_itr_queryi(idx[file_c], refIndex, 0, reflen[refIndex]);
-      bam1_t* rec = bam_init1();
-      while (sam_itr_next(samfile[file_c], iter, rec) >= 0) {
-	if (rec->core.flag & (BAM_FSECONDARY | BAM_FQCFAIL | BAM_FDUP | BAM_FSUPPLEMENTARY | BAM_FUNMAP | BAM_FMUNMAP)) continue;
-	if ((rec->core.flag & BAM_FPAIRED) && (rec->core.qual >= c.minMapQual) && (rec->core.tid>=0) && (rec->core.mtid>=0)) {
-	  // Mapping positions valid?
-	  if (_mappingPos(rec->core.tid, rec->core.mtid, rec->core.pos, rec->core.mpos, svType)) continue;
-	
-	  // Is the read or its mate in a black-masked region
-	  if (!exclIntervals.empty()) {
-	    typename TExclInterval::const_iterator itBlackMask = std::lower_bound(exclIntervals.begin(), exclIntervals.end(), ExcludeInterval(rec->core.tid, rec->core.pos, 0), SortExcludeIntervals<ExcludeInterval>());
-	    if (itBlackMask!=exclIntervals.begin()) --itBlackMask;
-	    if ((itBlackMask->tid==rec->core.tid) && (itBlackMask->start <= rec->core.pos) && (rec->core.pos<=itBlackMask->end)) continue;
-	    itBlackMask = std::lower_bound(exclIntervals.begin(), exclIntervals.end(), ExcludeInterval(rec->core.mtid, rec->core.mpos, 0), SortExcludeIntervals<ExcludeInterval>());
-	    if (itBlackMask!=exclIntervals.begin()) --itBlackMask;
-	    if ((itBlackMask->tid==rec->core.mtid) && (itBlackMask->start <= rec->core.mpos) && (rec->core.mpos<=itBlackMask->end)) continue;
-	  }
-	  
-	  // Is this a discordantly mapped paired-end?
-	  std::string rG = "DefaultLib";
-	  uint8_t *rgptr = bam_aux_get(rec, "RG");
-	  if (rgptr) {
-	    char* rg = (char*) (rgptr + 1);
-	    rG = std::string(rg);
-	  }
-	  TLibraryMap::iterator libIt=sampleIt->second.find(rG);
-	  if (libIt==sampleIt->second.end()) std::cerr << "Missing read group: " << rG << std::endl;
-	  if (libIt->second.median == 0) continue; // Single-end library
-	  if (_acceptedInsertSize(libIt->second, abs(rec->core.isize), svType)) continue;  // Normal paired-end (for deletions/insertions only)
-	  if (_acceptedOrientation(libIt->second.defaultOrient, getStrandIndependentOrientation(rec->core), svType)) continue;  // Orientation disagrees with SV type
-	  
-	  // Get or store the mapping quality for the partner
-	  if (_firstPairObs(rec->core.tid, rec->core.mtid, rec->core.pos, rec->core.mpos, svType)) {
-	    uint8_t r2Qual = rec->core.qual;
-	    uint8_t* ptr = bam_aux_get(rec, "AS");
-	    if (ptr) {
-	      int score = std::abs((int) bam_aux2i(ptr));
-	      r2Qual = std::min(r2Qual, (uint8_t) ( (score<255) ? score : 255 ));
-	    }
-	    std::size_t hv = hash_pair(rec);
-	    qualities[file_c][hv]= r2Qual;
-	    alen[file_c][hv]= alignmentLength(rec);
-	  } else {
-	    // Get the two mapping qualities
-	    uint8_t r2Qual = rec->core.qual;
-	    uint8_t* ptr = bam_aux_get(rec, "AS");
-	    if (ptr) {
-	      int score = std::abs((int) bam_aux2i(ptr));
-	      r2Qual = std::min(r2Qual, (uint8_t) ( (score<255) ? score : 255 ));
-	    }
-	    std::size_t hv=hash_pair_mate(rec);
-	    uint8_t pairQuality = std::min(qualities[file_c][hv], r2Qual);
-	    qualities[file_c][hv]= (uint8_t) 0;
-	    
-	    // Pair quality
-	    if (pairQuality < c.minMapQual) continue;
-	    
-	    // Store the paired-end
-	    if (rec->core.pos!=oldAlignPos) {
-	      oldAlignPos=rec->core.pos;
-	      unique_pairs.clear();
-	    }
-	    if (unique_pairs.insert(rec->core.mpos).second) {
+	  // Read alignments
+	  int32_t oldAlignPos = -1;
+	  int32_t oldSplitAlignPos = -1;
+	  hts_itr_t* iter = sam_itr_queryi(idx[file_c], refIndex, 0, reflen[refIndex]);
+	  bam1_t* rec = bam_init1();
+	  while (sam_itr_next(samfile[file_c], iter, rec) >= 0) {
+	    if (rec->core.flag & (BAM_FSECONDARY | BAM_FQCFAIL | BAM_FDUP | BAM_FSUPPLEMENTARY | BAM_FUNMAP)) continue;
+	    if ((rec->core.qual < c.minMapQual) || (rec->core.tid<0) || (rec->core.mtid<0)) continue;
+
+	    // Small indel detection using soft clips
+	    if (_smallIndelDetection(svType)) {
+	      bool hasSoftClip = false;
+	      uint32_t* cigar = bam_get_cigar(rec);
+	      for (std::size_t i = 0; i < rec->core.n_cigar; ++i)
+		if (bam_cigar_op(cigar[i]) == BAM_CSOFT_CLIP) hasSoftClip = true;
+	      if ((hasSoftClip) && (rec->core.l_qseq >= 35) && (rec->core.pos != oldSplitAlignPos)) {
+		oldSplitAlignPos = rec->core.pos;
+		int clipSize = 0;
+		int splitPoint = 0;
+		bool leadingSoftClip = false;
+		if (_validSoftClip(rec, clipSize, splitPoint, leadingSoftClip)) {
+		  // Minimum clip size
+		  int minClipSize = (int) (log10(rec->core.l_qseq) * 10);
+		  if (clipSize > minClipSize) {
+		    // Iterate both possible breakpoints
+		    for (int bpPoint = 0; bpPoint < 2; ++bpPoint) {
+		      // Leading or trailing softclip?
+		      if (_validSCOrientation(bpPoint, leadingSoftClip, _getCT(svType), svType)) {
+			// Get the sequence
+			std::string sequence;
+			sequence.resize(rec->core.l_qseq);
+			uint8_t* seqptr = bam_get_seq(rec);
+			for (int i = 0; i < rec->core.l_qseq; ++i) sequence[i] = "=ACMGRSVTWYHKDBN"[bam_seqi(seqptr, i)];
+			
+			// Adjust orientation if necessary
+			_adjustOrientation(sequence, bpPoint, _getCT(svType), svType);
+			
+			// Align to local reference
+			int32_t localrefStart = 0;
+			int32_t localrefEnd = 0;
+			int32_t seqLeftOver = 0;
+			if (bpPoint) {
+			  seqLeftOver = sequence.size() - clipSize;
+			  localrefStart = std::max(0, rec->core.pos - (500 + clipSize));
+			  localrefEnd = rec->core.pos + seqLeftOver + 25;
+			} else {
+			  seqLeftOver = sequence.size() - (splitPoint - rec->core.pos);
+			  localrefStart = rec->core.pos;
+			  localrefEnd = splitPoint + 500 + seqLeftOver;
+			}
+			std::string localref = boost::to_upper_copy(std::string(seq->seq.s + localrefStart, seq->seq.s + localrefEnd));
+			typedef boost::multi_array<char, 2> TAlign;
+			typedef typename TAlign::index TAIndex;
+			TAlign alignFwd;
+			AlignConfig<true, false> semiglobal;
+			DnaScore<int> sc(5, -4, -5 * c.minimumFlankSize, 0);
+			int altScore = gotoh(sequence, localref, alignFwd, semiglobal, sc);
+			altScore += 5 * c.minimumFlankSize;
+			int scoreThresholdAlt = (int) (qualityThres * sequence.size() * 5 + (1.0 - qualityThres) * sequence.size() * (-4));
+			
+			// Debug consensus to reference alignment
+			//for(TAIndex i = 0; i<alignFwd.shape()[0]; ++i) {
+			//for(TAIndex j = 0; j<alignFwd.shape()[1]; ++j) std::cerr << alignFwd[i][j];
+			//std::cerr << std::endl;
+			//}
+			
+			// Candidate small indel?
+			if (altScore > scoreThresholdAlt) {
+			  TAIndex cStart, cEnd, rStart, rEnd;
+			  _findSplit(alignFwd, cStart, cEnd, rStart, rEnd);
 #pragma omp critical
-	      {
-		bamRecord.push_back(BamAlignRecord(rec, pairQuality, alignmentLength(rec), alen[file_c][hv], libIt->second.median, libIt->second.mad, libIt->second.maxNormalISize, libIt->second.defaultOrient));
+			  {
+			    // Minimum size 5bp 
+			    if (rEnd > rStart + 5) splitRecord.push_back(SplitAlignRecord(localrefStart + rStart - cStart, localrefStart + rStart, localrefStart + rEnd, localrefStart + rEnd + seqLeftOver + 25, rec->core.qual));
+			  }
+			}
+		      }
+		    }
+		  }
+		}
 	      }
-	      ++libIt->second.abnormal_pairs;
+	    }
+
+	    // Paired-end clustering
+	    if (rec->core.flag & BAM_FPAIRED) {
+	      // Mate unmapped
+	      if (rec->core.flag & BAM_FMUNMAP) continue;
+
+	      // Mapping positions valid?
+	      if (_mappingPos(rec->core.tid, rec->core.mtid, rec->core.pos, rec->core.mpos, svType)) continue;
+	
+	      // Is the read or its mate in a black-masked region
+	      if (!exclIntervals.empty()) {
+		typename TExclInterval::const_iterator itBlackMask = std::lower_bound(exclIntervals.begin(), exclIntervals.end(), ExcludeInterval(rec->core.tid, rec->core.pos, 0), SortExcludeIntervals<ExcludeInterval>());
+		if (itBlackMask!=exclIntervals.begin()) --itBlackMask;
+		if ((itBlackMask->tid==rec->core.tid) && (itBlackMask->start <= rec->core.pos) && (rec->core.pos<=itBlackMask->end)) continue;
+		itBlackMask = std::lower_bound(exclIntervals.begin(), exclIntervals.end(), ExcludeInterval(rec->core.mtid, rec->core.mpos, 0), SortExcludeIntervals<ExcludeInterval>());
+		if (itBlackMask!=exclIntervals.begin()) --itBlackMask;
+		if ((itBlackMask->tid==rec->core.mtid) && (itBlackMask->start <= rec->core.mpos) && (rec->core.mpos<=itBlackMask->end)) continue;
+	      }
+	  
+	      // Is this a discordantly mapped paired-end?
+	      std::string rG = "DefaultLib";
+	      uint8_t *rgptr = bam_aux_get(rec, "RG");
+	      if (rgptr) {
+		char* rg = (char*) (rgptr + 1);
+		rG = std::string(rg);
+	      }
+	      TLibraryMap::iterator libIt=sampleIt->second.find(rG);
+	      if (libIt==sampleIt->second.end()) std::cerr << "Missing read group: " << rG << std::endl;
+	      if (libIt->second.median == 0) continue; // Single-end library
+	      if (_acceptedInsertSize(libIt->second, abs(rec->core.isize), svType)) continue;  // Normal paired-end (for deletions/insertions only)
+	      if (_acceptedOrientation(libIt->second.defaultOrient, getStrandIndependentOrientation(rec->core), svType)) continue;  // Orientation disagrees with SV type
+	  
+	      // Get or store the mapping quality for the partner
+	      if (_firstPairObs(rec->core.tid, rec->core.mtid, rec->core.pos, rec->core.mpos, svType)) {
+		uint8_t r2Qual = rec->core.qual;
+		uint8_t* ptr = bam_aux_get(rec, "AS");
+		if (ptr) {
+		  int score = std::abs((int) bam_aux2i(ptr));
+		  r2Qual = std::min(r2Qual, (uint8_t) ( (score<255) ? score : 255 ));
+		}
+		std::size_t hv = hash_pair(rec);
+		qualities[file_c][hv]= r2Qual;
+		alen[file_c][hv]= alignmentLength(rec);
+	      } else {
+		// Get the two mapping qualities
+		uint8_t r2Qual = rec->core.qual;
+		uint8_t* ptr = bam_aux_get(rec, "AS");
+		if (ptr) {
+		  int score = std::abs((int) bam_aux2i(ptr));
+		  r2Qual = std::min(r2Qual, (uint8_t) ( (score<255) ? score : 255 ));
+		}
+		std::size_t hv=hash_pair_mate(rec);
+		uint8_t pairQuality = std::min(qualities[file_c][hv], r2Qual);
+		qualities[file_c][hv]= (uint8_t) 0;
+		
+		// Pair quality
+		if (pairQuality < c.minMapQual) continue;
+	    
+		// Store the paired-end
+		if (rec->core.pos!=oldAlignPos) {
+		  oldAlignPos=rec->core.pos;
+		  unique_pairs.clear();
+		}
+		if (unique_pairs.insert(rec->core.mpos).second) {
+#pragma omp critical
+		  {
+		    bamRecord.push_back(BamAlignRecord(rec, pairQuality, alignmentLength(rec), alen[file_c][hv], libIt->second.median, libIt->second.mad, libIt->second.maxNormalISize, libIt->second.defaultOrient));
+		  }
+		  ++libIt->second.abnormal_pairs;
+		} else {
+		  ++libIt->second.non_unique_abnormal_pairs;
+		}
+	      }
+	    }
+	  }
+	  // Clean-up qualities
+	  _resetQualities(qualities[file_c], alen[file_c], svType);
+
+	  bam_destroy1(rec);
+	  hts_itr_destroy(iter);
+	}
+    
+	// Sort BAM records according to position
+	std::sort(bamRecord.begin(), bamRecord.end(), SortBamRecords<BamAlignRecord>());
+
+	// Components
+	typedef std::vector<uint32_t> TComponent;
+	TComponent comp;
+	comp.resize(bamRecord.size(), 0);
+	uint32_t numComp = 0;
+
+	// Edge lists for each component
+	typedef uint8_t TWeightType;
+	typedef EdgeRecord<TWeightType, std::size_t> TEdgeRecord;
+	typedef std::vector<TEdgeRecord> TEdgeList;
+	typedef std::map<uint32_t, TEdgeList> TCompEdgeList;
+	TCompEdgeList compEdge;
+	
+	// Iterate the chromosome range
+	std::size_t lastConnectedNode = 0;
+	std::size_t lastConnectedNodeStart = 0;
+	std::size_t bamItIndex = 0;
+	for(TBamRecord::const_iterator bamIt = bamRecord.begin(); bamIt != bamRecord.end(); ++bamIt, ++bamItIndex) {
+	  // Safe to clean the graph?
+	  if (bamItIndex > lastConnectedNode) {
+	    // Clean edge lists
+	    if (!compEdge.empty()) {
+	      _searchCliques(compEdge, bamRecord, dumpPe, dumpPeFile, reflen, refnames, svs, clique_count, overallMaxISize, svType);
+	      lastConnectedNodeStart = lastConnectedNode;
+	      compEdge.clear();
+	    }
+	  }
+	  int32_t const minCoord = _minCoord(bamIt->pos, bamIt->mpos, svType);
+	  int32_t const maxCoord = _maxCoord(bamIt->pos, bamIt->mpos, svType);
+	  TBamRecord::const_iterator bamItNext = bamIt;
+	  ++bamItNext;
+	  std::size_t bamItIndexNext = bamItIndex + 1;
+	  for(; ((bamItNext != bamRecord.end()) && (abs(_minCoord(bamItNext->pos, bamItNext->mpos, svType) + bamItNext->alen - minCoord) <= overallMaxISize)) ; ++bamItNext, ++bamItIndexNext) {
+	    // Check that mate chr agree (only for translocations)
+	    if (bamIt->mtid != bamItNext->mtid) continue;
+	    
+	    // Check combinability of pairs
+	    if (_pairsDisagree(minCoord, maxCoord, bamIt->alen, bamIt->maxNormalISize, _minCoord(bamItNext->pos, bamItNext->mpos, svType), _maxCoord(bamItNext->pos, bamItNext->mpos, svType), bamItNext->alen, bamItNext->maxNormalISize, _getSpanOrientation(*bamIt, bamIt->libOrient, svType), _getSpanOrientation(*bamItNext, bamItNext->libOrient, svType), svType)) continue;
+
+	    // Update last connected node
+	    if (bamItIndexNext > lastConnectedNode ) lastConnectedNode = bamItIndexNext;
+
+	    // Assign components
+	    uint32_t compIndex = 0;
+	    if (!comp[bamItIndex]) {
+	      if (!comp[bamItIndexNext]) {
+		// Both vertices have no component
+		compIndex = ++numComp;
+		comp[bamItIndex] = compIndex;
+		comp[bamItIndexNext] = compIndex;
+		compEdge.insert(std::make_pair(compIndex, TEdgeList()));
+	      } else {
+		compIndex = comp[bamItIndexNext];
+		comp[bamItIndex] = compIndex;
+	      }
 	    } else {
-	      ++libIt->second.non_unique_abnormal_pairs;
+	      if (!comp[bamItIndexNext]) {
+		compIndex = comp[bamItIndex];
+		comp[bamItIndexNext] = compIndex;
+	      } else {
+		// Both vertices have a component
+		if (comp[bamItIndexNext] == comp[bamItIndex]) {
+		  compIndex = comp[bamItIndexNext];
+		} else {
+		  // Merge components
+		  compIndex = comp[bamItIndex];
+		  uint32_t otherIndex = comp[bamItIndexNext];
+		  if (otherIndex < compIndex) {
+		    compIndex = comp[bamItIndexNext];
+		    otherIndex = comp[bamItIndex];
+		  }
+		  // Re-label other index
+		  for(std::size_t i = lastConnectedNodeStart; i <= lastConnectedNode; ++i) {
+		    if (otherIndex == comp[i]) comp[i] = compIndex;
+		  }
+		  // Merge edge lists
+		  TCompEdgeList::iterator compEdgeIt = compEdge.find(compIndex);
+		  TCompEdgeList::iterator compEdgeOtherIt = compEdge.find(otherIndex);
+		  compEdgeIt->second.insert(compEdgeIt->second.end(), compEdgeOtherIt->second.begin(), compEdgeOtherIt->second.end());
+		  compEdge.erase(compEdgeOtherIt);
+		}
+	      }
+	    }
+	    
+	    // Append new edge
+	    TCompEdgeList::iterator compEdgeIt = compEdge.find(compIndex);
+	    if (compEdgeIt->second.size() < c.graphPruning) {
+	      TWeightType weight = (TWeightType) ( std::log((float) abs( abs( (_minCoord(bamItNext->pos, bamItNext->mpos, svType) - minCoord) - (_maxCoord(bamItNext->pos, bamItNext->mpos, svType) - maxCoord) ) - abs(bamIt->Median - bamItNext->Median) ) + 1 ) / std::log(2) );
+	      compEdgeIt->second.push_back(TEdgeRecord(bamItIndex, bamItIndexNext, weight));
 	    }
 	  }
 	}
-      }
-      // Clean-up qualities
-      _resetQualities(qualities[file_c], alen[file_c], svType);
-
-      bam_destroy1(rec);
-      hts_itr_destroy(iter);
-    }
-    
-    // Sort BAM records according to position
-    std::sort(bamRecord.begin(), bamRecord.end(), SortBamRecords<BamAlignRecord>());
-    //for(TBamRecord::const_iterator bamIt = bamRecord.begin(); bamIt!=bamRecord.end(); ++bamIt) std::cerr << bamIt->tid << ',' << bamIt->pos << ',' << bamIt->mtid << ',' << bamIt->mpos << std::endl;
-
-    // Components
-    typedef std::vector<uint32_t> TComponent;
-    TComponent comp;
-    comp.resize(bamRecord.size(), 0);
-    uint32_t numComp = 0;
-
-    // Edge lists for each component
-    typedef uint8_t TWeightType;
-    typedef EdgeRecord<TWeightType, std::size_t> TEdgeRecord;
-    typedef std::vector<TEdgeRecord> TEdgeList;
-    typedef std::map<uint32_t, TEdgeList> TCompEdgeList;
-    TCompEdgeList compEdge;
-      
-    // Iterate the chromosome range
-    std::size_t lastConnectedNode = 0;
-    std::size_t lastConnectedNodeStart = 0;
-    std::size_t bamItIndex = 0;
-    for(TBamRecord::const_iterator bamIt = bamRecord.begin(); bamIt != bamRecord.end(); ++bamIt, ++bamItIndex) {
-      // Safe to clean the graph?
-      if (bamItIndex > lastConnectedNode) {
-	// Clean edge lists
 	if (!compEdge.empty()) {
 	  _searchCliques(compEdge, bamRecord, dumpPe, dumpPeFile, reflen, refnames, svs, clique_count, overallMaxISize, svType);
-	  lastConnectedNodeStart = lastConnectedNode;
 	  compEdge.clear();
 	}
-      }
-      int32_t const minCoord = _minCoord(bamIt->pos, bamIt->mpos, svType);
-      int32_t const maxCoord = _maxCoord(bamIt->pos, bamIt->mpos, svType);
-      TBamRecord::const_iterator bamItNext = bamIt;
-      ++bamItNext;
-      std::size_t bamItIndexNext = bamItIndex + 1;
-      for(; ((bamItNext != bamRecord.end()) && (abs(_minCoord(bamItNext->pos, bamItNext->mpos, svType) + bamItNext->alen - minCoord) <= overallMaxISize)) ; ++bamItNext, ++bamItIndexNext) {
-	// Check that mate chr agree (only for translocations)
-	if (bamIt->mtid != bamItNext->mtid) continue;
 
-	// Check combinability of pairs
-	if (_pairsDisagree(minCoord, maxCoord, bamIt->alen, bamIt->maxNormalISize, _minCoord(bamItNext->pos, bamItNext->mpos, svType), _maxCoord(bamItNext->pos, bamItNext->mpos, svType), bamItNext->alen, bamItNext->maxNormalISize, _getSpanOrientation(*bamIt, bamIt->libOrient, svType), _getSpanOrientation(*bamItNext, bamItNext->libOrient, svType), svType)) continue;
+	// Sort SVs for look-up
+	sort(svs.begin(), svs.end(), SortSVs<StructuralVariantRecord>());
 
-	// Update last connected node
-	if (bamItIndexNext > lastConnectedNode ) lastConnectedNode = bamItIndexNext;
+	// Add the soft clip SV records
+	if (_smallIndelDetection(svType)) {
+	  // Collect all promising structural variants
+	  TVariants splitSVs;
 
-	// Assign components
-	uint32_t compIndex = 0;
-	if (!comp[bamItIndex]) {
-	  if (!comp[bamItIndexNext]) {
-	    // Both vertices have no component
-	    compIndex = ++numComp;
-	    comp[bamItIndex] = compIndex;
-	    comp[bamItIndexNext] = compIndex;
-	    compEdge.insert(std::make_pair(compIndex, TEdgeList()));
-	  } else {
-	    compIndex = comp[bamItIndexNext];
-	    comp[bamItIndex] = compIndex;
-	  }
-	} else {
-	  if (!comp[bamItIndexNext]) {
-	    compIndex = comp[bamItIndex];
-	    comp[bamItIndexNext] = compIndex;
-	  } else {
-	    // Both vertices have a component
-	    if (comp[bamItIndexNext] == comp[bamItIndex]) {
-	      compIndex = comp[bamItIndexNext];
-	    } else {
-	      // Merge components
-	      compIndex = comp[bamItIndex];
-	      uint32_t otherIndex = comp[bamItIndexNext];
-	      if (otherIndex < compIndex) {
-		compIndex = comp[bamItIndexNext];
-		otherIndex = comp[bamItIndex];
-	      }
-	      // Re-label other index
-	      for(std::size_t i = lastConnectedNodeStart; i <= lastConnectedNode; ++i) {
-		  if (otherIndex == comp[i]) comp[i] = compIndex;
-	      }
-	      // Merge edge lists
-	      TCompEdgeList::iterator compEdgeIt = compEdge.find(compIndex);
-	      TCompEdgeList::iterator compEdgeOtherIt = compEdge.find(otherIndex);
-	      compEdgeIt->second.insert(compEdgeIt->second.end(), compEdgeOtherIt->second.begin(), compEdgeOtherIt->second.end());
-	      compEdge.erase(compEdgeOtherIt);
+	  int32_t bpWindowLen = 10;
+	  int32_t maxLookAhead = 0;
+	  TSplitRecord::const_iterator splitClusterIt = splitRecord.end();
+	  std::sort(splitRecord.begin(), splitRecord.end(), SortSplitRecords<SplitAlignRecord>());
+	  for(TSplitRecord::const_iterator splitIt = splitRecord.begin(); splitIt!=splitRecord.end(); ++splitIt) {
+	    if ((maxLookAhead) && (splitIt->splitbeg > maxLookAhead)) {
+	      // Process split read cluster
+	      _processSRCluster(splitClusterIt, splitIt, refIndex, bpWindowLen, reflen, svs, splitSVs, clique_count, svType);
+	      maxLookAhead = 0;
+	      splitClusterIt = splitRecord.end();
+	    }
+	    if ((!maxLookAhead) || (splitIt->splitbeg < maxLookAhead)) {
+	      if (!maxLookAhead) splitClusterIt = splitIt;
+	      maxLookAhead = splitIt->splitbeg + bpWindowLen;
 	    }
 	  }
-	}
+	  TSplitRecord::const_iterator splitIt = splitRecord.end();
+	  _processSRCluster(splitClusterIt, splitIt, refIndex, bpWindowLen, reflen, svs, splitSVs, clique_count, svType);
 
-	// Append new edge
-	TCompEdgeList::iterator compEdgeIt = compEdge.find(compIndex);
-	if (compEdgeIt->second.size() < c.graphPruning) {
-	  TWeightType weight = (TWeightType) ( std::log((float) abs( abs( (_minCoord(bamItNext->pos, bamItNext->mpos, svType) - minCoord) - (_maxCoord(bamItNext->pos, bamItNext->mpos, svType) - maxCoord) ) - abs(bamIt->Median - bamItNext->Median) ) + 1 ) / std::log(2) );
-	  compEdgeIt->second.push_back(TEdgeRecord(bamItIndex, bamItIndexNext, weight));
+	  // Append soft clip alignment records
+	  svs.insert(svs.end(), splitSVs.begin(), splitSVs.end());
 	}
       }
     }
-    if (!compEdge.empty()) {
-      _searchCliques(compEdge, bamRecord, dumpPe, dumpPeFile, reflen, refnames, svs, clique_count, overallMaxISize, svType);
-      compEdge.clear();
-    }
-  }  
+  }
+  kseq_destroy(seq);
+  gzclose(fp);
   
   // Close dump PE file
   if (dumpPe) dumpPeFile.close();
@@ -1492,8 +1778,43 @@ inline int run(Config const& c, TSVType svType) {
   // Split-read search
   if (peMapping) {
     if (boost::filesystem::exists(c.genome) && boost::filesystem::is_regular_file(c.genome) && boost::filesystem::file_size(c.genome)) 
-      if (!svs.empty()) 
+      if (!svs.empty()) {
 	findPutativeSplitReads(c, svs, svType);
+
+	if (_smallIndelDetection(svType)) {
+	  // Sort SVs for look-up and by decreasing PE support
+	  sort(svs.begin(), svs.end(), SortSVs<StructuralVariantRecord>());
+	
+	  // Temporary SV container
+	  TVariants svc;
+
+	  // Clean-up SV set
+	  for(typename TVariants::iterator svIt = svs.begin(); svIt != svs.end(); ++svIt) {
+	    // Unresolved soft clips
+	    if ((svIt->precise) && (svIt->srAlignQuality == 0)) continue;
+	  
+	    // Precise duplicates
+	    int32_t searchWindow = 10;
+	    bool svExists = false;
+	    typename TVariants::iterator itOther = std::lower_bound(svc.begin(), svc.end(), StructuralVariantRecord(svIt->chr, std::max(0, svIt->svStart - searchWindow), svIt->svEnd), SortSVs<StructuralVariantRecord>());
+	    for(; ((itOther != svc.end()) && (std::abs(itOther->svStart - svIt->svStart) < searchWindow)); ++itOther) {
+	      if (!svIt->precise) continue;
+	      if ((svIt->chr != itOther->chr) || (svIt->chr2 != itOther->chr2)) continue;
+	      if ((std::abs(svIt->svStart - itOther->svStart) + std::abs(svIt->svEnd - itOther->svEnd)) > searchWindow) continue;
+	      if ((svIt->svEnd < itOther->svStart) || (itOther->svEnd < svIt->svStart)) continue;
+	      svExists=true;
+	      break;
+	    }
+	    if (svExists) continue;
+
+	    // Add SV
+	    svc.push_back(*svIt);
+	  }
+
+	  // Final set of precise and imprecise SVs
+	  svs = svc;
+	}
+      }
   } else {
     // Read SV records from input vcffile
     vcfParse(c, refnames, reflen, overallMaxISize, svs, svType);
@@ -1610,14 +1931,14 @@ int main(int argc, char **argv) {
 
 
   // Check command line arguments
-  if ((vm.count("help")) || (!vm.count("input-file"))) { 
+  if ((vm.count("help")) || (!vm.count("input-file")) || (!vm.count("genome"))) { 
     printTitle("Delly");
     if (vm.count("warranty")) {
       displayWarranty();
     } else if (vm.count("license")) {
       gplV3();
     } else {
-      std::cout << "Usage: " << argv[0] << " [OPTIONS] <sample1.sort.bam> <sample2.sort.bam> ..." << std::endl;
+      std::cout << "Usage: " << argv[0] << " [OPTIONS] -g <ref.fa> <sample1.sort.bam> <sample2.sort.bam> ..." << std::endl;
       std::cout << visible_options << "\n"; 
     }
     return 1; 

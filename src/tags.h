@@ -251,10 +251,9 @@ namespace torali {
   struct SortSVs : public std::binary_function<TSV, TSV, bool>
   {
     inline bool operator()(TSV const& sv1, TSV const& sv2) {
-      return ((sv1.chr<sv2.chr) || ((sv1.chr==sv2.chr) && (sv1.svStart<sv2.svStart)) || ((sv1.chr==sv2.chr) && (sv1.svStart==sv2.svStart) && (sv1.svEnd<sv2.svEnd)));
+      return ((sv1.chr<sv2.chr) || ((sv1.chr==sv2.chr) && (sv1.svStart<sv2.svStart)) || ((sv1.chr==sv2.chr) && (sv1.svStart==sv2.svStart) && (sv1.svEnd<sv2.svEnd)) || ((sv1.chr==sv2.chr) && (sv1.svStart==sv2.svStart) && (sv1.svEnd==sv2.svEnd) && (sv1.peSupport > sv2.peSupport)));
     }
   };
-
 
 
   // SV Paired-end checks

@@ -112,6 +112,7 @@ namespace torali {
       typename TSVs::const_iterator itSVEnd = svs.end();
       for(;itSV!=itSVEnd;++itSV) {
 	if (file_c==(files.size()-1)) ++show_progress;
+	if (itSV->peSupport == 0) continue;
 
 	// Set up the mapping quality iterators
 	TSampleSVPair svSample = std::make_pair(sampleName, -itSV->id);
