@@ -19,27 +19,21 @@ parser = argparse.ArgumentParser(description='Inversion & proximal duplication c
 parser.add_argument('-v', '--vcf', metavar='inv.vcf', required=True, dest='invVCF', help='inversion or merged deletion/duplication vcf file (required)')
 parser.add_argument('-o', '--outVCF', metavar='out.vcf', required=True, dest='outVCF', help='output vcf file (required)')
 parser.add_argument('-c', '--complexSV', metavar='complexSV.vcf', required=False, dest='complexVCF', help='complex SV vcf file (optional)')
-parser.add_argument('-i', '--insOffset', metavar='170', required=False, dest='maxInsertionOffset', help='max. insertion offset (optional)')
-parser.add_argument('-d', '--dupLength', metavar='150', required=False, dest='minDuplicationLength', help='min. duplication length (optional)')
-parser.add_argument('-m', '--carrierConcordance', metavar='0.5', required=False, dest='minCarrierConcordance', help='min. carrier concordance (optional)')
-parser.add_argument('-n', '--nestedOverlap', metavar='0.75', required=False, dest='minNestedOverlap', help='min. required nested overlap (optional)')
 parser.add_argument('-f', '--filter', dest='siteFilter', action='store_true', help='Filter sites for PASS')
+
+parser.add_argument('-i', '--insOffset',          type=int,   default=170,   metavar='170',   required=False, help='max. insertion offset (optional)')
+parser.add_argument('-d', '--dupLength',          type=int,   default=150,   metavar='150',   required=False, help='min. duplication length (optional)')
+parser.add_argument('-m', '--carrierConcordance', type=float, default=0.5,   metavar='0.5',   required=False, help='min. carrier concordance (optional)')
+parser.add_argument('-n', '--nestedOverlap',      type=float, default=0.75,  metavar='0.75',  required=False, help='min. required nested overlap (optional)')
+parser.add_argument('-s', '--sizeCutoff',         type=int,   default=50000, metavar='50000', required=False, help='by default SVs >50kb are excluded')
 args = parser.parse_args()
 
 # Parse command-line
-maxInsertionOffset = 170
-if args.maxInsertionOffset:
-    maxInsertionOffset = int(args.maxInsertionOffset)
-minDuplicationLength = 150
-if args.minDuplicationLength:
-    minDuplicationLength = int(args.minDuplicationLength)
-minNestedOverlap = 0.75
-if args.minNestedOverlap:
-    minNestedOverlap = float(args.minNestedOverlap)
-minCarrierConcordance = 0.5
-if args.minCarrierConcordance:
-    minCarrierConcordance = float(args.minCarrierConcordance)
-maxSvSize = 50000
+maxInsertionOffset    = args.insOffset
+minDuplicationLength  = args.dupLength
+minNestedOverlap      = args.nestedOverlap
+minCarrierConcordance = args.carrierConcordance
+maxSvSize             = args.sizeCutoff
 
 # Parse 3to3 inversions
 sv = dict()
