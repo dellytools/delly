@@ -216,6 +216,7 @@ namespace torali {
     int32_t chr;
     int32_t svStart;
     int32_t svEnd;
+    int32_t peSupport;
     uint32_t id;
 
     CovRecord() {}
