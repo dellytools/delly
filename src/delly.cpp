@@ -76,6 +76,7 @@ struct Config {
   unsigned int minimumFlankSize;
   unsigned int flankQuality;
   unsigned int graphPruning;
+  unsigned int indelsize;
   float percentAbnormal;
   std::string svType;
   boost::filesystem::path outfile;
@@ -612,13 +613,6 @@ _movingAverage(std::vector<TValue> const& spp, TPosition const windowSize, TValu
 }
 
 
-template<typename TConfig, typename TStructuralVariantRecord>
-inline bool
-findPutativeSplitReads(TConfig const&, std::vector<TStructuralVariantRecord>&,  SVType<InsertionTag>) 
-{
-  return false;
-}
-
 template<typename TConfig, typename TStructuralVariantRecord, typename TTag>
 inline bool
 findPutativeSplitReads(TConfig const& c, std::vector<TStructuralVariantRecord>& svs,  SVType<TTag> svType) 
@@ -1126,6 +1120,13 @@ _annotateCoverage(TConfig const&, TRefNames const&, TSampleLibrary&, TSVs&, TCou
   //Nop
 }
 
+template<typename TConfig, typename TRefNames, typename TSampleLibrary, typename TSVs, typename TCountMap>
+inline void
+_annotateCoverage(TConfig const&, TRefNames const&, TSampleLibrary&, TSVs&, TCountMap&, SVType<InsertionTag>) 
+{
+  //Nop
+}
+
 template<typename TConfig, typename TSampleLibrary, typename TSVs, typename TCountMap, typename TTag>
 inline void
 _annotateSpanningCoverage(TConfig const& c, TSampleLibrary& sampleLib, TSVs& svs, TCountMap& spanCountMap, SVType<TTag> svType) 
@@ -1146,6 +1147,11 @@ _smallIndelDetection(SVType<DeletionTag>)
   return true;
 }
 
+inline bool
+_smallIndelDetection(SVType<InsertionTag>)
+{
+  return true;
+}
 
 template<typename TCompEdgeList, typename TBamRecord, typename TDumpFile, typename TRefLength, typename TRefNames, typename TSVs, typename TSVType>
 inline void
@@ -1509,12 +1515,12 @@ inline int run(Config const& c, TSVType svType) {
 			int32_t seqLeftOver = 0;
 			if (bpPoint) {
 			  seqLeftOver = sequence.size() - clipSize;
-			  localrefStart = std::max(0, rec->core.pos - (500 + clipSize));
+			  localrefStart = std::max(0, (int) rec->core.pos - (int) (c.indelsize + clipSize));
 			  localrefEnd = rec->core.pos + seqLeftOver + 25;
 			} else {
 			  seqLeftOver = sequence.size() - (splitPoint - rec->core.pos);
 			  localrefStart = rec->core.pos;
-			  localrefEnd = splitPoint + 500 + seqLeftOver;
+			  localrefEnd = splitPoint + c.indelsize + seqLeftOver;
 			}
 			std::string localref = boost::to_upper_copy(std::string(seq->seq.s + localrefStart, seq->seq.s + localrefEnd));
 			typedef boost::multi_array<char, 2> TAlign;
@@ -1526,20 +1532,22 @@ inline int run(Config const& c, TSVType svType) {
 			altScore += 5 * c.minimumFlankSize;
 			int scoreThresholdAlt = (int) (qualityThres * sequence.size() * 5 + (1.0 - qualityThres) * sequence.size() * (-4));
 			
-			// Debug consensus to reference alignment
-			//for(TAIndex i = 0; i<alignFwd.shape()[0]; ++i) {
-			//for(TAIndex j = 0; j<alignFwd.shape()[1]; ++j) std::cerr << alignFwd[i][j];
-			//std::cerr << std::endl;
-			//}
-			
 			// Candidate small indel?
 			if (altScore > scoreThresholdAlt) {
 			  TAIndex cStart, cEnd, rStart, rEnd;
-			  _findSplit(alignFwd, cStart, cEnd, rStart, rEnd);
+			  if (_findSplit(alignFwd, cStart, cEnd, rStart, rEnd)) {
+			    if (_validSRAlignment(cStart, cEnd, rStart, rEnd, svType)) {
+			      // Debug consensus to reference alignment
+			      //for(TAIndex i = 0; i<alignFwd.shape()[0]; ++i) {
+			      //for(TAIndex j = 0; j<alignFwd.shape()[1]; ++j) std::cerr << alignFwd[i][j];
+			      //std::cerr << std::endl;
+			      //}
+			      //std::cerr << bpPoint << ',' << cStart << ',' << cEnd << ',' << rStart << ',' << rEnd << std::endl;
 #pragma omp critical
-			  {
-			    // Minimum size 5bp 
-			    if (rEnd > rStart + 5) splitRecord.push_back(SplitAlignRecord(localrefStart + rStart - cStart, localrefStart + rStart, localrefStart + rEnd, localrefStart + rEnd + seqLeftOver + 25, rec->core.qual));
+			      {
+				splitRecord.push_back(SplitAlignRecord(localrefStart + rStart - cStart, localrefStart + rStart, localrefStart + rEnd, localrefStart + rEnd + seqLeftOver + 25, rec->core.qual));
+			      }
+			    }
 			  }
 			}
 		      }
@@ -1882,7 +1890,7 @@ int main(int argc, char **argv) {
   boost::program_options::options_description generic("Generic options");
   generic.add_options()
     ("help,?", "show help message")
-    ("type,t", boost::program_options::value<std::string>(&c.svType)->default_value("DEL"), "SV analysis type (DEL, DUP, INV, TRA)")
+    ("type,t", boost::program_options::value<std::string>(&c.svType)->default_value("DEL"), "SV analysis type (DEL, DUP, INV, TRA, INS)")
     ("outfile,o", boost::program_options::value<boost::filesystem::path>(&c.outfile)->default_value("sv.vcf"), "SV output file")
     ("exclude,x", boost::program_options::value<boost::filesystem::path>(&c.exclude)->default_value(""), "file with chr to exclude")
     ;
@@ -1898,6 +1906,7 @@ int main(int argc, char **argv) {
   breaks.add_options()
     ("genome,g", boost::program_options::value<boost::filesystem::path>(&c.genome), "genome fasta file")
     ("min-flank,m", boost::program_options::value<unsigned int>(&c.minimumFlankSize)->default_value(13), "minimum flanking sequence size")
+    ("indelsize,i", boost::program_options::value<unsigned int>(&c.indelsize)->default_value(500), "max. small InDel size")
     ;
 
   boost::program_options::options_description geno("Genotyping options");

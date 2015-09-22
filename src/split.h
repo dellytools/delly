@@ -117,10 +117,10 @@ namespace torali
 
   template<typename TBPoint, typename TCT>
   inline bool
-  _validSCOrientation(TBPoint, bool, TCT, SVType<InsertionTag>) 
+  _validSCOrientation(TBPoint bpPoint, bool leadingSC, TCT, SVType<InsertionTag>) 
   {
-    // ToDo
-    return false;
+    if (((!bpPoint) && (!leadingSC)) || ((bpPoint) && (leadingSC))) return true;
+    else return false;
   }
 
   template<typename TBPoint, typename TCT>
@@ -332,8 +332,25 @@ namespace torali
 
   template<typename TString, typename TSvRecord, typename TAIndex, typename TPosition>
   inline bool
-  _coordTransform(TString const& ref, TSvRecord const& sv, TAIndex rStart, TAIndex rEnd, TPosition& finalGapStart, TPosition& finalGapEnd, SVType<InsertionTag>) {
-    return false;
+  _coordTransform(TString const&, TSvRecord const& sv, TAIndex rStart, TAIndex rEnd, TPosition& finalGapStart, TPosition& finalGapEnd, SVType<InsertionTag>) {
+    finalGapStart = sv.svStartBeg + rStart;
+    finalGapEnd = sv.svStartBeg + rEnd;
+    return true;
+  }
+
+
+  template<typename TPos, typename TTag>
+  inline bool
+  _validSRAlignment(TPos const cStart, TPos const cEnd, TPos const rStart, TPos const rEnd, SVType<TTag>)
+  {
+    return (((cEnd - cStart) < 5) && ((rEnd - rStart) > 15));
+  }
+
+  template<typename TPos>
+  inline bool
+  _validSRAlignment(TPos const cStart, TPos const cEnd, TPos const rStart, TPos const rEnd, SVType<InsertionTag>)
+  {
+    return (((rEnd - rStart) < 5) && ((cEnd - cStart) > 15));
   }
 
 
@@ -385,6 +402,7 @@ namespace torali
   template<typename TConfig, typename TStructuralVariantRecord, typename TTag>
   inline bool
   alignConsensus(TConfig const& c, TStructuralVariantRecord& sv, std::string const& svRefStr, SVType<TTag> svType) {
+    if (sv.consensus.size() < 35) return false;
 
     // Create input alignments
     typedef boost::multi_array<char, 2> TAlign;
@@ -404,15 +422,16 @@ namespace torali
     DnaScore<int> sc(5, -4, -5 * c.minimumFlankSize, 0); // Don't penalize the split, ge=0 and make sure we have aligned segments > c.minimumFlankSize
     int score = gotoh(cons, ref, alignFwd, semiglobal, sc);
     score += 5 * c.minimumFlankSize; // Increase the score by allowing one internal gap
-    double quality = (double) ((score < 0) ? 0 : score ) / (double) (sv.consensus.size() * 5);
-    if (quality > 1) quality = 1;
-
-    // Check quality
-    if (quality < ((double) c.flankQuality / 100.0)) return false;
 
     // Check breakpoint
     TAIndex cStart, cEnd, rStart, rEnd;
     if (!_findSplit(alignFwd, cStart, cEnd, rStart, rEnd)) return false;
+    if (!_validSRAlignment(cStart, cEnd, rStart, rEnd, svType)) return false;
+
+    // Check quality
+    double quality = (double) ((score < 0) ? 0 : score ) / (double) ( (sv.consensus.size() - (cEnd - cStart - 1)) * 5);
+    if (quality > 1) quality = 1;
+    if (quality < ((double) c.flankQuality / 100.0)) return false;
 
     // Debug consensus to reference alignment
     //for(TAIndex i = 0; i<alignFwd.shape()[0]; ++i) {
@@ -437,6 +456,7 @@ namespace torali
     sv.svStart=finalGapStart;
     sv.svEnd=finalGapEnd;
     sv.srAlignQuality=quality;
+    sv.insLen=cEnd - cStart - 1;
     return true;
   }
 
