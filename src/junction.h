@@ -200,7 +200,6 @@ namespace torali {
 	      gotoh(itSV->consensus, svRefStr, alignFwd, semiglobal, sc);
 	      TAIndex cStart, cEnd, rStart, rEnd;
 	      _findSplit(alignFwd, cStart, cEnd, rStart, rEnd);
-	      int csBp = (cStart + cEnd) / 2;
 	      
 	      // Debug consensus to reference alignment
 	      //for(TAIndex i = 0; i<alignFwd.shape()[0]; ++i) {
@@ -221,7 +220,9 @@ namespace torali {
 		  int32_t regionChr = itSV->chr;
 		  int regionStart = std::max(0, (int) (itSV->svStartBeg + itSV->svStart)/2);
 		  int regionEnd = std::min((uint32_t) (itSV->svStart + itSV->svStartEnd)/2, reflen[itSV->chr]);
+		  int csBp = cStart;
 		  if (bpPoint) {
+		    csBp = cEnd;
 		    regionChr = itSV->chr2;
 		    regionStart = std::max(0, (int) (itSV->svEndBeg + itSV->svEnd)/2);
 		    regionEnd = std::min((uint32_t) (itSV->svEnd + itSV->svEndEnd)/2, reflen[itSV->chr2]);
