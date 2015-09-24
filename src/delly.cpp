@@ -339,6 +339,7 @@ vcfParse(TConfig const& c, TRefNames const& refnames, TRefLen const& reflen, TSi
 	    svRec.srAlignQuality=0;
 	    svRec.wiggle = 0;
 	    svRec.precise = false;
+	    svRec.insLen = 0;
 	    // Ignore ref, alt, qual and filter
 	    tokIter++; tokIter++; tokIter++; tokIter++;
 	    // Parse info string
@@ -356,6 +357,7 @@ vcfParse(TConfig const& c, TRefNames const& refnames, TRefLen const& reflen, TSi
 	      std::string key = keyValue.substr(0, found);
 	      std::string value = keyValue.substr(found+1);
 	      if (key == "PE") svRec.peSupport = boost::lexical_cast<int>(value);
+	      else if (key == "INSLEN") svRec.insLen = boost::lexical_cast<int>(value);
 	      else if (key == "MAPQ") svRec.peMapQuality = (uint8_t) boost::lexical_cast<uint16_t>(value); // lexical_cast does not work for uint8_t
 	      else if (key == "SR") svRec.srSupport = boost::lexical_cast<int>(value);
 	      else if (key == "SRQ") svRec.srAlignQuality = boost::lexical_cast<double>(value);
@@ -1447,7 +1449,7 @@ inline int run(Config const& c, TSVType svType) {
   boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
   std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Paired-end clustering" << std::endl;
   boost::progress_display show_progress( refnames.size() );
-  while ((l = kseq_read(seq)) >= 0) {
+  while (((l = kseq_read(seq)) >= 0) && (peMapping)) {
     for(int32_t refIndex=0; refIndex < (int32_t) refnames.size(); ++refIndex) {
       if (seq->name.s == refnames[refIndex]) {
 	++show_progress;
