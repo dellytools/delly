@@ -1326,7 +1326,9 @@ _processSRCluster(TIterator itInit, TIterator itEnd, int32_t refIndex, int32_t b
       svRec.ct=_getCT(svType);
       svRec.insLen = 0;
       svRec.id = clique_count++;
-      splitSVs.push_back(svRec);
+      if ((svRec.svStartBeg < svRec.svStart) && (svRec.svStart < svRec.svStartEnd))
+	if ((svRec.svEndBeg < svRec.svEnd) && (svRec.svEnd < svRec.svEndEnd))
+	  splitSVs.push_back(svRec);
     }
   }
 }
