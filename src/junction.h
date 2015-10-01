@@ -245,7 +245,7 @@ namespace torali {
 		      int clipSize = 0;
 		      int splitPoint = 0;
 		      bool leadingSoftClip = false;
-		      if (!_validSoftClip(rec, clipSize, splitPoint, leadingSoftClip)) continue;
+		      if (!_validSoftClip(rec, clipSize, splitPoint, leadingSoftClip, c.minMapQual)) continue;
 		      if ((splitPoint < regionStart) || (splitPoint > regionEnd)) continue;
 		      if (!_validSCOrientation(bpPoint, leadingSoftClip, itSV->ct, svType)) continue;
 		    } else {

@@ -216,10 +216,26 @@ namespace torali {
 	    else if ((align[i][j] == 'T') || (align[i][j] == 't')) ++countT;
 	  }
 	}
-	if (countA > (*itCov / 2)) cons.push_back('A');
-	else if (countC > (*itCov / 2)) cons.push_back('C');
-	else if (countG > (*itCov / 2)) cons.push_back('G');
-	else if (countT > (*itCov / 2)) cons.push_back('T');
+	int countAligned = countA + countC + countG + countT;
+	if (countAligned > (*itCov / 2)) {
+	  if (countA > countC) {
+	    if (countA > countG) {
+	      if (countA > countT) cons.push_back('A');
+	      else cons.push_back('T');
+	    } else {
+	      if (countG > countT) cons.push_back('G');
+	      else cons.push_back('T');
+	    }
+	  } else {
+	    if (countC > countG) {
+	      if (countC > countT) cons.push_back('C');
+	      else cons.push_back('T');
+	    } else {
+	      if (countG > countT) cons.push_back('G');
+	      else cons.push_back('T');
+	    }
+	  }
+	}
       }
     }
     cs = std::string(cons.begin(), cons.end());

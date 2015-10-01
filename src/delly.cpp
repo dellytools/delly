@@ -677,12 +677,12 @@ findPutativeSplitReads(TConfig const& c, std::vector<TStructuralVariantRecord>& 
 	    // Find putative split reads in all samples
 	    for (unsigned int bpPoint = 0; bpPoint<2; ++bpPoint) {
 	      int32_t regionChr = svIt->chr;
-	      int regionStart = (svIt->svStartBeg + svIt->svStart)/2;
+	      int regionStart = svIt->svStartBeg;
 	      int regionEnd = (svIt->svStart + svIt->svStartEnd)/2;
 	      if (bpPoint) {
 		regionChr = svIt->chr2;
 		regionStart = (svIt->svEndBeg + svIt->svEnd)/2;
-		regionEnd = (svIt->svEnd + svIt->svEndEnd)/2;
+		regionEnd = svIt->svEndEnd;
 		spp1.resize(regionEnd-regionStart, 0);
 	      } else {
 		spp0.resize(regionEnd-regionStart, 0);
@@ -698,7 +698,7 @@ findPutativeSplitReads(TConfig const& c, std::vector<TStructuralVariantRecord>& 
 		  int clipSize = 0;
 		  int splitPoint = 0;
 		  bool leadingSoftClip = false;
-		  if (_validSoftClip(rec, clipSize, splitPoint, leadingSoftClip)) {
+		  if (_validSoftClip(rec, clipSize, splitPoint, leadingSoftClip, c.minMapQual)) {
 		    if ((splitPoint >= regionStart) && (splitPoint < regionEnd)) {
 		      splitPoint -= regionStart;
 		      // Minimum clip size
@@ -1315,20 +1315,13 @@ _processSRCluster(TIterator itInit, TIterator itEnd, int32_t refIndex, int32_t b
       svRec.wiggle = bpWindowLen;
       std::sort(mapQV.begin(), mapQV.end());
       svRec.peMapQuality = mapQV[mapQV.size()/2];
-      if ((svRec.chr == svRec.chr2) && (svRec.svStartEnd > svRec.svEndBeg)) {
-	unsigned int midPointDel = ((svRec.svEnd - svRec.svStart) / 2) + svRec.svStart;
-	svRec.svStartEnd = midPointDel -1;
-	svRec.svEndBeg = midPointDel;
-      }
       svRec.srSupport=mapQV.size();
       svRec.srAlignQuality=0;
       svRec.precise=true;
       svRec.ct=_getCT(svType);
       svRec.insLen = 0;
       svRec.id = clique_count++;
-      if ((svRec.svStartBeg < svRec.svStart) && (svRec.svStart < svRec.svStartEnd))
-	if ((svRec.svEndBeg < svRec.svEnd) && (svRec.svEnd < svRec.svEndEnd))
-	  splitSVs.push_back(svRec);
+      if ((svRec.svStartBeg < svRec.svStart) && (svRec.svEnd < svRec.svEndEnd)) splitSVs.push_back(svRec);
     }
   }
 }
@@ -1491,12 +1484,13 @@ inline int run(Config const& c, TSVType svType) {
 	      uint32_t* cigar = bam_get_cigar(rec);
 	      for (std::size_t i = 0; i < rec->core.n_cigar; ++i)
 		if (bam_cigar_op(cigar[i]) == BAM_CSOFT_CLIP) hasSoftClip = true;
-	      if ((hasSoftClip) && (rec->core.l_qseq >= 35) && (rec->core.pos != oldSplitAlignPos)) {
-		oldSplitAlignPos = rec->core.pos;
+	      uint32_t ha = halfAlignmentLength(rec);
+	      if ((hasSoftClip) && (rec->core.l_qseq >= 35) && (rec->core.pos + ha != oldSplitAlignPos)) {
+		oldSplitAlignPos = rec->core.pos + ha;  // Leading soft-clips cause identical pos
 		int clipSize = 0;
 		int splitPoint = 0;
 		bool leadingSoftClip = false;
-		if (_validSoftClip(rec, clipSize, splitPoint, leadingSoftClip)) {
+		if (_validSoftClip(rec, clipSize, splitPoint, leadingSoftClip, c.minMapQual)) {
 		  // Minimum clip size
 		  int minClipSize = (int) (log10(rec->core.l_qseq) * 10);
 		  if (clipSize > minClipSize) {
@@ -1547,6 +1541,7 @@ inline int run(Config const& c, TSVType svType) {
 			      //std::cerr << std::endl;
 			      //}
 			      //std::cerr << bpPoint << ',' << cStart << ',' << cEnd << ',' << rStart << ',' << rEnd << std::endl;
+
 #pragma omp critical
 			      {
 				splitRecord.push_back(SplitAlignRecord(localrefStart + rStart - cStart, localrefStart + rStart, localrefStart + rEnd, localrefStart + rEnd + seqLeftOver + 25, rec->core.qual));
