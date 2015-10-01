@@ -1484,8 +1484,8 @@ inline int run(Config const& c, TSVType svType) {
 	      uint32_t* cigar = bam_get_cigar(rec);
 	      for (std::size_t i = 0; i < rec->core.n_cigar; ++i)
 		if (bam_cigar_op(cigar[i]) == BAM_CSOFT_CLIP) hasSoftClip = true;
-	      uint32_t ha = halfAlignmentLength(rec);
-	      if ((hasSoftClip) && (rec->core.l_qseq >= 35) && (rec->core.pos + ha != oldSplitAlignPos)) {
+	      int32_t ha = halfAlignmentLength(rec);
+	      if ((hasSoftClip) && (rec->core.l_qseq >= 35) && ((int32_t) (rec->core.pos + ha) != oldSplitAlignPos)) {
 		oldSplitAlignPos = rec->core.pos + ha;  // Leading soft-clips cause identical pos
 		int clipSize = 0;
 		int splitPoint = 0;
