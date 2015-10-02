@@ -693,6 +693,7 @@ findPutativeSplitReads(TConfig const& c, std::vector<TStructuralVariantRecord>& 
 		bam1_t* rec = bam_init1();
 		while (sam_itr_next(samfile[file_c], iter, rec) >= 0) {
 		  if (rec->core.flag & (BAM_FSECONDARY | BAM_FQCFAIL | BAM_FDUP | BAM_FSUPPLEMENTARY | BAM_FUNMAP)) continue;
+		  if (rec->core.pos < regionStart) continue;
 
 		  // Valid soft clip?
 		  int clipSize = 0;
@@ -702,8 +703,7 @@ findPutativeSplitReads(TConfig const& c, std::vector<TStructuralVariantRecord>& 
 		    if ((splitPoint >= regionStart) && (splitPoint < regionEnd)) {
 		      splitPoint -= regionStart;
 		      // Minimum clip size
-		      int minClipSize = (int) (log10(rec->core.l_qseq) * 10);
-		      if (clipSize > minClipSize) {
+		      if (clipSize > (int) (log10(rec->core.l_qseq) * 10)) {
 			// Leading or trailing softclip?
 			if (_validSCOrientation(bpPoint, leadingSoftClip, svIt->ct, svType)) {
 			  // Get the sequence
@@ -1525,13 +1525,14 @@ inline int run(Config const& c, TSVType svType) {
 			DnaScore<int> sc(5, -4, -5 * c.minimumFlankSize, 0);
 			int altScore = gotoh(sequence, localref, alignFwd, semiglobal, sc);
 			altScore += 5 * c.minimumFlankSize;
-			int scoreThresholdAlt = (int) (qualityThres * sequence.size() * 5 + (1.0 - qualityThres) * sequence.size() * (-4));
-			
+
 			// Candidate small indel?
-			if (altScore > scoreThresholdAlt) {
-			  TAIndex cStart, cEnd, rStart, rEnd;
-			  if (_findSplit(alignFwd, cStart, cEnd, rStart, rEnd)) {
-			    if (_validSRAlignment(cStart, cEnd, rStart, rEnd, svType)) {
+			TAIndex cStart, cEnd, rStart, rEnd;
+			if (_findSplit(alignFwd, cStart, cEnd, rStart, rEnd)) {
+			  if (_validSRAlignment(cStart, cEnd, rStart, rEnd, svType)) {
+			    int scoreThresholdAlt = (int) (qualityThres * (sequence.size() - (cEnd - cStart - 1)) * 5 + (1.0 - qualityThres) * (sequence.size() - (cEnd - cStart - 1)) * (-4));			    
+			    if (altScore > scoreThresholdAlt) {
+
 			      // Debug consensus to reference alignment
 			      //for(TAIndex i = 0; i<alignFwd.shape()[0]; ++i) {
 			      //for(TAIndex j = 0; j<alignFwd.shape()[1]; ++j) std::cerr << alignFwd[i][j];
