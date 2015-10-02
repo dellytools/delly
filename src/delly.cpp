@@ -1480,24 +1480,21 @@ inline int run(Config const& c, TSVType svType) {
 
 	    // Small indel detection using soft clips
 	    if (_smallIndelDetection(svType)) {
-	      bool hasSoftClip = false;
-	      uint32_t* cigar = bam_get_cigar(rec);
-	      for (std::size_t i = 0; i < rec->core.n_cigar; ++i)
-		if (bam_cigar_op(cigar[i]) == BAM_CSOFT_CLIP) hasSoftClip = true;
-	      int32_t ha = halfAlignmentLength(rec);
-	      if ((hasSoftClip) && (rec->core.l_qseq >= 35) && ((int32_t) (rec->core.pos + ha) != oldSplitAlignPos)) {
-		oldSplitAlignPos = rec->core.pos + ha;  // Leading soft-clips cause identical pos
-		int clipSize = 0;
-		int splitPoint = 0;
-		bool leadingSoftClip = false;
-		if (_validSoftClip(rec, clipSize, splitPoint, leadingSoftClip, c.minMapQual)) {
-		  // Minimum clip size
-		  int minClipSize = (int) (log10(rec->core.l_qseq) * 10);
-		  if (clipSize > minClipSize) {
-		    // Iterate both possible breakpoints
-		    for (int bpPoint = 0; bpPoint < 2; ++bpPoint) {
-		      // Leading or trailing softclip?
-		      if (_validSCOrientation(bpPoint, leadingSoftClip, _getCT(svType), svType)) {
+	      int clipSize = 0;
+	      int splitPoint = 0;
+	      bool leadingSoftClip = false;
+	      if (_validSoftClip(rec, clipSize, splitPoint, leadingSoftClip, c.minMapQual)) {
+		// Minimum clip size
+		if (clipSize > (int) (log10(rec->core.l_qseq) * 10)) {
+		  // Iterate both possible breakpoints
+		  for (int bpPoint = 0; bpPoint < 2; ++bpPoint) {
+		    // Leading or trailing softclip?
+		    if (_validSCOrientation(bpPoint, leadingSoftClip, _getCT(svType), svType)) {
+		      // Duplicate filter
+		      int32_t ha = halfAlignmentLength(rec);
+		      if ((int32_t) (rec->core.pos + ha) != oldSplitAlignPos) {
+			oldSplitAlignPos = rec->core.pos + ha;  // Leading soft-clips cause identical pos
+
 			// Get the sequence
 			std::string sequence;
 			sequence.resize(rec->core.l_qseq);

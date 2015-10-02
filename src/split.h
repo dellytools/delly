@@ -72,12 +72,12 @@ namespace torali
     // Check read-length
     if (rec->core.l_qseq < 35) return false;
 
-    // Check for soft-clips
-    bool hasSoftClip = false;
+    // Check for single soft-clip
+    unsigned int numSoftClip = 0;
     uint32_t* cigar = bam_get_cigar(rec);
-    for (unsigned int i = 0; i < rec->core.n_cigar; ++i) 
-      if (bam_cigar_op(cigar[i]) == BAM_CSOFT_CLIP) hasSoftClip = true;
-    if (!hasSoftClip) return false;
+    for (unsigned int i = 0; i < rec->core.n_cigar; ++i)
+      if (bam_cigar_op(cigar[i]) == BAM_CSOFT_CLIP) ++numSoftClip;
+    if (numSoftClip != 1) return false;
     
     // Get quality vector
     typedef std::vector<uint8_t> TQuality;
@@ -89,7 +89,6 @@ namespace torali
     // Get soft-clips
     unsigned int alen = 0;
     unsigned int lastIns = 0;
-    unsigned int numSoftClip = 0;
     unsigned int meanQuality = 0;
     for (unsigned int i = 0; i < rec->core.n_cigar; ++i) {
       if (bam_cigar_op(cigar[i]) == BAM_CMATCH) {
@@ -100,7 +99,6 @@ namespace torali
       } else if (bam_cigar_op(cigar[i]) == BAM_CSOFT_CLIP) {
 	if (!alen) leadingSC = true;
 	else leadingSC = false;
-	++numSoftClip;
 	clipSize = bam_cigar_oplen(cigar[i]);
 	splitPoint = rec->core.pos + alen;
 	unsigned int qualSum = 0;
@@ -108,8 +106,8 @@ namespace torali
 	meanQuality = qualSum / clipSize;
       }
     }
-    //std::cerr << numSoftClip << ',' << clipSize << ',' << meanQuality << ',' << splitPoint << std::endl;
-    return ((numSoftClip==1) && (meanQuality>= (unsigned int) qualCut));
+    //std::cerr << clipSize << ',' << meanQuality << ',' << splitPoint << std::endl;
+    return (meanQuality>= (unsigned int) qualCut);
   }
 
   template<typename TBPoint, typename TCT>
