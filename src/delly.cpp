@@ -1896,7 +1896,7 @@ int main(int argc, char **argv) {
   pem.add_options()
     ("map-qual,q", boost::program_options::value<unsigned short>(&c.minMapQual)->default_value(1), "min. paired-end mapping quality")
     ("mad-cutoff,s", boost::program_options::value<unsigned short>(&c.madCutoff)->default_value(9), "insert size cutoff, median+s*MAD (deletions only)")
-    ("flanking,f", boost::program_options::value<unsigned int>(&c.flankQuality)->default_value(80), "quality of the consensus alignment")
+    ("flanking,f", boost::program_options::value<unsigned int>(&c.flankQuality)->default_value(90), "quality of the consensus alignment")
     ;
 
   boost::program_options::options_description breaks("SR options");

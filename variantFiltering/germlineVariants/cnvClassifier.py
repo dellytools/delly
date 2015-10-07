@@ -88,8 +88,9 @@ if args.cnvVCF:
                 qIndex = (altratio + altgq + refgq) / 3
                 if (record.INFO['SVTYPE'] == "DEL") or (record.INFO['SVTYPE'] == "DUP"):
                     if (record.INFO['END'] - record.POS < 500) and (precise):
-                        # No read-depth check
-                        validRdRatio = True
+                        if (record.INFO['SRQ']>0.9):
+                            # No read-depth check
+                            validRdRatio = True
                     elif (len(hetRC)) and (len(refRC)):
                         rcref = numpy.median(numpy.array(rc))
                         if rcref > 500:
@@ -112,9 +113,9 @@ if args.cnvVCF:
                     G.node[record.ID]['Score'] = support
                     for cnvIStart, cnvIEnd in cnvRegion[record.CHROM].overlap((svStart, svEnd)):
                         otherID = cnvRegion[record.CHROM][(cnvIStart, cnvIEnd)]
-                        if overlapValid((svStart, svEnd), (cnvIStart, cnvIEnd), 0.1, 10000):
+                        if (record.INFO['SVTYPE'] == "INS") or (overlapValid((svStart, svEnd), (cnvIStart, cnvIEnd), 0.1, 10000)):
                             G.add_edge(record.ID, otherID)
-                    cnvRegion[record.CHROM][(svStart, svEnd)] = record.ID
+                    cnvRegion[record.CHROM][(svStart - 15, svEnd + 15)] = record.ID  # padding for PRECISE insertion
 
 # Pick best deletion/duplication for all overlapping calls
 selectedSVs = set()
