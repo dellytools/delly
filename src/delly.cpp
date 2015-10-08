@@ -78,6 +78,7 @@ struct Config {
   unsigned int graphPruning;
   unsigned int indelsize;
   float percentAbnormal;
+  bool indels;
   std::string svType;
   boost::filesystem::path outfile;
   boost::filesystem::path vcffile;
@@ -1479,7 +1480,7 @@ inline int run(Config const& c, TSVType svType) {
 	    if ((rec->core.qual < c.minMapQual) || (rec->core.tid<0) || (rec->core.mtid<0)) continue;
 
 	    // Small indel detection using soft clips
-	    if (_smallIndelDetection(svType)) {
+	    if ((c.indels) && (_smallIndelDetection(svType))) {
 	      int clipSize = 0;
 	      int splitPoint = 0;
 	      bool leadingSoftClip = false;
@@ -1739,7 +1740,7 @@ inline int run(Config const& c, TSVType svType) {
 	sort(svs.begin(), svs.end(), SortSVs<StructuralVariantRecord>());
 
 	// Add the soft clip SV records
-	if (_smallIndelDetection(svType)) {
+	if ((c.indels) && (_smallIndelDetection(svType))) {
 	  // Collect all promising structural variants
 	  TVariants splitSVs;
 
@@ -1903,6 +1904,7 @@ int main(int argc, char **argv) {
   breaks.add_options()
     ("genome,g", boost::program_options::value<boost::filesystem::path>(&c.genome), "genome fasta file")
     ("min-flank,m", boost::program_options::value<unsigned int>(&c.minimumFlankSize)->default_value(13), "minimum flanking sequence size")
+    ("noindels,n", "no small InDel calling")
     ("indelsize,i", boost::program_options::value<unsigned int>(&c.indelsize)->default_value(500), "max. small InDel size")
     ;
 
@@ -1958,6 +1960,10 @@ int main(int argc, char **argv) {
 
   // Always ignore reads of mapping quality <5 for genotyping, otherwise het. is more likely!
   if (c.minGenoQual<5) c.minGenoQual=5;
+
+  // Small InDels?
+  c.indels = true;
+  if (vm.count("noindels")) c.indels = false;
 
   // Run main program
   if (c.svType == "DEL") return run(c, SVType<DeletionTag>());
