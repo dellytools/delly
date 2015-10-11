@@ -64,31 +64,41 @@ if args.vcfFile:
             rcAlt = []
             nCount = 0
             tCount = 0
+            refpass = False
+            altpass = False
             for call in record.samples:
                 if call.called:
                     if (args.nameNormal and call.sample == args.nameNormal) or ((args.nameNormal is None) and ((re.search(r"[Nn]ormal", call.sample) != None) or (re.search(r"[Cc]ontrol", call.sample) != None))):
                         nCount += 1
                         if call.gt_type == 0:
                             if not precise:
-                                if (call['DV'] == 0) and (call['DR'] >= minCov):
+                                if call['DV'] == 0:
                                     rcRef.append(call['RC'])
+                                    if call['DR'] >= minCov:
+                                        refpass = True
                             else:
-                                if (call['RV'] == 0) and (call['RR'] >= minCov):
+                                if call['RV'] == 0:
                                     rcRef.append(call['RC'])
+                                    if call['RR'] >= minCov:
+                                        refpass = True
                     if (args.nameTumor and call.sample == args.nameTumor) or ((args.nameTumor is None) and (re.search(r"[Tt]umo[ur]", call.sample) != None)):
                         tCount += 1
                         if not precise:
                             cov = float(call['DV']+call['DR'])
-                            if (call['DV'] >= 2) and (cov >= minCov) and (float(call['DV'])/cov >= altAF):
+                            if (call['DV'] >= 2) and (float(call['DV'])/cov >= altAF):
                                 if (record.INFO['SVTYPE'] != "TRA") or (call['DV'] >= 5):
                                     rcAlt.append(call['RC'])
+                                    if cov >= minCov:
+                                        altpass = True
                         else:
                             cov = float(call['RV']+call['RR'])
-                            if (call['RV'] >= 2) and (cov >= minCov) and (float(call['RV'])/cov >= altAF):
+                            if (call['RV'] >= 2) and (float(call['RV'])/cov >= altAF):
                                 if (record.INFO['SVTYPE'] != "TRA") or (call['RV'] >= 5):
                                     rcAlt.append(call['RC'])
+                                    if cov >= minCov:
+                                        altpass = True
             genotypeRatio = float(nCount + tCount) /  float(len(record.samples))
-            if (nCount > 0) and (tCount > 0) and (len(rcRef) == nCount) and (len(rcAlt) > 0) and (genotypeRatio >= ratioGeno):
+            if (refpass) and (altpass) and (len(rcRef) == nCount) and (len(rcAlt) > 0) and (genotypeRatio >= ratioGeno):
                 rdRatio = 1
                 if numpy.median(rcRef):
                     rdRatio = round(numpy.median(rcAlt)/numpy.median(rcRef), 4)
