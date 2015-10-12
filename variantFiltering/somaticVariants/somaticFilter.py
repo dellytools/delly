@@ -22,6 +22,7 @@ parser.add_argument('-c', '--mincov', metavar='10', required=False, dest='minCov
 parser.add_argument('-m', '--minsize', metavar='500', required=False, dest='minSize', help='min. size (optional)')
 parser.add_argument('-n', '--maxsize', metavar='500000000', required=False, dest='maxSize', help='max. size (optional)')
 parser.add_argument('-r', '--ratioGeno', metavar='0.75', required=False, dest='ratioGeno', help='min. fraction of genotyped samples (optional)')
+parser.add_argument('-i', '--normalContamination', metavar='0.0', required=False, dest='normalCont', help='normal contamination (optional)')
 parser.add_argument('-f', '--filter', dest='siteFilter', action='store_true', help='Filter sites for PASS')
 parser.add_argument('-N', '--normal', metavar='normalID', required=False, dest='nameNormal', help='normal sample name as in VCF (optional)')
 parser.add_argument('-T', '--tumor', metavar='tumorID', required=False, dest='nameTumor', help='tumor sample name as in VCF (optional)')
@@ -44,6 +45,9 @@ if args.minCov:
 ratioGeno = 0.75
 if args.ratioGeno:
     ratioGeno = float(args.ratioGeno)
+normalCont = 0.0
+if args.normalCont:
+    normalCont = float(args.normalCont)
 traWindow = 2500  # 2.5kb translocation window
 
 
@@ -72,12 +76,14 @@ if args.vcfFile:
                         nCount += 1
                         if call.gt_type == 0:
                             if not precise:
-                                if call['DV'] == 0:
+                                cov = float(call['DV']+call['DR'])
+                                if float(call['DV'])/cov <= normalCont:
                                     rcRef.append(call['RC'])
                                     if call['DR'] >= minCov:
                                         refpass = True
                             else:
-                                if call['RV'] == 0:
+                                cov = float(call['RV']+call['RR'])
+                                if float(call['RV'])/cov <= normalCont:
                                     rcRef.append(call['RC'])
                                     if call['RR'] >= minCov:
                                         refpass = True
