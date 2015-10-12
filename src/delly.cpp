@@ -1477,7 +1477,7 @@ inline int run(Config const& c, TSVType svType) {
 	  bam1_t* rec = bam_init1();
 	  while (sam_itr_next(samfile[file_c], iter, rec) >= 0) {
 	    if (rec->core.flag & (BAM_FSECONDARY | BAM_FQCFAIL | BAM_FDUP | BAM_FSUPPLEMENTARY | BAM_FUNMAP)) continue;
-	    if ((rec->core.qual < c.minMapQual) || (rec->core.tid<0) || (rec->core.mtid<0)) continue;
+	    if ((rec->core.qual < c.minMapQual) || (rec->core.tid<0)) continue;
 
 	    // Small indel detection using soft clips
 	    if ((c.indels) && (_smallIndelDetection(svType))) {
@@ -1558,7 +1558,7 @@ inline int run(Config const& c, TSVType svType) {
 	    // Paired-end clustering
 	    if (rec->core.flag & BAM_FPAIRED) {
 	      // Mate unmapped
-	      if (rec->core.flag & BAM_FMUNMAP) continue;
+	      if ((rec->core.mtid<0) || (rec->core.flag & BAM_FMUNMAP)) continue;
 
 	      // Mapping positions valid?
 	      if (_mappingPos(rec->core.tid, rec->core.mtid, rec->core.pos, rec->core.mpos, svType)) continue;
