@@ -17,37 +17,24 @@ parser = argparse.ArgumentParser(description='Filter for somatic SVs.')
 parser.add_argument('-v', '--vcf', metavar='variants.vcf', required=True, dest='vcfFile', help='input vcf file (required)')
 parser.add_argument('-o', '--out', metavar='out.vcf', required=True, dest='outFile', help='output vcf file (required)')
 parser.add_argument('-t', '--type', metavar='DEL', required=True, dest='svType', help='SV type [DEL, DUP, INV, INS, TRA] (required)')
-parser.add_argument('-a', '--altaf', metavar='0.2', required=False, dest='altAF', help='min. alt. AF (optional)')
-parser.add_argument('-c', '--mincov', metavar='10', required=False, dest='minCov', help='min. coverage (optional)')
-parser.add_argument('-m', '--minsize', metavar='500', required=False, dest='minSize', help='min. size (optional)')
-parser.add_argument('-n', '--maxsize', metavar='500000000', required=False, dest='maxSize', help='max. size (optional)')
-parser.add_argument('-r', '--ratioGeno', metavar='0.75', required=False, dest='ratioGeno', help='min. fraction of genotyped samples (optional)')
-parser.add_argument('-i', '--normalContamination', metavar='0.0', required=False, dest='normalCont', help='normal contamination (optional)')
+parser.add_argument('-a', '--altaf', type=float, default=0.2, metavar='0.2', required=False, dest='altAF', help='min. alt. AF (optional)')
+parser.add_argument('-c', '--mincov', type=int, default=10, metavar='10', required=False, dest='minCov', help='min. coverage (optional)')
+parser.add_argument('-m', '--minsize', type=int, default=500, metavar='500', required=False, dest='minSize', help='min. size (optional)')
+parser.add_argument('-n', '--maxsize', type=int, default=500000000, metavar='500000000', required=False, dest='maxSize', help='max. size (optional)')
+parser.add_argument('-r', '--ratioGeno', type=float, default=0.75, metavar='0.75', required=False, dest='ratioGeno', help='min. fraction of genotyped samples (optional)')
+parser.add_argument('-i', '--normalContamination', type=float, default=0.0, metavar='0.0', required=False, dest='normalCont', help='normal contamination (optional)')
 parser.add_argument('-f', '--filter', dest='siteFilter', action='store_true', help='Filter sites for PASS')
 parser.add_argument('-N', '--normal', metavar='normalID', required=False, dest='nameNormal', help='normal sample name as in VCF (optional)')
 parser.add_argument('-T', '--tumor', metavar='tumorID', required=False, dest='nameTumor', help='tumor sample name as in VCF (optional)')
-
 args = parser.parse_args()
 
-# Command-line args
-minSize = 500
-if args.minSize:
-    minSize = int(args.minSize)
-maxSize = 500000000
-if args.maxSize:
-    maxSize = int(args.maxSize)
-altAF = 0.2
-if args.altAF:
-    altAF = float(args.altAF)
-minCov = 10
-if args.minCov:
-    minCov = int(args.minCov)
-ratioGeno = 0.75
-if args.ratioGeno:
-    ratioGeno = float(args.ratioGeno)
-normalCont = 0.0
-if args.normalCont:
-    normalCont = float(args.normalCont)
+# Command-line parameters
+minSize = args.minSize
+maxSize = args.maxSize
+altAF = args.altAF
+minCov = args.minCov
+ratioGeno = args.ratioGeno
+normalCont = args.normalCont
 traWindow = 2500  # 2.5kb translocation window
 
 
