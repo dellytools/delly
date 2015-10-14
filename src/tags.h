@@ -106,6 +106,36 @@ namespace torali {
     }
   }
 
+  // Deletions
+  inline uint8_t
+  _getCT(SVType<DeletionTag>) {
+    return 2;
+  }
+
+  // Duplications
+  inline uint8_t
+  _getCT(SVType<DuplicationTag>) {
+    return 3;
+  }
+
+  // Inversions
+  inline uint8_t
+  _getCT(SVType<InversionTag>) {
+    return 0;
+  }
+  
+  // Translocations
+  inline uint8_t
+  _getCT(SVType<TranslocationTag>) {
+    return 0;
+  }
+  
+  // Insertion
+  inline uint8_t
+  _getCT(SVType<InsertionTag>) {
+    return 4;
+  }
+  
 
   // Deletions
   template<typename TBamRecord>
