@@ -14,7 +14,7 @@ import networkx
 parser = argparse.ArgumentParser(description='Deletion/Duplication filter.')
 parser.add_argument('-v', '--vcf', metavar='cnv.vcf', required=True, dest='cnvVCF', help='deletion/duplication vcf file (required)')
 parser.add_argument('-o', '--outVCF', metavar='out.vcf', required=True, dest='outVCF', help='output vcf file (required)')
-parser.add_argument('-q', '--quality', type=float, default=0.6, metavar='0.6', required=False, help='required quality [0,1] (optional)')
+parser.add_argument('-q', '--quality', type=float, default=0.6, metavar='0.6', required=False, dest='quality', help='required quality [0,1] (optional)')
 parser.add_argument('-f', '--filter', dest='siteFilter', action='store_true', help='Filter sites for PASS')
 args = parser.parse_args()
 
