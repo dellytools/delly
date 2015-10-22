@@ -263,9 +263,9 @@ namespace torali {
 		    } else {
 		      // Check position
 		      if (bpPoint) {
-			if ((rec->core.pos + c.minimumFlankSize > itSV->svEnd) || (rec->core.pos + rec->core.l_qseq - c.minimumFlankSize < itSV->svEnd)) continue;
+			if ((rec->core.pos + c.minimumFlankSize > itSV->svEnd) || (rec->core.pos + rec->core.l_qseq < itSV->svEnd + c.minimumFlankSize)) continue;
 		      } else {
-			if ((rec->core.pos + c.minimumFlankSize > itSV->svStart) || (rec->core.pos + rec->core.l_qseq - c.minimumFlankSize < itSV->svStart)) continue;
+			if ((rec->core.pos + c.minimumFlankSize > itSV->svStart) || (rec->core.pos + rec->core.l_qseq < itSV->svStart + c.minimumFlankSize)) continue;
 		      }
 		    }
 
