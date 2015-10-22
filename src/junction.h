@@ -67,13 +67,16 @@ namespace torali {
 
   template<typename TAlign, typename TAIndex>
   inline int
-  _coreAlignScore(TAlign const& align, TAIndex& consStart, TAIndex& consEnd) {
+  _coreAlignScore(TAlign const& align, TAIndex& consStart, TAIndex& consEnd, TAIndex& alignLength) {
     // Ignore leading and trailing gaps
     bool leadingGap = true;
     int score = 0;
     int savedScore = 0;
     consStart = 0;
     TAIndex runningEnd = 0;
+    TAIndex consGaps = 0;
+    TAIndex totalConsGaps = 0;
+    TAIndex seqGaps = 0;
     for(TAIndex j = 0; j< (TAIndex) align.shape()[1]; ++j) {
       if (leadingGap) {
 	if (align[1][j] != '-') {
@@ -84,18 +87,28 @@ namespace torali {
 	else leadingGap = false;
       }
       if ((align[0][j] == '-') && (align[1][j] != '-')) {
-	score += -4;
+	++seqGaps;
 	++runningEnd;
       } else if ((align[0][j] != '-') && (align[1][j] == '-')) {
-	score += -4;
+	++consGaps;
       } else {
 	if (align[0][j] == align[1][j]) score += 5;
 	else score += -4;
+	if (consGaps) {
+	  score += (-10 + (-1) * consGaps);
+	  totalConsGaps += consGaps;
+	  consGaps = 0;
+	}
+	if (seqGaps) {
+	  score+= (-10 + (-1) * seqGaps);
+	  seqGaps = 0;
+	}
 	++runningEnd;
 	savedScore = score;
 	consEnd = runningEnd;
       }
     }
+    alignLength = (consEnd - consStart) + totalConsGaps;
     return savedScore;
   }
 
@@ -103,8 +116,8 @@ namespace torali {
   inline int
   _coreAlignScore(TAlign const& align) {
     typedef typename TAlign::index TAIndex;
-    TAIndex consStart, consEnd;
-    return _coreAlignScore(align, consStart, consEnd);
+    TAIndex consStart, consEnd, alignLength;
+    return _coreAlignScore(align, consStart, consEnd, alignLength);
   }
 
   template<typename TConfig, typename TSampleLibrary, typename TSVs, typename TCountMap, typename TTag>
@@ -269,8 +282,9 @@ namespace torali {
 		    gotoh(sequence, itSV->consensus, align, endFreeAlign);
 		    TAIndex consStart = 0;
 		    TAIndex consEnd = 0;
-		    int altScore = _coreAlignScore(align, consStart, consEnd);
-		    int scoreThresholdAlt = (int) (qualityThres * (consEnd - consStart) * 5 + (1.0 - qualityThres) * (consEnd - consStart) * (-4));
+		    TAIndex consAlignLength = 0;
+		    int altScore = _coreAlignScore(align, consStart, consEnd, consAlignLength);
+		    int scoreThresholdAlt = (int) (qualityThres * consAlignLength * 5 + (1.0 - qualityThres) * consAlignLength * (-4));
 
 		    // Debug alignment ALT
 		    //std::cerr << "Alt: " << altScore << std::endl;
@@ -283,8 +297,9 @@ namespace torali {
 		    gotoh(sequence, svRefStr, align, endFreeAlign);
 		    TAIndex rCoreStart = 0;
 		    TAIndex rCoreEnd = 0;
-		    int refScore = _coreAlignScore(align, rCoreStart, rCoreEnd);			  
-		    int scoreThresholdRef = (int) (qualityThres * (rCoreEnd - rCoreStart) * 5 + (1.0 - qualityThres) * (rCoreEnd - rCoreStart) * (-4));
+		    TAIndex rAlignLength = 0;
+		    int refScore = _coreAlignScore(align, rCoreStart, rCoreEnd, rAlignLength);
+		    int scoreThresholdRef = (int) (qualityThres * rAlignLength * 5 + (1.0 - qualityThres) * rAlignLength * (-4));
 
 		    // Debug alignment REF
 		    //std::cerr << "Ref: " << refScore << std::endl;
