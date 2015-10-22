@@ -1867,15 +1867,15 @@ int main(int argc, char **argv) {
   pem.add_options()
     ("map-qual,q", boost::program_options::value<unsigned short>(&c.minMapQual)->default_value(1), "min. paired-end mapping quality")
     ("mad-cutoff,s", boost::program_options::value<unsigned short>(&c.madCutoff)->default_value(9), "insert size cutoff, median+s*MAD (deletions only)")
-    ("flanking,f", boost::program_options::value<unsigned int>(&c.flankQuality)->default_value(90), "quality of the consensus alignment")
+    ("flanking,f", boost::program_options::value<uint32_t>(&c.flankQuality)->default_value(90), "quality of the consensus alignment")
     ;
 
   boost::program_options::options_description breaks("SR options");
   breaks.add_options()
     ("genome,g", boost::program_options::value<boost::filesystem::path>(&c.genome), "genome fasta file")
-    ("min-flank,m", boost::program_options::value<unsigned int>(&c.minimumFlankSize)->default_value(13), "minimum flanking sequence size")
+    ("min-flank,m", boost::program_options::value<int32_t>(&c.minimumFlankSize)->default_value(13), "minimum flanking sequence size")
     ("noindels,n", "no small InDel calling")
-    ("indelsize,i", boost::program_options::value<unsigned int>(&c.indelsize)->default_value(500), "max. small InDel size")
+    ("indelsize,i", boost::program_options::value<uint32_t>(&c.indelsize)->default_value(500), "max. small InDel size")
     ;
 
   boost::program_options::options_description geno("Genotyping options");
@@ -1890,7 +1890,7 @@ int main(int argc, char **argv) {
     ("input-file", boost::program_options::value< std::vector<boost::filesystem::path> >(&c.files), "input file")
     ("pe-dump,p", boost::program_options::value<boost::filesystem::path>(&c.peDump)->default_value(""), "outfile to dump PE info")
     ("pe-fraction,c", boost::program_options::value<float>(&c.percentAbnormal)->default_value(0.0), "fixed fraction c of discordant PEs, for c=0 MAD cutoff is used")
-    ("pruning,j", boost::program_options::value<unsigned int>(&c.graphPruning)->default_value(1000), "PE graph pruning cutoff")
+    ("pruning,j", boost::program_options::value<uint32_t>(&c.graphPruning)->default_value(1000), "PE graph pruning cutoff")
     ("warranty,w", "show warranty")
     ("license,l", "show license")
     ;
