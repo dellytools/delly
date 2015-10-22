@@ -447,7 +447,7 @@ namespace torali
     //std::cerr << std::endl;
 
     // Check flanking alignment length
-    if ((cStart < c.minimumFlankSize) || ((sv.consensus.size() - cEnd) < c.minimumFlankSize)) return false;
+    if (((int32_t) cStart < c.minimumFlankSize) || ( (int32_t) (sv.consensus.size() - cEnd) < c.minimumFlankSize)) return false;
 
     // Get the start and end of the structural variant
     unsigned int finalGapStart = 0;
