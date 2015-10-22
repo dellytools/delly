@@ -218,21 +218,20 @@ namespace torali {
 
 		for (unsigned int bpPoint = 0; bpPoint<2; ++bpPoint) {
 		  int32_t regionChr = itSV->chr;
-		  int regionStart = std::max(0, (int) (itSV->svStartBeg + itSV->svStart)/2);
+		  int regionStart = itSV->svStartBeg;
 		  int regionEnd = std::min((uint32_t) (itSV->svStart + itSV->svStartEnd)/2, reflen[itSV->chr]);
 		  int csBp = cStart;
 		  if (bpPoint) {
 		    csBp = cEnd;
 		    regionChr = itSV->chr2;
-		    regionStart = std::max(0, (int) (itSV->svEndBeg + itSV->svEnd)/2);
-		    regionEnd = std::min((uint32_t) (itSV->svEnd + itSV->svEndEnd)/2, reflen[itSV->chr2]);
+		    regionStart = (itSV->svEndBeg + itSV->svEnd)/2;
+		    regionEnd = std::min((uint32_t) itSV->svEndEnd, reflen[itSV->chr2]);
 		  }
 
 		  hts_itr_t* iter = sam_itr_queryi(idx[file_c], regionChr, regionStart, regionEnd);
 		  bam1_t* rec = bam_init1();
 		  while (sam_itr_next(samfile[file_c], iter, rec) >= 0) {
 		    if (rec->core.flag & (BAM_FSECONDARY | BAM_FQCFAIL | BAM_FDUP | BAM_FSUPPLEMENTARY | BAM_FUNMAP)) continue;
-
 		    // Check read length & quality
 		    if ((rec->core.l_qseq < 35) || (rec->core.qual < c.minGenoQual)) continue;
 
@@ -251,9 +250,9 @@ namespace torali {
 		    } else {
 		      // Check position
 		      if (bpPoint) {
-			if ((rec->core.pos > itSV->svEnd) || (rec->core.pos + rec->core.l_qseq < itSV->svEnd)) continue;
+			if ((rec->core.pos + c.minimumFlankSize > itSV->svEnd) || (rec->core.pos + rec->core.l_qseq - c.minimumFlankSize < itSV->svEnd)) continue;
 		      } else {
-			if ((rec->core.pos > itSV->svStart) || (rec->core.pos + rec->core.l_qseq < itSV->svStart)) continue;
+			if ((rec->core.pos + c.minimumFlankSize > itSV->svStart) || (rec->core.pos + rec->core.l_qseq - c.minimumFlankSize < itSV->svStart)) continue;
 		      }
 		    }
 
