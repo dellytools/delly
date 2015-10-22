@@ -72,11 +72,12 @@ using namespace torali;
 struct Config {
   unsigned short minMapQual;
   unsigned short minGenoQual;
-  unsigned short madCutoff;
-  unsigned int minimumFlankSize;
-  unsigned int flankQuality;
-  unsigned int graphPruning;
-  unsigned int indelsize;
+  unsigned short madCutoff
+  int32_t minimumFlankSize;
+  uint32_t flankQuality;
+  uint32_t graphPruning;
+  uint32_t indelsize;
+
   float percentAbnormal;
   bool indels;
   std::string svType;
