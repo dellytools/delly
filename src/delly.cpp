@@ -72,7 +72,7 @@ using namespace torali;
 struct Config {
   unsigned short minMapQual;
   unsigned short minGenoQual;
-  unsigned short madCutoff
+  unsigned short madCutoff;
   int32_t minimumFlankSize;
   uint32_t flankQuality;
   uint32_t graphPruning;
