@@ -1,3 +1,8 @@
 .boost
 .htslib
 *.pyc
+src/cov
+src/delly
+src/extract
+src/iover
+src/stats
