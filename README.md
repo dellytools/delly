@@ -66,6 +66,10 @@ Balanced, polymorphic SV sites (inversions):
 
 These python scripts are primarily meant as an example of how you can filter and annotate the final Delly vcf file further. They may require some fine-tuning depending on your application.
 
+Delly can also be used to re-genotype a given SV site list. Further details are provided [here](http://github.com/tobiasrausch/svcatalog).
+
+`./delly -t DEL -g hg19.fa -v del.sites.vcf -o NA19240.vcf NA19240.bam`
+
 
 FAQ
 ---
