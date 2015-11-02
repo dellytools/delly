@@ -356,11 +356,25 @@ namespace torali
     return (((rEnd - rStart) < 5) && ((cEnd - cStart) > 15));
   }
 
-
-  template<typename TAlign, typename TAIndex>
+  template<typename TGap, typename TTag>
   inline bool
-  _findSplit(TAlign const& align, TAIndex& cStart, TAIndex& cEnd, TAIndex& rStart, TAIndex& rEnd) {
+  _checkSVGap(TGap const refGap, TGap const oldRefGap, TGap const, TGap const, SVType<TTag>) {
+    return (refGap > oldRefGap);
+  }
+
+  template<typename TGap>
+  inline bool
+  _checkSVGap(TGap const, TGap const, TGap const varGap, TGap const oldVarGap, SVType<InsertionTag>) {
+    return (varGap > oldVarGap);
+  }
+
+
+  template<typename TAlign, typename TAIndex, typename TSVType>
+  inline bool
+    _findSplit(TAlign const& align, TAIndex& cStart, TAIndex& cEnd, TAIndex& rStart, TAIndex& rEnd, TAIndex& gS, TAIndex& gE, TSVType svt) {
     // Initializiation
+    gS=0;
+    gE=0;
     cStart=0;
     cEnd=0;
     rStart=0;
@@ -373,6 +387,8 @@ namespace torali
     TAIndex gapEndRefIndex=0;
     TAIndex gapStartVarIndex=0;
     TAIndex gapEndVarIndex=0;
+    TAIndex a1 = 0;
+    TAIndex a2 = 0;
     bool inGap=false;
     for(TAIndex j = 0; j < (TAIndex) align.shape()[1]; ++j) {
       if (align[0][j] != '-') ++varIndex;
@@ -381,25 +397,105 @@ namespace torali
       if (((align[0][j] == '-') || (align[1][j] == '-')) && (refIndex>0) && (varIndex>0)) {
 	if (!inGap) {
 	  gapStartRefIndex=refIndex;
-	  gapEndRefIndex=refIndex + 1;
 	  gapStartVarIndex=varIndex;
-	  gapEndVarIndex=varIndex + 1;
+	  a1 = j;
 	  inGap = true;
-	} else {
-	  gapEndRefIndex=refIndex + 1;
-	  gapEndVarIndex=varIndex + 1;
 	}
+	gapEndRefIndex=refIndex + 1;
+	gapEndVarIndex=varIndex + 1;
+	a2 = j;
       } else {
-	if ((inGap) && ((gapEndRefIndex - gapStartRefIndex) > (rEnd - rStart))) {
+	if ((inGap) && (_checkSVGap((gapEndRefIndex - gapStartRefIndex), (rEnd - rStart), (gapEndVarIndex - gapStartVarIndex), (cEnd - cStart), svt))) {
 	  rStart=gapStartRefIndex;
 	  rEnd=gapEndRefIndex;
 	  cStart=gapStartVarIndex;
 	  cEnd=gapEndVarIndex;
+	  gS = a1;
+	  gE = a2;
 	}
 	inGap=false;
       }
     }
     return (rEnd > rStart);
+  }
+
+  template<typename TAlign, typename TAIndex, typename TSVType>
+  inline bool
+  _findSplit(TAlign const& align, TAIndex& cStart, TAIndex& cEnd, TAIndex& rStart, TAIndex& rEnd, TSVType svt) {
+    TAIndex alignJ1 = 0;
+    TAIndex alignJ2 = 0;
+    return _findSplit(align, cStart, cEnd, rStart, rEnd, alignJ1, alignJ2, svt);
+  }
+
+  template<typename TAlign, typename TAIndex, typename TLength>
+  inline void
+  _findHomology(TAlign const& align, TAIndex const gS, TAIndex const gE, TLength& homLeft, TLength& homRight) {
+    int32_t mmThres = 1;
+    if (align[1][gS] == '-') {
+      // Insertion
+      int32_t mismatch = 0;
+      int32_t offset = 0;
+      for(std::size_t i = 0; i < gS; ++i, ++homLeft) {
+	if (align[1][gS-i-1] != align[0][gE-i-offset]) ++mismatch;
+	if (mismatch > mmThres) {
+	  // Try 1bp insertion
+	  if (!offset) {
+	    if (align[1][gS-i-1] == align[0][gE-i-(++offset)]) {
+	      --mismatch;
+	      continue;
+	    }
+	  }
+	  break;
+	}
+      }
+      mismatch = 0;
+      offset = 0;
+      for(std::size_t i = 0; i < (align.shape()[1] - gE - 1); ++i, ++homRight) {
+	if (align[0][gS+i] != align[1][gE+i+1]) ++mismatch;
+	if (mismatch > mmThres) {
+	  // Try 1bp insertion
+	  if (!offset) {
+	    if (align[0][gS+i+(++offset)] == align[1][gE+i+1]) {
+	      --mismatch;
+	      continue;
+	    }
+	  }
+	  break;
+	}
+      }
+    } else if (align[0][gS] == '-') {
+      // Deletion
+      int32_t mismatch = 0;
+      int32_t offset = 0;
+      for(std::size_t i = 0; i < gS; ++i, ++homLeft) {
+	if (align[0][gS-i-1] != align[1][gE-i-offset]) ++mismatch;
+	if (mismatch > mmThres) {
+	  // Try 1bp deletion
+	  if (!offset) {
+	    if (align[0][gS-i-1] == align[1][gE-i-(++offset)]) {
+	      --mismatch;
+	      continue;
+	    }
+	  }
+	  break;
+	}
+      }
+      mismatch = 0;
+      offset = 0;
+      for(std::size_t i = 0; i < (align.shape()[1] - gE - 1); ++i, ++homRight) {
+	if (align[1][gS+i] != align[0][gE+i+1]) ++mismatch;
+	if (mismatch > mmThres) {
+	  // Try 1bp deletion
+	  if (!offset) {
+	    if (align[1][gS+i+(++offset)] == align[0][gE+i+1]) {
+	      --mismatch;
+	      continue;
+	    }
+	  }
+	  break;
+	}
+      }
+    }
   }
 
   template<typename TConfig, typename TStructuralVariantRecord, typename TTag>
@@ -427,9 +523,15 @@ namespace torali
     score += 5 * c.minimumFlankSize; // Increase the score by allowing one internal gap
 
     // Check breakpoint
-    TAIndex cStart, cEnd, rStart, rEnd;
-    if (!_findSplit(alignFwd, cStart, cEnd, rStart, rEnd)) return false;
+    TAIndex cStart, cEnd, rStart, rEnd, gS, gE;
+    if (!_findSplit(alignFwd, cStart, cEnd, rStart, rEnd, gS, gE, svType)) return false;
     if (!_validSRAlignment(cStart, cEnd, rStart, rEnd, svType)) return false;
+    int32_t homLeft = 0;
+    int32_t homRight = 0;
+    _findHomology(alignFwd, gS, gE, homLeft, homRight);
+
+    // Check flanking alignment length
+    if ((homLeft + c.minimumFlankSize > cStart) || (sv.consensus.size() - cEnd < homRight + c.minimumFlankSize)) return false;
 
     // Check quality
     double quality = (double) ((score < 0) ? 0 : score ) / (double) ( (sv.consensus.size() - (cEnd - cStart - 1)) * 5);
@@ -445,9 +547,6 @@ namespace torali
     //}
     //std::cerr << "Alignment score: " << score << " (Quality: " << quality << ")" << std::endl;
     //std::cerr << std::endl;
-
-    // Check flanking alignment length
-    if (((int32_t) cStart < c.minimumFlankSize) || ( (int32_t) (sv.consensus.size() - cEnd) < c.minimumFlankSize)) return false;
 
     // Get the start and end of the structural variant
     unsigned int finalGapStart = 0;

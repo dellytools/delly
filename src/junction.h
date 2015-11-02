@@ -40,84 +40,24 @@ KSEQ_INIT(gzFile, gzread)
 
 namespace torali {
 
-  template<typename TBP, typename TPos, typename TSize, typename TSVBp, typename TTag>
-  inline bool
-  _overlapsSVBreakpoint(TBP const bpPoint, TPos const pStart, TSize const pEnd, TSVBp const start, TSVBp const end, SVType<TTag>) 
-  {
-    if (bpPoint) {
-      if ((pStart > end) || (pEnd < end)) return false;
-    } else {
-      if ((pStart > start) || (pEnd < start)) return false;
-    }
-    return true;
-  }
 
-  template<typename TBP, typename TPos, typename TSize, typename TSVBp>
-  inline bool
-  _overlapsSVBreakpoint(TBP const bpPoint, TPos const pStart, TSize const pEnd, TSVBp const start, TSVBp const end, SVType<DuplicationTag>) 
-  {
-    if (!bpPoint) {
-      if ((pStart > end) || (pEnd < end)) return false;
-    } else {
-      if ((pStart > start) || (pEnd < start)) return false;
-    }
-    return true;
-  }
-
-
-  template<typename TAlign, typename TAIndex>
-  inline int
-  _coreAlignScore(TAlign const& align, TAIndex& consStart, TAIndex& consEnd, TAIndex& alignLength) {
-    // Ignore leading and trailing gaps
-    bool leadingGap = true;
-    int score = 0;
-    int savedScore = 0;
-    consStart = 0;
-    TAIndex runningEnd = 0;
-    TAIndex consGaps = 0;
-    TAIndex totalConsGaps = 0;
-    TAIndex seqGaps = 0;
-    for(TAIndex j = 0; j< (TAIndex) align.shape()[1]; ++j) {
-      if (leadingGap) {
-	if (align[1][j] != '-') {
-	  ++consStart;
-	  ++runningEnd;
-	}
-	if ((align[0][j] == '-') || (align[1][j] == '-')) continue;
-	else leadingGap = false;
-      }
-      if ((align[0][j] == '-') && (align[1][j] != '-')) {
-	++seqGaps;
-	++runningEnd;
-      } else if ((align[0][j] != '-') && (align[1][j] == '-')) {
-	++consGaps;
-      } else {
-	if (align[0][j] == align[1][j]) score += 5;
-	else score += -4;
-	if (consGaps) {
-	  score += (-10 + (-1) * consGaps);
-	  totalConsGaps += consGaps;
-	  consGaps = 0;
-	}
-	if (seqGaps) {
-	  score+= (-10 + (-1) * seqGaps);
-	  seqGaps = 0;
-	}
-	++runningEnd;
-	savedScore = score;
-	consEnd = runningEnd;
-      }
-    }
-    alignLength = (consEnd - consStart) + totalConsGaps;
-    return savedScore;
-  }
-
-  template<typename TAlign>
-  inline int
-  _coreAlignScore(TAlign const& align) {
+  template<typename TAlign, typename TQualities>
+  inline uint32_t
+  _getAlignmentQual(TAlign const& align, TQualities const& qual) {
     typedef typename TAlign::index TAIndex;
-    TAIndex consStart, consEnd, alignLength;
-    return _coreAlignScore(align, consStart, consEnd, alignLength);
+    uint32_t baseQualSum = 0;
+    uint32_t seqPtr = 0;
+    uint32_t alignedBases = 0;
+    for(TAIndex j = 0; j < (TAIndex) align.shape()[1]; ++j) {
+      if (align[1][j] != '-') {
+	if (align[0][j] != '-') {
+	  ++alignedBases;
+	  baseQualSum += qual[seqPtr];
+	}
+	++seqPtr;
+      }
+    }
+    return (baseQualSum / alignedBases);
   }
 
   template<typename TConfig, typename TSampleLibrary, typename TSVs, typename TCountMap, typename TTag>
@@ -127,7 +67,7 @@ namespace torali {
     typedef typename TCountMap::key_type TSampleSVPair;
     typedef typename TCountMap::mapped_type TCountPair;
     typedef typename TCountPair::first_type TQualVector;
-    double qualityThres = (double) (c.flankQuality) / 100.0;
+    typedef std::vector<uint8_t> TQuality;
 
     // Open file handles
     typedef std::vector<std::string> TRefNames;
@@ -211,15 +151,18 @@ namespace torali {
 	      AlignConfig<true, false> semiglobal;
 	      DnaScore<int> sc(5, -4, -5 * c.minimumFlankSize, 0);
 	      gotoh(itSV->consensus, svRefStr, alignFwd, semiglobal, sc);
-	      TAIndex cStart, cEnd, rStart, rEnd;
-	      _findSplit(alignFwd, cStart, cEnd, rStart, rEnd);
-	      
+	      TAIndex cStart, cEnd, rStart, rEnd, gS, gE;
+	      _findSplit(alignFwd, cStart, cEnd, rStart, rEnd, gS, gE, svType);
+	      int32_t homLeft = 0;
+	      int32_t homRight = 0;
+	      _findHomology(alignFwd, gS, gE, homLeft, homRight);
+
 	      // Debug consensus to reference alignment
 	      //for(TAIndex i = 0; i<alignFwd.shape()[0]; ++i) {
 	      //for(TAIndex j = 0; j<alignFwd.shape()[1]; ++j) std::cerr << alignFwd[i][j];
 	      //std::cerr << std::endl;
 	      //}
-	      //std::cerr << cStart << ',' << cEnd << ':' << rStart << ',' << rEnd << std::endl;
+	      //std::cerr << "Consensus-to-reference: " << homLeft << ',' << homRight << std::endl;
 
 	      // Iterate all samples
 #pragma omp parallel for default(shared)
@@ -229,17 +172,33 @@ namespace torali {
 		TQualVector refQual;
 		unsigned int refAlignedReadCount = 0;
 
+		
 		for (unsigned int bpPoint = 0; bpPoint<2; ++bpPoint) {
 		  int32_t regionChr = itSV->chr;
-		  int regionStart = itSV->svStartBeg;
-		  int regionEnd = std::min((uint32_t) (itSV->svStart + itSV->svStartEnd)/2, reflen[itSV->chr]);
-		  int csBp = cStart;
+		  int regionStart = std::max(0, itSV->svStart - c.minimumFlankSize);
+		  int regionEnd = std::min((uint32_t) (itSV->svStart + c.minimumFlankSize), reflen[itSV->chr]);
+		  int32_t cutConsStart = cStart - homLeft - c.minimumFlankSize;
+		  int32_t cutConsEnd = cStart + homRight + c.minimumFlankSize;
+		  int32_t cutRefStart = rStart - homLeft - c.minimumFlankSize;
+		  int32_t cutRefEnd = rStart + homRight + c.minimumFlankSize;
 		  if (bpPoint) {
-		    csBp = cEnd;
 		    regionChr = itSV->chr2;
-		    regionStart = (itSV->svEndBeg + itSV->svEnd)/2;
-		    regionEnd = std::min((uint32_t) itSV->svEndEnd, reflen[itSV->chr2]);
+		    regionStart = std::max(0, itSV->svEnd - c.minimumFlankSize);
+		    regionEnd = std::min((uint32_t) (itSV->svEnd + c.minimumFlankSize), reflen[itSV->chr2]);
+		    cutConsStart = cEnd - homLeft - c.minimumFlankSize;
+		    cutConsEnd = cEnd + homRight + c.minimumFlankSize;
+		    cutRefStart = rStart - homLeft - c.minimumFlankSize;
+		    cutRefEnd = rStart + homRight + c.minimumFlankSize;
+		    if ((homLeft + c.minimumFlankSize > cEnd) || (itSV->consensus.size() - cEnd < homRight + c.minimumFlankSize)) continue;
+		  } else {
+		    if ((homLeft + c.minimumFlankSize > cStart) || (itSV->consensus.size() - cStart < homRight + c.minimumFlankSize)) continue;
 		  }
+		  std::string consProbe = itSV->consensus.substr(cutConsStart, (cutConsEnd - cutConsStart));
+		  std::string refProbe = svRefStr.substr(cutRefStart, (cutRefEnd - cutRefStart));
+
+		  //std::cerr << "Junction probes" << std::endl;
+		  //std::cerr << bpPoint << "," << consProbe << "," << refProbe << std::endl;
+
 
 		  hts_itr_t* iter = sam_itr_queryi(idx[file_c], regionChr, regionStart, regionEnd);
 		  bam1_t* rec = bam_init1();
@@ -253,19 +212,11 @@ namespace torali {
 		    uint32_t* cigar = bam_get_cigar(rec);
 		    for (std::size_t i = 0; i < rec->core.n_cigar; ++i)
 		      if (bam_cigar_op(cigar[i]) == BAM_CSOFT_CLIP) hasSoftClip = true;
-		    if (hasSoftClip) {
-		      int clipSize = 0;
-		      int splitPoint = 0;
-		      bool leadingSoftClip = false;
-		      if (!_validSoftClip(rec, clipSize, splitPoint, leadingSoftClip, c.minMapQual)) continue;
-		      if ((splitPoint < regionStart) || (splitPoint > regionEnd)) continue;
-		      if (!_validSCOrientation(bpPoint, leadingSoftClip, itSV->ct, svType)) continue;
-		    } else {
-		      // Check position
+		    if (!hasSoftClip) {
 		      if (bpPoint) {
-			if ((rec->core.pos + c.minimumFlankSize > itSV->svEnd) || (rec->core.pos + rec->core.l_qseq < itSV->svEnd + c.minimumFlankSize)) continue;
+			if ((rec->core.pos + c.minimumFlankSize + homLeft > itSV->svEnd) || (rec->core.pos + rec->core.l_qseq < itSV->svEnd + c.minimumFlankSize + homRight)) continue;
 		      } else {
-			if ((rec->core.pos + c.minimumFlankSize > itSV->svStart) || (rec->core.pos + rec->core.l_qseq < itSV->svStart + c.minimumFlankSize)) continue;
+			if ((rec->core.pos + c.minimumFlankSize + homLeft > itSV->svStart) || (rec->core.pos + rec->core.l_qseq < itSV->svStart + c.minimumFlankSize + homRight)) continue;
 		      }
 		    }
 
@@ -276,53 +227,50 @@ namespace torali {
 		    for (int i = 0; i < rec->core.l_qseq; ++i) sequence[i] = "=ACMGRSVTWYHKDBN"[bam_seqi(seqptr, i)];
 		    _adjustOrientation(sequence, bpPoint, itSV->ct, svType);
 
+		    double qualityThres = (double) (c.flankQuality) / 100.0;
 		    // Compute alignment to alternative haplotype
-		    AlignConfig<true, true> endFreeAlign;
-		    TAlign align;
-		    gotoh(sequence, itSV->consensus, align, endFreeAlign);
-		    TAIndex consStart = 0;
-		    TAIndex consEnd = 0;
-		    TAIndex consAlignLength = 0;
-		    int altScore = _coreAlignScore(align, consStart, consEnd, consAlignLength);
-		    int scoreThresholdAlt = (int) (qualityThres * consAlignLength * 5 + (1.0 - qualityThres) * consAlignLength * (-4));
+		    TAlign alignAlt;
+		    DnaScore<int> simple(5, -4, -4, -4);
+		    int32_t scoreA = gotoh(consProbe, sequence, alignAlt, semiglobal, simple);
+		    int32_t scoreAltThreshold = (int32_t) (qualityThres * consProbe.size() * 5 + (1.0 - qualityThres) * consProbe.size() * (-4));
+		    double scoreAlt = (double) scoreA / (double) scoreAltThreshold;
 
-		    // Debug alignment ALT
-		    //std::cerr << "Alt: " << altScore << std::endl;
-		    //for(TAIndex i = 0; i< (TAIndex) align.shape()[0]; ++i) {
-		    //for(TAIndex j = 0; j< (TAIndex) align.shape()[1]; ++j) std::cerr << align[i][j];
-		    //std::cerr << std::endl;
-		    //}
-		    
 		    // Compute alignment to reference haplotype
-		    gotoh(sequence, svRefStr, align, endFreeAlign);
-		    TAIndex rCoreStart = 0;
-		    TAIndex rCoreEnd = 0;
-		    TAIndex rAlignLength = 0;
-		    int refScore = _coreAlignScore(align, rCoreStart, rCoreEnd, rAlignLength);
-		    int scoreThresholdRef = (int) (qualityThres * rAlignLength * 5 + (1.0 - qualityThres) * rAlignLength * (-4));
-
-		    // Debug alignment REF
-		    //std::cerr << "Ref: " << refScore << std::endl;
-		    //for(TAIndex i = 0; i< (TAIndex) align.shape()[0]; ++i) {
-		    //for(TAIndex j = 0; j< (TAIndex) align.shape()[1]; ++j) std::cerr << align[i][j];
-		    //std::cerr << std::endl;
-		    //}
-			  
+		    TAlign alignRef;
+		    int32_t scoreR = gotoh(refProbe, sequence, alignRef, semiglobal, simple);
+		    int32_t scoreRefThreshold = (int32_t) (qualityThres * refProbe.size() * 5 + (1.0 - qualityThres) * refProbe.size() * (-4));
+		    double scoreRef = (double) scoreR / (double) scoreRefThreshold;
+		    
 		    // Any confident alignment?
-		    if ((refScore > scoreThresholdRef) || (altScore > scoreThresholdAlt)) {
-		      if ( (double) refScore / (double) scoreThresholdRef > (double) altScore / (double) scoreThresholdAlt) {
-			if (rCoreEnd - rCoreStart < 35) continue;
-			if (!_overlapsSVBreakpoint(bpPoint, rCoreStart + c.minimumFlankSize, rCoreEnd - c.minimumFlankSize, rStart, rEnd, svType)) continue;
-			
-			//std::cerr << sampleName << ',' << altScore << ',' << refScore << ':' << scoreThresholdAlt << ',' << scoreThresholdRef << std::endl;
+		    if ((scoreRef > 1) || (scoreAlt > 1)) {
+		      // Debug alignment to REF and ALT
+		      //std::cerr << "Alt:\t" << scoreAlt << "\tRef:\t" << scoreRef << std::endl;
+		      //for(TAIndex i = 0; i< (TAIndex) alignAlt.shape()[0]; ++i) {
+		      //for(TAIndex j = 0; j< (TAIndex) alignAlt.shape()[1]; ++j) std::cerr << alignAlt[i][j];
+		      //std::cerr << std::endl;
+		      //}
+		      //for(TAIndex i = 0; i< (TAIndex) alignRef.shape()[0]; ++i) {
+		      //for(TAIndex j = 0; j< (TAIndex) alignRef.shape()[1]; ++j) std::cerr << alignRef[i][j];
+		      //std::cerr << std::endl;
+		      //}
+		      
+		      if (scoreRef > scoreAlt) {
 			// Take only every second read because we sample both breakpoints
-			if (++refAlignedReadCount % 2) refQual.push_back(rec->core.qual);
+			if (++refAlignedReadCount % 2) {
+			  TQuality quality;
+			  quality.resize(rec->core.l_qseq);
+			  uint8_t* qualptr = bam_get_qual(rec);
+			  for (int i = 0; i < rec->core.l_qseq; ++i) quality[i] = qualptr[i];
+			  uint32_t rq = _getAlignmentQual(alignRef, quality);
+			  if (rq >= c.minGenoQual) refQual.push_back((uint8_t) std::min(rq, (uint32_t) rec->core.qual));
+			}
 		      } else {
-			if (consEnd - consStart < 35) continue;
-			if ( ( (consStart + c.minimumFlankSize) > csBp) || ((consEnd - c.minimumFlankSize) < csBp) ) continue;
-
-			//std::cerr << sampleName << ',' << altScore << ',' << refScore << ':' << scoreThresholdAlt << ',' << scoreThresholdRef << std::endl;
-			altQual.push_back(rec->core.qual);
+			TQuality quality;
+			quality.resize(rec->core.l_qseq);
+			uint8_t* qualptr = bam_get_qual(rec);
+			for (int i = 0; i < rec->core.l_qseq; ++i) quality[i] = qualptr[i];
+			uint32_t aq = _getAlignmentQual(alignAlt, quality);
+			if (aq >= c.minGenoQual) altQual.push_back((uint8_t) std::min(aq, (uint32_t) rec->core.qual));
 		      }
 		    }
 		  }

@@ -1472,48 +1472,57 @@ inline int run(Config const& c, TSVType svType) {
 			uint8_t* seqptr = bam_get_seq(rec);
 			for (int i = 0; i < rec->core.l_qseq; ++i) sequence[i] = "=ACMGRSVTWYHKDBN"[bam_seqi(seqptr, i)];
 			
-			// Adjust orientation if necessary
-			_adjustOrientation(sequence, bpPoint, _getCT(svType), svType);
+			// Check sequence
+			size_t nCount = std::count(sequence.begin(), sequence.end(), 'N');
+			if ((nCount * 100) / sequence.size() == 0) {
+			  std::string cstr = compressStr(sequence);
+			  double seqComplexity = (double) cstr.size() / (double) sequence.size();
+			  if (seqComplexity >= 0.45) {
+			    
+			    // Adjust orientation if necessary
+			    _adjustOrientation(sequence, bpPoint, _getCT(svType), svType);
 			
-			// Align to local reference
-			int32_t localrefStart = 0;
-			int32_t localrefEnd = 0;
-			int32_t seqLeftOver = 0;
-			if (bpPoint) {
-			  seqLeftOver = sequence.size() - clipSize;
-			  localrefStart = std::max(0, (int) rec->core.pos - (int) (c.indelsize + clipSize));
-			  localrefEnd = rec->core.pos + seqLeftOver + 25;
-			} else {
-			  seqLeftOver = sequence.size() - (splitPoint - rec->core.pos);
-			  localrefStart = rec->core.pos;
-			  localrefEnd = splitPoint + c.indelsize + seqLeftOver;
-			}
-			std::string localref = boost::to_upper_copy(std::string(seq->seq.s + localrefStart, seq->seq.s + localrefEnd));
-			typedef boost::multi_array<char, 2> TAlign;
-			typedef typename TAlign::index TAIndex;
-			TAlign alignFwd;
-			AlignConfig<true, false> semiglobal;
-			DnaScore<int> sc(5, -4, -5 * c.minimumFlankSize, 0);
-			int altScore = gotoh(sequence, localref, alignFwd, semiglobal, sc);
-			altScore += 5 * c.minimumFlankSize;
+			    // Align to local reference
+			    int32_t localrefStart = 0;
+			    int32_t localrefEnd = 0;
+			    int32_t seqLeftOver = 0;
+			    if (bpPoint) {
+			      seqLeftOver = sequence.size() - clipSize;
+			      localrefStart = std::max(0, (int) rec->core.pos - (int) (c.indelsize + clipSize));
+			      localrefEnd = rec->core.pos + seqLeftOver + 25;
+			    } else {
+			      seqLeftOver = sequence.size() - (splitPoint - rec->core.pos);
+			      localrefStart = rec->core.pos;
+			      localrefEnd = splitPoint + c.indelsize + seqLeftOver;
+			    }
+			    std::string localref = boost::to_upper_copy(std::string(seq->seq.s + localrefStart, seq->seq.s + localrefEnd));
+			    typedef boost::multi_array<char, 2> TAlign;
+			    typedef typename TAlign::index TAIndex;
+			    TAlign alignFwd;
+			    AlignConfig<true, false> semiglobal;
+			    DnaScore<int> sc(5, -4, -5 * c.minimumFlankSize, 0);
+			    int altScore = gotoh(sequence, localref, alignFwd, semiglobal, sc);
+			    altScore += 5 * c.minimumFlankSize;
+			    
+			    // Candidate small indel?
+			    TAIndex cStart, cEnd, rStart, rEnd;
+			    if (_findSplit(alignFwd, cStart, cEnd, rStart, rEnd, svType)) {
+			      if (_validSRAlignment(cStart, cEnd, rStart, rEnd, svType)) {
+				int scoreThresholdAlt = (int) (qualityThres * (sequence.size() - (cEnd - cStart - 1)) * 5 + (1.0 - qualityThres) * (sequence.size() - (cEnd - cStart - 1)) * (-4));			    
+				if (altScore > scoreThresholdAlt) {
 
-			// Candidate small indel?
-			TAIndex cStart, cEnd, rStart, rEnd;
-			if (_findSplit(alignFwd, cStart, cEnd, rStart, rEnd)) {
-			  if (_validSRAlignment(cStart, cEnd, rStart, rEnd, svType)) {
-			    int scoreThresholdAlt = (int) (qualityThres * (sequence.size() - (cEnd - cStart - 1)) * 5 + (1.0 - qualityThres) * (sequence.size() - (cEnd - cStart - 1)) * (-4));			    
-			    if (altScore > scoreThresholdAlt) {
-
-			      // Debug consensus to reference alignment
-			      //for(TAIndex i = 0; i<alignFwd.shape()[0]; ++i) {
-			      //for(TAIndex j = 0; j<alignFwd.shape()[1]; ++j) std::cerr << alignFwd[i][j];
-			      //std::cerr << std::endl;
-			      //}
-			      //std::cerr << bpPoint << ',' << cStart << ',' << cEnd << ',' << rStart << ',' << rEnd << std::endl;
-
+				  // Debug consensus to reference alignment
+				  //for(TAIndex i = 0; i<alignFwd.shape()[0]; ++i) {
+				  //for(TAIndex j = 0; j<alignFwd.shape()[1]; ++j) std::cerr << alignFwd[i][j];
+				  //std::cerr << std::endl;
+				  //}
+				  //std::cerr << bpPoint << ',' << cStart << ',' << cEnd << ',' << rStart << ',' << rEnd << std::endl;
+				  
 #pragma omp critical
-			      {
-				splitRecord.push_back(SplitAlignRecord(localrefStart + rStart - cStart, localrefStart + rStart, localrefStart + rEnd, localrefStart + rEnd + seqLeftOver + 25, rec->core.qual));
+				  {
+				    splitRecord.push_back(SplitAlignRecord(localrefStart + rStart - cStart, localrefStart + rStart, localrefStart + rEnd, localrefStart + rEnd + seqLeftOver + 25, rec->core.qual));
+				  }
+				}
 			      }
 			    }
 			  }
