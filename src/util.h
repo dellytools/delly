@@ -26,7 +26,11 @@ Contact: Tobias Rausch (rausch@embl.de)
 
 #include <boost/unordered_map.hpp>
 #include <boost/algorithm/string.hpp>
+#include <boost/iostreams/filtering_streambuf.hpp>
+#include <boost/iostreams/copy.hpp>
+#include <boost/iostreams/filter/gzip.hpp>
 #include <htslib/sam.h>
+#include <sstream>
 #include <math.h>
 #include "tags.h"
 
@@ -126,6 +130,28 @@ namespace torali
       return boost::lexical_cast<unsigned int>(id);
     }
 
+
+  inline std::string
+  compressStr(std::string const& data) {
+    std::stringstream compressed;
+    std::stringstream origin(data);
+    boost::iostreams::filtering_streambuf<boost::iostreams::input> out;
+    out.push(boost::iostreams::gzip_compressor(boost::iostreams::gzip_params(boost::iostreams::gzip::best_speed)));
+    out.push(origin);
+    boost::iostreams::copy(out, compressed);
+    return compressed.str();
+  }
+
+  inline std::string
+  decompressStr(std::string const& data) {
+    std::stringstream compressed(data);
+    std::stringstream decompressed;
+    boost::iostreams::filtering_streambuf<boost::iostreams::input> out;
+    out.push(boost::iostreams::gzip_decompressor());
+    out.push(compressed);
+    boost::iostreams::copy(out, decompressed);
+    return decompressed.str();
+  }
 
   template<typename TIterator, typename TValue>
   inline
