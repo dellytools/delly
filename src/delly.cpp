@@ -1339,7 +1339,15 @@ inline int run(Config const& c, TSVType svType) {
   idx.resize(c.files.size());
   for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
     samfile[file_c] = sam_open(c.files[file_c].string().c_str(), "r");
+    if (samfile[file_c] == NULL) {
+      std::cerr << "Fail to open file " << c.files[file_c].string() << std::endl;
+      return -1;
+    }
     idx[file_c] = sam_index_load(samfile[file_c], c.files[file_c].string().c_str());
+    if (idx[file_c] == NULL) {
+      std::cerr << "Fail to open index for " << c.files[file_c].string() << std::endl;
+      return -1;
+    }
     if (!file_c) {
       bam_hdr_t* hdr = sam_hdr_read(samfile[file_c]);
       for (int i = 0; i<hdr->n_targets; ++i) {

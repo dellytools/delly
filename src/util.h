@@ -223,6 +223,10 @@ namespace torali
     samfile.resize(files.size());
     for(unsigned int file_c = 0; file_c < files.size(); ++file_c) {
       samfile[file_c] = sam_open(files[file_c].string().c_str(), "r");
+      if (samfile[file_c] == NULL) {
+	std::cerr << "Fail to open file " << files[file_c].string() << std::endl;
+	return;
+      }
       std::string sampleName(files[file_c].stem().string());
       sampleLib.insert(std::make_pair(sampleName, TLibraryMap()));
     }
