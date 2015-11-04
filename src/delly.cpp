@@ -716,12 +716,12 @@ findPutativeSplitReads(TConfig const& c, std::vector<TStructuralVariantRecord>& 
 	    if (mvAvg > 0) 
 	      for(typename TOffsetSplit::const_iterator itOS = osp0.begin(); itOS != osp0.end(); ++itOS) 
 		if ((itOS->first >= lBound) && (itOS->first < uBound)) 
-		  if (splitReadSet.size() < 1000) splitReadSet.insert(itOS->second); // Limit to at most 1000 split reads
+		  if (splitReadSet.size() < 100) splitReadSet.insert(itOS->second); // Limit to at most 100 split reads
 	    _movingAverage(spp1, 5, mvAvg, lBound, uBound);
 	    if (mvAvg > 0) {
 	      for(typename TOffsetSplit::const_iterator itOS = osp1.begin(); itOS != osp1.end(); ++itOS) 
 		if ((itOS->first >= lBound) && (itOS->first < uBound)) 
-		  if (splitReadSet.size() < 1000) splitReadSet.insert(itOS->second); // Limit to at most 1000 split reads
+		  if (splitReadSet.size() < 100) splitReadSet.insert(itOS->second); // Limit to at most 100 split reads
 	    }
 	    totalSplitReadsAligned += splitReadSet.size();
 
