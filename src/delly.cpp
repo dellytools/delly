@@ -1563,7 +1563,7 @@ inline int run(Config const& c, TSVType svType) {
 		if (itBlackMask!=exclIntervals.begin()) --itBlackMask;
 		if ((itBlackMask->tid==rec->core.mtid) && (itBlackMask->start <= rec->core.mpos) && (rec->core.mpos<=itBlackMask->end)) continue;
 	      }
-	  
+
 	      // Is this a discordantly mapped paired-end?
 	      std::string rG = "DefaultLib";
 	      uint8_t *rgptr = bam_aux_get(rec, "RG");
@@ -1572,11 +1572,13 @@ inline int run(Config const& c, TSVType svType) {
 		rG = std::string(rg);
 	      }
 	      TLibraryMap::iterator libIt=sampleIt->second.find(rG);
-	      if (libIt==sampleIt->second.end()) std::cerr << "Missing read group: " << rG << std::endl;
-	      if (libIt->second.median == 0) continue; // Single-end library
-	      if (_acceptedInsertSize(libIt->second, abs(rec->core.isize), svType)) continue;  // Normal paired-end (for deletions/insertions only)
-	      if (_acceptedOrientation(libIt->second.defaultOrient, getStrandIndependentOrientation(rec->core), svType)) continue;  // Orientation disagrees with SV type
-	  
+	      if (libIt==sampleIt->second.end()) {
+		std::cerr << "Missing read group: " << rG << std::endl;
+		return -1;
+	      }
+	      if (_acceptedInsertSize(libIt->second, abs(rec->core.isize), svType)) continue; 
+	      if (_acceptedOrientation(libIt->second.defaultOrient, getStrandIndependentOrientation(rec->core), svType)) continue;
+
 	      // Get or store the mapping quality for the partner
 	      if (_firstPairObs(rec->core.tid, rec->core.mtid, rec->core.pos, rec->core.mpos, svType)) {
 		uint8_t r2Qual = rec->core.qual;

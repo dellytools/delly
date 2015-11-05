@@ -314,6 +314,7 @@ namespace torali
     }
     else if (sv.ct == 1) {
       TAIndex annealed = sv.svStartEnd - sv.svStartBeg;
+      if ((rStart >= annealed) || (rEnd < annealed)) return false;
       finalGapStart = sv.svStartBeg + (annealed - rStart) + 2;
       finalGapEnd = sv.svEndBeg + (rEnd - annealed);
     }

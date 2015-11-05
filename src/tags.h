@@ -397,31 +397,38 @@ namespace torali {
 
   // Deletions
   template<typename TISize, typename TLibInfo>
-    inline bool
-    _acceptedInsertSize(TLibInfo& libInfo, TISize const iSize, SVType<DeletionTag>) {
-    return (libInfo.maxISizeCutoff > iSize);
+  inline bool
+  _acceptedInsertSize(TLibInfo& libInfo, TISize const iSize, SVType<DeletionTag>) {
+    return ((libInfo.maxISizeCutoff > iSize) || (libInfo.median == 0));
   }
 
   // Insertions
   template<typename TISize, typename TLibInfo>
-    inline bool
-    _acceptedInsertSize(TLibInfo& libInfo, TISize const iSize, SVType<InsertionTag>) {
-    return (libInfo.minISizeCutoff <= iSize);
+  inline bool
+  _acceptedInsertSize(TLibInfo& libInfo, TISize const iSize, SVType<InsertionTag>) {
+    return ((libInfo.minISizeCutoff <= iSize) || (libInfo.median == 0));
   }
 
   // Duplications
   template<typename TISize, typename TLibInfo>
-    inline bool
-    _acceptedInsertSize(TLibInfo& libInfo, TISize const iSize, SVType<DuplicationTag>) {
+  inline bool
+  _acceptedInsertSize(TLibInfo& libInfo, TISize const iSize, SVType<DuplicationTag>) {
     // Exclude the chimeras in mate-pair libraries
-    return !((libInfo.median<1000) || ((libInfo.median>=1000) && (iSize >=1000)));
+    return !(((libInfo.median>0) && (libInfo.median<1000)) || ((libInfo.median>=1000) && (iSize >=1000)));
   }
 
-  // Other SV Types
-  template<typename TISize, typename TLibInfo, typename TTag>
-    inline bool
-    _acceptedInsertSize(TLibInfo&, TISize const, SVType<TTag>) {
-    return false;
+  // Inversions
+  template<typename TISize, typename TLibInfo>
+  inline bool
+  _acceptedInsertSize(TLibInfo& libInfo, TISize const, SVType<InversionTag>) {
+    return (libInfo.median == 0);
+  }
+
+  // Translocations
+  template<typename TISize, typename TLibInfo>
+  inline bool
+  _acceptedInsertSize(TLibInfo& libInfo, TISize const, SVType<TranslocationTag>) {
+    return (libInfo.median == 0);
   }
 
   // Deletions
@@ -456,10 +463,10 @@ namespace torali {
     return (((def<=1) && (lib!=2) && (lib!=3)) || ((def>=2) && (lib!=0) && (lib!=1)));
   }
 
-  // Other SV Types
-  template<typename TOrientation, typename TTag>
-    inline bool
-    _acceptedOrientation(TOrientation const, TOrientation const, SVType<TTag>) {
+  // Translocation
+  template<typename TOrientation>
+  inline bool
+  _acceptedOrientation(TOrientation const, TOrientation const, SVType<TranslocationTag>) {
     return false;
   }
 
