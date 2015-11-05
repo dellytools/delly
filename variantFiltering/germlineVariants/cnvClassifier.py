@@ -49,9 +49,11 @@ if args.cnvVCF:
                             refpass = True
                         gqRef.append(call['GQ'])
                         if precise:
-                            ratioRef.append(float(call['RV'])/float(call['RR'] + call['RV']))
+                            if call['RR'] + call['RV'] > 0:
+                                ratioRef.append(float(call['RV'])/float(call['RR'] + call['RV']))
                         else:
-                            ratioRef.append(float(call['DV'])/float(call['DR'] + call['DV']))
+                            if call['DR'] + call['DV'] > 0:
+                                ratioRef.append(float(call['DV'])/float(call['DR'] + call['DV']))
                         if call['RC'] > 0:
                             rc.append(call['RC'])
                             if call['RCL'] + call['RCR'] > 0:
@@ -61,11 +63,13 @@ if args.cnvVCF:
                             altpass = True
                         gqAlt.append(call['GQ'])
                         if precise:
-                            ratioAlt.append(float(call['RV'])/float(call['RR'] + call['RV']))
-                            support += call['RV']
+                            if call['RR'] + call['RV'] > 0:
+                                ratioAlt.append(float(call['RV'])/float(call['RR'] + call['RV']))
+                                support += call['RV']
                         else:
-                            ratioAlt.append(float(call['DV'])/float(call['DR'] + call['DV']))
-                            support += call['DV']
+                            if call['DR'] + call['DV'] > 0:
+                                ratioAlt.append(float(call['DV'])/float(call['DR'] + call['DV']))
+                                support += call['DV']
                         if (sum(hap) == 1) and (call['RCL'] + call['RCR'] > 0):
                             hetRC.append(float(call['RC'])/float(call['RCL'] + call['RCR']))
             callRate = float(len(gqRef) + len(gqAlt)) / float(len(record.samples))
