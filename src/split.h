@@ -450,7 +450,7 @@ namespace torali
       }
       mismatch = 0;
       offset = 0;
-      for(TAIndex i = 0; i < (align.shape()[1] - gE - 1); ++i, ++homRight) {
+      for(TAIndex i = 0; i < (TAIndex) (align.shape()[1] - gE - 1); ++i, ++homRight) {
 	if (align[0][gS+i] != align[1][gE+i+1]) ++mismatch;
 	if (mismatch > mmThres) {
 	  // Try 1bp insertion
@@ -482,7 +482,7 @@ namespace torali
       }
       mismatch = 0;
       offset = 0;
-      for(TAIndex i = 0; i < (align.shape()[1] - gE - 1); ++i, ++homRight) {
+      for(TAIndex i = 0; i < (TAIndex) (align.shape()[1] - gE - 1); ++i, ++homRight) {
 	if (align[1][gS+i] != align[0][gE+i+1]) ++mismatch;
 	if (mismatch > mmThres) {
 	  // Try 1bp deletion
