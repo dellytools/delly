@@ -189,9 +189,9 @@ namespace torali {
 		    cutConsEnd = cEnd + homRight + c.minimumFlankSize;
 		    cutRefStart = rStart - homLeft - c.minimumFlankSize;
 		    cutRefEnd = rStart + homRight + c.minimumFlankSize;
-		    if ((homLeft + c.minimumFlankSize > cEnd) || (itSV->consensus.size() - cEnd < homRight + c.minimumFlankSize)) continue;
+		    if ((homLeft + c.minimumFlankSize > (int32_t) cEnd) || ( (int32_t) (itSV->consensus.size() - cEnd) < homRight + c.minimumFlankSize)) continue;
 		  } else {
-		    if ((homLeft + c.minimumFlankSize > cStart) || (itSV->consensus.size() - cStart < homRight + c.minimumFlankSize)) continue;
+		    if ((homLeft + c.minimumFlankSize > (int32_t) cStart) || ( (int32_t) (itSV->consensus.size() - cStart) < homRight + c.minimumFlankSize)) continue;
 		  }
 		  std::string consProbe = itSV->consensus.substr(cutConsStart, (cutConsEnd - cutConsStart));
 		  std::string refProbe = svRefStr.substr(cutRefStart, (cutRefEnd - cutRefStart));
