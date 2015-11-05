@@ -69,10 +69,10 @@ namespace torali
     h[0][0] = -sc.inf;
 
     // Recursion
-    for(std::size_t col = 1; col <= n; ++col) {
-      for(std::size_t row = 1; row <= m; ++row) {
+    for(std::size_t row = 1; row <= m; ++row) {
+      for(std::size_t col = 1; col <= n; ++col) {
 	h[row][col] = std::max(s[row][col-1] + _horizontalGap(ac, row, m, sc.go + sc.ge), h[row][col-1] + _horizontalGap(ac, row, m, sc.ge));
-	v[row][col] = std::max( s[row-1][col] + _verticalGap(ac, col, n, sc.go + sc.ge), v[row-1][col] + _verticalGap(ac, col, n, sc.ge));
+	v[row][col] = std::max(s[row-1][col] + _verticalGap(ac, col, n, sc.go + sc.ge), v[row-1][col] + _verticalGap(ac, col, n, sc.ge));
 	s[row][col] = std::max(std::max(s[row-1][col-1] + _score(a1, a2, p1, p2, row-1, col-1, sc), h[row][col]), v[row][col]);
       }
     }
