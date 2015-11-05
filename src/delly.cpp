@@ -1572,10 +1572,7 @@ inline int run(Config const& c, TSVType svType) {
 		rG = std::string(rg);
 	      }
 	      TLibraryMap::iterator libIt=sampleIt->second.find(rG);
-	      if (libIt==sampleIt->second.end()) {
-		std::cerr << "Missing read group: " << rG << std::endl;
-		return -1;
-	      }
+	      if (libIt==sampleIt->second.end()) std::cerr << "Missing read group: " << rG << std::endl;
 	      if (_acceptedInsertSize(libIt->second, abs(rec->core.isize), svType)) continue; 
 	      if (_acceptedOrientation(libIt->second.defaultOrient, getStrandIndependentOrientation(rec->core), svType)) continue;
 
