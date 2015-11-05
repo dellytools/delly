@@ -24,6 +24,8 @@ Contact: Tobias Rausch (rausch@embl.de)
 #ifndef NEEDLE_H
 #define NEEDLE_H
 
+#define BOOST_DISABLE_ASSERTS
+#include <boost/multi_array.hpp>
 #include <iostream>
 #include "align.h"
 

@@ -21,8 +21,12 @@ Contact: Tobias Rausch (rausch@embl.de)
 ============================================================================
 */
 
+#define _SECURE_SCL 0
+#define _SCL_SECURE_NO_WARNINGS
 #include <iostream>
 #include <fstream>
+
+#define BOOST_DISABLE_ASSERTS
 #include <boost/graph/adjacency_list.hpp>
 #include <boost/graph/graphviz.hpp>
 #include <boost/graph/connected_components.hpp>

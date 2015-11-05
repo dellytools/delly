@@ -31,7 +31,7 @@ else ifeq (${DEBUG}, 2)
 	CXXFLAGS += -g -O0 -fno-inline -DPROFILE
 	LDFLAGS += -lprofiler -ltcmalloc
 else
-	CXXFLAGS += -O3 -march=native -mtune=native --fast-math -DNDEBUG
+	CXXFLAGS += -O3 -march=native -mtune=native -funroll-loops -std=c++11 --fast-math -DNDEBUG
 endif
 
 
