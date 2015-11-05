@@ -1258,7 +1258,7 @@ _processSRCluster(TIterator itInit, TIterator itEnd, int32_t refIndex, int32_t b
       if ((!itSV->precise) && ((std::abs(itSV->svStart - svStart) + std::abs(itSV->svEnd - svEnd)) < searchWindow) && (itSV->chr == refIndex) && (itSV->chr2 == refIndex)) {
 	if ((itSV->svEnd < svStart) || (svEnd < itSV->svStart)) continue;
 	// Augment existing SV call
-	itSV->svStartBeg = svStartBeg;
+	itSV->svStartBeg = std::max(svStartBeg, 0);
 	itSV->svStart = svStart;
 	itSV->svStartEnd = std::min((uint32_t) svStart + bpWindowLen, reflen[itSV->chr]);
 	itSV->svEndBeg = std::max((int32_t) svEnd - bpWindowLen, 0);
@@ -1280,7 +1280,7 @@ _processSRCluster(TIterator itInit, TIterator itEnd, int32_t refIndex, int32_t b
       StructuralVariantRecord svRec;
       svRec.chr = refIndex;
       svRec.chr2 = refIndex;
-      svRec.svStartBeg = svStartBeg;
+      svRec.svStartBeg = std::max(svStartBeg, 0);
       svRec.svStart = svStart;
       svRec.svStartEnd = std::min((uint32_t) svStart + bpWindowLen, reflen[svRec.chr]);
       svRec.svEndBeg = std::max((int32_t) svEnd - bpWindowLen, 0);
