@@ -531,7 +531,7 @@ namespace torali
     _findHomology(alignFwd, gS, gE, homLeft, homRight);
 
     // Check flanking alignment length
-    if ((homLeft + c.minimumFlankSize > cStart) || (sv.consensus.size() - cEnd < homRight + c.minimumFlankSize)) return false;
+    if ((homLeft + c.minimumFlankSize > (int32_t) cStart) || ( (int32_t) (sv.consensus.size() - cEnd) < homRight + c.minimumFlankSize)) return false;
 
     // Check quality
     double quality = (double) ((score < 0) ? 0 : score ) / (double) ( (sv.consensus.size() - (cEnd - cStart - 1)) * 5);
