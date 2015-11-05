@@ -435,7 +435,7 @@ namespace torali
       // Insertion
       int32_t mismatch = 0;
       int32_t offset = 0;
-      for(std::size_t i = 0; i < gS; ++i, ++homLeft) {
+      for(TAIndex i = 0; i < gS; ++i, ++homLeft) {
 	if (align[1][gS-i-1] != align[0][gE-i-offset]) ++mismatch;
 	if (mismatch > mmThres) {
 	  // Try 1bp insertion
@@ -450,7 +450,7 @@ namespace torali
       }
       mismatch = 0;
       offset = 0;
-      for(std::size_t i = 0; i < (align.shape()[1] - gE - 1); ++i, ++homRight) {
+      for(TAIndex i = 0; i < (align.shape()[1] - gE - 1); ++i, ++homRight) {
 	if (align[0][gS+i] != align[1][gE+i+1]) ++mismatch;
 	if (mismatch > mmThres) {
 	  // Try 1bp insertion
@@ -467,7 +467,7 @@ namespace torali
       // Deletion
       int32_t mismatch = 0;
       int32_t offset = 0;
-      for(std::size_t i = 0; i < gS; ++i, ++homLeft) {
+      for(TAIndex i = 0; i < gS; ++i, ++homLeft) {
 	if (align[0][gS-i-1] != align[1][gE-i-offset]) ++mismatch;
 	if (mismatch > mmThres) {
 	  // Try 1bp deletion
@@ -482,7 +482,7 @@ namespace torali
       }
       mismatch = 0;
       offset = 0;
-      for(std::size_t i = 0; i < (align.shape()[1] - gE - 1); ++i, ++homRight) {
+      for(TAIndex i = 0; i < (align.shape()[1] - gE - 1); ++i, ++homRight) {
 	if (align[1][gS+i] != align[0][gE+i+1]) ++mismatch;
 	if (mismatch > mmThres) {
 	  // Try 1bp deletion
