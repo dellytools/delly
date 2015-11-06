@@ -60,6 +60,34 @@ namespace torali {
     return (baseQualSum / alignedBases);
   }
 
+  template<typename TPos, typename TTag>
+  inline int32_t
+  _cutRefStart(TPos const rStart, TPos const rEnd, TPos const offset, unsigned int bpPoint, SVType<TTag>) {
+    if (bpPoint) return rEnd - offset;
+    else return rStart - offset;
+  }
+
+  template<typename TPos>
+  inline int32_t
+  _cutRefStart(TPos const rStart, TPos const rEnd, TPos const offset, unsigned int bpPoint, SVType<DuplicationTag>) {
+    if (!bpPoint) return rEnd - offset;
+    else return rStart - offset;
+  }
+
+  template<typename TPos, typename TTag>
+  inline int32_t
+  _cutRefEnd(TPos const rStart, TPos const rEnd, TPos const offset, unsigned int bpPoint, SVType<TTag>) {
+    if (bpPoint) return rEnd + offset;
+    else return rStart + offset;
+  }
+
+  template<typename TPos>
+  inline int32_t
+  _cutRefEnd(TPos const rStart, TPos const rEnd, TPos const offset, unsigned int bpPoint, SVType<DuplicationTag>) {
+    if (!bpPoint) return rEnd + offset;
+    else return rStart + offset;
+  }
+
   template<typename TConfig, typename TSampleLibrary, typename TSVs, typename TCountMap, typename TTag>
   inline void
   annotateJunctionReads(TConfig const& c, TSampleLibrary& sampleLib, TSVs& svs, TCountMap& countMap, SVType<TTag> svType)
@@ -156,6 +184,9 @@ namespace torali {
 	      int32_t homLeft = 0;
 	      int32_t homRight = 0;
 	      _findHomology(alignFwd, gS, gE, homLeft, homRight);
+	      if ((homLeft + c.minimumFlankSize > (int32_t) cStart) || ( (int32_t) (itSV->consensus.size() - cEnd) < homRight + c.minimumFlankSize)) continue;
+	      if ((homLeft + c.minimumFlankSize > (int32_t) rStart) || ( (int32_t) (svRefStr.size() - rEnd) < homRight + c.minimumFlankSize)) continue;
+
 
 	      // Debug consensus to reference alignment
 	      //for(TAIndex i = 0; i<alignFwd.shape()[0]; ++i) {
@@ -163,6 +194,9 @@ namespace torali {
 	      //std::cerr << std::endl;
 	      //}
 	      //std::cerr << "Consensus-to-reference: " << homLeft << ',' << homRight << std::endl;
+	      //std::cerr << cStart << ',' << cEnd << ',' << rStart << ',' << rEnd << std::endl;
+	      //std::cerr << homLeft << ',' << homRight << std::endl;
+
 
 	      // Iterate all samples
 #pragma omp parallel for default(shared)
@@ -172,28 +206,24 @@ namespace torali {
 		TQualVector refQual;
 		unsigned int refAlignedReadCount = 0;
 
-		
 		for (unsigned int bpPoint = 0; bpPoint<2; ++bpPoint) {
-		  int32_t regionChr = itSV->chr;
-		  int regionStart = std::max(0, itSV->svStart - c.minimumFlankSize);
-		  int regionEnd = std::min((uint32_t) (itSV->svStart + c.minimumFlankSize), reflen[itSV->chr]);
-		  int32_t cutConsStart = cStart - homLeft - c.minimumFlankSize;
-		  int32_t cutConsEnd = cStart + homRight + c.minimumFlankSize;
-		  int32_t cutRefStart = rStart - homLeft - c.minimumFlankSize;
-		  int32_t cutRefEnd = rStart + homRight + c.minimumFlankSize;
+		  int32_t regionChr, regionStart, regionEnd, cutConsStart, cutConsEnd, cutRefStart, cutRefEnd;
 		  if (bpPoint) {
 		    regionChr = itSV->chr2;
 		    regionStart = std::max(0, itSV->svEnd - c.minimumFlankSize);
 		    regionEnd = std::min((uint32_t) (itSV->svEnd + c.minimumFlankSize), reflen[itSV->chr2]);
 		    cutConsStart = cEnd - homLeft - c.minimumFlankSize;
 		    cutConsEnd = cEnd + homRight + c.minimumFlankSize;
-		    cutRefStart = rEnd - homLeft - c.minimumFlankSize;
-		    cutRefEnd = rEnd + homRight + c.minimumFlankSize;
-		    if ((homLeft + c.minimumFlankSize > (int32_t) cEnd) || ( (int32_t) (itSV->consensus.size() - cEnd) < homRight + c.minimumFlankSize)) continue;
-		    if ((homLeft + c.minimumFlankSize > (int32_t) rEnd) || ( (int32_t) (svRefStr.size() - rEnd) < homRight + c.minimumFlankSize)) continue;
+		    cutRefStart = _cutRefStart((int32_t) rStart, (int32_t) rEnd, homLeft + c.minimumFlankSize, bpPoint, svType);
+		    cutRefEnd = _cutRefEnd((int32_t) rStart, (int32_t) rEnd, homRight + c.minimumFlankSize, bpPoint, svType);
 		  } else {
-		    if ((homLeft + c.minimumFlankSize > (int32_t) cStart) || ( (int32_t) (itSV->consensus.size() - cStart) < homRight + c.minimumFlankSize)) continue;
-		    if ((homLeft + c.minimumFlankSize > (int32_t) rStart) || ( (int32_t) (svRefStr.size() - rStart) < homRight + c.minimumFlankSize)) continue;
+		    regionChr = itSV->chr;
+		    regionStart = std::max(0, itSV->svStart - c.minimumFlankSize);
+		    regionEnd = std::min((uint32_t) (itSV->svStart + c.minimumFlankSize), reflen[itSV->chr]);
+		    cutConsStart = cStart - homLeft - c.minimumFlankSize;
+		    cutConsEnd = cStart + homRight + c.minimumFlankSize;
+		    cutRefStart = _cutRefStart((int32_t) rStart, (int32_t) rEnd, homLeft + c.minimumFlankSize, bpPoint, svType);
+		    cutRefEnd = _cutRefEnd((int32_t) rStart, (int32_t) rEnd, homRight + c.minimumFlankSize, bpPoint, svType);
 		  }
 		  std::string consProbe = itSV->consensus.substr(cutConsStart, (cutConsEnd - cutConsStart));
 		  std::string refProbe = svRefStr.substr(cutRefStart, (cutRefEnd - cutRefStart));
