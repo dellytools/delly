@@ -44,6 +44,8 @@ Contact: Tobias Rausch (rausch@embl.de)
 #include <boost/functional/hash.hpp>
 #include <boost/filesystem.hpp>
 #include <boost/progress.hpp>
+
+#include <htslib/vcf.h>
 #include <htslib/sam.h>
 
 #ifdef OPENMP
@@ -277,104 +279,116 @@ _addOrientation(uint8_t const ct) {
 }
 
 // Parse Delly vcf file
-template<typename TConfig, typename TRefNames, typename TRefLen, typename TSize, typename TStructuralVariantRecord, typename TTag>
+template<typename TConfig, typename TRefLen, typename TSize, typename TStructuralVariantRecord, typename TTag>
 inline void
-vcfParse(TConfig const& c, TRefNames const& refnames, TRefLen const& reflen, TSize const overallMaxISize, std::vector<TStructuralVariantRecord>& svs, SVType<TTag> svType)
+vcfParse(TConfig const& c, TRefLen const& reflen, TSize const overallMaxISize, std::vector<TStructuralVariantRecord>& svs, SVType<TTag> svType)
 {
-  bool refPresent=false;
-  if (boost::filesystem::exists(c.genome) && boost::filesystem::is_regular_file(c.genome) && boost::filesystem::file_size(c.genome)) refPresent=true;
-  std::ifstream vcfFile(c.vcffile.string().c_str(), std::ifstream::in);
-  if (vcfFile.is_open()) {
-    typedef boost::unordered_map<std::string, unsigned int> TMapChr;
-    TMapChr mapChr;
-    for(unsigned int i = 0; i<refnames.size(); ++i) mapChr[ refnames[i] ] = i;
-    while (vcfFile.good()) {
-      std::string vcfLine;
-      getline(vcfFile, vcfLine);
-      if (vcfLine[0]=='#') continue;
-      typedef boost::tokenizer< boost::char_separator<char> > Tokenizer;
-      boost::char_separator<char> sep("\t");
-      Tokenizer tokens(vcfLine, sep);
-      Tokenizer::iterator tokIter = tokens.begin();
-      if (tokIter!=tokens.end()) {
-	std::string chr=*tokIter++;
-	TMapChr::const_iterator mapChrIt = mapChr.find(chr);
-	if (mapChrIt != mapChr.end()) {
-	  if (tokIter!=tokens.end()) {
-	    StructuralVariantRecord svRec;
-	    svRec.chr = mapChrIt->second;
-	    svRec.chr2 = mapChrIt->second;
-	    svRec.svStart = boost::lexical_cast<int32_t>(*tokIter++);
-	    std::string id = *tokIter++;
-	    if (id.substr(0,3)!=_addID(svType)) continue;
-	    svRec.id = parseSVid(id);
-	    svRec.peSupport=0;
-	    svRec.peMapQuality=0;
-	    svRec.srSupport=0;
-	    svRec.srAlignQuality=0;
-	    svRec.wiggle = 0;
-	    svRec.precise = false;
-	    svRec.insLen = 0;
-	    // Ignore ref, alt, qual and filter
-	    tokIter++; tokIter++; tokIter++; tokIter++;
-	    // Parse info string
-	    std::string infoStr = *tokIter++;
-	    boost::char_separator<char> sepInfo(";");
-	    Tokenizer infoTokens(infoStr, sepInfo);
-	    Tokenizer::iterator infoIter = infoTokens.begin();
-	    for (;infoIter!=infoTokens.end();++infoIter) {
-	      std::string keyValue = *infoIter;
-	      std::size_t found = keyValue.find('=');
-	      if (found==std::string::npos) {
-		if ((keyValue=="PRECISE") && (refPresent)) svRec.precise=true;
-		continue;
-	      }
-	      std::string key = keyValue.substr(0, found);
-	      std::string value = keyValue.substr(found+1);
-	      if (key == "PE") svRec.peSupport = boost::lexical_cast<int>(value);
-	      else if (key == "INSLEN") svRec.insLen = boost::lexical_cast<int>(value);
-	      else if (key == "MAPQ") svRec.peMapQuality = (uint8_t) boost::lexical_cast<uint16_t>(value); // lexical_cast does not work for uint8_t
-	      else if (key == "SR") svRec.srSupport = boost::lexical_cast<int>(value);
-	      else if (key == "SRQ") svRec.srAlignQuality = boost::lexical_cast<double>(value);
-	      else if (key == "CHR2") {
-		TMapChr::const_iterator mapChr2It = mapChr.find(value);
-		if (mapChr2It != mapChr.end()) svRec.chr2 = mapChr2It->second;
-	      }
-	      else if (key == "END") svRec.svEnd = boost::lexical_cast<int32_t>(value);
-	      else if (key == "CONSENSUS") svRec.consensus = value;
-	      else if (key == "CIPOS") {
-		std::size_t foundComma = value.find(',');
-		int off1 = boost::lexical_cast<int>(value.substr(0, foundComma));
-		int off2 = boost::lexical_cast<int>(value.substr(foundComma+1));
-		if (abs(off1)>svRec.wiggle) svRec.wiggle=abs(off1);
-		if (abs(off2)>svRec.wiggle) svRec.wiggle=abs(off2);
-	      }
-	      else if (key == "CIEND") {
-		std::size_t foundComma = value.find(',');
-		int endOff1 = boost::lexical_cast<int>(value.substr(0, foundComma));
-		int endOff2 = boost::lexical_cast<int>(value.substr(foundComma+1));
-		if (abs(endOff1)>svRec.wiggle) svRec.wiggle=abs(endOff1);
-		if (abs(endOff2)>svRec.wiggle) svRec.wiggle=abs(endOff2);
-	      }
-	      else if (key == "CT") svRec.ct = _decodeOrientation(value);
-	      else continue;
-	    }
-	    svRec.svStartBeg = std::max(svRec.svStart - 1 - overallMaxISize, 0);
-	    svRec.svStartEnd = std::min((uint32_t) svRec.svStart - 1 + overallMaxISize, reflen[svRec.chr]);
-	    svRec.svEndBeg = std::max(svRec.svEnd - 1 - overallMaxISize, 0);
-	    svRec.svEndEnd = std::min((uint32_t) svRec.svEnd - 1 + overallMaxISize, reflen[svRec.chr2]);
-	    if ((svRec.chr==svRec.chr2) && (svRec.svStartEnd > svRec.svEndBeg)) {
-	      unsigned int midPointDel = ((svRec.svEnd - svRec.svStart) / 2) + svRec.svStart;
-	      svRec.svStartEnd = midPointDel -1;
-	      svRec.svEndBeg = midPointDel;
-	    }
-	    svs.push_back(svRec);
-	  }
-	}
-      }
+  // Load bcf file
+  htsFile* ifile = bcf_open(c.vcffile.string().c_str(), "r");
+  bcf_hdr_t* hdr = bcf_hdr_read(ifile);
+  bcf1_t* rec = bcf_init();
+
+  // Load bam file
+  samFile* samfile = sam_open(c.files[0].string().c_str(), "r");
+  bam_hdr_t* hd = sam_hdr_read(samfile);
+
+  // Parse bcf
+  int32_t nsvend = 0;
+  int32_t* svend = NULL;
+  int32_t npe = 0;
+  int32_t* pe = NULL;
+  int32_t ninslen = 0;
+  int32_t* inslen = NULL;
+  int32_t nsr = 0;
+  int32_t* sr = NULL;
+  int32_t ncipos = 0;
+  int32_t* cipos = NULL;
+  int32_t nmapq = 0;
+  int32_t* mapq = NULL;
+  int32_t nct = 0;
+  char* ct = NULL;
+  int32_t nsrq = 0;
+  float* srq = NULL;
+  int32_t nsvt = 0;
+  char* svt = NULL;
+  int32_t ncons = 0;
+  char* cons = NULL;
+  int32_t nchr2 = 0;
+  char* chr2 = NULL;
+  unsigned int clique_count = 1;
+  while (bcf_read(ifile, hdr, rec) == 0) {
+    bcf_unpack(rec, BCF_UN_INFO);
+
+    // Correct SV type
+    bcf_get_info_string(hdr, rec, "SVTYPE", &svt, &nsvt);
+    if (std::string(svt) != _addID(svType)) continue;
+
+    // Fill SV record
+    StructuralVariantRecord svRec;
+    std::string chrName = bcf_hdr_id2name(hdr, rec->rid);
+    int32_t tid = bam_name2id(hd, chrName.c_str());
+    svRec.chr = tid;
+    svRec.svStart = rec->pos + 1;
+    svRec.id = clique_count++;
+
+    // Parse INFO
+    if (bcf_get_info_flag(hdr, rec, "PRECISE", 0, 0) > 0) svRec.precise=true;
+    else svRec.precise = false;
+    if (bcf_get_info_int32(hdr, rec, "PE", &pe, &npe) > 0) svRec.peSupport = *pe;
+    else svRec.peSupport = 0;
+    if (bcf_get_info_int32(hdr, rec, "INSLEN", &inslen, &ninslen) > 0) svRec.insLen = *inslen;
+    else svRec.insLen = 0;
+    if (bcf_get_info_int32(hdr, rec, "SR", &sr, &nsr) > 0) svRec.srSupport = *sr;
+    else svRec.srSupport = 0;
+    if (bcf_get_info_int32(hdr, rec, "END", &svend, &nsvend) > 0) svRec.svEnd = *svend;
+    else svRec.svEnd = rec->pos + 2;
+    if (bcf_get_info_string(hdr, rec, "CONSENSUS", &cons, &ncons) > 0) svRec.consensus = std::string(cons);
+    else svRec.precise = false;
+    if (bcf_get_info_int32(hdr, rec, "CIPOS", &cipos, &ncipos) > 0) svRec.wiggle = cipos[1];
+    else svRec.wiggle = 0;
+    if (bcf_get_info_int32(hdr, rec, "MAPQ", &mapq, &nmapq) > 0) svRec.peMapQuality = (uint8_t) *mapq;
+    else svRec.peMapQuality = 0;
+    if (bcf_get_info_float(hdr, rec, "SRQ", &srq, &nsrq) > 0) svRec.srAlignQuality = (double) *srq;
+    else svRec.srAlignQuality = 0;
+    if (bcf_get_info_string(hdr, rec, "CT", &ct, &nct) > 0) svRec.ct = _decodeOrientation(std::string(ct));
+    if (bcf_get_info_string(hdr, rec, "CHR2", &chr2, &nchr2) > 0) {
+      std::string chr2Name = std::string(chr2);
+      svRec.chr2 = bam_name2id(hd, chr2Name.c_str());
+    } else svRec.chr2 = tid;
+
+    // Assign remaining fields
+    svRec.svStartBeg = std::max(svRec.svStart - 1 - overallMaxISize, 0);
+    svRec.svStartEnd = std::min((uint32_t) svRec.svStart - 1 + overallMaxISize, reflen[svRec.chr]);
+    svRec.svEndBeg = std::max(svRec.svEnd - 1 - overallMaxISize, 0);
+    svRec.svEndEnd = std::min((uint32_t) svRec.svEnd - 1 + overallMaxISize, reflen[svRec.chr2]);
+    if ((svRec.chr==svRec.chr2) && (svRec.svStartEnd > svRec.svEndBeg)) {
+      unsigned int midPointDel = ((svRec.svEnd - svRec.svStart) / 2) + svRec.svStart;
+      svRec.svStartEnd = midPointDel -1;
+      svRec.svEndBeg = midPointDel;
     }
-    vcfFile.close();
+    svs.push_back(svRec);
   }
+  // Close bam
+  sam_close(samfile);
+  bam_hdr_destroy(hd);
+
+  // Clean-up
+  free(svend);
+  free(svt);
+  free(pe);
+  free(inslen);
+  free(sr);
+  free(cons);
+  free(cipos);
+  free(mapq);
+  free(srq);
+  free(ct);
+  free(chr2);
+
+  // Close VCF
+  bcf_hdr_destroy(hdr);
+  bcf_close(ifile);
+  bcf_destroy(rec);
 }
 
 
@@ -1792,7 +1806,7 @@ inline int run(Config const& c, TSVType svType) {
       }
   } else {
     // Read SV records from input vcffile
-    vcfParse(c, refnames, reflen, overallMaxISize, svs, svType);
+    vcfParse(c, reflen, overallMaxISize, svs, svType);
   }
 
   // Debug output
@@ -1919,6 +1933,12 @@ int main(int argc, char **argv) {
       std::cout << visible_options << "\n"; 
     }
     return 1; 
+  }
+
+  // Check reference
+  if (!(boost::filesystem::exists(c.genome) && boost::filesystem::is_regular_file(c.genome) && boost::filesystem::file_size(c.genome))) {
+    std::cerr << "Reference file is missing!" << std::endl;
+    return 1;
   }
 
   // Show cmd
