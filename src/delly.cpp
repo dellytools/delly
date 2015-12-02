@@ -1076,7 +1076,7 @@ _annotateCoverage(TConfig const& c, TRefNames const& refnames, TSampleLibrary& s
   typedef std::pair<int, int> TBpRead;
   typedef boost::unordered_map<TSampleSVPair, TBpRead> TReadCountMap;
   TReadCountMap readCountMap;
-  annotateCoverage(c.files, c.minGenoQual, sampleLib, svc, readCountMap, BpLevelType<NoBpLevelCount>(), CoverageType<RedundancyFilterTag>());
+  annotateCoverage(c.files, c.minGenoQual, sampleLib, svc, readCountMap, BpLevelType<NoBpLevelCount>());
   for (typename TReadCountMap::const_iterator rcIt = readCountMap.begin(); rcIt != readCountMap.end(); ++rcIt) {
     // Map control regions back to original id
     int svID = rcIt->first.second;
@@ -1448,13 +1448,7 @@ inline int run(Config const& c, TSVType svType) {
 	  std::string sampleName(c.files[file_c].stem().string());
 	  TSampleLibrary::iterator sampleIt=sampleLib.find(sampleName);
 
-	  // Unique pairs for the given sample
-	  typedef boost::container::flat_set<int32_t> TUniquePairs;
-	  TUniquePairs unique_pairs;
-
 	  // Read alignments
-	  int32_t oldAlignPos = -1;
-	  int32_t oldSplitAlignPos = -1;
 	  hts_itr_t* iter = sam_itr_queryi(idx[file_c], refIndex, 0, reflen[refIndex]);
 	  bam1_t* rec = bam_init1();
 	  while (sam_itr_next(samfile[file_c], iter, rec) >= 0) {
@@ -1473,67 +1467,61 @@ inline int run(Config const& c, TSVType svType) {
 		  for (int bpPoint = 0; bpPoint < 2; ++bpPoint) {
 		    // Leading or trailing softclip?
 		    if (_validSCOrientation(bpPoint, leadingSoftClip, _getCT(svType), svType)) {
-		      // Duplicate filter
-		      int32_t ha = halfAlignmentLength(rec);
-		      if ((int32_t) (rec->core.pos + ha) != oldSplitAlignPos) {
-			oldSplitAlignPos = rec->core.pos + ha;  // Leading soft-clips cause identical pos
-
-			// Get the sequence
-			std::string sequence;
-			sequence.resize(rec->core.l_qseq);
-			uint8_t* seqptr = bam_get_seq(rec);
-			for (int i = 0; i < rec->core.l_qseq; ++i) sequence[i] = "=ACMGRSVTWYHKDBN"[bam_seqi(seqptr, i)];
-			
-			// Check sequence
-			size_t nCount = std::count(sequence.begin(), sequence.end(), 'N');
-			if ((nCount * 100) / sequence.size() == 0) {
-			  std::string cstr = compressStr(sequence);
-			  double seqComplexity = (double) cstr.size() / (double) sequence.size();
-			  if (seqComplexity >= 0.45) {
-			    
-			    // Adjust orientation if necessary
-			    _adjustOrientation(sequence, bpPoint, _getCT(svType), svType);
-			
-			    // Align to local reference
-			    int32_t localrefStart = 0;
-			    int32_t localrefEnd = 0;
-			    int32_t seqLeftOver = 0;
-			    if (bpPoint) {
-			      seqLeftOver = sequence.size() - clipSize;
-			      localrefStart = std::max(0, (int) rec->core.pos - (int) (c.indelsize + clipSize));
-			      localrefEnd = rec->core.pos + seqLeftOver + 25;
-			    } else {
-			      seqLeftOver = sequence.size() - (splitPoint - rec->core.pos);
-			      localrefStart = rec->core.pos;
-			      localrefEnd = splitPoint + c.indelsize + seqLeftOver;
-			    }
-			    std::string localref = boost::to_upper_copy(std::string(seq->seq.s + localrefStart, seq->seq.s + localrefEnd));
-			    typedef boost::multi_array<char, 2> TAlign;
-			    typedef typename TAlign::index TAIndex;
-			    TAlign alignFwd;
-			    AlignConfig<true, false> semiglobal;
-			    DnaScore<int> sc(5, -4, -5 * c.minimumFlankSize, 0);
-			    int altScore = gotoh(sequence, localref, alignFwd, semiglobal, sc);
-			    altScore += 5 * c.minimumFlankSize;
-			    
-			    // Candidate small indel?
-			    TAIndex cStart, cEnd, rStart, rEnd;
-			    if (_findSplit(alignFwd, cStart, cEnd, rStart, rEnd, svType)) {
-			      if (_validSRAlignment(cStart, cEnd, rStart, rEnd, svType)) {
-				int scoreThresholdAlt = (int) (qualityThres * (sequence.size() - (cEnd - cStart - 1)) * 5 + (1.0 - qualityThres) * (sequence.size() - (cEnd - cStart - 1)) * (-4));			    
-				if (altScore > scoreThresholdAlt) {
-
-				  // Debug consensus to reference alignment
-				  //for(TAIndex i = 0; i<alignFwd.shape()[0]; ++i) {
-				  //for(TAIndex j = 0; j<alignFwd.shape()[1]; ++j) std::cerr << alignFwd[i][j];
-				  //std::cerr << std::endl;
-				  //}
-				  //std::cerr << bpPoint << ',' << cStart << ',' << cEnd << ',' << rStart << ',' << rEnd << std::endl;
-				  
+		      // Get the sequence
+		      std::string sequence;
+		      sequence.resize(rec->core.l_qseq);
+		      uint8_t* seqptr = bam_get_seq(rec);
+		      for (int i = 0; i < rec->core.l_qseq; ++i) sequence[i] = "=ACMGRSVTWYHKDBN"[bam_seqi(seqptr, i)];
+		      
+		      // Check sequence
+		      size_t nCount = std::count(sequence.begin(), sequence.end(), 'N');
+		      if ((nCount * 100) / sequence.size() == 0) {
+			std::string cstr = compressStr(sequence);
+			double seqComplexity = (double) cstr.size() / (double) sequence.size();
+			if (seqComplexity >= 0.45) {
+			  
+			  // Adjust orientation if necessary
+			  _adjustOrientation(sequence, bpPoint, _getCT(svType), svType);
+			  
+			  // Align to local reference
+			  int32_t localrefStart = 0;
+			  int32_t localrefEnd = 0;
+			  int32_t seqLeftOver = 0;
+			  if (bpPoint) {
+			    seqLeftOver = sequence.size() - clipSize;
+			    localrefStart = std::max(0, (int) rec->core.pos - (int) (c.indelsize + clipSize));
+			    localrefEnd = rec->core.pos + seqLeftOver + 25;
+			  } else {
+			    seqLeftOver = sequence.size() - (splitPoint - rec->core.pos);
+			    localrefStart = rec->core.pos;
+			    localrefEnd = splitPoint + c.indelsize + seqLeftOver;
+			  }
+			  std::string localref = boost::to_upper_copy(std::string(seq->seq.s + localrefStart, seq->seq.s + localrefEnd));
+			  typedef boost::multi_array<char, 2> TAlign;
+			  typedef typename TAlign::index TAIndex;
+			  TAlign alignFwd;
+			  AlignConfig<true, false> semiglobal;
+			  DnaScore<int> sc(5, -4, -5 * c.minimumFlankSize, 0);
+			  int altScore = gotoh(sequence, localref, alignFwd, semiglobal, sc);
+			  altScore += 5 * c.minimumFlankSize;
+			  
+			  // Candidate small indel?
+			  TAIndex cStart, cEnd, rStart, rEnd;
+			  if (_findSplit(alignFwd, cStart, cEnd, rStart, rEnd, svType)) {
+			    if (_validSRAlignment(cStart, cEnd, rStart, rEnd, svType)) {
+			      int scoreThresholdAlt = (int) (qualityThres * (sequence.size() - (cEnd - cStart - 1)) * 5 + (1.0 - qualityThres) * (sequence.size() - (cEnd - cStart - 1)) * (-4));			    
+			      if (altScore > scoreThresholdAlt) {
+				
+				// Debug consensus to reference alignment
+				//for(TAIndex i = 0; i<alignFwd.shape()[0]; ++i) {
+				//for(TAIndex j = 0; j<alignFwd.shape()[1]; ++j) std::cerr << alignFwd[i][j];
+				//std::cerr << std::endl;
+				//}
+				//std::cerr << bpPoint << ',' << cStart << ',' << cEnd << ',' << rStart << ',' << rEnd << std::endl;
+				
 #pragma omp critical
-				  {
-				    splitRecord.push_back(SplitAlignRecord(localrefStart + rStart - cStart, localrefStart + rStart, localrefStart + rEnd, localrefStart + rEnd + seqLeftOver + 25, rec->core.qual));
-				  }
+				{
+				  splitRecord.push_back(SplitAlignRecord(localrefStart + rStart - cStart, localrefStart + rStart, localrefStart + rEnd, localrefStart + rEnd + seqLeftOver + 25, rec->core.qual));
 				}
 			      }
 			    }
@@ -1602,20 +1590,11 @@ inline int run(Config const& c, TSVType svType) {
 		// Pair quality
 		if (pairQuality < c.minMapQual) continue;
 	    
-		// Store the paired-end
-		if (rec->core.pos!=oldAlignPos) {
-		  oldAlignPos=rec->core.pos;
-		  unique_pairs.clear();
-		}
-		if (unique_pairs.insert(rec->core.mpos).second) {
 #pragma omp critical
-		  {
-		    bamRecord.push_back(BamAlignRecord(rec, pairQuality, alignmentLength(rec), alen[file_c][hv], libIt->second.median, libIt->second.mad, libIt->second.maxNormalISize, libIt->second.defaultOrient));
-		  }
-		  ++libIt->second.abnormal_pairs;
-		} else {
-		  ++libIt->second.non_unique_abnormal_pairs;
+		{
+		  bamRecord.push_back(BamAlignRecord(rec, pairQuality, alignmentLength(rec), alen[file_c][hv], libIt->second.median, libIt->second.mad, libIt->second.maxNormalISize, libIt->second.defaultOrient));
 		}
+		++libIt->second.abnormal_pairs;
 	      }
 	    }
 	  }
@@ -1857,7 +1836,7 @@ inline int run(Config const& c, TSVType svType) {
     std::cout << "Sample: " << sampleIt->first << std::endl;
     TLibraryMap::const_iterator libIt=sampleIt->second.begin();
     for(;libIt!=sampleIt->second.end();++libIt) {
-      std::cout << "RG: ID=" << libIt->first << ",Median=" << libIt->second.median << ",MAD=" << libIt->second.mad << ",LibLayout=" << (int) libIt->second.defaultOrient << ",MaxSizeCut=" << libIt->second.maxISizeCutoff << ",MinSizeCut=" << libIt->second.minISizeCutoff << ",DuplicateDiscordantPairs=" << libIt->second.non_unique_abnormal_pairs << ",UniqueDiscordantPairs=" << libIt->second.abnormal_pairs << std::endl;
+      std::cout << "RG: ID=" << libIt->first << ",Median=" << libIt->second.median << ",MAD=" << libIt->second.mad << ",LibLayout=" << (int) libIt->second.defaultOrient << ",MaxSizeCut=" << libIt->second.maxISizeCutoff << ",MinSizeCut=" << libIt->second.minISizeCutoff << ",UniqueDiscordantPairs=" << libIt->second.abnormal_pairs << std::endl;
     }
   }
 #ifdef PROFILE

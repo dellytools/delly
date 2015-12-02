@@ -38,9 +38,6 @@ namespace torali {
     };
 
 
-  struct RedundancyFilterTag;
-  struct NoRedundancyFilterTag;
-  
   template<typename CoverageTag>
     struct CoverageType {
     };

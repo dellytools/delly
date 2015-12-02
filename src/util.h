@@ -47,7 +47,6 @@ namespace torali
     int maxNormalISize;
     int maxISizeCutoff;
     uint8_t defaultOrient;
-    unsigned int non_unique_abnormal_pairs;
     unsigned int abnormal_pairs;
   };
 

@@ -68,9 +68,8 @@ struct Config {
 };
 
 
-template<typename TCoverageType>
 inline int
-run(Config const& c, TCoverageType covType)
+run(Config const& c)
 {
   // Create library objects
   typedef boost::unordered_map<std::string, LibraryInfo> TLibraryMap;
@@ -165,8 +164,8 @@ run(Config const& c, TCoverageType covType)
   TCountMap countMap;
 
   // Annotate coverage
-  if (c.inclCigar) annotateCoverage(c.files, c.minGenoQual, sampleLib, svs, countMap, BpLevelType<BpLevelCount>(), covType);
-  else annotateCoverage(c.files, c.minGenoQual, sampleLib, svs, countMap, BpLevelType<NoBpLevelCount>(), covType);
+  if (c.inclCigar) annotateCoverage(c.files, c.minGenoQual, sampleLib, svs, countMap, BpLevelType<BpLevelCount>());
+  else annotateCoverage(c.files, c.minGenoQual, sampleLib, svs, countMap, BpLevelType<NoBpLevelCount>());
 
   // Output library statistics
   std::cout << "Library statistics" << std::endl;
@@ -197,8 +196,8 @@ run(Config const& c, TCoverageType covType)
   dataOut << std::endl;
 
   // Iterate all SVs
-  typename TSVs::const_iterator itSV = svs.begin();
-  typename TSVs::const_iterator itSVEnd = svs.end();
+  TSVs::const_iterator itSV = svs.begin();
+  TSVs::const_iterator itSVEnd = svs.end();
   for(;itSV!=itSVEnd;++itSV) {
     dataOut << refnames[itSV->chr] << "\t" << itSV->svStart << "\t" << itSV->svEnd << "\t" << idToName.find(itSV->id)->second;
     // Iterate all samples
@@ -206,7 +205,7 @@ run(Config const& c, TCoverageType covType)
       // Get the sample name
       std::string sampleName(c.files[file_c].stem().string());
       TSampleSVPair sampleSVPair = std::make_pair(sampleName, itSV->id);
-      typename TCountMap::iterator countMapIt=countMap.find(sampleSVPair);
+      TCountMap::iterator countMapIt=countMap.find(sampleSVPair);
       dataOut << "\t";
       if (c.avg_flag) dataOut << ( (countMapIt->second.first) / (double) (itSV->svEnd - itSV->svStart)) << "\t";
       if (c.bp_flag) dataOut << countMapIt->second.first << "\t";
@@ -231,7 +230,6 @@ int main(int argc, char **argv) {
     ("help,?", "show help message")
     ("avg-cov,a", "show average coverage")
     ("bp-count,b", "show base pair count")
-    ("disable-redundancy,d", "disable redundancy filtering")
     ("quality-cut,q", boost::program_options::value<uint16_t>(&c.minGenoQual)->default_value(0), "exclude all alignments with quality < q")
     ("outfile,f", boost::program_options::value<boost::filesystem::path>(&c.outfile)->default_value("cov.gz"), "coverage output file")
     ;
@@ -283,8 +281,6 @@ int main(int argc, char **argv) {
     }
     return 1; 
   }
-  bool disableRedFilter=false;
-  if (vm.count("disable-redundancy")) disableRedFilter=true;
   if (vm.count("bp-count")) c.bp_flag = true;
   else c.bp_flag = false;
   if (vm.count("avg-cov")) c.avg_flag = true;
@@ -299,6 +295,5 @@ int main(int argc, char **argv) {
   std::cout << std::endl;
  
   // Run coverage annotation
-  if (disableRedFilter) return run(c, CoverageType<NoRedundancyFilterTag>());
-  else return run(c, CoverageType<RedundancyFilterTag>());
+  return run(c);
 }

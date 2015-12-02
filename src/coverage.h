@@ -67,23 +67,9 @@ _addBpCounts(bam1_t*, TWindow, TWindow, TCount, BpLevelType<NoBpLevelCount>)
   //Nop
 }
 
-template<typename TPos, typename TUniquePairs>
-inline bool 
-_redundancyFilter(TPos matePos, TUniquePairs& uRead, CoverageType<RedundancyFilterTag>) {
-  return uRead.insert(matePos).second;
-}
-
-template<typename TPos, typename TUniquePairs>
-inline bool
-_redundancyFilter(TPos, TUniquePairs&, CoverageType<NoRedundancyFilterTag>) {
-  return true;
-}
-
-
-
-template<typename TFiles, typename TSampleLibrary, typename TSVs, typename TCountMap, typename TBpLevelType, typename TCoverageType>
+template<typename TFiles, typename TSampleLibrary, typename TSVs, typename TCountMap, typename TBpLevelType>
 inline void
-annotateCoverage(TFiles const& files, uint16_t minMapQual, TSampleLibrary& sampleLib, TSVs& svs, TCountMap& countMap, TBpLevelType bpLevel, TCoverageType covType)
+annotateCoverage(TFiles const& files, uint16_t minMapQual, TSampleLibrary& sampleLib, TSVs& svs, TCountMap& countMap, TBpLevelType bpLevel)
 {
   typedef typename TSVs::value_type TSV;
 
@@ -166,14 +152,9 @@ annotateCoverage(TFiles const& files, uint16_t minMapQual, TSampleLibrary& sampl
 	// Process sub-intervals
 	typename TInterval::const_iterator itInt = intervals.begin();
 	for(;itInt!=intervals.end(); ++itInt) {
-	  // Unique pairs for the given interval
-	  typedef boost::container::flat_set<int32_t> TUniquePairs;
-	  TUniquePairs unique_pairs_read;
-
 	  // Count reads / aligned base-pairs
 	  unsigned int bp_sum = 0;
 	  unsigned int read_sum = 0;
-	  int32_t oldPos=-1;
 
 	  // Read alignments
 	  hts_itr_t* iter = sam_itr_queryi(idx[file_c], oldChr, std::max(0, (int32_t) itInt->first - maxReadLen), itInt->second);
@@ -182,16 +163,9 @@ annotateCoverage(TFiles const& files, uint16_t minMapQual, TSampleLibrary& sampl
 	    if (rec->core.flag & (BAM_FSECONDARY | BAM_FQCFAIL | BAM_FDUP | BAM_FSUPPLEMENTARY | BAM_FUNMAP)) continue;
 	    if (rec->core.qual < minMapQual) continue;
 	  
-	    // Is it a unique pair
-	    if (rec->core.pos!=oldPos) {
-	      oldPos=rec->core.pos;
-	      unique_pairs_read.clear();
-	    }
-	    if (_redundancyFilter(rec->core.mpos, unique_pairs_read, covType)) {
-	      int32_t midPoint = rec->core.pos + halfAlignmentLength(rec);
-	      if ((midPoint >= itInt->first) && (midPoint < itInt->second)) ++read_sum;
-	      _addBpCounts(rec, itInt->first, itInt->second, bp_sum, bpLevel);
-	    }
+	    int32_t midPoint = rec->core.pos + halfAlignmentLength(rec);
+	    if ((midPoint >= itInt->first) && (midPoint < itInt->second)) ++read_sum;
+	    _addBpCounts(rec, itInt->first, itInt->second, bp_sum, bpLevel);
 	  }
 	  bam_destroy1(rec);
 	  hts_itr_destroy(iter);

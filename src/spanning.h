@@ -124,10 +124,6 @@ namespace torali {
 	typedef boost::unordered_map<std::size_t, uint8_t> TQualities;
 	TQualities qualities;
 
-	// Unique pairs for the given sample
-	typedef boost::container::flat_set<int32_t> TUniquePairs;
-	TUniquePairs unique_pairs;
-
 	// Pre-compute regions
 	unsigned int maxBp = 2;
 	int32_t regionChr1 = itSV->chr;
@@ -156,7 +152,6 @@ namespace torali {
 	    regionStart = regionStart1;
 	    regionEnd = regionEnd1;
 	  }
-	  int32_t oldAlignPos=-1;
 	  hts_itr_t* iter = sam_itr_queryi(idx[file_c], regionChr, regionStart, regionEnd);
 	  bam1_t* rec = bam_init1();
 	  while (sam_itr_next(samfile[file_c], iter, rec) >= 0) {
@@ -176,7 +171,7 @@ namespace torali {
 	    typename TLibraryMap::iterator libIt=sampleIt->second.find(rG);
 	    if (libIt->second.median == 0) continue; // Single-end library
 	    int outerISize = std::abs(rec->core.pos - rec->core.mpos) + rec->core.l_qseq;
-	      
+
 	    // Abnormal paired-end
 	    if ((getStrandIndependentOrientation(rec->core) != libIt->second.defaultOrient) || (outerISize < libIt->second.minNormalISize) || (outerISize > libIt->second.maxNormalISize) || (rec->core.tid!=rec->core.mtid)) {
 	      if (_acceptedInsertSize(libIt->second, abs(rec->core.isize), svType)) continue;  // Normal paired-end (for deletions, insertions only - this uses minISizeCutoff and maxISizeCutoff)
@@ -187,15 +182,13 @@ namespace torali {
 	      int32_t const minPos = _minCoord(rec->core.pos, rec->core.mpos, svType);
 	      int32_t const maxPos = _maxCoord(rec->core.pos, rec->core.mpos, svType);
 
-	      bool validSize = true;
 	      if (rec->core.tid==itSV->chr) {
 		if (minPos < itSV->svStart) {
-		  validSize = (!_pairsDisagree(minPos, maxPos, rec->core.l_qseq, libIt->second.maxNormalISize, itSV->svStart, itSV->svEnd, rec->core.l_qseq, libIt->second.maxNormalISize, _getSpanOrientation(rec->core, libIt->second.defaultOrient, svType), itSV->ct, svType));
+		  if (_pairsDisagree(minPos, maxPos, rec->core.l_qseq, libIt->second.maxNormalISize, itSV->svStart, itSV->svEnd, rec->core.l_qseq, libIt->second.maxNormalISize, _getSpanOrientation(rec->core, libIt->second.defaultOrient, svType), itSV->ct, svType)) continue;
 		} else {
-		  validSize = (!_pairsDisagree(itSV->svStart, itSV->svEnd, rec->core.l_qseq, libIt->second.maxNormalISize, minPos, maxPos, rec->core.l_qseq, libIt->second.maxNormalISize, itSV->ct, _getSpanOrientation(rec->core, libIt->second.defaultOrient, svType), svType));
+		  if (_pairsDisagree(itSV->svStart, itSV->svEnd, rec->core.l_qseq, libIt->second.maxNormalISize, minPos, maxPos, rec->core.l_qseq, libIt->second.maxNormalISize, itSV->ct, _getSpanOrientation(rec->core, libIt->second.defaultOrient, svType), svType)) continue;
 		}
 	      }
-	      if (!validSize) continue;
 	    }
 		    
 	    // Get or store the mapping quality for the partner
@@ -220,53 +213,46 @@ namespace torali {
 	      // Pair quality
 	      if (pairQuality < minMapQual) continue;
 	      
-	      // Is it a unique pair
-	      if (rec->core.pos!=oldAlignPos) {
-		oldAlignPos=rec->core.pos;
-		unique_pairs.clear();
-	      }
-	      if (unique_pairs.insert(rec->core.mpos).second) {
-		// Insert the interval
-		if ((getStrandIndependentOrientation(rec->core) == libIt->second.defaultOrient) && (outerISize >= libIt->second.minNormalISize) && (outerISize <= libIt->second.maxNormalISize) && (rec->core.tid==rec->core.mtid)) {
-		  // Normal spanning coverage, take inner insert-size
-		  //int32_t sPosStart = std::min(rec->core.pos, rec->core.mpos);
-		  //int32_t ePosStart = std::min(rec->core.pos, rec->core.mpos) + rec->core.l_qseq;
-		  //int32_t sPosEnd = std::max(rec->core.pos, rec->core.mpos);
-		  //int32_t ePosEnd = std::max(rec->core.pos, rec->core.mpos) + rec->core.l_qseq;
-		  //if ((itSV->chr==rec->core.tid) && (itSV->svStart>=sPosStart) && (itSV->svStart<=ePosStart)) leftIt->second.first.push_back(pairQuality);
-		  //if ((itSV->chr2==rec->core.tid) && (itSV->svEnd>=sPosEnd) && (itSV->svEnd<=ePosEnd)) rightIt->second.first.push_back(pairQuality);
-		  int32_t sPos = std::min(rec->core.pos, rec->core.mpos);
-		  int32_t ePos = std::max(rec->core.pos, rec->core.mpos) + rec->core.l_qseq;
-		  int32_t midPoint = sPos+(ePos-sPos)/2;
-		  sPos=std::max(sPos, midPoint - rec->core.l_qseq);
-		  ePos=std::min(ePos, midPoint + rec->core.l_qseq);
-		  int32_t innerSPos = std::min(rec->core.pos, rec->core.mpos) + rec->core.l_qseq;
-		  int32_t innerEPos = std::max(rec->core.pos, rec->core.mpos);
-		  if ((innerSPos<innerEPos) && ((innerEPos - innerSPos) > (ePos-sPos))) {
-		    sPos = innerSPos;
-		    ePos = innerEPos;
-		  }
-		  if (std::abs(midPoint - itSV->svStart) < std::abs(itSV->svEnd - midPoint)) {
-		    if ((itSV->chr==rec->core.tid) && (itSV->svStart>=sPos) && (itSV->svStart<=ePos)) leftIt->second.first.push_back(pairQuality);
-		  } else {
-		    if ((itSV->chr2==rec->core.tid) && (itSV->svEnd>=sPos) && (itSV->svEnd<=ePos)) rightIt->second.first.push_back(pairQuality);
-		  }
-		} else if ((getStrandIndependentOrientation(rec->core) != libIt->second.defaultOrient) || (outerISize < libIt->second.minNormalISize) || (outerISize > libIt->second.maxNormalISize) || (rec->core.tid!=rec->core.mtid)) {
-		  // Missing spanning coverage
-		  if (_mateIsUpstream(libIt->second.defaultOrient, (rec->core.flag & BAM_FREAD1), (rec->core.flag & BAM_FREVERSE))) {
-		    if ((itSV->chr==rec->core.tid) && (itSV->svStart>=rec->core.pos) && (itSV->svStart<=(rec->core.pos + libIt->second.maxNormalISize))) leftIt->second.second.push_back(pairQuality);
-		    if ((itSV->chr2==rec->core.tid) && (itSV->svEnd>=rec->core.pos) && (itSV->svEnd<=(rec->core.pos + libIt->second.maxNormalISize))) rightIt->second.second.push_back(pairQuality);
-		  } else {
-		    if ((itSV->chr==rec->core.tid) && (itSV->svStart>=std::max(0, rec->core.pos + rec->core.l_qseq - libIt->second.maxNormalISize)) && (itSV->svStart<=(rec->core.pos + rec->core.l_qseq))) leftIt->second.second.push_back(pairQuality);
-		    if ((itSV->chr2==rec->core.tid) && (itSV->svEnd>=std::max(0, rec->core.pos + rec->core.l_qseq - libIt->second.maxNormalISize)) && (itSV->svEnd<=(rec->core.pos + rec->core.l_qseq))) rightIt->second.second.push_back(pairQuality);
-		  }
-		  if (_mateIsUpstream(libIt->second.defaultOrient, !(rec->core.flag & BAM_FREAD1), (rec->core.flag & BAM_FMREVERSE))) {
-		    if ((itSV->chr==rec->core.mtid) && (itSV->svStart>=rec->core.mpos) && (itSV->svStart<=(rec->core.mpos + libIt->second.maxNormalISize))) leftIt->second.second.push_back(pairQuality);
-		    if ((itSV->chr2==rec->core.mtid) && (itSV->svEnd>=rec->core.mpos) && (itSV->svEnd<=(rec->core.mpos + libIt->second.maxNormalISize))) rightIt->second.second.push_back(pairQuality);
-		  } else {
-		    if ((itSV->chr==rec->core.mtid) && (itSV->svStart>=std::max(0, rec->core.mpos + rec->core.l_qseq - libIt->second.maxNormalISize)) && (itSV->svStart<=(rec->core.mpos + rec->core.l_qseq))) leftIt->second.second.push_back(pairQuality);
-		    if ((itSV->chr2==rec->core.mtid) && (itSV->svEnd>=std::max(0,rec->core.mpos + rec->core.l_qseq - libIt->second.maxNormalISize)) && (itSV->svEnd<=(rec->core.mpos + rec->core.l_qseq))) rightIt->second.second.push_back(pairQuality);
-		  }
+	      // Insert the interval
+	      if ((getStrandIndependentOrientation(rec->core) == libIt->second.defaultOrient) && (outerISize >= libIt->second.minNormalISize) && (outerISize <= libIt->second.maxNormalISize) && (rec->core.tid==rec->core.mtid)) {
+		// Normal spanning coverage, take inner insert-size
+		//int32_t sPosStart = std::min(rec->core.pos, rec->core.mpos);
+		//int32_t ePosStart = std::min(rec->core.pos, rec->core.mpos) + rec->core.l_qseq;
+		//int32_t sPosEnd = std::max(rec->core.pos, rec->core.mpos);
+		//int32_t ePosEnd = std::max(rec->core.pos, rec->core.mpos) + rec->core.l_qseq;
+		//if ((itSV->chr==rec->core.tid) && (itSV->svStart>=sPosStart) && (itSV->svStart<=ePosStart)) leftIt->second.first.push_back(pairQuality);
+		//if ((itSV->chr2==rec->core.tid) && (itSV->svEnd>=sPosEnd) && (itSV->svEnd<=ePosEnd)) rightIt->second.first.push_back(pairQuality);
+		int32_t sPos = std::min(rec->core.pos, rec->core.mpos);
+		int32_t ePos = std::max(rec->core.pos, rec->core.mpos) + rec->core.l_qseq;
+		int32_t midPoint = sPos+(ePos-sPos)/2;
+		sPos=std::max(sPos, midPoint - rec->core.l_qseq);
+		ePos=std::min(ePos, midPoint + rec->core.l_qseq);
+		int32_t innerSPos = std::min(rec->core.pos, rec->core.mpos) + rec->core.l_qseq;
+		int32_t innerEPos = std::max(rec->core.pos, rec->core.mpos);
+		if ((innerSPos<innerEPos) && ((innerEPos - innerSPos) > (ePos-sPos))) {
+		  sPos = innerSPos;
+		  ePos = innerEPos;
+		}
+		if (std::abs(midPoint - itSV->svStart) < std::abs(itSV->svEnd - midPoint)) {
+		  if ((itSV->chr==rec->core.tid) && (itSV->svStart>=sPos) && (itSV->svStart<=ePos)) leftIt->second.first.push_back(pairQuality);
+		} else {
+		  if ((itSV->chr2==rec->core.tid) && (itSV->svEnd>=sPos) && (itSV->svEnd<=ePos)) rightIt->second.first.push_back(pairQuality);
+		}
+	      } else if ((getStrandIndependentOrientation(rec->core) != libIt->second.defaultOrient) || (outerISize < libIt->second.minNormalISize) || (outerISize > libIt->second.maxNormalISize) || (rec->core.tid!=rec->core.mtid)) {
+		// Missing spanning coverage
+		if (_mateIsUpstream(libIt->second.defaultOrient, (rec->core.flag & BAM_FREAD1), (rec->core.flag & BAM_FREVERSE))) {
+		  if ((itSV->chr==rec->core.tid) && (itSV->svStart>=rec->core.pos) && (itSV->svStart<=(rec->core.pos + libIt->second.maxNormalISize))) leftIt->second.second.push_back(pairQuality);
+		  if ((itSV->chr2==rec->core.tid) && (itSV->svEnd>=rec->core.pos) && (itSV->svEnd<=(rec->core.pos + libIt->second.maxNormalISize))) rightIt->second.second.push_back(pairQuality);
+		} else {
+		  if ((itSV->chr==rec->core.tid) && (itSV->svStart>=std::max(0, rec->core.pos + rec->core.l_qseq - libIt->second.maxNormalISize)) && (itSV->svStart<=(rec->core.pos + rec->core.l_qseq))) leftIt->second.second.push_back(pairQuality);
+		  if ((itSV->chr2==rec->core.tid) && (itSV->svEnd>=std::max(0, rec->core.pos + rec->core.l_qseq - libIt->second.maxNormalISize)) && (itSV->svEnd<=(rec->core.pos + rec->core.l_qseq))) rightIt->second.second.push_back(pairQuality);
+		}
+		if (_mateIsUpstream(libIt->second.defaultOrient, !(rec->core.flag & BAM_FREAD1), (rec->core.flag & BAM_FMREVERSE))) {
+		  if ((itSV->chr==rec->core.mtid) && (itSV->svStart>=rec->core.mpos) && (itSV->svStart<=(rec->core.mpos + libIt->second.maxNormalISize))) leftIt->second.second.push_back(pairQuality);
+		  if ((itSV->chr2==rec->core.mtid) && (itSV->svEnd>=rec->core.mpos) && (itSV->svEnd<=(rec->core.mpos + libIt->second.maxNormalISize))) rightIt->second.second.push_back(pairQuality);
+		} else {
+		  if ((itSV->chr==rec->core.mtid) && (itSV->svStart>=std::max(0, rec->core.mpos + rec->core.l_qseq - libIt->second.maxNormalISize)) && (itSV->svStart<=(rec->core.mpos + rec->core.l_qseq))) leftIt->second.second.push_back(pairQuality);
+		  if ((itSV->chr2==rec->core.mtid) && (itSV->svEnd>=std::max(0,rec->core.mpos + rec->core.l_qseq - libIt->second.maxNormalISize)) && (itSV->svEnd<=(rec->core.mpos + rec->core.l_qseq))) rightIt->second.second.push_back(pairQuality);
 		}
 	      }
 	    }
