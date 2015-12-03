@@ -1552,12 +1552,11 @@ inline int run(Config const& c, TSVType svType) {
 	      }
 	    }
 	  }
-	  // Clean-up qualities
-	  _resetQualities(qualities[file_c], alen[file_c], svType);
-	
 	  bam_destroy1(rec);
 	  hts_itr_destroy(iter);
 	}
+	// Clean-up qualities
+	_resetQualities(qualities[file_c], alen[file_c], svType);
       }
     
       // Sort BAM records according to position
