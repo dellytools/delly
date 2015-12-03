@@ -152,35 +152,6 @@ struct SortBamRecords : public std::binary_function<TRecord, TRecord, bool>
   }
 };
 
-// SplitRead struct
-struct SplitReadCoord {
-  bool forwardRead;
-  unsigned int offset;
-  int lastKmer;
-  int diag;
-  std::vector<char> read;
-};
-
-
-template<typename TSequence>
-struct OutputRead {
-  bool forwardRead;
-  unsigned int readOffset;
-  TSequence seq;
-};
-
-template<typename TRecord>
-struct SortSplitReadRecords : public std::binary_function<TRecord, TRecord, bool>
-{
-  inline bool operator()(TRecord const& s1, TRecord const& s2) {
-    if (s1.offset == s2.offset) {
-      if (s1.lastKmer == s2.lastKmer) return (s1.diag < s2.diag);
-      else return (s1.lastKmer<s2.lastKmer);
-    } else return (s1.offset < s2.offset);
-  }
-};
-
-
 // Edge struct
 template<typename TWeight, typename TVertex>
 struct EdgeRecord {
