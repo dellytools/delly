@@ -200,25 +200,6 @@ struct SortEdgeRecords : public std::binary_function<TRecord, TRecord, bool>
   }
 };
 
-// ExcludeInterval
-struct ExcludeInterval {
-  int32_t tid;
-  int32_t start;
-  int32_t end;
-  
-  ExcludeInterval() {}
-  ExcludeInterval(int32_t r, int32_t s, int32_t e) : tid(r), start(s), end(e) {}
-};
-
-// Sort exclude intervals
-template<typename TRecord>
-struct SortExcludeIntervals : public std::binary_function<TRecord, TRecord, bool>
-{
-  inline bool operator()(TRecord const& i1, TRecord const& i2) const {
-    return ((i1.tid < i2.tid) || ((i1.tid == i2.tid) && (i1.start < i2.start)) || ((i1.tid == i2.tid) && (i1.start == i2.start) && (i1.end < i2.end)));
-  }
-};
-
 // Read count struct
 struct ReadCount {
   int leftRC;
@@ -1368,8 +1349,13 @@ inline int run(Config const& c, TSVType svType) {
   }
 
   // Exclude intervals
-  typedef std::vector<ExcludeInterval> TExclInterval;
-  TExclInterval exclIntervals;
+  typedef boost::icl::interval_set<uint32_t> TChrIntervals;
+  typedef typename TChrIntervals::interval_type TIVal;
+  typedef std::vector<TChrIntervals> TRegionsGenome;
+  TRegionsGenome validRegions;
+  validRegions.resize(hdr->n_targets);
+  TRegionsGenome exclg;
+  exclg.resize(hdr->n_targets);
   std::vector<bool> validChr;
   validChr.resize(hdr->n_targets, true);
   if (c.hasExcludeFile) {
@@ -1389,7 +1375,7 @@ inline int run(Config const& c, TSVType svType) {
 	    if (tokIter!=tokens.end()) {
 	      int32_t start = boost::lexical_cast<int32_t>(*tokIter++);
 	      int32_t end = boost::lexical_cast<int32_t>(*tokIter++);
-	      exclIntervals.push_back(ExcludeInterval(tid, start, end));
+	      exclg[tid].insert(TIVal::right_open(start, end));
 	    } else validChr[tid] = false; // Exclude entire chromosome
 	  }
 	}
@@ -1397,7 +1383,16 @@ inline int run(Config const& c, TSVType svType) {
       chrFile.close();
     }
   }
-  std::sort(exclIntervals.begin(), exclIntervals.end(), SortExcludeIntervals<ExcludeInterval>());
+  // Create the valid regions
+  for (int i = 0; i<hdr->n_targets; ++i) {
+    uint32_t istart = 0;
+    for(typename TChrIntervals::iterator it = exclg[i].begin(); it != exclg[i].end(); ++it) {
+      if (istart + 1 < it->lower()) validRegions[i].insert(TIVal::right_open(istart, it->lower() - 1));
+      istart = it->upper();
+    }
+    if (istart + 1 < hdr->target_len[i]) validRegions[i].insert(TIVal::right_open(istart, hdr->target_len[i]));
+  }
+  exclg.clear();
 
   // Dump PE
   bool dumpPe=false;
@@ -1446,160 +1441,152 @@ inline int run(Config const& c, TSVType svType) {
 	TSampleLibrary::iterator sampleIt=sampleLib.find(sampleName);
 	
 	// Read alignments
-	hts_itr_t* iter = sam_itr_queryi(idx[file_c], refIndex, 0, reflen[refIndex]);
-	bam1_t* rec = bam_init1();
-	while (sam_itr_next(samfile[file_c], iter, rec) >= 0) {
-	  if (rec->core.flag & (BAM_FSECONDARY | BAM_FQCFAIL | BAM_FDUP | BAM_FSUPPLEMENTARY | BAM_FUNMAP)) continue;
-	  if ((rec->core.qual < c.minMapQual) || (rec->core.tid<0)) continue;
+	for(typename TChrIntervals::const_iterator vRIt = validRegions[refIndex].begin(); vRIt != validRegions[refIndex].end(); ++vRIt) {
+	  hts_itr_t* iter = sam_itr_queryi(idx[file_c], refIndex, vRIt->lower(), vRIt->upper());
+	  bam1_t* rec = bam_init1();
+	  while (sam_itr_next(samfile[file_c], iter, rec) >= 0) {
+	    if (rec->core.flag & (BAM_FSECONDARY | BAM_FQCFAIL | BAM_FDUP | BAM_FSUPPLEMENTARY | BAM_FUNMAP)) continue;
+	    if ((rec->core.qual < c.minMapQual) || (rec->core.tid<0)) continue;
 	  
-	  // Small indel detection using soft clips
-	  if ((c.indels) && (_smallIndelDetection(svType))) {
-	    int clipSize = 0;
-	    int splitPoint = 0;
-	    bool leadingSoftClip = false;
-	    if (_validSoftClip(rec, clipSize, splitPoint, leadingSoftClip, c.minMapQual)) {
-	      // Minimum clip size
-	      if (clipSize > (int) (log10(rec->core.l_qseq) * 10)) {
-		// Iterate both possible breakpoints
-		for (int bpPoint = 0; bpPoint < 2; ++bpPoint) {
-		  // Leading or trailing softclip?
-		  if (_validSCOrientation(bpPoint, leadingSoftClip, _getCT(svType), svType)) {
-		    // Get the sequence
-		    std::string sequence;
-		    sequence.resize(rec->core.l_qseq);
-		    uint8_t* seqptr = bam_get_seq(rec);
-		    for (int i = 0; i < rec->core.l_qseq; ++i) sequence[i] = "=ACMGRSVTWYHKDBN"[bam_seqi(seqptr, i)];
-		    
-		    // Check sequence
-		    size_t nCount = std::count(sequence.begin(), sequence.end(), 'N');
-		    if ((nCount * 100) / sequence.size() == 0) {
-		      std::string cstr = compressStr(sequence);
-		      double seqComplexity = (double) cstr.size() / (double) sequence.size();
-		      if (seqComplexity >= 0.45) {
-			
-			// Adjust orientation if necessary
-			_adjustOrientation(sequence, bpPoint, _getCT(svType), svType);
-			
-			// Align to local reference
-			int32_t localrefStart = 0;
-			int32_t localrefEnd = 0;
-			int32_t seqLeftOver = 0;
-			if (bpPoint) {
-			  seqLeftOver = sequence.size() - clipSize;
-			  localrefStart = std::max(0, (int) rec->core.pos - (int) (c.indelsize + clipSize));
-			  localrefEnd = rec->core.pos + seqLeftOver + 25;
-			} else {
-			  seqLeftOver = sequence.size() - (splitPoint - rec->core.pos);
-			  localrefStart = rec->core.pos;
-			  localrefEnd = splitPoint + c.indelsize + seqLeftOver;
-			}
-			std::string localref = boost::to_upper_copy(std::string(seq->seq.s + localrefStart, seq->seq.s + localrefEnd));
-			typedef boost::multi_array<char, 2> TAlign;
-			typedef typename TAlign::index TAIndex;
-			TAlign alignFwd;
-			AlignConfig<true, false> semiglobal;
-			DnaScore<int> sc(5, -4, -5 * c.minimumFlankSize, 0);
-			int altScore = gotoh(sequence, localref, alignFwd, semiglobal, sc);
-			altScore += 5 * c.minimumFlankSize;
-			
-			// Candidate small indel?
-			TAIndex cStart, cEnd, rStart, rEnd;
-			if (_findSplit(alignFwd, cStart, cEnd, rStart, rEnd, svType)) {
-			  if (_validSRAlignment(cStart, cEnd, rStart, rEnd, svType)) {
-			    int scoreThresholdAlt = (int) (qualityThres * (sequence.size() - (cEnd - cStart - 1)) * 5 + (1.0 - qualityThres) * (sequence.size() - (cEnd - cStart - 1)) * (-4));			    
-			    if (altScore > scoreThresholdAlt) {
-			      
-			      // Debug consensus to reference alignment
-			      //for(TAIndex i = 0; i<alignFwd.shape()[0]; ++i) {
-			      //for(TAIndex j = 0; j<alignFwd.shape()[1]; ++j) std::cerr << alignFwd[i][j];
-			      //std::cerr << std::endl;
-			      //}
-			      //std::cerr << bpPoint << ',' << cStart << ',' << cEnd << ',' << rStart << ',' << rEnd << std::endl;
+	    // Small indel detection using soft clips
+	    if ((c.indels) && (_smallIndelDetection(svType))) {
+	      int clipSize = 0;
+	      int splitPoint = 0;
+	      bool leadingSoftClip = false;
+	      if (_validSoftClip(rec, clipSize, splitPoint, leadingSoftClip, c.minMapQual)) {
+		// Minimum clip size
+		if (clipSize > (int) (log10(rec->core.l_qseq) * 10)) {
+		  // Iterate both possible breakpoints
+		  for (int bpPoint = 0; bpPoint < 2; ++bpPoint) {
+		    // Leading or trailing softclip?
+		    if (_validSCOrientation(bpPoint, leadingSoftClip, _getCT(svType), svType)) {
+		      // Get the sequence
+		      std::string sequence;
+		      sequence.resize(rec->core.l_qseq);
+		      uint8_t* seqptr = bam_get_seq(rec);
+		      for (int i = 0; i < rec->core.l_qseq; ++i) sequence[i] = "=ACMGRSVTWYHKDBN"[bam_seqi(seqptr, i)];
+		      
+		      // Check sequence
+		      size_t nCount = std::count(sequence.begin(), sequence.end(), 'N');
+		      if ((nCount * 100) / sequence.size() == 0) {
+			std::string cstr = compressStr(sequence);
+			double seqComplexity = (double) cstr.size() / (double) sequence.size();
+			if (seqComplexity >= 0.45) {
+			  
+			  // Adjust orientation if necessary
+			  _adjustOrientation(sequence, bpPoint, _getCT(svType), svType);
+			  
+			  // Align to local reference
+			  int32_t localrefStart = 0;
+			  int32_t localrefEnd = 0;
+			  int32_t seqLeftOver = 0;
+			  if (bpPoint) {
+			    seqLeftOver = sequence.size() - clipSize;
+			    localrefStart = std::max(0, (int) rec->core.pos - (int) (c.indelsize + clipSize));
+			    localrefEnd = rec->core.pos + seqLeftOver + 25;
+			  } else {
+			    seqLeftOver = sequence.size() - (splitPoint - rec->core.pos);
+			    localrefStart = rec->core.pos;
+			    localrefEnd = splitPoint + c.indelsize + seqLeftOver;
+			  }
+			  std::string localref = boost::to_upper_copy(std::string(seq->seq.s + localrefStart, seq->seq.s + localrefEnd));
+			  typedef boost::multi_array<char, 2> TAlign;
+			  typedef typename TAlign::index TAIndex;
+			  TAlign alignFwd;
+			  AlignConfig<true, false> semiglobal;
+			  DnaScore<int> sc(5, -4, -5 * c.minimumFlankSize, 0);
+			  int altScore = gotoh(sequence, localref, alignFwd, semiglobal, sc);
+			  altScore += 5 * c.minimumFlankSize;
+			  
+			  // Candidate small indel?
+			  TAIndex cStart, cEnd, rStart, rEnd;
+			  if (_findSplit(alignFwd, cStart, cEnd, rStart, rEnd, svType)) {
+			    if (_validSRAlignment(cStart, cEnd, rStart, rEnd, svType)) {
+			      int scoreThresholdAlt = (int) (qualityThres * (sequence.size() - (cEnd - cStart - 1)) * 5 + (1.0 - qualityThres) * (sequence.size() - (cEnd - cStart - 1)) * (-4));			    
+			      if (altScore > scoreThresholdAlt) {
+				
+				// Debug consensus to reference alignment
+				//for(TAIndex i = 0; i<alignFwd.shape()[0]; ++i) {
+				//for(TAIndex j = 0; j<alignFwd.shape()[1]; ++j) std::cerr << alignFwd[i][j];
+				//std::cerr << std::endl;
+				//}
+				//std::cerr << bpPoint << ',' << cStart << ',' << cEnd << ',' << rStart << ',' << rEnd << std::endl;
 				
 #pragma omp critical
-			      {
-				splitRecord.push_back(SplitAlignRecord(localrefStart + rStart - cStart, localrefStart + rStart, localrefStart + rEnd, localrefStart + rEnd + seqLeftOver + 25, rec->core.qual));
+				{
+				  splitRecord.push_back(SplitAlignRecord(localrefStart + rStart - cStart, localrefStart + rStart, localrefStart + rEnd, localrefStart + rEnd + seqLeftOver + 25, rec->core.qual));
+				}
 			      }
 			    }
 			  }
 			}
 		      }
 		    }
-		    }
+		  }
 		}
 	      }
 	    }
-	  }
-
-	  // Paired-end clustering
-	  if (rec->core.flag & BAM_FPAIRED) {
-	    // Mate unmapped
-	    if ((rec->core.mtid<0) || (rec->core.flag & BAM_FMUNMAP)) continue;
 	    
-	    // Mapping positions valid?
-	    if (_mappingPos(rec->core.tid, rec->core.mtid, rec->core.pos, rec->core.mpos, svType)) continue;
-	    
-	    // Is the read or its mate in a black-masked region
-	    if (!exclIntervals.empty()) {
-	      typename TExclInterval::const_iterator itBlackMask = std::lower_bound(exclIntervals.begin(), exclIntervals.end(), ExcludeInterval(rec->core.tid, rec->core.pos, 0), SortExcludeIntervals<ExcludeInterval>());
-	      if (itBlackMask!=exclIntervals.begin()) --itBlackMask;
-	      if ((itBlackMask->tid==rec->core.tid) && (itBlackMask->start <= rec->core.pos) && (rec->core.pos<=itBlackMask->end)) continue;
-	      itBlackMask = std::lower_bound(exclIntervals.begin(), exclIntervals.end(), ExcludeInterval(rec->core.mtid, rec->core.mpos, 0), SortExcludeIntervals<ExcludeInterval>());
-	      if (itBlackMask!=exclIntervals.begin()) --itBlackMask;
-	      if ((itBlackMask->tid==rec->core.mtid) && (itBlackMask->start <= rec->core.mpos) && (rec->core.mpos<=itBlackMask->end)) continue;
-	    }
-	    
-	    // Is this a discordantly mapped paired-end?
-	    std::string rG = "DefaultLib";
-	    uint8_t *rgptr = bam_aux_get(rec, "RG");
-	    if (rgptr) {
-	      char* rg = (char*) (rgptr + 1);
-	      rG = std::string(rg);
-	    }
-	    TLibraryMap::iterator libIt=sampleIt->second.find(rG);
-	    if (libIt==sampleIt->second.end()) std::cerr << "Missing read group: " << rG << std::endl;
-	    if (_acceptedInsertSize(libIt->second, abs(rec->core.isize), svType)) continue; 
-	    if (_acceptedOrientation(libIt->second.defaultOrient, getStrandIndependentOrientation(rec->core), svType)) continue;
-
-	    // Get or store the mapping quality for the partner
-	    if (_firstPairObs(rec->core.tid, rec->core.mtid, rec->core.pos, rec->core.mpos, svType)) {
-	      uint8_t r2Qual = rec->core.qual;
-	      uint8_t* ptr = bam_aux_get(rec, "AS");
-	      if (ptr) {
-		int score = std::abs((int) bam_aux2i(ptr));
-		r2Qual = std::min(r2Qual, (uint8_t) ( (score<255) ? score : 255 ));
-	      }
-	      std::size_t hv = hash_pair(rec);
-	      qualities[file_c][hv]= r2Qual;
-	      alen[file_c][hv]= alignmentLength(rec);
-	    } else {
-	      // Get the two mapping qualities
-	      uint8_t r2Qual = rec->core.qual;
-	      uint8_t* ptr = bam_aux_get(rec, "AS");
-	      if (ptr) {
-		int score = std::abs((int) bam_aux2i(ptr));
-		r2Qual = std::min(r2Qual, (uint8_t) ( (score<255) ? score : 255 ));
-	      }
-	      std::size_t hv=hash_pair_mate(rec);
-	      uint8_t pairQuality = std::min(qualities[file_c][hv], r2Qual);
-	      qualities[file_c][hv]= (uint8_t) 0;
+	    // Paired-end clustering
+	    if (rec->core.flag & BAM_FPAIRED) {
+	      // Mate unmapped
+	      if ((rec->core.mtid<0) || (rec->core.flag & BAM_FMUNMAP)) continue;
 	      
-	      // Pair quality
-	      if (pairQuality < c.minMapQual) continue;
+	      // Mapping positions valid?
+	      if (_mappingPos(rec->core.tid, rec->core.mtid, rec->core.pos, rec->core.mpos, svType)) continue;
 	      
+	      // Is this a discordantly mapped paired-end?
+	      std::string rG = "DefaultLib";
+	      uint8_t *rgptr = bam_aux_get(rec, "RG");
+	      if (rgptr) {
+		char* rg = (char*) (rgptr + 1);
+		rG = std::string(rg);
+	      }
+	      TLibraryMap::iterator libIt=sampleIt->second.find(rG);
+	      if (libIt==sampleIt->second.end()) std::cerr << "Missing read group: " << rG << std::endl;
+	      if (_acceptedInsertSize(libIt->second, abs(rec->core.isize), svType)) continue; 
+	      if (_acceptedOrientation(libIt->second.defaultOrient, getStrandIndependentOrientation(rec->core), svType)) continue;
+	      
+	      // Get or store the mapping quality for the partner
+	      if (_firstPairObs(rec->core.tid, rec->core.mtid, rec->core.pos, rec->core.mpos, svType)) {
+		uint8_t r2Qual = rec->core.qual;
+		uint8_t* ptr = bam_aux_get(rec, "AS");
+		if (ptr) {
+		  int score = std::abs((int) bam_aux2i(ptr));
+		  r2Qual = std::min(r2Qual, (uint8_t) ( (score<255) ? score : 255 ));
+		}
+		std::size_t hv = hash_pair(rec);
+		qualities[file_c][hv]= r2Qual;
+		alen[file_c][hv]= alignmentLength(rec);
+	      } else {
+		// Get the two mapping qualities
+		uint8_t r2Qual = rec->core.qual;
+		uint8_t* ptr = bam_aux_get(rec, "AS");
+		if (ptr) {
+		  int score = std::abs((int) bam_aux2i(ptr));
+		  r2Qual = std::min(r2Qual, (uint8_t) ( (score<255) ? score : 255 ));
+		}
+		std::size_t hv=hash_pair_mate(rec);
+		uint8_t pairQuality = std::min(qualities[file_c][hv], r2Qual);
+		qualities[file_c][hv]= (uint8_t) 0;
+	      
+		// Pair quality
+		if (pairQuality < c.minMapQual) continue;
+		
 #pragma omp critical
-	      {
-		bamRecord.push_back(BamAlignRecord(rec, pairQuality, alignmentLength(rec), alen[file_c][hv], libIt->second.median, libIt->second.mad, libIt->second.maxNormalISize, libIt->second.defaultOrient));
+		{
+		  bamRecord.push_back(BamAlignRecord(rec, pairQuality, alignmentLength(rec), alen[file_c][hv], libIt->second.median, libIt->second.mad, libIt->second.maxNormalISize, libIt->second.defaultOrient));
+		}
+		++libIt->second.abnormal_pairs;
 	      }
-	      ++libIt->second.abnormal_pairs;
 	    }
 	  }
-	}
-	// Clean-up qualities
-	_resetQualities(qualities[file_c], alen[file_c], svType);
+	  // Clean-up qualities
+	  _resetQualities(qualities[file_c], alen[file_c], svType);
 	
-	bam_destroy1(rec);
-	hts_itr_destroy(iter);
+	  bam_destroy1(rec);
+	  hts_itr_destroy(iter);
+	}
       }
     
       // Sort BAM records according to position
