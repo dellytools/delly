@@ -590,7 +590,7 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
   }
     
   // Clean-up
-  for(size_t i = 0; i < bcf_hdr_nsamples(hdr); ++i) delete [] ftarr[i];
+  for(int32_t i = 0; i < bcf_hdr_nsamples(hdr); ++i) delete [] ftarr[i];
   delete [] ftarr;
   free(gts);
   free(gls);
@@ -1527,11 +1527,11 @@ inline int run(Config const& c, TSVType svType) {
 			if (bpPoint) {
 			  seqLeftOver = sequence.size() - clipSize;
 			  localrefStart = std::max(0, (int) rec->core.pos - (int) (c.indelsize + clipSize));
-			  localrefEnd = rec->core.pos + seqLeftOver + 25;
+			  localrefEnd = std::min(rec->core.pos + seqLeftOver + 25, (int) hdr->target_len[refIndex]);
 			} else {
 			  seqLeftOver = sequence.size() - (splitPoint - rec->core.pos);
 			  localrefStart = rec->core.pos;
-			  localrefEnd = splitPoint + c.indelsize + seqLeftOver;
+			  localrefEnd = std::min(splitPoint + c.indelsize + seqLeftOver, hdr->target_len[refIndex]);
 			}
 			std::string localref = boost::to_upper_copy(std::string(seq->seq.s + localrefStart, seq->seq.s + localrefEnd));
 			typedef boost::multi_array<char, 2> TAlign;
