@@ -368,64 +368,83 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
   // Typedefs
   typedef typename TCountMap::key_type TSampleSVPair;
 
-  // Get the references
-  typedef std::vector<std::string> TRefNames;
-  TRefNames refnames;
-  if (refnames.empty()) {
-    samFile* samfile = sam_open(c.files[0].string().c_str(), "r");
-    bam_hdr_t* hdr = sam_hdr_read(samfile);
-    for (int i = 0; i<hdr->n_targets; ++i) refnames.push_back(hdr->target_name[i]);
-    bam_hdr_destroy(hdr);
-    sam_close(samfile);
-  }
+  // Open one bam file header
+  samFile* samfile = sam_open(c.files[0].string().c_str(), "r");
+  bam_hdr_t* bamhd = sam_hdr_read(samfile);
 
   // Output all structural variants
-  std::ofstream ofile(c.outfile.string().c_str());
+  htsFile *fp = hts_open(c.outfile.string().c_str(), "wg");
+  bcf_hdr_t *hdr = bcf_hdr_init("w");
 
   // Print vcf header
   boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
   boost::gregorian::date today = now.date();
-  ofile << "##fileformat=VCFv4.1" << std::endl;
-  ofile << "##fileDate=" << boost::gregorian::to_iso_string(today) << std::endl;
-  ofile << "##ALT=<ID=DEL,Description=\"Deletion\">" << std::endl;
-  ofile << "##ALT=<ID=DUP,Description=\"Duplication\">" << std::endl;
-  ofile << "##ALT=<ID=INV,Description=\"Inversion\">" << std::endl;
-  ofile << "##ALT=<ID=TRA,Description=\"Translocation\">" << std::endl;
-  ofile << "##ALT=<ID=INS,Description=\"Insertion\">" << std::endl;
-  ofile << "##FILTER=<ID=LowQual,Description=\"PE/SR support below 3 or mapping quality below 20.\">" << std::endl;
-  ofile << "##INFO=<ID=CIEND,Number=2,Type=Integer,Description=\"PE confidence interval around END\">" << std::endl;
-  ofile << "##INFO=<ID=CIPOS,Number=2,Type=Integer,Description=\"PE confidence interval around POS\">" << std::endl;
-  ofile << "##INFO=<ID=CHR2,Number=1,Type=String,Description=\"Chromosome for END coordinate in case of a translocation\">" << std::endl;
-  ofile << "##INFO=<ID=END,Number=1,Type=Integer,Description=\"End position of the structural variant\">" << std::endl;
-  ofile << "##INFO=<ID=PE,Number=1,Type=Integer,Description=\"Paired-end support of the structural variant\">" << std::endl;
-  ofile << "##INFO=<ID=MAPQ,Number=1,Type=Integer,Description=\"Median mapping quality of paired-ends\">" << std::endl;
-  ofile << "##INFO=<ID=SR,Number=1,Type=Integer,Description=\"Split-read support\">" << std::endl;
-  ofile << "##INFO=<ID=SRQ,Number=1,Type=Float,Description=\"Split-read consensus alignment quality\">" << std::endl;
-  ofile << "##INFO=<ID=CONSENSUS,Number=1,Type=String,Description=\"Split-read consensus sequence\">" << std::endl;
-  ofile << "##INFO=<ID=CT,Number=1,Type=String,Description=\"Paired-end signature induced connection type\">" << std::endl;
-  ofile << "##INFO=<ID=IMPRECISE,Number=0,Type=Flag,Description=\"Imprecise structural variation\">" << std::endl;
-  ofile << "##INFO=<ID=PRECISE,Number=0,Type=Flag,Description=\"Precise structural variation\">" << std::endl;
-  ofile << "##INFO=<ID=SVTYPE,Number=1,Type=String,Description=\"Type of structural variant\">" << std::endl;
-  ofile << "##INFO=<ID=SVMETHOD,Number=1,Type=String,Description=\"Type of approach used to detect SV\">" << std::endl;
-  ofile << "##INFO=<ID=INSLEN,Number=1,Type=Integer,Description=\"Predicted length of the insertion\">" << std::endl;
-  ofile << "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">" << std::endl;
-  ofile << "##FORMAT=<ID=GL,Number=G,Type=Float,Description=\"Log10-scaled genotype likelihoods for RR,RA,AA genotypes\">" << std::endl;
-  ofile << "##FORMAT=<ID=GQ,Number=1,Type=Integer,Description=\"Genotype Quality\">" << std::endl;
-  ofile << "##FORMAT=<ID=FT,Number=1,Type=String,Description=\"Per-sample genotype filter\">" << std::endl;
-  ofile << "##FORMAT=<ID=RC,Number=1,Type=Integer,Description=\"Raw high-quality read counts for the SV\">" << std::endl;
-  ofile << "##FORMAT=<ID=RCL,Number=1,Type=Integer,Description=\"Raw high-quality read counts for the left control region\">" << std::endl;
-  ofile << "##FORMAT=<ID=RCR,Number=1,Type=Integer,Description=\"Raw high-quality read counts for the right control region\">" << std::endl;
-  ofile << "##FORMAT=<ID=CN,Number=1,Type=Integer,Description=\"Read-depth based copy-number estimate for autosomal sites\">" << std::endl;
-  ofile << "##FORMAT=<ID=DR,Number=1,Type=Integer,Description=\"# high-quality reference pairs\">" << std::endl;
-  ofile << "##FORMAT=<ID=DV,Number=1,Type=Integer,Description=\"# high-quality variant pairs\">" << std::endl;
-  ofile << "##FORMAT=<ID=RR,Number=1,Type=Integer,Description=\"# high-quality reference junction reads\">" << std::endl;
-  ofile << "##FORMAT=<ID=RV,Number=1,Type=Integer,Description=\"# high-quality variant junction reads\">" << std::endl;
-  ofile << "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT";
+  std::stringstream datestr;
+  datestr << "##fileDate=" << boost::gregorian::to_iso_string(today);
+  bcf_hdr_append(hdr, datestr.str().c_str());
+  bcf_hdr_append(hdr, "##ALT=<ID=DEL,Description=\"Deletion\">");
+  bcf_hdr_append(hdr, "##ALT=<ID=DUP,Description=\"Duplication\">");
+  bcf_hdr_append(hdr, "##ALT=<ID=INV,Description=\"Inversion\">");
+  bcf_hdr_append(hdr, "##ALT=<ID=TRA,Description=\"Translocation\">");
+  bcf_hdr_append(hdr, "##ALT=<ID=INS,Description=\"Insertion\">");
+  bcf_hdr_append(hdr, "##FILTER=<ID=LowQual,Description=\"PE/SR support below 3 or mapping quality below 20.\">");
+  bcf_hdr_append(hdr, "##INFO=<ID=CIEND,Number=2,Type=Integer,Description=\"PE confidence interval around END\">");
+  bcf_hdr_append(hdr, "##INFO=<ID=CIPOS,Number=2,Type=Integer,Description=\"PE confidence interval around POS\">");
+  bcf_hdr_append(hdr, "##INFO=<ID=CHR2,Number=1,Type=String,Description=\"Chromosome for END coordinate in case of a translocation\">");
+  bcf_hdr_append(hdr, "##INFO=<ID=END,Number=1,Type=Integer,Description=\"End position of the structural variant\">");
+  bcf_hdr_append(hdr, "##INFO=<ID=PE,Number=1,Type=Integer,Description=\"Paired-end support of the structural variant\">");
+  bcf_hdr_append(hdr, "##INFO=<ID=MAPQ,Number=1,Type=Integer,Description=\"Median mapping quality of paired-ends\">");
+  bcf_hdr_append(hdr, "##INFO=<ID=SR,Number=1,Type=Integer,Description=\"Split-read support\">");
+  bcf_hdr_append(hdr, "##INFO=<ID=SRQ,Number=1,Type=Float,Description=\"Split-read consensus alignment quality\">");
+  bcf_hdr_append(hdr, "##INFO=<ID=CONSENSUS,Number=1,Type=String,Description=\"Split-read consensus sequence\">");
+  bcf_hdr_append(hdr, "##INFO=<ID=CT,Number=1,Type=String,Description=\"Paired-end signature induced connection type\">");
+  bcf_hdr_append(hdr, "##INFO=<ID=IMPRECISE,Number=0,Type=Flag,Description=\"Imprecise structural variation\">");
+  bcf_hdr_append(hdr, "##INFO=<ID=PRECISE,Number=0,Type=Flag,Description=\"Precise structural variation\">");
+  bcf_hdr_append(hdr, "##INFO=<ID=SVTYPE,Number=1,Type=String,Description=\"Type of structural variant\">");
+  bcf_hdr_append(hdr, "##INFO=<ID=SVMETHOD,Number=1,Type=String,Description=\"Type of approach used to detect SV\">");
+  bcf_hdr_append(hdr, "##INFO=<ID=INSLEN,Number=1,Type=Integer,Description=\"Predicted length of the insertion\">");
+  bcf_hdr_append(hdr, "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">");
+  bcf_hdr_append(hdr, "##FORMAT=<ID=GL,Number=G,Type=Float,Description=\"Log10-scaled genotype likelihoods for RR,RA,AA genotypes\">");
+  bcf_hdr_append(hdr, "##FORMAT=<ID=GQ,Number=1,Type=Integer,Description=\"Genotype Quality\">");
+  bcf_hdr_append(hdr, "##FORMAT=<ID=FT,Number=1,Type=String,Description=\"Per-sample genotype filter\">");
+  bcf_hdr_append(hdr, "##FORMAT=<ID=RC,Number=1,Type=Integer,Description=\"Raw high-quality read counts for the SV\">");
+  bcf_hdr_append(hdr, "##FORMAT=<ID=RCL,Number=1,Type=Integer,Description=\"Raw high-quality read counts for the left control region\">");
+  bcf_hdr_append(hdr, "##FORMAT=<ID=RCR,Number=1,Type=Integer,Description=\"Raw high-quality read counts for the right control region\">");
+  bcf_hdr_append(hdr, "##FORMAT=<ID=CN,Number=1,Type=Integer,Description=\"Read-depth based copy-number estimate for autosomal sites\">");
+  bcf_hdr_append(hdr, "##FORMAT=<ID=DR,Number=1,Type=Integer,Description=\"# high-quality reference pairs\">");
+  bcf_hdr_append(hdr, "##FORMAT=<ID=DV,Number=1,Type=Integer,Description=\"# high-quality variant pairs\">");
+  bcf_hdr_append(hdr, "##FORMAT=<ID=RR,Number=1,Type=Integer,Description=\"# high-quality reference junction reads\">");
+  bcf_hdr_append(hdr, "##FORMAT=<ID=RV,Number=1,Type=Integer,Description=\"# high-quality variant junction reads\">");
+  // Add reference
+  std::stringstream refloc;
+  refloc << "##reference=" << c.genome.string();
+  bcf_hdr_append(hdr, refloc.str().c_str());
+  for (int i = 0; i<bamhd->n_targets; ++i) {
+    std::stringstream refname;
+    refname << "##contig=<ID=" << bamhd->target_name[i] << ",length=" << bamhd->target_len[i] << ">";
+    bcf_hdr_append(hdr, refname.str().c_str());
+  }
+  // Add samples
   for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
     std::string sampleName(c.files[file_c].stem().string());
-    ofile << "\t" << sampleName;
+    bcf_hdr_add_sample(hdr, sampleName.c_str());
   }
-  ofile << std::endl;
+  bcf_hdr_add_sample(hdr, NULL);
+  bcf_hdr_write(fp, hdr);
+
+  // Genotype arrays
+  int32_t *gts = (int*) malloc(bcf_hdr_nsamples(hdr) * 2 * sizeof(int));
+  float *gls = (float*) malloc(bcf_hdr_nsamples(hdr) * 3 * sizeof(float));
+  int32_t *rcl = (int*) malloc(bcf_hdr_nsamples(hdr) * sizeof(int));
+  int32_t *rc = (int*) malloc(bcf_hdr_nsamples(hdr) * sizeof(int));
+  int32_t *rcr = (int*) malloc(bcf_hdr_nsamples(hdr) * sizeof(int));
+  int32_t *cnest = (int*) malloc(bcf_hdr_nsamples(hdr) * sizeof(int));
+  int32_t *drcount = (int*) malloc(bcf_hdr_nsamples(hdr) * sizeof(int));
+  int32_t *dvcount = (int*) malloc(bcf_hdr_nsamples(hdr) * sizeof(int));
+  int32_t *rrcount = (int*) malloc(bcf_hdr_nsamples(hdr) * sizeof(int));
+  int32_t *rvcount = (int*) malloc(bcf_hdr_nsamples(hdr) * sizeof(int));
+  int32_t *gqval = (int*) malloc(bcf_hdr_nsamples(hdr) * sizeof(int));
+  char** ftarr = new char*[bcf_hdr_nsamples(hdr)];
 
   // Iterate all structural variants
   typedef std::vector<TStructuralVariantRecord> TSVs;
@@ -434,41 +453,64 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
   now = boost::posix_time::second_clock::local_time();
   std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Genotyping" << std::endl;
   boost::progress_display show_progress( svs.size() );
+  bcf1_t *rec = bcf_init();
   for(;svIter!=svIterEnd;++svIter) {
     ++show_progress;
 
     // Output main vcf fields
-    std::string filterField="PASS";
+    int32_t tmpi = bcf_hdr_id2int(hdr, BCF_DT_ID, "PASS");
     if ((svIter->precise) && (svIter->chr == svIter->chr2)) {
-      if ((svIter->srSupport < 3) || (svIter->peMapQuality < 20)) filterField="LowQual";
+      if ((svIter->srSupport < 3) || (svIter->peMapQuality < 20)) tmpi = bcf_hdr_id2int(hdr, BCF_DT_ID, "LowQual");
     } else {
-      if ((svIter->peSupport < 3) || (svIter->peMapQuality < 20) || ( (svIter->chr != svIter->chr2) && (svIter->peSupport < 5) ) ) filterField="LowQual";
+      if ((svIter->peSupport < 3) || (svIter->peMapQuality < 20) || ( (svIter->chr != svIter->chr2) && (svIter->peSupport < 5) ) ) tmpi = bcf_hdr_id2int(hdr, BCF_DT_ID, "LowQual");
     }
-    
+    rec->rid = bcf_hdr_name2id(hdr, bamhd->target_name[svIter->chr]);
+    rec->pos = svIter->svStart - 1;
     std::stringstream id;
     id << _addID(svType) << std::setw(8) << std::setfill('0') << svIter->id;
-    ofile << refnames[svIter->chr] << "\t" << svIter->svStart << "\t" << id.str() << "\tN\t<" << _addID(svType) << ">\t.\t" <<  filterField << "\t";
+    bcf_update_id(hdr, rec, id.str().c_str());
+    std::stringstream alleles;
+    alleles << "N,<" << _addID(svType) << ">";
+    bcf_update_alleles_str(hdr, rec, alleles.str().c_str());
+    // ToDo
+    //rec->qual = 0;
+    bcf_update_filter(hdr, rec, &tmpi, 1);
 
-    // Add info fields
-    if (svIter->precise) ofile << "PRECISE;";
-    else ofile << "IMPRECISE;";
-    ofile << "CIEND=" << -svIter->wiggle << "," << svIter->wiggle << ";CIPOS=" << -svIter->wiggle << "," << svIter->wiggle << ";";
-    ofile << "SVTYPE=" << _addID(svType) << ";";
-    ofile << "SVMETHOD=EMBL.DELLYv" << dellyVersionNumber << ";";
-    ofile << "CHR2=" << refnames[svIter->chr2] << ";";
-    ofile << "END=" << svIter->svEnd << ";";
-    ofile << "CT=" << _addOrientation(svIter->ct) << ";";
-    ofile << "INSLEN=" << _addInsertionLength(svIter->insLen, svType) << ";";
-    ofile << "PE=" << svIter->peSupport << ";";
-    ofile << "MAPQ=" << (int) svIter->peMapQuality;
+    // Add INFO fields
+    if (svIter->precise) bcf_update_info_flag(hdr, rec, "PRECISE", NULL, 1);
+    else bcf_update_info_flag(hdr, rec, "IMPRECISE", NULL, 1);
+    bcf_update_info_string(hdr, rec, "SVTYPE", _addID(svType).c_str());
+    std::stringstream dellyVersion;
+    dellyVersion << "EMBL.DELLYv" << dellyVersionNumber;
+    bcf_update_info_string(hdr,rec, "SVMETHOD", dellyVersion.str().c_str());
+    bcf_update_info_string(hdr,rec, "CHR2", bamhd->target_name[svIter->chr2]);
+    tmpi = svIter->svEnd;
+    bcf_update_info_int32(hdr, rec, "END", &tmpi, 1);
+    tmpi = _addInsertionLength(svIter->insLen, svType);
+    bcf_update_info_int32(hdr, rec, "INSLEN", &tmpi, 1);
+    tmpi = svIter->peSupport;
+    bcf_update_info_int32(hdr, rec, "PE", &tmpi, 1);
+    tmpi = svIter->peMapQuality;
+    bcf_update_info_int32(hdr, rec, "MAPQ", &tmpi, 1);
+    bcf_update_info_string(hdr, rec, "CT", _addOrientation(svIter->ct).c_str());
+    int32_t ciend[2];
+    ciend[0] = -svIter->wiggle;
+    ciend[1] = svIter->wiggle;
+    int32_t cipos[2];
+    cipos[0] = -svIter->wiggle;
+    cipos[1] = svIter->wiggle;
+    bcf_update_info_int32(hdr, rec, "CIPOS", cipos, 2);
+    bcf_update_info_int32(hdr, rec, "CIEND", ciend, 2);
+    
     if (svIter->precise)  {
-      ofile << ";SR=" << svIter->srSupport;
-      ofile << ";SRQ=" << svIter->srAlignQuality;
-      ofile << ";CONSENSUS=" << svIter->consensus;
+      tmpi = svIter->srSupport;
+      bcf_update_info_int32(hdr, rec, "SR", &tmpi, 1);
+      float tmpf = svIter->srAlignQuality;
+      bcf_update_info_float(hdr, rec, "SRQ", &tmpf, 1);
+      bcf_update_info_string(hdr, rec, "CONSENSUS", svIter->consensus.c_str());
     }
 
-    // Add genotype columns (right bp only across all samples)
-    ofile << "\tGT:GL:GQ:FT:RCL:RC:RCR:CN:DR:DV:RR:RV";
+    // Add genotype columns
     for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
       // Get the sample name
       std::string sampleName(c.files[file_c].stem().string());
@@ -479,60 +521,96 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
       typename TCountMap::const_iterator spanRightIt=spanCountMap.find(sampleSVPairRight);
 
       // Counters
-      int drCount = 0;
-      int dvCount = 0;
-      int rrCount = 0;
-      int rvCount = 0;
-      int leftRC = 0;
-      int rcCount = 0;
-      int rightRC = 0;
+      rcl[file_c] = 0;
+      rc[file_c] = 0;
+      rcr[file_c] = 0;
+      cnest[file_c] = 0;
+      drcount[file_c] = 0;
+      dvcount[file_c] = 0;
+      rrcount[file_c] = 0;
+      rvcount[file_c] = 0;
       if (spanLeftIt->second.first.size()<spanRightIt->second.first.size()) {
-	drCount=spanLeftIt->second.first.size();
-	dvCount=spanLeftIt->second.second.size();
+	drcount[file_c] = spanLeftIt->second.first.size();
+	dvcount[file_c] = spanLeftIt->second.second.size();
       } else {
-	drCount=spanRightIt->second.first.size();
-	dvCount=spanRightIt->second.second.size();
+	drcount[file_c] = spanRightIt->second.first.size();
+	dvcount[file_c] = spanRightIt->second.second.size();
       }
       if (jctCountMapIt!=jctCountMap.end()) {
-	rrCount = jctCountMapIt->second.first.size();
-	rvCount = jctCountMapIt->second.second.size();
+	rrcount[file_c] = jctCountMapIt->second.first.size();
+	rvcount[file_c] = jctCountMapIt->second.second.size();
       }
 
       // Compute GLs
       double gl[3];
-      int gqVal;
-      std::string gtype;
+      gqval[file_c] = 0;
       bool trGL;
-      if (svIter->precise) trGL = _computeGLs(jctCountMapIt->second.first, jctCountMapIt->second.second, &gl[0], gqVal, gtype);
+      if (svIter->precise) trGL = _computeGLs(jctCountMapIt->second.first, jctCountMapIt->second.second, &gl[0], gqval[file_c], gts, file_c);
       else {  // Imprecise SVs
-	if (spanLeftIt->second.first.size()<spanRightIt->second.first.size()) trGL = _computeGLs(spanLeftIt->second.first, spanLeftIt->second.second, &gl[0], gqVal, gtype);
-	else trGL = _computeGLs(spanRightIt->second.first, spanRightIt->second.second, &gl[0], gqVal, gtype);
+	if (spanLeftIt->second.first.size()<spanRightIt->second.first.size()) trGL = _computeGLs(spanLeftIt->second.first, spanLeftIt->second.second, &gl[0], gqval[file_c], gts, file_c);
+	else trGL = _computeGLs(spanRightIt->second.first, spanRightIt->second.second, &gl[0], gqval[file_c], gts, file_c);
       }
+      gls[file_c * 3 + 2] = (float) gl[0];
+      gls[file_c * 3 + 1] = (float) gl[1];
+      gls[file_c * 3] = (float) gl[2];
 
       // Compute RCs
       typename TReadCountMap::const_iterator readCountMapIt=readCountMap.find(sampleSVPairLeft);
       if (readCountMapIt!=readCountMap.end()) {
-	leftRC = readCountMapIt->second.leftRC;
-	rcCount = readCountMapIt->second.rc;
-	rightRC = readCountMapIt->second.rightRC;
+	rcl[file_c] = readCountMapIt->second.leftRC;
+	rc[file_c] = readCountMapIt->second.rc;
+	rcr[file_c] = readCountMapIt->second.rightRC;
       }	
-      int cnEst = -1;
-      if ((leftRC + rightRC) > 0) cnEst = boost::math::iround( 2.0 * (double) rcCount / (double) (leftRC + rightRC) );
+      cnest[file_c] = -1;
+      if ((rcl[file_c] + rcr[file_c]) > 0) cnest[file_c] = boost::math::iround( 2.0 * (double) rc[file_c] / (double) (rcl[file_c] + rcr[file_c]) );
       
       // Output genotypes
       if (trGL) {
-	ofile << "\t" << gtype << ":" << gl[2] << "," << gl[1] << "," << gl[0] << ":" << gqVal << ":";
-	if (gqVal<15) ofile << "LowQual:";
-	else ofile << "PASS:";
-      } else {
-	ofile << "\t./.:.,.,.:0:LowQual:";
+	std::string ft;
+	if (gqval[file_c] < 15) ft = "LowQual";
+	else ft = "PASS";
+	ftarr[file_c] = new char[ft.size() + 1];
+	strcpy(ftarr[file_c], ft.c_str());
       }
-      ofile << leftRC << ":" << rcCount << ":" << rightRC << ":" << cnEst << ":" << drCount << ":" << dvCount << ":" << rrCount << ":" << rvCount;
     }
-    ofile << std::endl;
+    bcf_update_genotypes(hdr, rec, gts, bcf_hdr_nsamples(hdr) * 2);
+    bcf_update_format_float(hdr, rec, "GL",  gls, bcf_hdr_nsamples(hdr) * 3);
+    bcf_update_format_int32(hdr, rec, "GQ", gqval, bcf_hdr_nsamples(hdr));
+    bcf_update_format_string(hdr, rec, "FT", const_cast<const char**>(ftarr), bcf_hdr_nsamples(hdr));
+    bcf_update_format_int32(hdr, rec, "RCL", rcl, bcf_hdr_nsamples(hdr));
+    bcf_update_format_int32(hdr, rec, "RC", rc, bcf_hdr_nsamples(hdr));
+    bcf_update_format_int32(hdr, rec, "RCR", rcr, bcf_hdr_nsamples(hdr));
+    bcf_update_format_int32(hdr, rec, "CN", cnest, bcf_hdr_nsamples(hdr));
+    bcf_update_format_int32(hdr, rec, "DR", drcount, bcf_hdr_nsamples(hdr));
+    bcf_update_format_int32(hdr, rec, "DV", dvcount, bcf_hdr_nsamples(hdr));
+    bcf_update_format_int32(hdr, rec, "RR", rrcount, bcf_hdr_nsamples(hdr));
+    bcf_update_format_int32(hdr, rec, "RV", rvcount, bcf_hdr_nsamples(hdr));
+    bcf_write1(fp, hdr, rec);
+    bcf_clear1(rec);
   }
+    
+  // Clean-up
+  for(size_t i = 0; i < bcf_hdr_nsamples(hdr); ++i) delete [] ftarr[i];
+  delete [] ftarr;
+  free(gts);
+  free(gls);
+  free(rcl);
+  free(rc);
+  free(cnest);
+  free(drcount);
+  free(dvcount);
+  free(rrcount);
+  free(rvcount);
+  free(gqval);
 
-  ofile.close();
+  // Close BAM file
+  bam_hdr_destroy(bamhd);
+  sam_close(samfile);
+
+  // Close VCF file
+  bcf_destroy1(rec);
+  bcf_hdr_destroy(hdr);
+  hts_close(fp);
 }
 
 
@@ -1806,7 +1884,7 @@ int main(int argc, char **argv) {
   generic.add_options()
     ("help,?", "show help message")
     ("type,t", boost::program_options::value<std::string>(&c.svType)->default_value("DEL"), "SV type (DEL, DUP, INV, TRA, INS)")
-    ("outfile,o", boost::program_options::value<boost::filesystem::path>(&c.outfile)->default_value("sv.vcf"), "SV output file")
+    ("outfile,o", boost::program_options::value<boost::filesystem::path>(&c.outfile)->default_value("sv.vcf.gz"), "SV output file")
     ("exclude,x", boost::program_options::value<boost::filesystem::path>(&c.exclude), "file with regions to exclude")
     ;
 
