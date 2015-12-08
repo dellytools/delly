@@ -472,8 +472,6 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
     std::stringstream alleles;
     alleles << "N,<" << _addID(svType) << ">";
     bcf_update_alleles_str(hdr, rec, alleles.str().c_str());
-    // ToDo
-    //rec->qual = 0;
     bcf_update_filter(hdr, rec, &tmpi, 1);
 
     // Add INFO fields
@@ -542,17 +540,12 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
       }
 
       // Compute GLs
-      double gl[3];
-      gqval[file_c] = 0;
       bool trGL;
-      if (svIter->precise) trGL = _computeGLs(jctCountMapIt->second.first, jctCountMapIt->second.second, &gl[0], gqval[file_c], gts, file_c);
+      if (svIter->precise) trGL = _computeGLs(jctCountMapIt->second.first, jctCountMapIt->second.second, gls, gqval, gts, file_c);
       else {  // Imprecise SVs
-	if (spanLeftIt->second.first.size()<spanRightIt->second.first.size()) trGL = _computeGLs(spanLeftIt->second.first, spanLeftIt->second.second, &gl[0], gqval[file_c], gts, file_c);
-	else trGL = _computeGLs(spanRightIt->second.first, spanRightIt->second.second, &gl[0], gqval[file_c], gts, file_c);
+	if (spanLeftIt->second.first.size()<spanRightIt->second.first.size()) trGL = _computeGLs(spanLeftIt->second.first, spanLeftIt->second.second, gls, gqval, gts, file_c);
+	else trGL = _computeGLs(spanRightIt->second.first, spanRightIt->second.second, gls, gqval, gts, file_c);
       }
-      gls[file_c * 3 + 2] = (float) gl[0];
-      gls[file_c * 3 + 1] = (float) gl[1];
-      gls[file_c * 3] = (float) gl[2];
 
       // Compute RCs
       typename TReadCountMap::const_iterator readCountMapIt=readCountMap.find(sampleSVPairLeft);
@@ -573,6 +566,10 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
 	strcpy(ftarr[file_c], ft.c_str());
       }
     }
+    // ToDo
+    //rec->qual = 0;
+
+
     bcf_update_genotypes(hdr, rec, gts, bcf_hdr_nsamples(hdr) * 2);
     bcf_update_format_float(hdr, rec, "GL",  gls, bcf_hdr_nsamples(hdr) * 3);
     bcf_update_format_int32(hdr, rec, "GQ", gqval, bcf_hdr_nsamples(hdr));

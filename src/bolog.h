@@ -40,9 +40,12 @@ struct BoLog {
 };
 
 
- template<typename TMapqVector, typename FLP, typename TGQ>
+ template<typename TMapqVector>
  inline bool
- _computeGLs(TMapqVector const& mapqRef, TMapqVector const& mapqAlt, FLP* gl, TGQ& gq, int32_t* gts, int const file_c) {
+ _computeGLs(TMapqVector const& mapqRef, TMapqVector const& mapqAlt, float* gls, int32_t* gqval, int32_t* gts, int const file_c) {
+   typedef double FLP;
+   FLP gl[3];
+
    // Compute genotype likelihoods
    BoLog<FLP> bl;
    
@@ -82,7 +85,7 @@ struct BoLog {
    if ((peDepth) && (pl[0] + pl[1] + pl[2] > 0)) {
      FLP likelihood = (FLP) std::log10((1-1/(bl.phred2prob[pl[0]]+bl.phred2prob[pl[1]]+bl.phred2prob[pl[2]])));
      likelihood = (likelihood > SMALLEST_GL) ? likelihood : SMALLEST_GL;
-     gq = (TGQ) boost::math::round(-10 * likelihood);
+     gqval[file_c] = (int32_t) boost::math::round(-10 * likelihood);
      if (glBest==0) {
        gts[file_c * 2] = bcf_gt_unphased(1);
        gts[file_c * 2 + 1] = bcf_gt_unphased(1);
@@ -96,9 +99,12 @@ struct BoLog {
    } else {
      gts[file_c * 2] = bcf_gt_missing;
      gts[file_c * 2 + 1] = bcf_gt_missing;
-     gq = 0;
+     gqval[file_c] = 0;
    }
-   return (gq > 0);
+   gls[file_c * 3 + 2] = (float) gl[0];
+   gls[file_c * 3 + 1] = (float) gl[1];
+   gls[file_c * 3] = (float) gl[2];
+   return (gqval[file_c] > 0);
  }
  
 
