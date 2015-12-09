@@ -379,10 +379,9 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
   // Print vcf header
   boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
   boost::gregorian::date today = now.date();
-  std::stringstream datestr;
-  datestr << "##fileDate=" << boost::gregorian::to_iso_string(today);
-  std::string tmps = datestr.str();
-  bcf_hdr_append(hdr, tmps.c_str());
+  std::string datestr("##fileDate=");
+  datestr += boost::gregorian::to_iso_string(today);
+  bcf_hdr_append(hdr, datestr.c_str());
   bcf_hdr_append(hdr, "##ALT=<ID=DEL,Description=\"Deletion\">");
   bcf_hdr_append(hdr, "##ALT=<ID=DUP,Description=\"Duplication\">");
   bcf_hdr_append(hdr, "##ALT=<ID=INV,Description=\"Inversion\">");
@@ -417,15 +416,13 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
   bcf_hdr_append(hdr, "##FORMAT=<ID=RR,Number=1,Type=Integer,Description=\"# high-quality reference junction reads\">");
   bcf_hdr_append(hdr, "##FORMAT=<ID=RV,Number=1,Type=Integer,Description=\"# high-quality variant junction reads\">");
   // Add reference
-  std::stringstream refloc;
-  refloc << "##reference=" << c.genome.string();
-  tmps = refloc.str();
-  bcf_hdr_append(hdr, tmps.c_str());
+  std::string refloc("##reference=");
+  refloc += c.genome.string();
+  bcf_hdr_append(hdr, refloc.c_str());
   for (int i = 0; i<bamhd->n_targets; ++i) {
-    std::stringstream refname;
-    refname << "##contig=<ID=" << bamhd->target_name[i] << ",length=" << bamhd->target_len[i] << ">";
-    tmps = refname.str();
-    bcf_hdr_append(hdr, tmps.c_str());
+    std::string refname("##contig=<ID=");
+    refname += std::string(bamhd->target_name[i]) + ",length=" + boost::lexical_cast<std::string>(bamhd->target_len[i]) + ">";
+    bcf_hdr_append(hdr, refname.c_str());
   }
   // Add samples
   for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
@@ -471,22 +468,20 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
     rec->pos = svIter->svStart - 1;
     std::stringstream id;
     id << _addID(svType) << std::setw(8) << std::setfill('0') << svIter->id;
-    tmps = id.str();
+    std::string tmps(id.str());
     bcf_update_id(hdr, rec, tmps.c_str());
-    std::stringstream alleles;
-    alleles << "N,<" << _addID(svType) << ">";
-    tmps = alleles.str();
-    bcf_update_alleles_str(hdr, rec, tmps.c_str());
+    std::string alleles;
+    alleles += "N,<" + _addID(svType) + ">";
+    bcf_update_alleles_str(hdr, rec, alleles.c_str());
     bcf_update_filter(hdr, rec, &tmpi, 1);
 
     // Add INFO fields
     if (svIter->precise) bcf_update_info_flag(hdr, rec, "PRECISE", NULL, 1);
     else bcf_update_info_flag(hdr, rec, "IMPRECISE", NULL, 1);
     bcf_update_info_string(hdr, rec, "SVTYPE", _addID(svType).c_str());
-    std::stringstream dellyVersion;
-    dellyVersion << "EMBL.DELLYv" << dellyVersionNumber;
-    tmps = dellyVersion.str();
-    bcf_update_info_string(hdr,rec, "SVMETHOD", tmps.c_str());
+    std::string dellyVersion("EMBL.DELLYv");
+    dellyVersion += dellyVersionNumber;
+    bcf_update_info_string(hdr,rec, "SVMETHOD", dellyVersion.c_str());
     bcf_update_info_string(hdr,rec, "CHR2", bamhd->target_name[svIter->chr2]);
     tmpi = svIter->svEnd;
     bcf_update_info_int32(hdr, rec, "END", &tmpi, 1);
