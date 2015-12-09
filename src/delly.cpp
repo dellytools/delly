@@ -181,6 +181,14 @@ struct ReadCount {
   ReadCount(int l, int m, int r) : leftRC(l), rc(m), rightRC(r) {}
 };
 
+// Convert string to char*
+struct cstyle_str {
+  const char* operator ()(const std::string& s) {
+    return s.c_str();
+  }
+};
+
+
 // Deletions
 inline std::string
 _addID(SVType<DeletionTag>) {
@@ -444,7 +452,8 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
   int32_t *rrcount = (int*) malloc(bcf_hdr_nsamples(hdr) * sizeof(int));
   int32_t *rvcount = (int*) malloc(bcf_hdr_nsamples(hdr) * sizeof(int));
   int32_t *gqval = (int*) malloc(bcf_hdr_nsamples(hdr) * sizeof(int));
-  char** ftarr = new char*[bcf_hdr_nsamples(hdr)];
+  std::vector<std::string> ftarr;
+  ftarr.resize(bcf_hdr_nsamples(hdr));
 
   // Iterate all structural variants
   typedef std::vector<TStructuralVariantRecord> TSVs;
@@ -559,11 +568,8 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
       if ((rcl[file_c] + rcr[file_c]) > 0) cnest[file_c] = boost::math::iround( 2.0 * (double) rc[file_c] / (double) (rcl[file_c] + rcr[file_c]) );
       
       // Genotype filter
-      std::string ft;
-      if (gqval[file_c] < 15) ft = "LowQual";
-      else ft = "PASS";
-      ftarr[file_c] = new char[ft.size() + 1];
-      strcpy(ftarr[file_c], ft.c_str());
+      if (gqval[file_c] < 15) ftarr[file_c] = "LowQual";
+      else ftarr[file_c] = "PASS";
     }
     // ToDo
     //rec->qual = 0;
@@ -572,7 +578,9 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
     bcf_update_genotypes(hdr, rec, gts, bcf_hdr_nsamples(hdr) * 2);
     bcf_update_format_float(hdr, rec, "GL",  gls, bcf_hdr_nsamples(hdr) * 3);
     bcf_update_format_int32(hdr, rec, "GQ", gqval, bcf_hdr_nsamples(hdr));
-    bcf_update_format_string(hdr, rec, "FT", const_cast<const char**>(ftarr), bcf_hdr_nsamples(hdr));
+    std::vector<const char*> strp(bcf_hdr_nsamples(hdr));
+    std::transform(ftarr.begin(), ftarr.end(), strp.begin(), cstyle_str());
+    bcf_update_format_string(hdr, rec, "FT", &strp[0], bcf_hdr_nsamples(hdr));
     bcf_update_format_int32(hdr, rec, "RCL", rcl, bcf_hdr_nsamples(hdr));
     bcf_update_format_int32(hdr, rec, "RC", rc, bcf_hdr_nsamples(hdr));
     bcf_update_format_int32(hdr, rec, "RCR", rcr, bcf_hdr_nsamples(hdr));
@@ -586,8 +594,6 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
   }
     
   // Clean-up
-  for(int32_t i = 0; i < bcf_hdr_nsamples(hdr); ++i) delete [] ftarr[i];
-  delete [] ftarr;
   free(gts);
   free(gls);
   free(rcl);
