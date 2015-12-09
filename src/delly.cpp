@@ -592,6 +592,7 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
   free(gls);
   free(rcl);
   free(rc);
+  free(rcr);
   free(cnest);
   free(drcount);
   free(dvcount);
