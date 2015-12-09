@@ -41,7 +41,7 @@ struct BoLog {
 
 
  template<typename TMapqVector>
- inline bool
+ inline void
  _computeGLs(TMapqVector const& mapqRef, TMapqVector const& mapqAlt, float* gls, int32_t* gqval, int32_t* gts, int const file_c) {
    typedef double FLP;
    FLP gl[3];
@@ -104,7 +104,6 @@ struct BoLog {
    gls[file_c * 3 + 2] = (float) gl[0];
    gls[file_c * 3 + 1] = (float) gl[1];
    gls[file_c * 3] = (float) gl[2];
-   return (gqval[file_c] > 0);
  }
  
 

@@ -546,11 +546,10 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
       }
 
       // Compute GLs
-      bool trGL;
-      if (svIter->precise) trGL = _computeGLs(jctCountMapIt->second.first, jctCountMapIt->second.second, gls, gqval, gts, file_c);
+      if (svIter->precise) _computeGLs(jctCountMapIt->second.first, jctCountMapIt->second.second, gls, gqval, gts, file_c);
       else {  // Imprecise SVs
-	if (spanLeftIt->second.first.size()<spanRightIt->second.first.size()) trGL = _computeGLs(spanLeftIt->second.first, spanLeftIt->second.second, gls, gqval, gts, file_c);
-	else trGL = _computeGLs(spanRightIt->second.first, spanRightIt->second.second, gls, gqval, gts, file_c);
+	if (spanLeftIt->second.first.size()<spanRightIt->second.first.size()) _computeGLs(spanLeftIt->second.first, spanLeftIt->second.second, gls, gqval, gts, file_c);
+	else _computeGLs(spanRightIt->second.first, spanRightIt->second.second, gls, gqval, gts, file_c);
       }
 
       // Compute RCs
@@ -563,14 +562,12 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
       cnest[file_c] = -1;
       if ((rcl[file_c] + rcr[file_c]) > 0) cnest[file_c] = boost::math::iround( 2.0 * (double) rc[file_c] / (double) (rcl[file_c] + rcr[file_c]) );
       
-      // Output genotypes
-      if (trGL) {
-	std::string ft;
-	if (gqval[file_c] < 15) ft = "LowQual";
-	else ft = "PASS";
-	ftarr[file_c] = new char[ft.size() + 1];
-	strcpy(ftarr[file_c], ft.c_str());
-      }
+      // Genotype filter
+      std::string ft;
+      if (gqval[file_c] < 15) ft = "LowQual";
+      else ft = "PASS";
+      ftarr[file_c] = new char[ft.size() + 1];
+      strcpy(ftarr[file_c], ft.c_str());
     }
     // ToDo
     //rec->qual = 0;
