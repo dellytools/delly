@@ -466,10 +466,11 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
     }
     rec->rid = bcf_hdr_name2id(hdr, bamhd->target_name[svIter->chr]);
     rec->pos = svIter->svStart - 1;
-    std::stringstream id;
-    id << _addID(svType) << std::setw(8) << std::setfill('0') << svIter->id;
-    std::string tmps(id.str());
-    bcf_update_id(hdr, rec, tmps.c_str());
+    std::string id(_addID(svType));
+    std::string padNumber = boost::lexical_cast<std::string>(svIter->id);
+    padNumber.insert(padNumber.begin(), 8 - padNumber.length(), '0');
+    id += padNumber;
+    bcf_update_id(hdr, rec, id.c_str());
     std::string alleles;
     alleles += "N,<" + _addID(svType) + ">";
     bcf_update_alleles_str(hdr, rec, alleles.c_str());
