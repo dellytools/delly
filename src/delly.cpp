@@ -381,7 +381,7 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
   boost::gregorian::date today = now.date();
   std::stringstream datestr;
   datestr << "##fileDate=" << boost::gregorian::to_iso_string(today);
-  bcf_hdr_append(hdr, datestr.str().c_str());
+  bcf_hdr_append(hdr, strdup(datestr.str().c_str()));
   bcf_hdr_append(hdr, "##ALT=<ID=DEL,Description=\"Deletion\">");
   bcf_hdr_append(hdr, "##ALT=<ID=DUP,Description=\"Duplication\">");
   bcf_hdr_append(hdr, "##ALT=<ID=INV,Description=\"Inversion\">");
@@ -418,11 +418,11 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
   // Add reference
   std::stringstream refloc;
   refloc << "##reference=" << c.genome.string();
-  bcf_hdr_append(hdr, refloc.str().c_str());
+  bcf_hdr_append(hdr, strdup(refloc.str().c_str()));
   for (int i = 0; i<bamhd->n_targets; ++i) {
     std::stringstream refname;
     refname << "##contig=<ID=" << bamhd->target_name[i] << ",length=" << bamhd->target_len[i] << ">";
-    bcf_hdr_append(hdr, refname.str().c_str());
+    bcf_hdr_append(hdr, strdup(refname.str().c_str()));
   }
   // Add samples
   for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
@@ -468,10 +468,10 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
     rec->pos = svIter->svStart - 1;
     std::stringstream id;
     id << _addID(svType) << std::setw(8) << std::setfill('0') << svIter->id;
-    bcf_update_id(hdr, rec, id.str().c_str());
+    bcf_update_id(hdr, rec, strdup(id.str().c_str()));
     std::stringstream alleles;
     alleles << "N,<" << _addID(svType) << ">";
-    bcf_update_alleles_str(hdr, rec, alleles.str().c_str());
+    bcf_update_alleles_str(hdr, rec, strdup(alleles.str().c_str()));
     bcf_update_filter(hdr, rec, &tmpi, 1);
 
     // Add INFO fields
@@ -480,7 +480,7 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
     bcf_update_info_string(hdr, rec, "SVTYPE", _addID(svType).c_str());
     std::stringstream dellyVersion;
     dellyVersion << "EMBL.DELLYv" << dellyVersionNumber;
-    bcf_update_info_string(hdr,rec, "SVMETHOD", dellyVersion.str().c_str());
+    bcf_update_info_string(hdr,rec, "SVMETHOD", strdup(dellyVersion.str().c_str()));
     bcf_update_info_string(hdr,rec, "CHR2", bamhd->target_name[svIter->chr2]);
     tmpi = svIter->svEnd;
     bcf_update_info_int32(hdr, rec, "END", &tmpi, 1);
