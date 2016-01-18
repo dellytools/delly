@@ -15,7 +15,10 @@ parser = argparse.ArgumentParser(description='Deletion/Duplication filter.')
 parser.add_argument('-v', '--vcf', metavar='cnv.vcf', required=True, dest='cnvVCF', help='deletion/duplication vcf file (required)')
 parser.add_argument('-o', '--outVCF', metavar='out.vcf', required=True, dest='outVCF', help='output vcf file (required)')
 parser.add_argument('-q', '--quality', type=float, default=0.6, metavar='0.6', required=False, dest='quality', help='required quality [0,1] (optional)')
-parser.add_argument('-f', '--filter', dest='siteFilter', action='store_true', help='Filter sites for PASS')
+parser.add_argument('-f', '--filter', dest='siteFilter', action='store_true', help='filter sites for PASS')
+group = parser.add_argument_group('fine tuning', description='note that at least one non-carrier sample per call is required.')
+group.add_argument('-s', '--minSize', required=False, metavar='500', type=int, help='min. size for read-depth estimation (optional). Smaller DELs/DUPs don\'t undergo read-depth check', default=500)
+group.add_argument('-r', '--maxRefRatio', type=float, default=0.0, metavar='0.0', required=False, help='max. ALT ratio in reference sample (optional). Best used with very high coverage')
 args = parser.parse_args()
 
 # Parse command-line
@@ -91,9 +94,9 @@ if args.cnvVCF:
                 validRdRatio = False
                 qIndex = (altratio + altgq + refgq) / 3
                 if (record.INFO['SVTYPE'] == "DEL") or (record.INFO['SVTYPE'] == "DUP"):
-                    if (record.INFO['END'] - record.POS < 500) and (precise):
+                    if (record.INFO['END'] - record.POS < args.minSize) and (precise):
                         if (record.INFO['SRQ']>0.9):
-                            # No read-depth check
+                            # No read-depth check for small precise calls
                             validRdRatio = True
                     elif (len(hetRC)) and (len(refRC)):
                         rcref = numpy.median(numpy.array(rc))
@@ -110,7 +113,7 @@ if args.cnvVCF:
 
                 # Check quality
                 #print(record.CHROM, svStart, svEnd, record.ID, qIndex, numpy.percentile(ratioRef, 99), altgq, refgq, altratio, sep="\t")
-                if (validRdRatio) and (qIndex > quality) and (numpy.percentile(ratioRef, 99) == 0):
+                if (validRdRatio) and (qIndex > quality) and (numpy.percentile(ratioRef, 99) <= args.maxRefRatio):
                     if not cnvRegion.has_key(record.CHROM):
                         cnvRegion[record.CHROM] = banyan.SortedDict(key_type=(int, int), alg=banyan.RED_BLACK_TREE, updator=banyan.OverlappingIntervalsUpdator)
                     G.add_node(record.ID)
