@@ -1947,7 +1947,7 @@ int main(int argc, char **argv) {
       std::cout << "Usage: " << argv[0] << " [OPTIONS] -g <ref.fa> <sample1.sort.bam> <sample2.sort.bam> ..." << std::endl;
       std::cout << visible_options << "\n"; 
     }
-    return 1; 
+    return 0; 
   }
 
   // Check reference
