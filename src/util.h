@@ -61,6 +61,58 @@ namespace torali
     std::vector<int32_t> vecISize;
   };
 
+
+  // Deletions
+  inline std::string
+    _addID(SVType<DeletionTag>) {
+    return "DEL";
+  }
+  
+  // Duplications
+  inline std::string
+    _addID(SVType<DuplicationTag>) {
+    return "DUP";
+  }
+  
+  // Inversions
+  inline std::string
+    _addID(SVType<InversionTag>) {
+    return "INV";
+  }
+  
+  // Translocations
+  inline std::string
+    _addID(SVType<TranslocationTag>) {
+    return "TRA";
+  }
+  
+  // Insertion
+  inline std::string
+    _addID(SVType<InsertionTag>) {
+    return "INS";
+  }
+
+
+  // Decode Orientation
+  inline uint8_t
+    _decodeOrientation(std::string const& value) {
+    if (value=="3to3") return 0;
+    else if (value=="5to5") return 1;
+    else if (value=="3to5") return 2;
+    else if (value=="5to3") return 3;
+    else return 4;
+  }
+  
+  // Add Orientation
+  inline std::string
+    _addOrientation(uint8_t const ct) {
+    if (ct==0) return "3to3";
+    else if (ct==1) return "5to5";
+    else if (ct==2) return "3to5";
+    else if (ct==3) return "5to3";
+    else return "NtoN";
+  }
+  
   
   inline unsigned int alignmentLength(bam1_t* rec) {
     uint32_t* cigar = bam_get_cigar(rec);
