@@ -130,6 +130,19 @@ void _remove_format(bcf_hdr_t* hdr, bcf1_t* rec) {
   }
 }
 
+template<typename TPos>
+double recOverlap(TPos const s1, TPos const e1, TPos const s2, TPos const e2) {
+  if ((e1 < s2) || (s1 > e2)) return 0;
+  double lenA = (double) (e1-s1);
+  if (lenA <= 0) return 0;
+  double lenB = (double) (e2-s2);
+  if (lenB <= 0) return 0;
+  double overlapLen = double(std::min(e1, e2) - std::max(s1, s2));
+  if (overlapLen <= 0) return 0;
+  return (overlapLen / std::max(lenA, lenB));
+}
+
+
 template<typename TGenomeIntervals, typename TContigMap, typename TSVType>
 void _fillIntervalMap(Config const& c, TGenomeIntervals& iScore, TContigMap& cMap, TSVType svType) {
   typedef typename TGenomeIntervals::value_type TIntervalScores;
@@ -189,6 +202,9 @@ void _fillIntervalMap(Config const& c, TGenomeIntervals& iScore, TContigMap& cMa
       if (bcf_get_info_int32(hdr, rec, "PE", &pe, &npe) > 0) peSupport = *pe;
       unsigned int srSupport = 0;
       if (bcf_get_info_int32(hdr, rec, "SR", &sr, &nsr) > 0) srSupport = *sr;
+      // Remove this line
+      //if (srSupport > 0) precise = true;
+
       uint8_t peMapQuality = 0;
       if (bcf_get_info_int32(hdr, rec, "MAPQ", &mapq, &nmapq) > 0) peMapQuality = (uint8_t) *mapq;
       double srAlignQuality = 0;
@@ -204,7 +220,7 @@ void _fillIntervalMap(Config const& c, TGenomeIntervals& iScore, TContigMap& cMa
       uint32_t score = 0;
       if (precise) score = srSupport * (100 * srAlignQuality);
       else score = peSupport * (uint32_t) peMapQuality;
-      
+
       // Store the interval
       iScore[tid].push_back(IntervalScore(svStart, svEnd, score));
     }
@@ -246,12 +262,14 @@ void _processIntervalMap(Config const& c, TGenomeIntervals const& iScore, TGenom
 	if (iSNext->start - iS->start > c.bpoffset) break;
 	else {
 	  if (((iSNext->end > iS->end) && (iSNext->end - iS->end < c.bpoffset)) || ((iSNext->end <= iS->end) &&(iS->end - iSNext->end < c.bpoffset))) {
-	    if (iS->score < iSNext->score) *iK = false;
-	    else if (iSNext ->score < iS->score) *iKNext = false;
-	    else {
-	      if (iS->start < iSNext->start) *iKNext = false;
-	      else if (iS->end < iSNext->end) *iKNext = false;
-	      else *iK = false;
+	    if (recOverlap(iS->start, iS->end, iSNext->start, iSNext->end) >= c.recoverlap) {
+	      if (iS->score < iSNext->score) *iK = false;
+	      else if (iSNext ->score < iS->score) *iKNext = false;
+	      else {
+		if (iS->start < iSNext->start) *iKNext = false;
+		else if (iS->end < iSNext->end) *iKNext = false;
+		else *iK = false;
+	      }
 	    }
 	  }
 	}
@@ -270,25 +288,47 @@ void _outputSelectedIntervals(Config const& c, TGenomeIntervals const& iSelected
   std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Filtering SVs" << std::endl;
   boost::progress_display show_progress( c.files.size() );
 
-  // Copy VCF header from first file and remove samples
-  htsFile* ifile0 = bcf_open(c.files[0].string().c_str(), "r");
-  bcf_hdr_t* hdr0 = bcf_hdr_read(ifile0);
+  // Open output VCF file
   htsFile *fp = hts_open(c.outfile.string().c_str(), "wg");
-  bcf_hdr_t *hdr_out = bcf_hdr_dup(hdr0);
-  // Combine the remaining headers
-  for(unsigned int file_c = 1; file_c < c.files.size(); ++file_c) {
-    htsFile* ifile = bcf_open(c.files[file_c].string().c_str(), "r");
-    bcf_hdr_t* hdr = bcf_hdr_read(ifile);
-    hdr_out = bcf_hdr_merge(hdr_out, hdr);
-    bcf_hdr_destroy(hdr);
-    bcf_close(ifile);
-  }
-  bcf_hdr_set_samples(hdr_out, NULL, false);
-  bcf_hdr_write(fp, hdr_out);
-  bcf_hdr_destroy(hdr0);
-  bcf_close(ifile0);
+  bcf_hdr_t *hdr_out = bcf_hdr_init("w");
 
   // Write VCF header
+  boost::gregorian::date today = now.date();
+  std::string datestr("##fileDate=");
+  datestr += boost::gregorian::to_iso_string(today);
+  bcf_hdr_append(hdr_out, datestr.c_str());
+  bcf_hdr_append(hdr_out, "##ALT=<ID=DEL,Description=\"Deletion\">");
+  bcf_hdr_append(hdr_out, "##ALT=<ID=DUP,Description=\"Duplication\">");
+  bcf_hdr_append(hdr_out, "##ALT=<ID=INV,Description=\"Inversion\">");
+  bcf_hdr_append(hdr_out, "##ALT=<ID=TRA,Description=\"Translocation\">");
+  bcf_hdr_append(hdr_out, "##ALT=<ID=INS,Description=\"Insertion\">");
+  bcf_hdr_append(hdr_out, "##FILTER=<ID=LowQual,Description=\"PE/SR support below 3 or mapping quality below 20.\">");
+  bcf_hdr_append(hdr_out, "##INFO=<ID=CIEND,Number=2,Type=Integer,Description=\"PE confidence interval around END\">");
+  bcf_hdr_append(hdr_out, "##INFO=<ID=CIPOS,Number=2,Type=Integer,Description=\"PE confidence interval around POS\">");
+  bcf_hdr_append(hdr_out, "##INFO=<ID=CHR2,Number=1,Type=String,Description=\"Chromosome for END coordinate in case of a translocation\">");
+  bcf_hdr_append(hdr_out, "##INFO=<ID=END,Number=1,Type=Integer,Description=\"End position of the structural variant\">");
+  bcf_hdr_append(hdr_out, "##INFO=<ID=PE,Number=1,Type=Integer,Description=\"Paired-end support of the structural variant\">");
+  bcf_hdr_append(hdr_out, "##INFO=<ID=MAPQ,Number=1,Type=Integer,Description=\"Median mapping quality of paired-ends\">");
+  bcf_hdr_append(hdr_out, "##INFO=<ID=SR,Number=1,Type=Integer,Description=\"Split-read support\">");
+  bcf_hdr_append(hdr_out, "##INFO=<ID=SRQ,Number=1,Type=Float,Description=\"Split-read consensus alignment quality\">");
+  bcf_hdr_append(hdr_out, "##INFO=<ID=CONSENSUS,Number=1,Type=String,Description=\"Split-read consensus sequence\">");
+  bcf_hdr_append(hdr_out, "##INFO=<ID=CT,Number=1,Type=String,Description=\"Paired-end signature induced connection type\">");
+  bcf_hdr_append(hdr_out, "##INFO=<ID=IMPRECISE,Number=0,Type=Flag,Description=\"Imprecise structural variation\">");
+  bcf_hdr_append(hdr_out, "##INFO=<ID=PRECISE,Number=0,Type=Flag,Description=\"Precise structural variation\">");
+  bcf_hdr_append(hdr_out, "##INFO=<ID=SVTYPE,Number=1,Type=String,Description=\"Type of structural variant\">");
+  bcf_hdr_append(hdr_out, "##INFO=<ID=SVMETHOD,Number=1,Type=String,Description=\"Type of approach used to detect SV\">");
+  // Add reference contigs
+  for(typename TContigMap::iterator cIt = cMap.begin(); cIt != cMap.end(); ++cIt) {
+    std::string refname("##contig=<ID=");
+    refname += cIt->first + ">";
+    bcf_hdr_append(hdr_out, refname.c_str());
+  }
+  bcf_hdr_add_sample(hdr_out, NULL);
+  bcf_hdr_write(fp, hdr_out);
+
+  // Parse input VCF files
+  bcf1_t *rout = bcf_init();
+  uint32_t svcounter=1;
   for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
     ++show_progress;
     htsFile* ifile = bcf_open(c.files[file_c].string().c_str(), "r");
@@ -312,6 +352,12 @@ void _outputSelectedIntervals(Config const& c, TGenomeIntervals const& iSelected
     char* svt = NULL;
     int32_t nchr2 = 0;
     char* chr2 = NULL;
+    int32_t ncipos = 0;
+    int32_t* cipos = NULL;
+    int32_t nciend = 0;
+    int32_t* ciend = NULL;
+    int32_t ncons = 0;
+    char* cons = NULL;    
     while (bcf_read(ifile, hdr, rec) == 0) {
       bcf_unpack(rec, BCF_UN_INFO);
       // Correct SV type
@@ -325,9 +371,9 @@ void _outputSelectedIntervals(Config const& c, TGenomeIntervals const& iSelected
 
       // Correct size
       std::string chrName(bcf_hdr_id2name(hdr, rec->rid));
-      uint32_t tid = cMap[chrName];
-      uint32_t svStart = rec->pos;
-      uint32_t svEnd = svStart + 1;
+      int32_t tid = cMap[chrName];
+      int32_t svStart = rec->pos;
+      int32_t svEnd = svStart + 1;
       if (bcf_get_info_int32(hdr, rec, "END", &svend, &nsvend) > 0) svEnd = *svend;
 
       // Parse INFO fields
@@ -338,13 +384,17 @@ void _outputSelectedIntervals(Config const& c, TGenomeIntervals const& iSelected
       if (bcf_get_info_int32(hdr, rec, "PE", &pe, &npe) > 0) peSupport = *pe;
       unsigned int srSupport = 0;
       if (bcf_get_info_int32(hdr, rec, "SR", &sr, &nsr) > 0) srSupport = *sr;
+      // Remove this line
+      //if (srSupport > 0) precise = true;
+
       uint8_t peMapQuality = 0;
       if (bcf_get_info_int32(hdr, rec, "MAPQ", &mapq, &nmapq) > 0) peMapQuality = (uint8_t) *mapq;
-      double srAlignQuality = 0;
+      float srAlignQuality = 0;
       if (bcf_get_info_float(hdr, rec, "SRQ", &srq, &nsrq) > 0) srAlignQuality = (double) *srq;
-      uint32_t mtid = tid;
+      int32_t mtid = tid;
+      std::string chr2Name = chrName;
       if (bcf_get_info_string(hdr, rec, "CHR2", &chr2, &nchr2) > 0) {
-	std::string chr2Name(chr2);
+	chr2Name = std::string(chr2);
 	mtid = cMap[chr2Name];
       }
       if (mtid != tid) continue;
@@ -356,16 +406,55 @@ void _outputSelectedIntervals(Config const& c, TGenomeIntervals const& iSelected
       
       typename TIntervalScores::const_iterator iter = std::lower_bound(iSelected[tid].begin(), iSelected[tid].end(), IntervalScore(svStart, svEnd, score), SortIScores<IntervalScore>());
       if ((iter != iSelected[tid].end()) && (iter->start == svStart) && (iter->end == svEnd) && (iter->score == score)) {
-	rec->rid = bcf_hdr_name2id(hdr_out, chrName.c_str());
+	// Fetch missing INFO fields
+	bcf_get_info_int32(hdr, rec, "CIPOS", &cipos, &ncipos);
+	bcf_get_info_int32(hdr, rec, "CIEND", &ciend, &nciend);
+	std::string consensus;
+	if (precise) {
+	  bcf_get_info_string(hdr, rec, "CONSENSUS", &cons, &ncons);
+	  consensus = boost::to_upper_copy(std::string(cons));
+	}
 
-	// Remove spurious FORMAT and INFO tags
-	_remove_format(hdr, rec);
-	_remove_format(hdr_out, rec);
-	_remove_info(hdr, rec);
-	_remove_info(hdr_out, rec);
-
+	// Create new record
+	rout->rid = bcf_hdr_name2id(hdr_out, chrName.c_str());
+	rout->pos = rec->pos;
+	rout->qual = 0;
+	std::string id(_addID(svType));
+	std::string padNumber = boost::lexical_cast<std::string>(svcounter++);
+	padNumber.insert(padNumber.begin(), 8 - padNumber.length(), '0');
+	id += padNumber;
+	bcf_update_id(hdr_out, rout, id.c_str());
+	std::string alleles;
+	alleles += "N,<" + _addID(svType) + ">";
+	bcf_update_alleles_str(hdr_out, rout, alleles.c_str());
+	int32_t tmppass = bcf_hdr_id2int(hdr_out, BCF_DT_ID, "PASS");
+	bcf_update_filter(hdr_out, rout, &tmppass, 1);
+	
+	// Add INFO fields
+	if (precise) bcf_update_info_flag(hdr_out, rout, "PRECISE", NULL, 1);
+	else bcf_update_info_flag(hdr_out, rout, "IMPRECISE", NULL, 1);
+	bcf_update_info_string(hdr_out, rout, "SVTYPE", _addID(svType).c_str());
+	std::string dellyVersion("EMBL.DELLYv");
+	dellyVersion += dellyVersionNumber;
+	bcf_update_info_string(hdr_out,rout, "SVMETHOD", dellyVersion.c_str());
+	bcf_update_info_string(hdr_out,rout, "CHR2", chr2Name.c_str());
+	bcf_update_info_int32(hdr_out, rout, "END", &svEnd, 1);
+	bcf_update_info_int32(hdr_out, rout, "PE", &peSupport, 1);
+	int32_t tmpi = peMapQuality;
+	bcf_update_info_int32(hdr_out, rout, "MAPQ", &tmpi, 1);
+	bcf_update_info_string(hdr_out, rout, "CT", _addOrientation(ict).c_str());
+	bcf_update_info_int32(hdr_out, rout, "CIPOS", cipos, 2);
+	bcf_update_info_int32(hdr_out, rout, "CIEND", ciend, 2);
+	if (precise) {
+	  bcf_update_info_int32(hdr_out, rout, "SR", &srSupport, 1);
+	  bcf_update_info_float(hdr_out, rout, "SRQ", &srAlignQuality, 1);	
+	  bcf_update_info_string(hdr_out, rout, "CONSENSUS", consensus.c_str());
+	}
+	
 	// Write record
-	bcf_write1(fp, hdr_out, rec);
+	bcf_write1(fp, hdr_out, rout);
+	bcf_clear1(rout);
+
 	//std::cerr << bcf_hdr_id2name(hdr, tid) << '\t' << svStart << '\t' << svEnd << std::endl;
       }
     }
@@ -378,12 +467,15 @@ void _outputSelectedIntervals(Config const& c, TGenomeIntervals const& iSelected
     free(srq);
     free(svt);
     free(chr2);
+    free(cipos);
+    free(ciend);
     bcf_hdr_destroy(hdr);
     bcf_close(ifile);
     bcf_destroy(rec);
   }
 
   // Close VCF file
+  bcf_destroy(rout);
   bcf_hdr_destroy(hdr_out);
   hts_close(fp);
 }
