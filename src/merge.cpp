@@ -614,8 +614,19 @@ int main(int argc, char **argv) {
   } else if (c.svType == "DUP") {
     c.reqCT = 3;
     return run(c, SVType<DuplicationTag>());
+  } else if (c.svType == "INV") {
+    boost::filesystem::path oldPath = c.outfile;
+    int rVal = 0;
+    for(int i = 0; i<2; ++i) {
+      c.reqCT = i;
+      std::string fileStem(oldPath.stem().stem().string());
+      fileStem += "." + _addOrientation(c.reqCT) + ".vcf.gz";
+      if (oldPath.parent_path().string().size()) c.outfile=boost::filesystem::path(oldPath.parent_path().string() + "/" + fileStem);
+      else c.outfile=boost::filesystem::path(fileStem);
+      rVal += run(c, SVType<InversionTag>());
+    }
+    return rVal;
   }
-  //else if (c.svType == "INV") return run(c, SVType<InversionTag>());
   //else if (c.svType == "TRA") return run(c, SVType<TranslocationTag>());
   //else if (c.svType == "INS") return run(c, SVType<InsertionTag>());
   else {
