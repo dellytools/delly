@@ -207,8 +207,8 @@ void _fillIntervalMap(Config const& c, TGenomeIntervals& iScore, TContigMap& cMa
 
       uint8_t peMapQuality = 0;
       if (bcf_get_info_int32(hdr, rec, "MAPQ", &mapq, &nmapq) > 0) peMapQuality = (uint8_t) *mapq;
-      double srAlignQuality = 0;
-      if (bcf_get_info_float(hdr, rec, "SRQ", &srq, &nsrq) > 0) srAlignQuality = (double) *srq;
+      float srAlignQuality = 0;
+      if (bcf_get_info_float(hdr, rec, "SRQ", &srq, &nsrq) > 0) srAlignQuality = *srq;
       uint32_t mtid = tid;
       if (bcf_get_info_string(hdr, rec, "CHR2", &chr2, &nchr2) > 0) {
 	std::string chr2Name(chr2);
@@ -390,7 +390,7 @@ void _outputSelectedIntervals(Config const& c, TGenomeIntervals const& iSelected
       uint8_t peMapQuality = 0;
       if (bcf_get_info_int32(hdr, rec, "MAPQ", &mapq, &nmapq) > 0) peMapQuality = (uint8_t) *mapq;
       float srAlignQuality = 0;
-      if (bcf_get_info_float(hdr, rec, "SRQ", &srq, &nsrq) > 0) srAlignQuality = (double) *srq;
+      if (bcf_get_info_float(hdr, rec, "SRQ", &srq, &nsrq) > 0) srAlignQuality = *srq;
       int32_t mtid = tid;
       std::string chr2Name = chrName;
       if (bcf_get_info_string(hdr, rec, "CHR2", &chr2, &nchr2) > 0) {
@@ -403,9 +403,17 @@ void _outputSelectedIntervals(Config const& c, TGenomeIntervals const& iSelected
       uint32_t score = 0;
       if (precise) score = srSupport * (100 * srAlignQuality);
       else score = peSupport * (uint32_t) peMapQuality;
-      
+
+      // Is this a selected interval
       typename TIntervalScores::const_iterator iter = std::lower_bound(iSelected[tid].begin(), iSelected[tid].end(), IntervalScore(svStart, svEnd, score), SortIScores<IntervalScore>());
-      if ((iter != iSelected[tid].end()) && (iter->start == svStart) && (iter->end == svEnd) && (iter->score == score)) {
+      bool foundInterval = false;
+      for(; (iter != iSelected[tid].end()) && (iter->start == svStart); ++iter) {
+	if ((iter->start == svStart) && (iter->end == svEnd) && (iter->score == score)) {
+	  foundInterval = true;
+	  break;
+	}
+      }
+      if (foundInterval) {
 	// Fetch missing INFO fields
 	bcf_get_info_int32(hdr, rec, "CIPOS", &cipos, &ncipos);
 	bcf_get_info_int32(hdr, rec, "CIEND", &ciend, &nciend);
