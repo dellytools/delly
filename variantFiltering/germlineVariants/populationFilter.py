@@ -38,7 +38,7 @@ if args.minSize:
 maxSize = 5000000
 if args.maxSize:
     maxSize = int(args.maxSize)
-altAF = 0.4
+altAF = 0.2
 if args.altAF:
     altAF = float(args.altAF)
 ratioGeno = 0.4
