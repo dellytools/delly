@@ -41,6 +41,8 @@ Contact: Tobias Rausch (rausch@embl.de)
 #include <boost/filesystem.hpp>
 #include <boost/tokenizer.hpp>
 #include <boost/progress.hpp>
+
+#include <htslib/vcf.h>
 #include <htslib/sam.h>
 
 #ifdef OPENMP
