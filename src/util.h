@@ -161,6 +161,17 @@ namespace torali
       }
     }
 
+    inline bool
+      _isKeyPresent(bcf_hdr_t const* hdr, std::string const& key) {
+      return (bcf_hdr_id2int(hdr, BCF_DT_ID, key.c_str())>=0);
+    }
+
+    inline int
+    _getInfoType(bcf_hdr_t const* hdr, std::string const& key) {
+      return bcf_hdr_id2type(hdr, BCF_HL_INFO, bcf_hdr_id2int(hdr, BCF_DT_ID, key.c_str()));
+    }
+
+
 
   template<typename TSVId>
     inline unsigned int

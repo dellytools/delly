@@ -216,10 +216,25 @@ void _fillIntervalMap(Config const& c, TGenomeIntervals& iScore, TContigMap& cMa
       }
       if (mtid != tid) continue;
 
-      // Proxy quality score for the SV
+      // Quality score for the SV
       uint32_t score = 0;
-      if (precise) score = srSupport * (100 * srAlignQuality);
-      else score = peSupport * (uint32_t) peMapQuality;
+      if (_isKeyPresent(hdr, "SCORE")) {
+	int32_t nvcfscore = 0;
+	if (_getInfoType(hdr, "SCORE") == BCF_HT_INT) {
+	  int32_t* vcfscore = NULL;
+	  bcf_get_info_int32(hdr, rec, "SCORE", &vcfscore, &nvcfscore);
+	  score = *vcfscore;
+	  free(vcfscore);
+	} else if (_getInfoType(hdr, "SCORE") == BCF_HT_REAL) {
+	  float* vcfscore = NULL;
+	  bcf_get_info_float(hdr, rec, "SCORE", &vcfscore, &nvcfscore);
+	  score = (uint32_t) (*vcfscore * 10000); // for scores in [0,1] 
+	  free(vcfscore);
+	}
+      } else {
+	if (precise) score = srSupport * (100 * srAlignQuality);
+	else score = peSupport * (uint32_t) peMapQuality;
+      }
 
       // Store the interval
       iScore[tid].push_back(IntervalScore(svStart, svEnd, score));
@@ -401,8 +416,23 @@ void _outputSelectedIntervals(Config const& c, TGenomeIntervals const& iSelected
 
       // Proxy quality score for the SV
       uint32_t score = 0;
-      if (precise) score = srSupport * (100 * srAlignQuality);
-      else score = peSupport * (uint32_t) peMapQuality;
+      if (_isKeyPresent(hdr, "SCORE")) {
+	int32_t nvcfscore = 0;
+	if (_getInfoType(hdr, "SCORE") == BCF_HT_INT) {
+	  int32_t* vcfscore = NULL;
+	  bcf_get_info_int32(hdr, rec, "SCORE", &vcfscore, &nvcfscore);
+	  score = *vcfscore;
+	  free(vcfscore);
+	} else if (_getInfoType(hdr, "SCORE") == BCF_HT_REAL) {
+	  float* vcfscore = NULL;
+	  bcf_get_info_float(hdr, rec, "SCORE", &vcfscore, &nvcfscore);
+	  score = (uint32_t) (*vcfscore * 10000); // for scores in [0,1] 
+	  free(vcfscore);
+	}
+      } else {
+	if (precise) score = srSupport * (100 * srAlignQuality);
+	else score = peSupport * (uint32_t) peMapQuality;
+      }
 
       // Is this a selected interval
       typename TIntervalScores::const_iterator iter = std::lower_bound(iSelected[tid].begin(), iSelected[tid].end(), IntervalScore(svStart, svEnd, score), SortIScores<IntervalScore>());
