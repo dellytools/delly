@@ -2,7 +2,7 @@
 
 # 2014-2015 Markus Hsi-Yang Fritz
 
-from __future__ import division
+from __future__ import division, print_function
 import click
 from flask import Flask, render_template, request
 import h5py
@@ -14,6 +14,7 @@ import math
 import re
 import pysam
 import csv
+import sys
 
 app = Flask(__name__)
 cfg = dict()
@@ -72,8 +73,11 @@ def calls(chrom):
                     'chr2': chrom2
                 })
         # no calls for this chrom...
-        except ValueError:
-            pass
+        except (ValueError, AttributeError) as e:
+            print('Error parsing VCF file for chromosome {}'.format(chrom), file = sys.stderr)
+            print('Note: There might be no calls; Also keys CHR2 and END',
+                  'need to be present in every variant.', file = sys.stderr)
+            print(e, file = sys.stderr)
 
     return json.dumps(dataset)
 
@@ -112,7 +116,7 @@ def depth(s1, s2, c):
         bin_end = (e-1) // 100
         n_bins = bin_end - bin_start + 1
 
-        print s, e, n_req, bin_start, bin_end
+        print(s, e, n_req, bin_start, bin_end)
 
         if 'chrom' not in cfg or c != cfg['chrom'] \
                 or 'x' not in cfg or 'y' not in cfg:
