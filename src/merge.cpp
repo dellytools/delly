@@ -333,13 +333,20 @@ void _outputSelectedIntervals(Config const& c, TGenomeIntervals const& iSelected
   bcf_hdr_append(hdr_out, "##INFO=<ID=SVTYPE,Number=1,Type=String,Description=\"Type of structural variant\">");
   bcf_hdr_append(hdr_out, "##INFO=<ID=SVMETHOD,Number=1,Type=String,Description=\"Type of approach used to detect SV\">");
   // Add reference contigs
-  for(typename TContigMap::iterator cIt = cMap.begin(); cIt != cMap.end(); ++cIt) {
+  uint32_t numseq = 0;
+  for(typename TContigMap::iterator cIt = cMap.begin(); cIt != cMap.end(); ++cIt, ++numseq) {
     std::string refname("##contig=<ID=");
     refname += cIt->first + ">";
     bcf_hdr_append(hdr_out, refname.c_str());
   }
   bcf_hdr_add_sample(hdr_out, NULL);
   bcf_hdr_write(fp, hdr_out);
+
+  // Duplicate filter (identical start, end, score values)
+  typedef std::pair<uint32_t, uint32_t> TStartEnd;
+  typedef std::set<TStartEnd> TIntervalSet;
+  typedef std::vector<TIntervalSet> TGenomicIntervalSet;
+  TGenomicIntervalSet gis(numseq);
 
   // Parse input VCF files
   bcf1_t *rout = bcf_init();
@@ -439,8 +446,12 @@ void _outputSelectedIntervals(Config const& c, TGenomeIntervals const& iSelected
       bool foundInterval = false;
       for(; (iter != iSelected[tid].end()) && (iter->start == svStart); ++iter) {
 	if ((iter->start == svStart) && (iter->end == svEnd) && (iter->score == score)) {
-	  foundInterval = true;
-	  break;
+	  // Duplicate?
+	  if (gis[tid].find(std::make_pair(svStart, svEnd)) == gis[tid].end()) {
+	    foundInterval = true;
+	    gis[tid].insert(std::make_pair(svStart, svEnd));
+	    break;
+	  }
 	}
       }
       if (foundInterval) {
@@ -457,10 +468,14 @@ void _outputSelectedIntervals(Config const& c, TGenomeIntervals const& iSelected
 	rout->rid = bcf_hdr_name2id(hdr_out, chrName.c_str());
 	rout->pos = rec->pos;
 	rout->qual = 0;
-	std::string id(_addID(svType));
-	std::string padNumber = boost::lexical_cast<std::string>(svcounter++);
-	padNumber.insert(padNumber.begin(), 8 - padNumber.length(), '0');
-	id += padNumber;
+	std::string id;
+	if (c.files.size() == 1) id = std::string(rec->d.id); // Within one VCF file IDs are unique
+	else {
+	  id += _addID(svType);
+	  std::string padNumber = boost::lexical_cast<std::string>(svcounter++);
+	  padNumber.insert(padNumber.begin(), 8 - padNumber.length(), '0');
+	  id += padNumber;
+	}
 	bcf_update_id(hdr_out, rout, id.c_str());
 	std::string alleles;
 	alleles += "N,<" + _addID(svType) + ">";
