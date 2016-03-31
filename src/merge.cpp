@@ -52,6 +52,7 @@ Contact: Tobias Rausch (rausch@embl.de)
 #include "tags.h"
 #include "version.h"
 #include "util.h"
+#include "modvcf.h"
 
 using namespace torali;
 
@@ -83,53 +84,6 @@ struct SortIScores : public std::binary_function<TRecord, TRecord, bool>
 
 };
 
-void _remove_info_tag(bcf_hdr_t* hdr, bcf1_t* rec, std::string const& tag) {
-  bcf_update_info(hdr, rec, tag.c_str(), NULL, 0, BCF_HT_INT);  // Type does not matter for n = 0
-}
-
-void _remove_format_tag(bcf_hdr_t* hdr, bcf1_t* rec, std::string const& tag) {
-  bcf_update_format(hdr, rec, tag.c_str(), NULL, 0, BCF_HT_INT);  // Type does not matter for n = 0
-}
-
-void _remove_info(bcf_hdr_t* hdr, bcf1_t* rec) {
-  std::string tmp[] = {"CT", "PRECISE", "IMPRECISE", "SVTYPE", "SVMETHOD", "CIEND", "CIPOS", "CHR2", "END", "PE", "MAPQ", "SR", "SRQ", "CONSENSUS"};
-  std::set<std::string> keepInfo(tmp, tmp + sizeof(tmp)/sizeof(tmp[0]));
-
-  if (!(rec->unpacked & BCF_UN_INFO)) bcf_unpack(rec, BCF_UN_INFO);
-  
-  for (int i = 0; i < rec->n_info; ++i){
-    bcf_info_t* inf = &rec->d.info[i];
-    const char* key = bcf_hdr_int2id(hdr, BCF_DT_ID, inf->key);
-    if (keepInfo.find(std::string(key)) != keepInfo.end()) continue;
-    
-    if (inf->vptr_free) {
-      free(inf->vptr - inf->vptr_off);
-      inf->vptr_free = 0;
-    }
-    rec->d.shared_dirty |= BCF1_DIRTY_INF;
-    inf->vptr = NULL;
-  }
-}
-
-void _remove_format(bcf_hdr_t* hdr, bcf1_t* rec) {
-  if (!(rec->unpacked & BCF_UN_FMT)) bcf_unpack(rec, BCF_UN_FMT);
-  
-  for(int i = 0; i<rec->n_fmt; ++i) {
-    bcf_fmt_t* fmt = &rec->d.fmt[i];
-    const char* key = bcf_hdr_int2id(hdr, BCF_DT_ID, fmt->id);
-    bcf_update_format(hdr, rec, key, NULL, 0, BCF_HT_INT); // the type is irrelevant for n = 0
-    // Keep GT
-    //if ((key[0]=='G') && key[1]=='T' && (!key[2])) continue;
-
-    if (fmt->p_free) {
-      free(fmt->p - fmt->p_off);
-      fmt->p_free = 0;
-    }
-    rec->d.indiv_dirty = 1;
-    fmt->p = NULL;
-  }
-}
-
 template<typename TPos>
 double recOverlap(TPos const s1, TPos const e1, TPos const s2, TPos const e2) {
   if ((e1 < s2) || (s1 > e2)) return 0;
@@ -149,7 +103,7 @@ void _fillIntervalMap(Config const& c, TGenomeIntervals& iScore, TContigMap& cMa
   typedef typename TIntervalScores::value_type IntervalScore;
 
   boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
-  std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Reading input VCF files" << std::endl;
+  std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Reading input VCF/BCF files" << std::endl;
   boost::progress_display show_progress( c.files.size() );
 
 
@@ -304,7 +258,7 @@ void _outputSelectedIntervals(Config const& c, TGenomeIntervals const& iSelected
   boost::progress_display show_progress( c.files.size() );
 
   // Open output VCF file
-  htsFile *fp = hts_open(c.outfile.string().c_str(), "wg");
+  htsFile *fp = hts_open(c.outfile.string().c_str(), "wb");
   bcf_hdr_t *hdr_out = bcf_hdr_init("w");
 
   // Write VCF header
@@ -531,6 +485,9 @@ void _outputSelectedIntervals(Config const& c, TGenomeIntervals const& iSelected
   bcf_destroy(rout);
   bcf_hdr_destroy(hdr_out);
   hts_close(fp);
+
+  // Build index
+  bcf_index_build(c.outfile.string().c_str(), 14);
 }
 
 
@@ -600,7 +557,7 @@ int main(int argc, char **argv) {
   generic.add_options()
     ("help,?", "show help message")
     ("type,t", boost::program_options::value<std::string>(&c.svType)->default_value("DEL"), "SV type (DEL, DUP, INV, TRA, INS)")
-    ("outfile,o", boost::program_options::value<boost::filesystem::path>(&c.outfile)->default_value("sv.vcf.gz"), "Merged SV VCF output file")
+    ("outfile,o", boost::program_options::value<boost::filesystem::path>(&c.outfile)->default_value("sv.bcf"), "Merged SV BCF output file")
     ("minsize,m", boost::program_options::value<uint32_t>(&c.minsize)->default_value(0), "min. SV size")
     ("maxsize,n", boost::program_options::value<uint32_t>(&c.maxsize)->default_value(1000000), "max. SV size")
     ;
@@ -634,13 +591,13 @@ int main(int argc, char **argv) {
 
   // Check command line arguments
   if ((vm.count("help")) || (!vm.count("input-file"))) { 
-    printTitle("Delly SV VCF site merging");
+    printTitle("Delly SV VCF/BCF site merging");
     if (vm.count("warranty")) {
       displayWarranty();
     } else if (vm.count("license")) {
       gplV3();
     } else {
-      std::cout << "Usage: " << argv[0] << " [OPTIONS] <sample1.vcf> <sample2.vcf> ..." << std::endl;
+      std::cout << "Usage: " << argv[0] << " [OPTIONS] <sample1.bcf> <sample2.bcf> ..." << std::endl;
       std::cout << visible_options << "\n"; 
     }
     return 1; 
@@ -665,7 +622,7 @@ int main(int argc, char **argv) {
     for(int i = 0; i<2; ++i) {
       c.reqCT = i;
       std::string fileStem(oldPath.stem().stem().string());
-      fileStem += "." + _addOrientation(c.reqCT) + ".vcf.gz";
+      fileStem += "." + _addOrientation(c.reqCT) + ".bcf";
       if (oldPath.parent_path().string().size()) c.outfile=boost::filesystem::path(oldPath.parent_path().string() + "/" + fileStem);
       else c.outfile=boost::filesystem::path(fileStem);
       rVal += run(c, SVType<InversionTag>());

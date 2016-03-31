@@ -330,7 +330,7 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
   bam_hdr_t* bamhd = sam_hdr_read(samfile);
 
   // Output all structural variants
-  htsFile *fp = hts_open(c.outfile.string().c_str(), "wg");
+  htsFile *fp = hts_open(c.outfile.string().c_str(), "wb");
   bcf_hdr_t *hdr = bcf_hdr_init("w");
 
   // Print vcf header
@@ -563,6 +563,9 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
   bcf_destroy1(rec);
   bcf_hdr_destroy(hdr);
   hts_close(fp);
+
+  // Build index
+  bcf_index_build(c.outfile.string().c_str(), 14);
 }
 
 
@@ -1836,7 +1839,7 @@ int main(int argc, char **argv) {
   generic.add_options()
     ("help,?", "show help message")
     ("type,t", boost::program_options::value<std::string>(&c.svType)->default_value("DEL"), "SV type (DEL, DUP, INV, TRA, INS)")
-    ("outfile,o", boost::program_options::value<boost::filesystem::path>(&c.outfile)->default_value("sv.vcf.gz"), "SV output file")
+    ("outfile,o", boost::program_options::value<boost::filesystem::path>(&c.outfile)->default_value("sv.bcf"), "SV BCF output file")
     ("exclude,x", boost::program_options::value<boost::filesystem::path>(&c.exclude), "file with regions to exclude")
     ;
 
@@ -1857,7 +1860,7 @@ int main(int argc, char **argv) {
 
   boost::program_options::options_description geno("Genotyping options");
   geno.add_options()
-    ("vcffile,v", boost::program_options::value<boost::filesystem::path>(&c.vcffile), "input VCF file for re-genotyping")
+    ("vcffile,v", boost::program_options::value<boost::filesystem::path>(&c.vcffile), "input VCF/BCF file for re-genotyping")
     ("geno-qual,u", boost::program_options::value<unsigned short>(&c.minGenoQual)->default_value(5), "min. mapping quality for genotyping")
     ;
 
@@ -1964,7 +1967,7 @@ int main(int argc, char **argv) {
   // Check input VCF file
   if (vm.count("vcffile")) {
     if (!(boost::filesystem::exists(c.vcffile) && boost::filesystem::is_regular_file(c.vcffile) && boost::filesystem::file_size(c.vcffile))) {
-      std::cerr << "Input VCF file is missing: " << c.vcffile.string() << std::endl;
+      std::cerr << "Input VCF/BCF file is missing: " << c.vcffile.string() << std::endl;
       return 1;
     }
     htsFile* ifile = bcf_open(c.vcffile.string().c_str(), "r");

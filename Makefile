@@ -41,35 +41,41 @@ BOOSTSOURCES = $(wildcard src/modular-boost/libs/iostreams/include/boost/iostrea
 DELLYSOURCES = $(wildcard src/*.h) $(wildcard src/*.cpp)
 
 # Targets
-TARGETS = .htslib .boost src/delly src/extract src/cov src/iover src/stats src/merge
+TARGETS = .htslib .bcftools .boost src/delly src/extract src/cov src/iover src/stats src/merge src/filter
 
 all:   	$(TARGETS)
 
 .htslib: $(HTSLIBSOURCES)
 	cd src/htslib && make && make lib-static && cd ../../ && touch .htslib
 
+.bcftools: $(HTSLIBSOURCES)
+	cd src/bcftools && make all && cd ../../ && touch .bcftools
+
 .boost: $(BOOSTSOURCES)
 	cd src/modular-boost && ./bootstrap.sh --prefix=${PWD}/src/modular-boost --without-icu --with-libraries=iostreams,filesystem,system,program_options,date_time && ./b2 && ./b2 headers && cd ../../ && touch .boost
 
-src/delly: .htslib .boost $(DELLYSOURCES)
+src/delly: .htslib .bcftools .boost $(DELLYSOURCES)
 	$(CXX) $(CXXFLAGS) $@.cpp -o $@ $(LDFLAGS)
 
-src/extract: .htslib .boost $(DELLYSOURCES)
+src/extract: .htslib .bcftools .boost $(DELLYSOURCES)
 	$(CXX) $(CXXFLAGS) $@.cpp -o $@ $(LDFLAGS)
 
-src/cov: .htslib .boost $(DELLYSOURCES)
+src/cov: .htslib .bcftools .boost $(DELLYSOURCES)
 	$(CXX) $(CXXFLAGS) $@.cpp -o $@ $(LDFLAGS)
 
-src/iover: .htslib .boost $(DELLYSOURCES)
+src/iover: .htslib .bcftools .boost $(DELLYSOURCES)
 	$(CXX) $(CXXFLAGS) $@.cpp -o $@ $(LDFLAGS)
 
-src/stats: .htslib .boost $(DELLYSOURCES)
+src/stats: .htslib .bcftools .boost $(DELLYSOURCES)
 	$(CXX) $(CXXFLAGS) $@.cpp -o $@ $(LDFLAGS)
 
-src/merge: .htslib .boost $(DELLYSOURCES)
+src/merge: .htslib .bcftools .boost $(DELLYSOURCES)
+	$(CXX) $(CXXFLAGS) $@.cpp -o $@ $(LDFLAGS)
+
+src/filter: .htslib .bcftools .boost $(DELLYSOURCES)
 	$(CXX) $(CXXFLAGS) $@.cpp -o $@ $(LDFLAGS)
 
 clean:
 	cd src/htslib && make clean
 	cd src/modular-boost && ./b2 --clean-all
-	rm -f $(TARGETS) $(TARGETS:=.o) .htslib .boost
+	rm -f $(TARGETS) $(TARGETS:=.o) .htslib .boost .bcftools
