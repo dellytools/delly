@@ -79,7 +79,44 @@ void _remove_format(bcf_hdr_t* hdr, bcf1_t* rec) {
   }
 }
 
+inline int
+_getInfoType(bcf_hdr_t const* hdr, std::string const& key) {
+  return bcf_hdr_id2type(hdr, BCF_HL_INFO, bcf_hdr_id2int(hdr, BCF_DT_ID, key.c_str()));
+}
 
+inline int
+_getFormatType(bcf_hdr_t const* hdr, std::string const& key) {
+  return bcf_hdr_id2type(hdr, BCF_HL_FMT, bcf_hdr_id2int(hdr, BCF_DT_ID, key.c_str()));
+}
+
+inline bool _missing(bool const value) {
+  return !value;
+}
+
+inline bool _missing(float const value) {
+  return bcf_float_is_missing(value);
+}
+
+inline bool _missing(int8_t const value) {
+  return (value == bcf_int8_missing);
+}
+
+inline bool _missing(int16_t const value) {
+  return (value == bcf_int16_missing);
+}
+
+inline bool _missing(int32_t const value) {
+  return (value == bcf_int32_missing);
+}
+
+inline bool _missing(std::string const& value) {
+  return ((value.empty()) || (value == "."));
+}
+
+inline bool
+_isKeyPresent(bcf_hdr_t const* hdr, std::string const& key) {
+  return (bcf_hdr_id2int(hdr, BCF_DT_ID, key.c_str())>=0);
+}
 
 
 }

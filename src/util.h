@@ -161,18 +161,6 @@ namespace torali
       }
     }
 
-    inline bool
-      _isKeyPresent(bcf_hdr_t const* hdr, std::string const& key) {
-      return (bcf_hdr_id2int(hdr, BCF_DT_ID, key.c_str())>=0);
-    }
-
-    inline int
-    _getInfoType(bcf_hdr_t const* hdr, std::string const& key) {
-      return bcf_hdr_id2type(hdr, BCF_HL_INFO, bcf_hdr_id2int(hdr, BCF_DT_ID, key.c_str()));
-    }
-
-
-
   template<typename TSVId>
     inline unsigned int
     parseSVid(TSVId id) 
@@ -221,6 +209,14 @@ namespace torali
     {
       std::nth_element(begin, begin + (end - begin) / 2, end);
       median = *(begin + (end - begin) / 2);
+    }
+
+  template<typename TIterator, typename TPercentile, typename TValue>
+  inline
+    void getPercentile(TIterator begin, TIterator end, TPercentile p, TValue& percentile) 
+    {
+      std::nth_element(begin, begin + (end - begin) / p, end);
+      percentile = *(begin + (end - begin) / p);
     }
 
   template<typename TIterator, typename TPercent, typename TValue>
