@@ -178,9 +178,10 @@ run(Config const& c, TSVType svType) {
       while (true) {
 	int32_t ret = 0;
 	if (tbx) {
-	  kstring_t s = {0,0,0};
-	  ret = tbx_itr_next(ifile, tbx, itervcf, &s);
-	  if (ret >= 0) vcf_parse1(&s, hdr, rec);
+	  kstring_t str = {0, 0, NULL};
+	  ret = tbx_itr_next(ifile, tbx, itervcf, &str);
+	  if (ret >= 0) vcf_parse1(&str, hdr, rec);
+	  if (str.s != NULL) free(str.s);
 	} else ret = bcf_itr_next(ifile, itervcf, rec);
 	if (ret < 0) break;
 	bcf_unpack(rec, BCF_UN_INFO);
@@ -332,7 +333,8 @@ run(Config const& c, TSVType svType) {
       }
       bcf_destroy(rec);
     }
-    hts_itr_destroy(itervcf);
+    if (tbx) tbx_itr_destroy(itervcf);
+    else hts_itr_destroy(itervcf);
   }
   kseq_destroy(seq);
   gzclose(fp);
