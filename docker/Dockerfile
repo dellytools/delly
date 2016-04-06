@@ -12,8 +12,8 @@ MAINTAINER Tobias Rausch rausch@embl.de
 # update package repository
 RUN apt-get update
 
-# install g++, git, zlib, cmake, ant
-RUN apt-get install -y build-essential g++ git cmake zlib1g-dev ant libbz2-dev libboost-date-time-dev libboost-program-options-dev libboost-system-dev libboost-filesystem-dev libboost-iostreams-dev
+# install g++, git, zlib, cmake, ant, python
+RUN apt-get install -y build-essential g++ git cmake zlib1g-dev ant libbz2-dev libboost-date-time-dev libboost-program-options-dev libboost-system-dev libboost-filesystem-dev libboost-iostreams-dev python python-dev python-pip gfortran libncurses-dev hdf5-tools libhdf5-dev
 
 # set environment
 ENV BOOST_ROOT /usr
@@ -22,5 +22,14 @@ ENV SEQTK_ROOT /htslib
 # install delly
 RUN git clone https://github.com/samtools/htslib.git
 RUN cd htslib && make && make lib-static && cd ..
+RUN git clone https://github.com/samtools/bcftools.git
+RUN cd bcftools && make all && cd ..
+RUN git clone https://github.com/samtools/samtools.git
+RUN cd samtools && make all && cd ..
 RUN git clone https://github.com/tobiasrausch/delly.git
-RUN cd delly/ && touch .htslib .boost && make src/delly && make src/stats && cd ..
+RUN cd delly/ && touch .bcftools .htslib .boost && make all && cd ..
+
+# install python variant filtering dependencies
+RUN pip install -r delly/variantFiltering/requirements.txt
+
+
