@@ -39,7 +39,7 @@ Delly2 primarily parallelizes on the sample level. Hence, OMP_NUM_THREADS should
 Running Delly2
 --------------
 
-Delly2 needs a sorted and indexed bam file for every sample and the reference genome to identify split-reads. The output is in [vcf](http://vcftools.github.io/) format. Prior duplicate marking is recommended. The SV type can be DEL, DUP, INV or TRA for deletions, tandem duplications, inversions and translocations, respectively. Delly2 supports germline and somatic SV discovery, genotyping and filtering. Because of that, Delly2 has been modularized and common workflows for germline and somatic SV calling are outlined below.
+Delly2 needs a sorted and indexed bam file for every sample and the reference genome to identify split-reads. The output is in [bcf](http://samtools.github.io/bcftools/) format. Prior duplicate marking is recommended. The SV type can be DEL, DUP, INV or TRA for deletions, tandem duplications, inversions and translocations, respectively. Delly2 supports germline and somatic SV discovery, genotyping and filtering. Because of that, Delly2 has been modularized and common workflows for germline and somatic SV calling are outlined below.
 
 Somatic SV calling
 ------------------

@@ -203,6 +203,24 @@ namespace torali
     return decompressed.str();
   }
 
+  inline double
+  entropy(std::string const& st) {
+    typedef double TPrecision;
+    std::vector<char> stvec(st.begin(), st.end());
+    std::set<char> alphabet(stvec.begin(), stvec.end());
+    TPrecision ent = 0;
+    TPrecision freq = 0;
+    for(std::set<char>::const_iterator c = alphabet.begin(); c != alphabet.end(); ++c) {
+      int ctr = 0;
+      for (std::vector<char>::const_iterator s = stvec.begin(); s != stvec.end(); ++s)
+	if (*s == *c) ++ctr;
+      freq = (TPrecision) ctr / (TPrecision) stvec.size();
+      ent += (freq) * log(freq)/log(2);
+    }
+    return -ent;
+  }
+
+
   template<typename TIterator, typename TValue>
   inline
     void getMedian(TIterator begin, TIterator end, TValue& median) 
