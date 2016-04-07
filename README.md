@@ -90,7 +90,7 @@ Germline SV calling
 FAQ
 ---
 * What is the smallest SV size Delly can call?  
-This depends on the sharpness of the insert size distribution. For an insert size of 200-300bp with a 20-30bp standard deviation, Delly starts to call reliable SVs >=300bp. Delly2 also supports calling of small InDels using soft-clipped reads only. This smallest SV size called is then 15bp.
+This depends on the sharpness of the insert size distribution. For an insert size of 200-300bp with a 20-30bp standard deviation, Delly starts to call reliable SVs >=300bp. Delly2 also supports calling of small InDels using soft-clipped reads only. In this mode the smallest SV size called is 15bp.
 
 * Can Delly be used on a non-diploid genome?  
 Yes and no. The SV site discovery works for any ploidy. However, Delly's genotyping model assumes hom. reference, het. and hom. alternative.
