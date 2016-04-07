@@ -70,8 +70,8 @@ using namespace torali;
 struct Config {
   bool filterForPass;
   bool hasSampleFile;
-  uint32_t minsize;
-  uint32_t maxsize;
+  int32_t minsize;
+  int32_t maxsize;
   uint32_t coverage;
   uint32_t rdsize;
   float ratiogeno;
@@ -388,8 +388,8 @@ int main(int argc, char **argv) {
     ("outfile,o", boost::program_options::value<boost::filesystem::path>(&c.outfile)->default_value("sv.bcf"), "Filtered SV BCF output file")
     ("genome,g", boost::program_options::value<boost::filesystem::path>(&c.genome), "Genomic reference file")
     ("altaf,a", boost::program_options::value<float>(&c.altaf)->default_value(0.2), "min. fractional ALT support")
-    ("minsize,m", boost::program_options::value<uint32_t>(&c.minsize)->default_value(500), "min. SV size")
-    ("maxsize,n", boost::program_options::value<uint32_t>(&c.maxsize)->default_value(500000000), "max. SV size")
+    ("minsize,m", boost::program_options::value<int32_t>(&c.minsize)->default_value(500), "min. SV size")
+    ("maxsize,n", boost::program_options::value<int32_t>(&c.maxsize)->default_value(500000000), "max. SV size")
     ("ratiogeno,r", boost::program_options::value<float>(&c.ratiogeno)->default_value(0.75), "min. fraction of genotyped samples")
     ("pass,p", "Filter sites for PASS")
     ;
