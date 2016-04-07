@@ -96,7 +96,7 @@ This depends on the sharpness of the insert size distribution. For an insert siz
 Yes and no. The SV site discovery works for any ploidy. However, Delly's genotyping model assumes hom. reference, het. and hom. alternative.
 
 * How do I run Delly if I have multiple different libraries/bam files for a single sample?    
-Merge these bams using tools such as [Picard](http://picard.sourceforge.net/) and tag each library with a unique ReadGroup. 
+Merge these bams using tools such as [Picard](http://broadinstitute.github.io/picard/) and tag each library with a unique ReadGroup. 
 
 * Delly is running to slowly what can I do?
 Exclude telomere and centromere regions. Delly2 ships with such an exclude list for human and mouse samples. In addition, you can filter input reads more stringently using -q 20 and -s 15.
