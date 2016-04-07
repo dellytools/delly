@@ -52,13 +52,13 @@ Somatic SV calling
 
 `filter -t DEL -f somatic -o t1.pre.bcf -s samples.tsv -g hg19.fa t1.bcf`
 
-* Re-genotype somatic sites across a larger panel of control samples to efficiently filter false postives and germline SVs. This can be run in parallel for each sample using Delly2's re-genotyping and bcftools merge afterwards.
+* Re-genotype somatic sites across a larger panel of control samples to efficiently filter false postives and germline SVs. For performance reasons, this can be run in parallel for each sample (see germline SV calling) and/or directly on a combined pre-filtered somatic site list from multiple tumor/control pairs.
 
-`delly -t DEL -g hg19.fa -v t1.pre.bcf -o pre.geno.bcf -x hg19.excl tumor1.bam control1.bam ... controlN.bam`
+`delly -t DEL -g hg19.fa -v t1.pre.bcf -o geno.bcf -x hg19.excl tumor1.bam control1.bam ... controlN.bam`
 
-* Post-filter for somatic SVs using all controls
+* Post-filter for somatic SVs using all control samples.
 
-`filter -t DEL -f somatic -o t1.somatic.bcf -s samples.tsv -g hg19.fa pre.geno.bcf
+`filter -t DEL -f somatic -o t1.somatic.bcf -s samples.tsv -g hg19.fa geno.bcf`
 
 
 
