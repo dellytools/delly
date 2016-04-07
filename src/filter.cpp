@@ -72,8 +72,8 @@ struct Config {
   bool hasSampleFile;
   int32_t minsize;
   int32_t maxsize;
-  uint32_t coverage;
-  uint32_t rdsize;
+  int32_t coverage;
+  int32_t rdsize;
   float ratiogeno;
   float altaf;
   float controlcont;
@@ -398,7 +398,7 @@ int main(int argc, char **argv) {
   boost::program_options::options_description somatic("Somatic options");
   somatic.add_options()
     ("samples,s", boost::program_options::value<boost::filesystem::path>(&c.samplefile), "Two-column sample file listing sample name and tumor or control")
-    ("coverage,v", boost::program_options::value<uint32_t>(&c.coverage)->default_value(10), "min. coverage in tumor")
+    ("coverage,v", boost::program_options::value<int32_t>(&c.coverage)->default_value(10), "min. coverage in tumor")
     ("controlcontamination,c", boost::program_options::value<float>(&c.controlcont)->default_value(0.0), "max. fractional ALT support in control")
     ;
 
@@ -406,7 +406,7 @@ int main(int argc, char **argv) {
   boost::program_options::options_description germline("Germline options");
   germline.add_options()
     ("gq,q", boost::program_options::value<float>(&c.gq)->default_value(15), "min. median GQ for carriers and non-carriers")
-    ("rdsize,z", boost::program_options::value<uint32_t>(&c.rdsize)->default_value(200), "SVs greater this value are filtered using read-depth (DEL, DUP)")
+    ("rdsize,z", boost::program_options::value<int32_t>(&c.rdsize)->default_value(200), "SVs greater this value are filtered using read-depth (DEL, DUP)")
     ("rddel,e", boost::program_options::value<float>(&c.rddel)->default_value(0.8), "max. read-depth ratio of carrier vs. non-carrier for a deletion")
     ("rddup,u", boost::program_options::value<float>(&c.rddup)->default_value(1.2), "min. read-depth ratio of carrier vs. non-carrier for a duplication")
     ;
