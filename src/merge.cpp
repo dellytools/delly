@@ -347,9 +347,9 @@ void _outputSelectedIntervals(Config const& c, TGenomeIntervals const& iSelected
 
       // Correct size
       std::string chrName(bcf_hdr_id2name(hdr, rec->rid));
-      int32_t tid = cMap[chrName];
-      int32_t svStart = rec->pos;
-      int32_t svEnd = svStart + 1;
+      uint32_t tid = cMap[chrName];
+      uint32_t svStart = rec->pos;
+      uint32_t svEnd = svStart + 1;
       if (bcf_get_info_int32(hdr, rec, "END", &svend, &nsvend) > 0) svEnd = *svend;
 
       // Parse INFO fields
@@ -530,14 +530,14 @@ inline int run(Config const& c, TSVType svType) {
   TGenomeIntervals iScore;
   iScore.resize(numseq, TIntervalScores());
   _fillIntervalMap(c, iScore, contigMap, svType);
-  for(int i = 0; i<numseq; ++i) std::sort(iScore[i].begin(), iScore[i].end(), SortIScores<IntervalScore>());
+  for(uint32_t i = 0; i<numseq; ++i) std::sort(iScore[i].begin(), iScore[i].end(), SortIScores<IntervalScore>());
 
   // Filter intervals
   TGenomeIntervals iSelected;
   iSelected.resize(numseq, TIntervalScores());
   _processIntervalMap(c, iScore, iSelected);
   iScore.clear();
-  for(int i = 0; i<numseq; ++i) std::sort(iSelected[i].begin(), iSelected[i].end(), SortIScores<IntervalScore>());
+  for(uint32_t i = 0; i<numseq; ++i) std::sort(iSelected[i].begin(), iSelected[i].end(), SortIScores<IntervalScore>());
 
   // Output best intervals
   _outputSelectedIntervals(c, iSelected, contigMap, svType);
