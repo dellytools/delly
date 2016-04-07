@@ -46,19 +46,19 @@ Somatic SV calling
 
 * At least one tumor sample and a matched control sample are required. All tumor/control pairs are run separately for SV discovery:
 
-`./src/delly -t DEL -x hg19.excl -o t1.bcf -g hg19.fa tumor1.bam control1.bam`
+`delly -t DEL -x hg19.excl -o t1.bcf -g hg19.fa tumor1.bam control1.bam`
 
 * Somatic pre-filtering of every tumor/control pair using a tab-delimited sample description file (<sample id>\t[tumor|control]).
 
-`./src/filter -t DEL -f somatic -o t1.pre.bcf -s samples.tsv -g hg19.fa t1.bcf`
+`filter -t DEL -f somatic -o t1.pre.bcf -s samples.tsv -g hg19.fa t1.bcf`
 
 * Re-genotype somatic sites across a larger panel of control samples to efficiently filter false postives and germline SVs. This can be run in parallel for each sample using Delly2's re-genotyping and bcftools merge afterwards.
 
-`./src/delly -t DEL -g hg19.fa -v t1.pre.bcf -o pre.geno.bcf -x hg19.excl tumor1.bam control1.bam ... controlN.bam`
+`delly -t DEL -g hg19.fa -v t1.pre.bcf -o pre.geno.bcf -x hg19.excl tumor1.bam control1.bam ... controlN.bam`
 
 * Post-filter for somatic SVs using all controls
 
-`./src/filter -t DEL -f somatic -o t1.somatic.bcf -s samples.tsv -g hg19.fa pre.geno.bcf
+`filter -t DEL -f somatic -o t1.somatic.bcf -s samples.tsv -g hg19.fa pre.geno.bcf
 
 
 
