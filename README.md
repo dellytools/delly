@@ -79,7 +79,7 @@ Germline SV calling
 
 `delly -t DEL -g hg19.fa -v del.bcf -o sN.geno.bcf -x hg19.excl sN.bam`
 
-* Merge all re-genotyped samples to get a single VCF using bcftools merge
+* Merge all re-genotyped samples to get a single VCF/BCF using bcftools merge
 
 `bcftools merge -O b -o merged.bcf s1.geno.bcf s2.geno.bcf ... sN.geno.bcf`
 
