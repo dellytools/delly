@@ -367,7 +367,7 @@ void _outputSelectedIntervals(Config const& c, TGenomeIntervals const& iSelected
       if (bcf_get_info_int32(hdr, rec, "MAPQ", &mapq, &nmapq) > 0) peMapQuality = (uint8_t) *mapq;
       float srAlignQuality = 0;
       if (bcf_get_info_float(hdr, rec, "SRQ", &srq, &nsrq) > 0) srAlignQuality = *srq;
-      int32_t mtid = tid;
+      uint32_t mtid = tid;
       std::string chr2Name = chrName;
       if (bcf_get_info_string(hdr, rec, "CHR2", &chr2, &nchr2) > 0) {
 	chr2Name = std::string(chr2);
