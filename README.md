@@ -48,7 +48,7 @@ Somatic SV calling
 
 `delly -t DEL -x hg19.excl -o t1.bcf -g hg19.fa tumor1.bam control1.bam`
 
-* Somatic pre-filtering of every tumor/control pair using a tab-delimited sample description file (<sample id>\t[tumor|control]).
+* Somatic pre-filtering of every tumor/control pair using a tab-delimited sample description file where the first column is the sample id (as in the VCF/BCF file) and the second column is either tumor or control.
 
 `filter -t DEL -f somatic -o t1.pre.bcf -s samples.tsv -g hg19.fa t1.bcf`
 
