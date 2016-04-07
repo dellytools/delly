@@ -186,7 +186,7 @@ void _fillIntervalMap(Config const& c, TGenomeIntervals& iScore, TContigMap& cMa
 	  free(vcfscore);
 	}
       } else {
-	if (precise) score = srSupport * (100 * srAlignQuality);
+	if (precise) score = srSupport * (uint32_t) (100 * srAlignQuality);
 	else score = peSupport * (uint32_t) peMapQuality;
       }
 
@@ -391,7 +391,7 @@ void _outputSelectedIntervals(Config const& c, TGenomeIntervals const& iSelected
 	  free(vcfscore);
 	}
       } else {
-	if (precise) score = srSupport * (100 * srAlignQuality);
+	if (precise) score = srSupport * (uint32_t) (100 * srAlignQuality);
 	else score = peSupport * (uint32_t) peMapQuality;
       }
 

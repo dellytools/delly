@@ -46,7 +46,7 @@ void _remove_info(bcf_hdr_t* hdr, bcf1_t* rec) {
 
   if (!(rec->unpacked & BCF_UN_INFO)) bcf_unpack(rec, BCF_UN_INFO);
   
-  for (int i = 0; i < rec->n_info; ++i){
+  for (uint32_t i = 0; i < rec->n_info; ++i){
     bcf_info_t* inf = &rec->d.info[i];
     const char* key = bcf_hdr_int2id(hdr, BCF_DT_ID, inf->key);
     if (keepInfo.find(std::string(key)) != keepInfo.end()) continue;
@@ -63,7 +63,7 @@ void _remove_info(bcf_hdr_t* hdr, bcf1_t* rec) {
 void _remove_format(bcf_hdr_t* hdr, bcf1_t* rec) {
   if (!(rec->unpacked & BCF_UN_FMT)) bcf_unpack(rec, BCF_UN_FMT);
   
-  for(int i = 0; i<rec->n_fmt; ++i) {
+  for(uint32_t i = 0; i<rec->n_fmt; ++i) {
     bcf_fmt_t* fmt = &rec->d.fmt[i];
     const char* key = bcf_hdr_int2id(hdr, BCF_DT_ID, fmt->id);
     bcf_update_format(hdr, rec, key, NULL, 0, BCF_HT_INT); // the type is irrelevant for n = 0
