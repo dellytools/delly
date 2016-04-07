@@ -1,7 +1,7 @@
 Delly2
 ======
 
-Delly2 is an integrated structural variant prediction method that can discover and genotype deletions, tandem duplications, inversions and translocations
+Delly2 is an integrated structural variant prediction method that can discover, genotype and visualize deletions, tandem duplications, inversions and translocations
 at single-nucleotide resolution in short-read massively parallel sequencing data. It uses paired-ends and split-reads to sensitively and accurately
 delineate genomic rearrangements throughout the genome. Structural variants can be visualized using [Delly-maze](https://github.com/tobiasrausch/delly/tree/master/vis/maze/) and [Delly-suave](https://github.com/tobiasrausch/delly/tree/master/vis/suave/).
 
@@ -18,7 +18,7 @@ Alternatively, you can build Delly2 from source. Delly2 dependencies are include
 
 `make all`
 
-There is a Delly discussion group [delly-users](http://groups.google.com/d/forum/delly-users) for questions and a few wiki pages on some additional [tools](https://github.com/tobiasrausch/delly/wiki). 
+There is a Delly discussion group [delly-users](http://groups.google.com/d/forum/delly-users) for usage and installation questions and a dockerized [delly](https://registry.hub.docker.com/u/trausch/delly/). Some additional Delly2 tools are briefly described in the [wiki](https://github.com/tobiasrausch/delly/wiki). 
 
 
 Delly2 multi-threading mode
@@ -30,7 +30,7 @@ Delly2 supports parallel computing using the OpenMP API (www.openmp.org).
 There is also a statically linked, multi-threaded binary for Linux 64-bit available under [releases](https://github.com/tobiasrausch/delly/releases/).
 
 
-You can set the number of threads using the environment variable OMP_NUM_THREADS in your shell.
+You can set the number of threads using the environment variable OMP_NUM_THREADS.
 
 `export OMP_NUM_THREADS=3`
 
@@ -39,54 +39,73 @@ Delly2 primarily parallelizes on the sample level. Hence, OMP_NUM_THREADS should
 Running Delly2
 --------------
 
-Delly2 just needs one bam file for every sample and the reference genome to identify split-reads. The output is in [vcf](http://vcftools.sourceforge.net/) format.
-The SV type can be DEL, DUP, INV or TRA for deletions, tandem duplications, inversions and translocations, respectively.
+Delly2 just needs one sorted and indexed bam file for every sample and the reference genome to identify split-reads. The output is in [vcf](http://vcftools.sourceforge.net/) format. Prior duplicate marking is recommended. The SV type can be DEL, DUP, INV or TRA for deletions, tandem duplications, inversions and translocations, respectively. Delly2 supports germline and somatic SV discovery, genotyping and filtering. Because of that, Delly2 has been modularized and common workflows for germline and somatic SV calling are outlined below.
 
-`./src/delly -t DEL -o del.vcf -g <ref.fa> <sample1.sort.bam> ... <sampleN.sort.bam>`
+Somatic SV calling
+------------------
 
-Each bam file is assumed to be one sample. If you do have multiple bam files for a single sample please merge these bams using tools such as [Picard](http://picard.sourceforge.net/) and tag each library with a unique ReadGroup. To save runtime it is advisable to exclude telomere and centromere regions. Delly2 ships with such an exclude list for human and mouse samples.
+* At least one tumor sample and a matched control sample are required. All tumor/control pairs are run separately for SV discovery:
 
-`./src/delly -t DEL -x human.hg19.excl.tsv -o del.vcf -g <ref.fa> <sample1.bam> ... <sampleN.bam>`
+`./src/delly -t DEL -x hg19.excl -o t1.bcf -g hg19.fa tumor1.bam control1.bam`
 
-If you omit the reference sequence Delly skips the split-read analysis. The vcf file follows the [vcf specification](http://vcftools.sourceforge.net/specs.html) and all output fields are explained in the vcf header.
+* Somatic pre-filtering of every tumor/control pair using a tab-delimited sample description file (<sample id>\t[tumor|control]).
 
-`grep "^#" del.vcf`
+`./src/filter -t DEL -f somatic -o t1.pre.bcf -s samples.tsv -g hg19.fa t1.bcf`
 
-Delly ships with python scripts to filter somatic variants for tumor/normal comparisons and to filter confident polymorphic SV sites in population-scale SV calling.
+* Re-genotype somatic sites across a larger panel of control samples to efficiently filter false postives and germline SVs. This can be run in parallel for each sample using Delly2's re-genotyping and bcftools merge afterwards.
 
-`python somaticFilter.py -t DEL -v del.vcf -o del.somatic.vcf -f`
+`./src/delly -t DEL -g hg19.fa -v t1.pre.bcf -o pre.geno.bcf -x hg19.excl tumor1.bam control1.bam ... controlN.bam`
 
-Copy-number variable polymorphic SV sites:
+* Post-filter for somatic SVs using all controls
 
-`python cnvClassifier.py -v del.vcf -o del.sites.vcf -f`
+`./src/filter -t DEL -f somatic -o t1.somatic.bcf -s samples.tsv -g hg19.fa pre.geno.bcf
 
-Balanced, polymorphic SV sites (inversions):
 
-`python populationFilter.py -v inv.vcf -o inv.sites.vcf -f`
 
-These python scripts are primarily meant as an example of how you can filter and annotate the final Delly vcf file further. They may require some fine-tuning depending on your application.
+Germline SV calling
+-------------------
 
-Delly can also be used to re-genotype a given SV site list. Further details are provided [here](http://github.com/tobiasrausch/svcatalog).
+* SV calling is done by sample or in small batches to increase SV breakpoint precision
 
-`./delly -t DEL -g hg19.fa -v del.sites.vcf -o NA19240.vcf NA19240.bam`
+`delly -t DEL -g hg19.fa -o s1.bcf -x hg19.excl sample1.bam`
 
+* Merge SV sites into a unified site list 
+
+`merge -t DEL -m 500 -n 1000000 -o del.bcf -b 500 -r 0.5 s1.bcf s2.bcf ... sN.bcf`
+
+* Re-genotype merged SV site list across all samples. This can be run in parallel for each sample.
+
+`delly -t DEL -g hg19.fa -v del.bcf -o s1.geno.bcf -x hg19.excl s1.bam`
+
+`delly -t DEL -g hg19.fa -v del.bcf -o sN.geno.bcf -x hg19.excl sN.bam`
+
+* Merge all re-genotyped samples to get a single VCF using bcftools merge
+
+`bcftools merge -O b -o merged.bcf s1.geno.bcf s2.geno.bcf ... sN.geno.bcf`
+
+* Apply the germline SV filter
+
+`filter -t DEL -f germline -o germline.bcf -g hg19.fa merged.bcf`
 
 FAQ
 ---
 * What is the smallest SV size Delly can call?  
-This depends on the sharpness of the insert size distribution. For an insert size of 200-300bp with a 20-30bp standard deviation, Delly starts to call reliable SVs >=300bp.
+This depends on the sharpness of the insert size distribution. For an insert size of 200-300bp with a 20-30bp standard deviation, Delly starts to call reliable SVs >=300bp. Delly2 also supports calling of small InDels using soft-clipped reads only. This smallest SV size called is then 15bp.
 
 * Can Delly be used on a non-diploid genome?  
 Yes and no. The SV site discovery works for any ploidy. However, Delly's genotyping model assumes hom. reference, het. and hom. alternative.
 
-* How can Delly be used to call somatic SVs?  
-Run Delly jointly on the cancer data and the matched control sequencing data. Ideally, you include many control samples in a single run because assuming that any reference mapping artifact is recurrent, multiple control samples from different patients will help you to catch these reference-biases more easily. In the end, one just filters the tumor SVs against all SVs present in any of the control genomes as exemplified in the somatic filtering python script. Do not run multiple tumor genomes together since overlapping somatic SVs might have different coordinates in different tumor genomes, except these tumor samples are from the same patient as in tumor heterogeneity studies. The usual setup is tumor.bam + control.bam(s).
+* How do I run Delly if I have multiple different libraries/bam files for a single sample?
+Merge these bams using tools such as [Picard](http://picard.sourceforge.net/) and tag each library with a unique ReadGroup. 
+
+* Delly is running to slowly what can I do?
+Exclude telomere and centromere regions. Delly2 ships with such an exclude list for human and mouse samples. In addition, you can filter input reads more stringently using -q 20 and -s 15.
 
 * Are non-unique alignments, multi-mappings and/or multiple split-read alignments allowed?  
-Delly expects two alignment records in the bam file for every paired-end, one for the first and one for the second read. Multiple split-read alignment records of a given read are allowed if and only if one of them (e.g. the longest split alignment) is a primary alignment whereas all others are marked as secondary or supplementary (flag 0x0100 or flag 0x0800).
+Delly expects two alignment records in the bam file for every paired-end, one for the first and one for the second read. Multiple split-read alignment records of a given read are allowed if and only if one of them (e.g. the longest split alignment) is a primary alignment whereas all others are marked as secondary or supplementary (flag 0x0100 or flag 0x0800). This is the default for bwa mem.
 
 * What pre-processing of bam files is required?    
-Bam files need to be sorted and index. If multiple libraries are present for a single sample (e.g., a long-insert mate-pair library and a short-insert paired-end library) these need to be merged in a single bam file with unique ReadGroup tags. A prior marking of duplicates is not necessary but also does not harm because Delly has its own duplicate filter and is aware of the duplicate flag.
+Bam files need to be sorted and index. If multiple libraries are present for a single sample (e.g., a long-insert mate-pair library and a short-insert paired-end library) these need to be merged in a single bam file with unique ReadGroup tags. A prior marking of duplicates is recommended.
 
 * Usage/discussion mailing list?         
 There is a delly discussion group [delly-users](http://groups.google.com/d/forum/delly-users).
