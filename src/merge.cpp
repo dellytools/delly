@@ -676,7 +676,10 @@ int main(int argc, char **argv) {
     }
     return rVal;
   } 
-  //else if (c.svType == "INS") return run(c, SVType<InsertionTag>());
+  else if (c.svType == "INS") {
+    c.reqCT = 4;
+    return run(c, SVType<InsertionTag>());
+  }
   else {
     std::cerr << "SV analysis type not supported by Delly: " << c.svType << std::endl;
     return 1;
