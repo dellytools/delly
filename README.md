@@ -65,7 +65,7 @@ Somatic SV calling
 Germline SV calling
 -------------------
 
-* SV calling is done by sample or in small batches to increase SV breakpoint precision
+* SV calling is done by sample or in small batches to increase SV sensitivity & breakpoint precision
 
 `delly -t DEL -g hg19.fa -o s1.bcf -x hg19.excl sample1.bam`
 
