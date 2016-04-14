@@ -255,7 +255,7 @@ void _outputSelectedIntervals(Config& c, TGenomeIntervals const& iSelected, TCon
   boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
   std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Filtering SVs" << std::endl;
   int32_t totalSelectedSVs = 0;
-  for(int32_t i = 0; i<iSelected.size(); ++i) totalSelectedSVs += iSelected[i].size();
+  for(uint32_t i = 0; i<iSelected.size(); ++i) totalSelectedSVs += iSelected[i].size();
   boost::progress_display show_progress( totalSelectedSVs );
 
   // Open output VCF file
@@ -313,7 +313,7 @@ void _outputSelectedIntervals(Config& c, TGenomeIntervals const& iSelected, TCon
   TBcfHeader hdr(c.files.size());
   TBcfRecord rec(c.files.size());
   TEof eof(c.files.size());
-  int32_t allEOF = 0;
+  uint32_t allEOF = 0;
   for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
     ifile[file_c] = bcf_open(c.files[file_c].string().c_str(), "r");
     hdr[file_c] = bcf_hdr_read(ifile[file_c]);
