@@ -150,7 +150,7 @@ void _fillIntervalMap(Config const& c, TGenomeIntervals& iScore, TContigMap& cMa
       if (bcf_get_info_int32(hdr, rec, "END", &svend, &nsvend) > 0) svEnd = *svend;
 
       // Parse INFO fields
-      if ((svEnd - svStart < c.minsize) || (svEnd - svStart > c.maxsize)) continue;
+      if ((std::string(svt) != "TRA") && ((svEnd - svStart < c.minsize) || (svEnd - svStart > c.maxsize))) continue;
       bool precise = false;
       if (bcf_get_info_flag(hdr, rec, "PRECISE", 0, 0) > 0) precise=true;
       unsigned int peSupport = 0;
@@ -164,12 +164,10 @@ void _fillIntervalMap(Config const& c, TGenomeIntervals& iScore, TContigMap& cMa
       if (bcf_get_info_int32(hdr, rec, "MAPQ", &mapq, &nmapq) > 0) peMapQuality = (uint8_t) *mapq;
       float srAlignQuality = 0;
       if (bcf_get_info_float(hdr, rec, "SRQ", &srq, &nsrq) > 0) srAlignQuality = *srq;
-      uint32_t mtid = tid;
       if (bcf_get_info_string(hdr, rec, "CHR2", &chr2, &nchr2) > 0) {
 	std::string chr2Name(chr2);
-	mtid = cMap[chr2Name];
+	//mtid = cMap[chr2Name];
       }
-      if (mtid != tid) continue;
 
       // Quality score for the SV
       uint32_t score = 0;
@@ -208,8 +206,8 @@ void _fillIntervalMap(Config const& c, TGenomeIntervals& iScore, TContigMap& cMa
   }
 }
 
-template<typename TGenomeIntervals>
-void _processIntervalMap(Config const& c, TGenomeIntervals const& iScore, TGenomeIntervals& iSelected) {
+template<typename TGenomeIntervals, typename TSVType>
+void _processIntervalMap(Config const& c, TGenomeIntervals const& iScore, TGenomeIntervals& iSelected, TSVType svType) {
   typedef typename TGenomeIntervals::value_type TIntervalScores;
   typedef typename TIntervalScores::value_type IntervalScore;
 
@@ -232,7 +230,7 @@ void _processIntervalMap(Config const& c, TGenomeIntervals const& iScore, TGenom
 	if (iSNext->start - iS->start > c.bpoffset) break;
 	else {
 	  if (((iSNext->end > iS->end) && (iSNext->end - iS->end < c.bpoffset)) || ((iSNext->end <= iS->end) &&(iS->end - iSNext->end < c.bpoffset))) {
-	    if (recOverlap(iS->start, iS->end, iSNext->start, iSNext->end) >= c.recoverlap) {
+	    if ((_addID(svType) == "TRA") || (recOverlap(iS->start, iS->end, iSNext->start, iSNext->end) >= c.recoverlap)) {
 	      if (iS->score < iSNext->score) *iK = false;
 	      else if (iSNext ->score < iS->score) *iKNext = false;
 	      else {
@@ -360,6 +358,7 @@ void _outputSelectedIntervals(Config& c, TGenomeIntervals const& iSelected, TCon
 	if ((idx < 0) || (rec[idx]->rid > rec[file_c]->rid) || ((rec[idx]->rid == rec[file_c]->rid) && (rec[idx]->pos > rec[file_c]->pos))) idx = file_c;
       }
     }
+
     // Correct SV type
     bcf_get_info_string(hdr[idx], rec[idx], "SVTYPE", &svt, &nsvt);
     if (std::string(svt) == _addID(svType)) {
@@ -375,118 +374,117 @@ void _outputSelectedIntervals(Config& c, TGenomeIntervals const& iSelected, TCon
 	if (bcf_get_info_int32(hdr[idx], rec[idx], "END", &svend, &nsvend) > 0) svEnd = *svend;
 
 	// Parse INFO fields
-	if ((svEnd - svStart < c.minsize) || (svEnd - svStart > c.maxsize)) continue;
-	bool precise = false;
-	if (bcf_get_info_flag(hdr[idx], rec[idx], "PRECISE", 0, 0) > 0) precise=true;
-	unsigned int peSupport = 0;
-	if (bcf_get_info_int32(hdr[idx], rec[idx], "PE", &pe, &npe) > 0) peSupport = *pe;
-	unsigned int srSupport = 0;
-	if (bcf_get_info_int32(hdr[idx], rec[idx], "SR", &sr, &nsr) > 0) srSupport = *sr;
-	// Remove this line
-	//if (srSupport > 0) precise = true;
-
-	uint8_t peMapQuality = 0;
-	if (bcf_get_info_int32(hdr[idx], rec[idx], "MAPQ", &mapq, &nmapq) > 0) peMapQuality = (uint8_t) *mapq;
-	float srAlignQuality = 0;
-	if (bcf_get_info_float(hdr[idx], rec[idx], "SRQ", &srq, &nsrq) > 0) srAlignQuality = *srq;
-	uint32_t mtid = tid;
-	std::string chr2Name = chrName;
-	if (bcf_get_info_string(hdr[idx], rec[idx], "CHR2", &chr2, &nchr2) > 0) {
-	  chr2Name = std::string(chr2);
-	  mtid = cMap[chr2Name];
-	}
-	if (mtid != tid) continue;
-
-	// Proxy quality score for the SV
-	uint32_t score = 0;
-	if (_isKeyPresent(hdr[idx], "SCORE")) {
-	  int32_t nvcfscore = 0;
-	  if (_getInfoType(hdr[idx], "SCORE") == BCF_HT_INT) {
-	    int32_t* vcfscore = NULL;
-	    bcf_get_info_int32(hdr[idx], rec[idx], "SCORE", &vcfscore, &nvcfscore);
-	    score = *vcfscore;
-	    free(vcfscore);
-	  } else if (_getInfoType(hdr[idx], "SCORE") == BCF_HT_REAL) {
-	    float* vcfscore = NULL;
-	    bcf_get_info_float(hdr[idx], rec[idx], "SCORE", &vcfscore, &nvcfscore);
-	    score = (uint32_t) (*vcfscore * 10000); // for scores in [0,1] 
-	    free(vcfscore);
-	  }
-	} else {
-	  if (precise) score = srSupport * (uint32_t) (100 * srAlignQuality);
-	  else score = peSupport * (uint32_t) peMapQuality;
-	}
-
-	// Is this a selected interval
-	typename TIntervalScores::const_iterator iter = std::lower_bound(iSelected[tid].begin(), iSelected[tid].end(), IntervalScore(svStart, svEnd, score), SortIScores<IntervalScore>());
-	bool foundInterval = false;
-	for(; (iter != iSelected[tid].end()) && (iter->start == svStart); ++iter) {
-	  if ((iter->start == svStart) && (iter->end == svEnd) && (iter->score == score)) {
-	    // Duplicate?
-	    if (gis[tid].find(std::make_pair(svStart, svEnd)) == gis[tid].end()) {
-	      foundInterval = true;
-	      gis[tid].insert(std::make_pair(svStart, svEnd));
-	    } else ++show_progress;
-	    break;
-	  }
-	}
-	if (foundInterval) {
-	  ++show_progress;
-
-	  // Fetch missing INFO fields
-	  bcf_get_info_int32(hdr[idx], rec[idx], "CIPOS", &cipos, &ncipos);
-	  bcf_get_info_int32(hdr[idx], rec[idx], "CIEND", &ciend, &nciend);
-	  std::string consensus;
-	  if (precise) {
-	    bcf_get_info_string(hdr[idx], rec[idx], "CONSENSUS", &cons, &ncons);
-	    consensus = boost::to_upper_copy(std::string(cons));
-	  }
-
-	  // Create new record
-	  rout->rid = bcf_hdr_name2id(hdr_out, chrName.c_str());
-	  rout->pos = rec[idx]->pos;
-	  rout->qual = 0;
-	  std::string id;
-	  if (c.files.size() == 1) id = std::string(rec[idx]->d.id); // Within one VCF file IDs are unique
-	  else {
-	    id += _addID(svType);
-	    std::string padNumber = boost::lexical_cast<std::string>(c.svcounter++);
-	    padNumber.insert(padNumber.begin(), 8 - padNumber.length(), '0');
-	    id += padNumber;
-	  }
-	  bcf_update_id(hdr_out, rout, id.c_str());
-	  std::string alleles;
-	  alleles += "N,<" + _addID(svType) + ">";
-	  bcf_update_alleles_str(hdr_out, rout, alleles.c_str());
-	  int32_t tmppass = bcf_hdr_id2int(hdr_out, BCF_DT_ID, "PASS");
-	  bcf_update_filter(hdr_out, rout, &tmppass, 1);
-	
-	  // Add INFO fields
-	  if (precise) bcf_update_info_flag(hdr_out, rout, "PRECISE", NULL, 1);
-	  else bcf_update_info_flag(hdr_out, rout, "IMPRECISE", NULL, 1);
-	  bcf_update_info_string(hdr_out, rout, "SVTYPE", _addID(svType).c_str());
-	  std::string dellyVersion("EMBL.DELLYv");
-	  dellyVersion += dellyVersionNumber;
-	  bcf_update_info_string(hdr_out,rout, "SVMETHOD", dellyVersion.c_str());
-	  bcf_update_info_string(hdr_out,rout, "CHR2", chr2Name.c_str());
-	  bcf_update_info_int32(hdr_out, rout, "END", &svEnd, 1);
-	  bcf_update_info_int32(hdr_out, rout, "PE", &peSupport, 1);
-	  int32_t tmpi = peMapQuality;
-	  bcf_update_info_int32(hdr_out, rout, "MAPQ", &tmpi, 1);
-	  bcf_update_info_string(hdr_out, rout, "CT", _addOrientation(ict).c_str());
-	  bcf_update_info_int32(hdr_out, rout, "CIPOS", cipos, 2);
-	  bcf_update_info_int32(hdr_out, rout, "CIEND", ciend, 2);
-	  if (precise) {
-	    bcf_update_info_int32(hdr_out, rout, "SR", &srSupport, 1);
-	    bcf_update_info_float(hdr_out, rout, "SRQ", &srAlignQuality, 1);	
-	    bcf_update_info_string(hdr_out, rout, "CONSENSUS", consensus.c_str());
-	  }
-	
-	  // Write record
-	  bcf_write1(fp, hdr_out, rout);
-	  bcf_clear1(rout);
+	if ((std::string(svt) == "TRA") || ((std::string(svt) != "TRA") && (svEnd - svStart >= c.minsize) && (svEnd - svStart <= c.maxsize))) {
+	  bool precise = false;
+	  if (bcf_get_info_flag(hdr[idx], rec[idx], "PRECISE", 0, 0) > 0) precise=true;
+	  unsigned int peSupport = 0;
+	  if (bcf_get_info_int32(hdr[idx], rec[idx], "PE", &pe, &npe) > 0) peSupport = *pe;
+	  unsigned int srSupport = 0;
+	  if (bcf_get_info_int32(hdr[idx], rec[idx], "SR", &sr, &nsr) > 0) srSupport = *sr;
+	  // Remove this line
+	  //if (srSupport > 0) precise = true;
 	  
-	  //std::cerr << bcf_hdr_id2name(hdr[idx], tid) << '\t' << svStart << '\t' << svEnd << std::endl;
+	  uint8_t peMapQuality = 0;
+	  if (bcf_get_info_int32(hdr[idx], rec[idx], "MAPQ", &mapq, &nmapq) > 0) peMapQuality = (uint8_t) *mapq;
+	  float srAlignQuality = 0;
+	  if (bcf_get_info_float(hdr[idx], rec[idx], "SRQ", &srq, &nsrq) > 0) srAlignQuality = *srq;
+	  std::string chr2Name = chrName;
+	  if (bcf_get_info_string(hdr[idx], rec[idx], "CHR2", &chr2, &nchr2) > 0) {
+	    chr2Name = std::string(chr2);
+	    //mtid = cMap[chr2Name];
+	  }
+
+	  // Proxy quality score for the SV
+	  uint32_t score = 0;
+	  if (_isKeyPresent(hdr[idx], "SCORE")) {
+	    int32_t nvcfscore = 0;
+	    if (_getInfoType(hdr[idx], "SCORE") == BCF_HT_INT) {
+	      int32_t* vcfscore = NULL;
+	      bcf_get_info_int32(hdr[idx], rec[idx], "SCORE", &vcfscore, &nvcfscore);
+	      score = *vcfscore;
+	      free(vcfscore);
+	    } else if (_getInfoType(hdr[idx], "SCORE") == BCF_HT_REAL) {
+	      float* vcfscore = NULL;
+	      bcf_get_info_float(hdr[idx], rec[idx], "SCORE", &vcfscore, &nvcfscore);
+	      score = (uint32_t) (*vcfscore * 10000); // for scores in [0,1] 
+	      free(vcfscore);
+	    }
+	  } else {
+	    if (precise) score = srSupport * (uint32_t) (100 * srAlignQuality);
+	    else score = peSupport * (uint32_t) peMapQuality;
+	  }
+	  
+	  // Is this a selected interval
+	  typename TIntervalScores::const_iterator iter = std::lower_bound(iSelected[tid].begin(), iSelected[tid].end(), IntervalScore(svStart, svEnd, score), SortIScores<IntervalScore>());
+	  bool foundInterval = false;
+	  for(; (iter != iSelected[tid].end()) && (iter->start == svStart); ++iter) {
+	    if ((iter->start == svStart) && (iter->end == svEnd) && (iter->score == score)) {
+	      // Duplicate?
+	      if (gis[tid].find(std::make_pair(svStart, svEnd)) == gis[tid].end()) {
+		foundInterval = true;
+		gis[tid].insert(std::make_pair(svStart, svEnd));
+	      } else ++show_progress;
+	      break;
+	    }
+	  }
+	  if (foundInterval) {
+	    ++show_progress;
+	    
+	    // Fetch missing INFO fields
+	    bcf_get_info_int32(hdr[idx], rec[idx], "CIPOS", &cipos, &ncipos);
+	    bcf_get_info_int32(hdr[idx], rec[idx], "CIEND", &ciend, &nciend);
+	    std::string consensus;
+	    if (precise) {
+	      bcf_get_info_string(hdr[idx], rec[idx], "CONSENSUS", &cons, &ncons);
+	      consensus = boost::to_upper_copy(std::string(cons));
+	    }
+	    
+	    // Create new record
+	    rout->rid = bcf_hdr_name2id(hdr_out, chrName.c_str());
+	    rout->pos = rec[idx]->pos;
+	    rout->qual = 0;
+	    std::string id;
+	    if (c.files.size() == 1) id = std::string(rec[idx]->d.id); // Within one VCF file IDs are unique
+	    else {
+	      id += _addID(svType);
+	      std::string padNumber = boost::lexical_cast<std::string>(c.svcounter++);
+	      padNumber.insert(padNumber.begin(), 8 - padNumber.length(), '0');
+	      id += padNumber;
+	    }
+	    bcf_update_id(hdr_out, rout, id.c_str());
+	    std::string alleles;
+	    alleles += "N,<" + _addID(svType) + ">";
+	    bcf_update_alleles_str(hdr_out, rout, alleles.c_str());
+	    int32_t tmppass = bcf_hdr_id2int(hdr_out, BCF_DT_ID, "PASS");
+	    bcf_update_filter(hdr_out, rout, &tmppass, 1);
+	    
+	    // Add INFO fields
+	    if (precise) bcf_update_info_flag(hdr_out, rout, "PRECISE", NULL, 1);
+	    else bcf_update_info_flag(hdr_out, rout, "IMPRECISE", NULL, 1);
+	    bcf_update_info_string(hdr_out, rout, "SVTYPE", _addID(svType).c_str());
+	    std::string dellyVersion("EMBL.DELLYv");
+	    dellyVersion += dellyVersionNumber;
+	    bcf_update_info_string(hdr_out,rout, "SVMETHOD", dellyVersion.c_str());
+	    bcf_update_info_string(hdr_out,rout, "CHR2", chr2Name.c_str());
+	    bcf_update_info_int32(hdr_out, rout, "END", &svEnd, 1);
+	    bcf_update_info_int32(hdr_out, rout, "PE", &peSupport, 1);
+	    int32_t tmpi = peMapQuality;
+	    bcf_update_info_int32(hdr_out, rout, "MAPQ", &tmpi, 1);
+	    bcf_update_info_string(hdr_out, rout, "CT", _addOrientation(ict).c_str());
+	    bcf_update_info_int32(hdr_out, rout, "CIPOS", cipos, 2);
+	    bcf_update_info_int32(hdr_out, rout, "CIEND", ciend, 2);
+	    if (precise) {
+	      bcf_update_info_int32(hdr_out, rout, "SR", &srSupport, 1);
+	      bcf_update_info_float(hdr_out, rout, "SRQ", &srAlignQuality, 1);	
+	      bcf_update_info_string(hdr_out, rout, "CONSENSUS", consensus.c_str());
+	    }
+	
+	    // Write record
+	    bcf_write1(fp, hdr_out, rout);
+	    bcf_clear1(rout);
+	  
+	    //std::cerr << bcf_hdr_id2name(hdr[idx], tid) << '\t' << svStart << '\t' << svEnd << std::endl;
+	  }
 	}
       }
     }
@@ -571,7 +569,7 @@ inline int run(Config& c, TSVType svType) {
   // Filter intervals
   TGenomeIntervals iSelected;
   iSelected.resize(numseq, TIntervalScores());
-  _processIntervalMap(c, iScore, iSelected);
+  _processIntervalMap(c, iScore, iSelected, svType);
   iScore.clear();
   for(uint32_t i = 0; i<numseq; ++i) std::sort(iSelected[i].begin(), iSelected[i].end(), SortIScores<IntervalScore>());
 
@@ -665,8 +663,19 @@ int main(int argc, char **argv) {
       rVal += run(c, SVType<InversionTag>());
     }
     return rVal;
-  }
-  //else if (c.svType == "TRA") return run(c, SVType<TranslocationTag>());
+  } else if (c.svType == "TRA") {
+    boost::filesystem::path oldPath = c.outfile;
+    int rVal = 0;
+    for(int i = 0; i<4; ++i) {
+      c.reqCT = i;
+      std::string fileStem(oldPath.stem().stem().string());
+      fileStem += "." + _addOrientation(c.reqCT) + ".bcf";
+      if (oldPath.parent_path().string().size()) c.outfile=boost::filesystem::path(oldPath.parent_path().string() + "/" + fileStem);
+      else c.outfile=boost::filesystem::path(fileStem);
+      rVal += run(c, SVType<TranslocationTag>());
+    }
+    return rVal;
+  } 
   //else if (c.svType == "INS") return run(c, SVType<InsertionTag>());
   else {
     std::cerr << "SV analysis type not supported by Delly: " << c.svType << std::endl;
