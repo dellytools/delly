@@ -402,8 +402,9 @@ namespace torali {
   // Insertions
   template<typename TISize, typename TLibInfo>
   inline bool
-  _acceptedInsertSize(TLibInfo& libInfo, TISize const iSize, SVType<InsertionTag>) {
-    return ((libInfo.minISizeCutoff <= iSize) || (libInfo.median == 0));
+  _acceptedInsertSize(TLibInfo&, TISize const, SVType<InsertionTag>) {
+    return true;
+    //return ((libInfo.minISizeCutoff <= iSize) || (libInfo.median == 0));
   }
 
   // Duplications
