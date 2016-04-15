@@ -46,19 +46,19 @@ Somatic SV calling
 
 * At least one tumor sample and a matched control sample are required. All tumor/control pairs are run separately for SV discovery:
 
-`delly -t DEL -x hg19.excl -o t1.bcf -g hg19.fa tumor1.bam control1.bam`
+`delly call -t DEL -x hg19.excl -o t1.bcf -g hg19.fa tumor1.bam control1.bam`
 
 * Somatic pre-filtering of every tumor/control pair using a tab-delimited sample description file where the first column is the sample id (as in the VCF/BCF file) and the second column is either tumor or control.
 
-`filter -t DEL -f somatic -o t1.pre.bcf -s samples.tsv -g hg19.fa t1.bcf`
+`delly filter -t DEL -f somatic -o t1.pre.bcf -s samples.tsv -g hg19.fa t1.bcf`
 
 * Re-genotype somatic sites across a larger panel of control samples to efficiently filter false postives and germline SVs. For performance reasons, this can be run in parallel for each sample (see germline SV calling) and/or directly on a combined pre-filtered somatic site list from multiple tumor/control pairs.
 
-`delly -t DEL -g hg19.fa -v t1.pre.bcf -o geno.bcf -x hg19.excl tumor1.bam control1.bam ... controlN.bam`
+`delly call -t DEL -g hg19.fa -v t1.pre.bcf -o geno.bcf -x hg19.excl tumor1.bam control1.bam ... controlN.bam`
 
 * Post-filter for somatic SVs using all control samples.
 
-`filter -t DEL -f somatic -o t1.somatic.bcf -s samples.tsv -g hg19.fa geno.bcf`
+`delly filter -t DEL -f somatic -o t1.somatic.bcf -s samples.tsv -g hg19.fa geno.bcf`
 
 
 
@@ -67,17 +67,17 @@ Germline SV calling
 
 * SV calling is done by sample or in small batches to increase SV sensitivity & breakpoint precision
 
-`delly -t DEL -g hg19.fa -o s1.bcf -x hg19.excl sample1.bam`
+`delly call -t DEL -g hg19.fa -o s1.bcf -x hg19.excl sample1.bam`
 
 * Merge SV sites into a unified site list 
 
-`merge -t DEL -m 500 -n 1000000 -o del.bcf -b 500 -r 0.5 s1.bcf s2.bcf ... sN.bcf`
+`delly merge -t DEL -m 500 -n 1000000 -o del.bcf -b 500 -r 0.5 s1.bcf s2.bcf ... sN.bcf`
 
 * Re-genotype merged SV site list across all samples. This can be run in parallel for each sample.
 
-`delly -t DEL -g hg19.fa -v del.bcf -o s1.geno.bcf -x hg19.excl s1.bam`
+`delly call -t DEL -g hg19.fa -v del.bcf -o s1.geno.bcf -x hg19.excl s1.bam`
 
-`delly -t DEL -g hg19.fa -v del.bcf -o sN.geno.bcf -x hg19.excl sN.bam`
+`delly call -t DEL -g hg19.fa -v del.bcf -o sN.geno.bcf -x hg19.excl sN.bam`
 
 * Merge all re-genotyped samples to get a single VCF/BCF using bcftools merge
 
@@ -85,7 +85,7 @@ Germline SV calling
 
 * Apply the germline SV filter
 
-`filter -t DEL -f germline -o germline.bcf -g hg19.fa merged.bcf`
+`delly filter -t DEL -f germline -o germline.bcf -g hg19.fa merged.bcf`
 
 FAQ
 ---
