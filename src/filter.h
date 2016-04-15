@@ -449,6 +449,8 @@ int filter(int argc, char **argv) {
   if (c.filter == "germline") c.controlcont = 1.0;
 
   // Check sample file
+  std::set<std::string> tSet;
+  std::set<std::string> cSet;
   if (c.filter == "somatic") {
     c.hasSampleFile = true;
     if (!(boost::filesystem::exists(c.samplefile) && boost::filesystem::is_regular_file(c.samplefile) && boost::filesystem::file_size(c.samplefile))) {
@@ -469,8 +471,8 @@ int filter(int argc, char **argv) {
 	    std::string sample = *tokIter++;
 	    if (tokIter != tokens.end()) {
 	      std::string type = *tokIter;
-	      if (type == "control") c.controlSet.insert(sample);
-	      else if (type == "tumor") c.tumorSet.insert(sample);
+	      if (type == "control") cSet.insert(sample);
+	      else if (type == "tumor") tSet.insert(sample);
 	      else {
 		std::cerr << "Sample type for " << sample << " is neither tumor nor control" << std::endl;
 		return 1;
@@ -480,12 +482,18 @@ int filter(int argc, char **argv) {
 	}
 	sampleFile.close();
       }
-      if (c.tumorSet.empty()) {
+      if (tSet.empty()) {
 	std::cerr << "No tumor samples specified." << std::endl;
 	return 1;
       }
-      if (c.controlSet.empty()) {
+      if (cSet.empty()) {
 	std::cerr << "No control samples specified." << std::endl;
+	return 1;
+      }
+      std::vector<std::string> intersection;
+      std::set_intersection(cSet.begin(), cSet.end(), tSet.begin(), tSet.end(), std::back_inserter(intersection));
+      if (!intersection.empty()) {
+	std::cerr << "Sample " << intersection[0] << " is both a tumor and control sample." << std::endl;
 	return 1;
       }
     }
@@ -518,10 +526,17 @@ int filter(int argc, char **argv) {
     // Check sample names
     if (c.filter == "somatic") {
       for (int i = 0; i < bcf_hdr_nsamples(hdr); ++i) {
-	if ((c.tumorSet.find(hdr->samples[i]) == c.tumorSet.end()) && (c.controlSet.find(hdr->samples[i]) == c.controlSet.end())) {
-	  std::cerr << "Sample " << hdr->samples[i] << " is missing in sample file." << std::endl;
-	  return 1;
-	}
+	if (tSet.find(hdr->samples[i]) != tSet.end()) c.tumorSet.insert(hdr->samples[i]);
+	else if (cSet.find(hdr->samples[i]) != cSet.end()) c.controlSet.insert(hdr->samples[i]);
+	else std::cerr << "Warning: Sample " << hdr->samples[i] << " is missing in sample file." << std::endl;
+      }
+      if (c.tumorSet.empty()) {
+	std::cerr << "No tumor samples specified." << std::endl;
+	return 1;
+      }
+      if (c.controlSet.empty()) {
+	std::cerr << "No control samples specified." << std::endl;
+	return 1;
       }
     }
     bcf_hdr_destroy(hdr);
@@ -533,6 +548,7 @@ int filter(int argc, char **argv) {
   // Show cmd
   boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
   std::cout << '[' << boost::posix_time::to_simple_string(now) << "] ";
+  std::cout << "delly ";
   for(int i=0; i<argc; ++i) { std::cout << argv[i] << ' '; }
   std::cout << std::endl;
 
