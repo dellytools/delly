@@ -297,7 +297,7 @@ filterRun(TFilterConfig const& c, TSVType svType) {
 	    }
 	  } else if (c.filter == "germline") {
 	    float rrefvarpercentile = 0;
-	    if (!rRefVar.empty()) getPercentile(rRefVar.begin(), rRefVar.end(), 1, rrefvarpercentile);
+	    if (!rRefVar.empty()) getPercentile(rRefVar, 0.9, rrefvarpercentile);
 	    float raltvarmed = 0;
 	    if (!rAltVar.empty()) getMedian(rAltVar.begin(), rAltVar.end(), raltvarmed);
 	    float rccontrolmed = 0;

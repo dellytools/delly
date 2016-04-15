@@ -229,12 +229,12 @@ namespace torali
       median = *(begin + (end - begin) / 2);
     }
 
-  template<typename TIterator, typename TPercentile, typename TValue>
+  template<typename TVector, typename TPercentile, typename TValue>
   inline
-    void getPercentile(TIterator begin, TIterator end, TPercentile p, TValue& percentile) 
+    void getPercentile(TVector& vec, TPercentile p, TValue& percentile) 
     {
-      std::nth_element(begin, begin + (end - begin) / p, end);
-      percentile = *(begin + (end - begin) / p);
+      std::nth_element(vec.begin(), vec.begin() + int((vec.size() * p)), vec.end());
+      percentile = *(vec.begin() + int(vec.size() * p));
     }
 
   template<typename TIterator, typename TPercent, typename TValue>
