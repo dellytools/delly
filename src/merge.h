@@ -59,6 +59,7 @@ namespace torali
 
 
 struct MergeConfig {
+  bool filterForPass;
   uint8_t reqCT;
   uint32_t svcounter;
   uint32_t bpoffset;
@@ -135,6 +136,11 @@ void _fillIntervalMap(MergeConfig const& c, TGenomeIntervals& iScore, TContigMap
     char* chr2 = NULL;
     while (bcf_read(ifile, hdr, rec) == 0) {
       bcf_unpack(rec, BCF_UN_INFO);
+      // Check PASS
+      bool pass = true;
+      if (c.filterForPass) pass = (bcf_has_filter(hdr, rec, const_cast<char*>("PASS"))==1);
+      if (!pass) continue;
+
       // Correct SV type
       bcf_get_info_string(hdr, rec, "SVTYPE", &svt, &nsvt);
       if (std::string(svt) != _addID(svType)) continue;
@@ -364,10 +370,14 @@ void _outputSelectedIntervals(MergeConfig& c, TGenomeIntervals const& iSelected,
     // Correct SV type
     bcf_get_info_string(hdr[idx], rec[idx], "SVTYPE", &svt, &nsvt);
     if (std::string(svt) == _addID(svType)) {
+      // Check PASS
+      bool pass = true;
+      if (c.filterForPass) pass = (bcf_has_filter(hdr[idx], rec[idx], const_cast<char*>("PASS"))==1);
+
       // Correct CT
       uint8_t ict = 0;
       if (bcf_get_info_string(hdr[idx], rec[idx], "CT", &ct, &nct) > 0) ict = _decodeOrientation(std::string(ct));
-      if (ict == c.reqCT) {
+      if ((pass) && (ict == c.reqCT)) {
 	// Correct size
 	std::string chrName(bcf_hdr_id2name(hdr[idx], rec[idx]->rid));
 	uint32_t tid = cMap[chrName];
@@ -597,6 +607,7 @@ int merge(int argc, char **argv) {
     ("outfile,o", boost::program_options::value<boost::filesystem::path>(&c.outfile)->default_value("sv.bcf"), "Merged SV BCF output file")
     ("minsize,m", boost::program_options::value<uint32_t>(&c.minsize)->default_value(0), "min. SV size")
     ("maxsize,n", boost::program_options::value<uint32_t>(&c.maxsize)->default_value(1000000), "max. SV size")
+    ("pass,p", "Filter sites for PASS")
     ;
 
   // Define overlap options
@@ -631,6 +642,10 @@ int merge(int argc, char **argv) {
     std::cout << visible_options << "\n"; 
     return 0; 
   }
+
+  // Filter for PASS
+  if (vm.count("pass")) c.filterForPass = true;
+  else c.filterForPass = false;
 
   // Show cmd
   boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();

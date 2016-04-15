@@ -204,10 +204,10 @@ filterRun(TFilterConfig const& c, TSVType svType) {
 	    bcf_get_info_float(hdr, rec, "SRQ", &srq, &nsrq);
 	    if (srq != NULL) srqval = *srq;
 	  }
-	  float rsqval = 1;
+	  //float rsqval = 1;
 	  if (_isKeyPresent(hdr, "RSQ")) {
 	    bcf_get_info_float(hdr, rec, "RSQ", &rsq, &nrsq);
-	    if (rsq != NULL) rsqval = *rsq;
+	    //if (rsq != NULL) rsqval = *rsq;
 	  }
 	  bcf_get_format_int32(hdr, rec, "GT", &gt, &ngt);
 	  if (_getFormatType(hdr, "GQ") == BCF_HT_INT) bcf_get_format_int32(hdr, rec, "GQ", &gq, &ngq);
