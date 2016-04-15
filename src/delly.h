@@ -21,12 +21,13 @@ Contact: Tobias Rausch (rausch@embl.de)
 ============================================================================
 */
 
-#define _SECURE_SCL 0
-#define _SCL_SECURE_NO_WARNINGS
+#ifndef DELLY_H
+#define DELLY_H
+
+
 #include <iostream>
 #include <fstream>
 
-#define BOOST_DISABLE_ASSERTS
 #include <boost/graph/adjacency_list.hpp>
 #include <boost/graph/graphviz.hpp>
 #include <boost/graph/connected_components.hpp>
@@ -48,14 +49,6 @@ Contact: Tobias Rausch (rausch@embl.de)
 #include <htslib/vcf.h>
 #include <htslib/sam.h>
 
-#ifdef OPENMP
-#include <omp.h>
-#endif
-
-#ifdef PROFILE
-#include "gperftools/profiler.h"
-#endif
-
 #include "version.h"
 #include "util.h"
 #include "bolog.h"
@@ -72,7 +65,8 @@ Contact: Tobias Rausch (rausch@embl.de)
 #include <zlib.h>
 #include <stdio.h>
 
-using namespace torali;
+namespace torali
+{
 
 // Config arguments
 struct Config {
@@ -1306,7 +1300,7 @@ _processSRCluster(TIterator itInit, TIterator itEnd, int32_t refIndex, int32_t b
 
 
 template<typename TSVType>
-inline int run(Config const& c, TSVType svType) {
+inline int dellyRun(Config const& c, TSVType svType) {
 #ifdef PROFILE
   ProfilerStart("delly.prof");
 #endif
@@ -1834,7 +1828,7 @@ inline int run(Config const& c, TSVType svType) {
 }
 
 
-int main(int argc, char **argv) {
+int delly(int argc, char **argv) {
   Config c;
 
   // Define generic options
@@ -1874,8 +1868,6 @@ int main(int argc, char **argv) {
     ("pe-dump,p", boost::program_options::value<boost::filesystem::path>(&c.peDump)->default_value(""), "outfile to dump PE info")
     ("pe-fraction,c", boost::program_options::value<float>(&c.percentAbnormal)->default_value(0.0), "fixed fraction c of discordant PEs, for c=0 MAD cutoff is used")
     ("pruning,j", boost::program_options::value<uint32_t>(&c.graphPruning)->default_value(1000), "PE graph pruning cutoff")
-    ("warranty,w", "show warranty")
-    ("license,l", "show license")
     ;
 
   boost::program_options::positional_options_description pos_args;
@@ -1893,16 +1885,10 @@ int main(int argc, char **argv) {
 
   // Check command line arguments
   if ((vm.count("help")) || (!vm.count("input-file")) || (!vm.count("genome"))) { 
-    printTitle("Delly");
-    if (vm.count("warranty")) {
-      displayWarranty();
-    } else if (vm.count("license")) {
-      gplV3();
-    } else {
-      std::cout << "Usage: " << argv[0] << " [OPTIONS] -g <ref.fa> <sample1.sort.bam> <sample2.sort.bam> ..." << std::endl;
-      std::cout << visible_options << "\n"; 
-    }
-    return 0; 
+    std::cout << std::endl;
+    std::cout << "Usage: delly " << argv[0] << " [OPTIONS] -g <ref.fa> <sample1.sort.bam> <sample2.sort.bam> ..." << std::endl;
+    std::cout << visible_options << "\n";
+    return 0;
   }
 
   // Check reference
@@ -2002,13 +1988,18 @@ int main(int argc, char **argv) {
   if (vm.count("noindels")) c.indels = false;
 
   // Run main program
-  if (c.svType == "DEL") return run(c, SVType<DeletionTag>());
-  else if (c.svType == "DUP") return run(c, SVType<DuplicationTag>());
-  else if (c.svType == "INV") return run(c, SVType<InversionTag>());
-  else if (c.svType == "TRA") return run(c, SVType<TranslocationTag>());
-  else if (c.svType == "INS") return run(c, SVType<InsertionTag>());
+  if (c.svType == "DEL") return dellyRun(c, SVType<DeletionTag>());
+  else if (c.svType == "DUP") return dellyRun(c, SVType<DuplicationTag>());
+  else if (c.svType == "INV") return dellyRun(c, SVType<InversionTag>());
+  else if (c.svType == "TRA") return dellyRun(c, SVType<TranslocationTag>());
+  else if (c.svType == "INS") return dellyRun(c, SVType<InsertionTag>());
   else {
     std::cerr << "SV analysis type not supported by Delly: " << c.svType << std::endl;
     return 1;
   }
 }
+
+
+}
+
+#endif

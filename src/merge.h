@@ -21,6 +21,9 @@ Contact: Tobias Rausch (rausch@embl.de)
 ============================================================================
 */
 
+#ifndef MERGE_H
+#define MERGE_H
+
 #include <iostream>
 #include <fstream>
 #include <boost/unordered_map.hpp>
@@ -45,18 +48,17 @@ Contact: Tobias Rausch (rausch@embl.de)
 #include <htslib/sam.h>
 #include <htslib/vcf.h>
 
-#ifdef OPENMP
-#include <omp.h>
-#endif
-
 #include "tags.h"
 #include "version.h"
 #include "util.h"
 #include "modvcf.h"
 
-using namespace torali;
 
-struct Config {
+namespace torali
+{
+
+
+struct MergeConfig {
   uint8_t reqCT;
   uint32_t svcounter;
   uint32_t bpoffset;
@@ -99,7 +101,7 @@ double recOverlap(TPos const s1, TPos const e1, TPos const s2, TPos const e2) {
 
 
 template<typename TGenomeIntervals, typename TContigMap, typename TSVType>
-void _fillIntervalMap(Config const& c, TGenomeIntervals& iScore, TContigMap& cMap, TSVType svType) {
+void _fillIntervalMap(MergeConfig const& c, TGenomeIntervals& iScore, TContigMap& cMap, TSVType svType) {
   typedef typename TGenomeIntervals::value_type TIntervalScores;
   typedef typename TIntervalScores::value_type IntervalScore;
 
@@ -207,7 +209,7 @@ void _fillIntervalMap(Config const& c, TGenomeIntervals& iScore, TContigMap& cMa
 }
 
 template<typename TGenomeIntervals, typename TSVType>
-void _processIntervalMap(Config const& c, TGenomeIntervals const& iScore, TGenomeIntervals& iSelected, TSVType svType) {
+void _processIntervalMap(MergeConfig const& c, TGenomeIntervals const& iScore, TGenomeIntervals& iSelected, TSVType svType) {
   typedef typename TGenomeIntervals::value_type TIntervalScores;
   typedef typename TIntervalScores::value_type IntervalScore;
 
@@ -248,7 +250,7 @@ void _processIntervalMap(Config const& c, TGenomeIntervals const& iScore, TGenom
 }
 
 template<typename TGenomeIntervals, typename TContigMap, typename TSVType>
-void _outputSelectedIntervals(Config& c, TGenomeIntervals const& iSelected, TContigMap& cMap, TSVType svType) {
+void _outputSelectedIntervals(MergeConfig& c, TGenomeIntervals const& iSelected, TContigMap& cMap, TSVType svType) {
   typedef typename TGenomeIntervals::value_type TIntervalScores;
   typedef typename TIntervalScores::value_type IntervalScore;
 
@@ -526,7 +528,7 @@ void _outputSelectedIntervals(Config& c, TGenomeIntervals const& iSelected, TCon
 
 
 template<typename TSVType>
-inline int run(Config& c, TSVType svType) {
+inline int mergeRun(MergeConfig& c, TSVType svType) {
 
   // All files may use a different set of chromosomes
   typedef boost::unordered_map<std::string, uint32_t> TContigMap;
@@ -583,8 +585,8 @@ inline int run(Config& c, TSVType svType) {
   return 0;
 }
 
-int main(int argc, char **argv) {
-  Config c;
+int merge(int argc, char **argv) {
+  MergeConfig c;
   c.svcounter = 1;
 
   // Define generic options
@@ -608,8 +610,6 @@ int main(int argc, char **argv) {
   boost::program_options::options_description hidden("Hidden options");
   hidden.add_options()
     ("input-file", boost::program_options::value< std::vector<boost::filesystem::path> >(&c.files), "input file")
-    ("license,l", "show license")
-    ("warranty,w", "show warranty")
     ;
   boost::program_options::positional_options_description pos_args;
   pos_args.add("input-file", -1);
@@ -626,16 +626,10 @@ int main(int argc, char **argv) {
 
   // Check command line arguments
   if ((vm.count("help")) || (!vm.count("input-file"))) { 
-    printTitle("Delly SV VCF/BCF site merging");
-    if (vm.count("warranty")) {
-      displayWarranty();
-    } else if (vm.count("license")) {
-      gplV3();
-    } else {
-      std::cout << "Usage: " << argv[0] << " [OPTIONS] <sample1.bcf> <sample2.bcf> ..." << std::endl;
-      std::cout << visible_options << "\n"; 
-    }
-    return 1; 
+    std::cout << std::endl;
+    std::cout << "Usage: delly " << argv[0] << " [OPTIONS] <sample1.bcf> <sample2.bcf> ..." << std::endl;
+    std::cout << visible_options << "\n"; 
+    return 0; 
   }
 
   // Show cmd
@@ -647,10 +641,10 @@ int main(int argc, char **argv) {
   // Run merging
   if (c.svType == "DEL") {
     c.reqCT = 2;
-    return run(c, SVType<DeletionTag>());
+    return mergeRun(c, SVType<DeletionTag>());
   } else if (c.svType == "DUP") {
     c.reqCT = 3;
-    return run(c, SVType<DuplicationTag>());
+    return mergeRun(c, SVType<DuplicationTag>());
   } else if (c.svType == "INV") {
     boost::filesystem::path oldPath = c.outfile;
     int rVal = 0;
@@ -660,7 +654,7 @@ int main(int argc, char **argv) {
       fileStem += "." + _addOrientation(c.reqCT) + ".bcf";
       if (oldPath.parent_path().string().size()) c.outfile=boost::filesystem::path(oldPath.parent_path().string() + "/" + fileStem);
       else c.outfile=boost::filesystem::path(fileStem);
-      rVal += run(c, SVType<InversionTag>());
+      rVal += mergeRun(c, SVType<InversionTag>());
     }
     return rVal;
   } else if (c.svType == "TRA") {
@@ -672,16 +666,20 @@ int main(int argc, char **argv) {
       fileStem += "." + _addOrientation(c.reqCT) + ".bcf";
       if (oldPath.parent_path().string().size()) c.outfile=boost::filesystem::path(oldPath.parent_path().string() + "/" + fileStem);
       else c.outfile=boost::filesystem::path(fileStem);
-      rVal += run(c, SVType<TranslocationTag>());
+      rVal += mergeRun(c, SVType<TranslocationTag>());
     }
     return rVal;
   } 
   else if (c.svType == "INS") {
     c.reqCT = 4;
-    return run(c, SVType<InsertionTag>());
+    return mergeRun(c, SVType<InsertionTag>());
   }
   else {
     std::cerr << "SV analysis type not supported by Delly: " << c.svType << std::endl;
     return 1;
   }
 }
+
+}
+
+#endif

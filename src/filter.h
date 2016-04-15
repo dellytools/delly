@@ -21,6 +21,9 @@ Contact: Tobias Rausch (rausch@embl.de)
 ============================================================================
 */
 
+#ifndef FILTER_H
+#define FILTER_H
+
 #include <iostream>
 #include <fstream>
 #include <boost/unordered_map.hpp>
@@ -53,21 +56,16 @@ Contact: Tobias Rausch (rausch@embl.de)
 #include <zlib.h>
 #include <stdio.h>
 
-#ifdef OPENMP
-#include <omp.h>
-#endif
-
 #include "tags.h"
 #include "version.h"
 #include "util.h"
 #include "modvcf.h"
 
-KSEQ_INIT(gzFile, gzread)
+namespace torali 
+{
 
-using namespace torali;
 
-
-struct Config {
+struct FilterConfig {
   bool filterForPass;
   bool hasSampleFile;
   int32_t minsize;
@@ -91,9 +89,9 @@ struct Config {
 };
 
 
-template<typename TSVType>
+template<typename TFilterConfig, typename TSVType>
 inline int
-run(Config const& c, TSVType svType) {
+filterRun(TFilterConfig const& c, TSVType svType) {
 
   // Load bcf file
   htsFile* ifile = hts_open(c.vcffile.string().c_str(), "r");
@@ -376,8 +374,8 @@ run(Config const& c, TSVType svType) {
 }
 
 
-int main(int argc, char **argv) {
-  Config c;
+int filter(int argc, char **argv) {
+  FilterConfig c;
 
   // Define generic options
   boost::program_options::options_description generic("Generic options");
@@ -415,8 +413,6 @@ int main(int argc, char **argv) {
   boost::program_options::options_description hidden("Hidden options");
   hidden.add_options()
     ("input-file", boost::program_options::value<boost::filesystem::path>(&c.vcffile), "input file")
-    ("license,l", "show license")
-    ("warranty,w", "show warranty")
     ;
   boost::program_options::positional_options_description pos_args;
   pos_args.add("input-file", -1);
@@ -433,16 +429,10 @@ int main(int argc, char **argv) {
 
   // Check command line arguments
   if ((vm.count("help")) || (!vm.count("input-file"))) {
-    printTitle("Delly SV filtering");
-    if (vm.count("warranty")) {
-      displayWarranty();
-    } else if (vm.count("license")) {
-      gplV3();
-    } else {
-      std::cout << "Usage: " << argv[0] << " [OPTIONS] -g <genome.fa> <input.bcf>" << std::endl;
-      std::cout << visible_options << "\n"; 
-    }
-    return 1; 
+    std::cout << std::endl;
+    std::cout << "Usage: delly " << argv[0] << " [OPTIONS] -g <genome.fa> <input.bcf>" << std::endl;
+    std::cout << visible_options << "\n"; 
+    return 0; 
   }
 
   // Filter for PASS
@@ -546,13 +536,17 @@ int main(int argc, char **argv) {
   for(int i=0; i<argc; ++i) { std::cout << argv[i] << ' '; }
   std::cout << std::endl;
 
-  if (c.svType == "DEL") return run(c, SVType<DeletionTag>());
-  else if (c.svType == "DUP") return run(c, SVType<DuplicationTag>());
-  else if (c.svType == "INV") return run(c, SVType<InversionTag>());
-  else if (c.svType == "TRA") return run(c, SVType<TranslocationTag>());
-  else if (c.svType == "INS") return run(c, SVType<InsertionTag>());
+  if (c.svType == "DEL") return filterRun(c, SVType<DeletionTag>());
+  else if (c.svType == "DUP") return filterRun(c, SVType<DuplicationTag>());
+  else if (c.svType == "INV") return filterRun(c, SVType<InversionTag>());
+  else if (c.svType == "TRA") return filterRun(c, SVType<TranslocationTag>());
+  else if (c.svType == "INS") return filterRun(c, SVType<InsertionTag>());
   else {
     std::cerr << "SV analysis type not supported by Delly: " << c.svType << std::endl;
     return 1;
   }
 }
+
+}
+
+#endif

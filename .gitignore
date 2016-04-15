@@ -4,13 +4,11 @@
 *.pyc
 
 # Binaries
+src/main
 src/cov
-src/delly
 src/extract
 src/iover
 src/stats
-src/merge
-src/filter
 
 # Compiled Object files
 *.slo
