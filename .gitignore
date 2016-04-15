@@ -4,7 +4,7 @@
 *.pyc
 
 # Binaries
-src/main
+src/delly
 src/cov
 src/extract
 src/iover
