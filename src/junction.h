@@ -62,30 +62,54 @@ namespace torali {
 
   template<typename TPos, typename TTag>
   inline int32_t
-  _cutRefStart(TPos const rStart, TPos const rEnd, TPos const offset, unsigned int bpPoint, SVType<TTag>) {
+  _cutRefStart(TPos const rStart, TPos const rEnd, TPos const offset, unsigned int bpPoint, uint8_t const, SVType<TTag>) {
     if (bpPoint) return rEnd - offset;
     else return rStart - offset;
   }
 
   template<typename TPos>
   inline int32_t
-  _cutRefStart(TPos const rStart, TPos const rEnd, TPos const offset, unsigned int bpPoint, SVType<DuplicationTag>) {
+  _cutRefStart(TPos const rStart, TPos const rEnd, TPos const offset, unsigned int bpPoint, uint8_t const, SVType<DuplicationTag>) {
     if (!bpPoint) return rEnd - offset;
     else return rStart - offset;
   }
 
+  template<typename TPos>
+  inline int32_t
+  _cutRefStart(TPos const rStart, TPos const rEnd, TPos const offset, unsigned int bpPoint, uint8_t const ct, SVType<TranslocationTag>) {
+    if (ct == 3) {
+      if (!bpPoint) return rEnd - offset;
+      else return rStart - offset;
+    } else {
+      if (bpPoint) return rEnd - offset;
+      else return rStart - offset;
+    }
+  }
+
   template<typename TPos, typename TTag>
   inline int32_t
-  _cutRefEnd(TPos const rStart, TPos const rEnd, TPos const offset, unsigned int bpPoint, SVType<TTag>) {
+  _cutRefEnd(TPos const rStart, TPos const rEnd, TPos const offset, unsigned int bpPoint, uint8_t const, SVType<TTag>) {
     if (bpPoint) return rEnd + offset;
     else return rStart + offset;
   }
 
   template<typename TPos>
   inline int32_t
-  _cutRefEnd(TPos const rStart, TPos const rEnd, TPos const offset, unsigned int bpPoint, SVType<DuplicationTag>) {
+  _cutRefEnd(TPos const rStart, TPos const rEnd, TPos const offset, unsigned int bpPoint, uint8_t const, SVType<DuplicationTag>) {
     if (!bpPoint) return rEnd + offset;
     else return rStart + offset;
+  }
+
+  template<typename TPos>
+  inline int32_t
+  _cutRefEnd(TPos const rStart, TPos const rEnd, TPos const offset, unsigned int bpPoint, uint8_t const ct, SVType<TranslocationTag>) {
+    if (ct == 3) {
+      if (!bpPoint) return rEnd + offset;
+      else return rStart + offset;
+    } else {
+      if (bpPoint) return rEnd + offset;
+      else return rStart + offset;
+    }
   }
 
   template<typename TConfig, typename TSampleLibrary, typename TSVs, typename TCountMap, typename TTag>
@@ -214,16 +238,16 @@ namespace torali {
 		    regionEnd = std::min((uint32_t) (itSV->svEnd + c.minimumFlankSize), reflen[itSV->chr2]);
 		    cutConsStart = cEnd - homLeft - c.minimumFlankSize;
 		    cutConsEnd = cEnd + homRight + c.minimumFlankSize;
-		    cutRefStart = _cutRefStart((int32_t) rStart, (int32_t) rEnd, homLeft + c.minimumFlankSize, bpPoint, svType);
-		    cutRefEnd = _cutRefEnd((int32_t) rStart, (int32_t) rEnd, homRight + c.minimumFlankSize, bpPoint, svType);
+		    cutRefStart = _cutRefStart((int32_t) rStart, (int32_t) rEnd, homLeft + c.minimumFlankSize, bpPoint, itSV->ct, svType);
+		    cutRefEnd = _cutRefEnd((int32_t) rStart, (int32_t) rEnd, homRight + c.minimumFlankSize, bpPoint, itSV->ct, svType);
 		  } else {
 		    regionChr = itSV->chr;
 		    regionStart = std::max(0, itSV->svStart - c.minimumFlankSize);
 		    regionEnd = std::min((uint32_t) (itSV->svStart + c.minimumFlankSize), reflen[itSV->chr]);
 		    cutConsStart = cStart - homLeft - c.minimumFlankSize;
 		    cutConsEnd = cStart + homRight + c.minimumFlankSize;
-		    cutRefStart = _cutRefStart((int32_t) rStart, (int32_t) rEnd, homLeft + c.minimumFlankSize, bpPoint, svType);
-		    cutRefEnd = _cutRefEnd((int32_t) rStart, (int32_t) rEnd, homRight + c.minimumFlankSize, bpPoint, svType);
+		    cutRefStart = _cutRefStart((int32_t) rStart, (int32_t) rEnd, homLeft + c.minimumFlankSize, bpPoint, itSV->ct, svType);
+		    cutRefEnd = _cutRefEnd((int32_t) rStart, (int32_t) rEnd, homRight + c.minimumFlankSize, bpPoint, itSV->ct, svType);
 		  }
 		  std::string consProbe = itSV->consensus.substr(cutConsStart, (cutConsEnd - cutConsStart));
 		  std::string refProbe = svRefStr.substr(cutRefStart, (cutRefEnd - cutRefStart));
