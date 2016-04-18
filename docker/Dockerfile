@@ -30,6 +30,7 @@ RUN git clone https://github.com/tobiasrausch/delly.git
 RUN cd delly/ && touch .bcftools .htslib .boost && make all && cd ..
 
 # install python variant filtering dependencies
-RUN pip install -r delly/variantFiltering/requirements.txt
+RUN pip install -r delly/complexVariants/requirements.txt
+
 
 
