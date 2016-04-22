@@ -276,12 +276,12 @@ filterRun(TFilterConfig const& c, TSVType svType) {
 	      }
 	    }
 	  }
-	  float genotypeRatio = (float) (nCount + tCount) / (float) (bcf_hdr_nsamples(hdr));
 	  std::string alleles;
 	  std::string refAllele = boost::to_upper_copy(std::string(seq->seq.s + rec->pos, seq->seq.s + rec->pos + 1));
 	  alleles += refAllele + ",<" + _addID(svType) + ">";
 	  bcf_update_alleles_str(hdr_out, rec, alleles.c_str());
 	  if (c.filter == "somatic") {
+	    float genotypeRatio = (float) (nCount + tCount) / (float) (c.controlSet.size() + c.tumorSet.size());
 	    if ((controlpass) && (tumorpass) && (controlpass == nCount) && (genotypeRatio >= c.ratiogeno)) {
 	      float rccontrolmed = 0;
 	      getMedian(rcControl.begin(), rcControl.end(), rccontrolmed);
@@ -296,6 +296,7 @@ filterRun(TFilterConfig const& c, TSVType svType) {
 	      bcf_write1(ofile, hdr_out, rec);
 	    }
 	  } else if (c.filter == "germline") {
+	    float genotypeRatio = (float) (nCount + tCount) / (float) (bcf_hdr_nsamples(hdr));
 	    float rrefvarpercentile = 0;
 	    if (!rRefVar.empty()) getPercentile(rRefVar, 0.9, rrefvarpercentile);
 	    float raltvarmed = 0;
@@ -313,6 +314,8 @@ filterRun(TFilterConfig const& c, TSVType svType) {
 	    float rcrawmed = 0;
 	    if (!rcraw.empty()) getMedian(rcraw.begin(), rcraw.end(), rcrawmed);
 	    float af = (float) ac[1] / (float) (ac[0] + ac[1]);
+
+	    //std::cerr << bcf_hdr_id2name(hdr, rec->rid) << '\t' << (rec->pos + 1) << '\t' << *svend << '\t' << rec->d.id << '\t' << svlen << '\t' << ac[1] << '\t' << af << '\t' << genotypeRatio << '\t' << std::string(svt) << '\t' << precise << '\t' << rrefvarpercentile << '\t' << raltvarmed << '\t' << gqrefmed << '\t' << gqaltmed << '\t' << rdRatio << '\t' << rcrawmed << '\t' << srqval << std::endl;
 	    
 	    if ((af>0) && (gqaltmed >= c.gq) && (gqrefmed >= c.gq) && (raltvarmed >= c.altaf) && (genotypeRatio >= c.ratiogeno)) {
 	      if ((std::string(svt)=="DEL") && (svlen >= c.rdsize) && (rdRatio > c.rddel)) continue;
@@ -324,7 +327,7 @@ filterRun(TFilterConfig const& c, TSVType svType) {
 	      bcf_update_info_float(hdr_out, rec, "RDRATIO", &rdRatio, 1);
 	      bcf_write1(ofile, hdr_out, rec);
 
-	      //std::cerr << bcf_hdr_id2name(hdr, rec->rid) << '\t' << (rec->pos + 1) << '\t' << *svend << '\t' << rec->d.id << '\t' << svlen << '\t' << ac[1] << '\t' << af << '\t' << genotypeRatio << '\t' << std::string(svt) << '\t' << precise << '\t' << rrefvarpercentile << '\t' << raltvarmed << '\t' << gqrefmed << '\t' << gqaltmed << '\t' << rdRatio << '\t' << rcrawmed << '\t' << rsqval << '\t' << srqval << std::endl;
+
 	    }
 	  }
 	}
