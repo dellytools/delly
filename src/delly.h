@@ -58,6 +58,7 @@ Contact: Tobias Rausch (rausch@embl.de)
 #include "junction.h"
 #include "msa.h"
 #include "split.h"
+#include "pacbio.h"
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -83,6 +84,7 @@ struct Config {
   bool hasExcludeFile;
   bool hasVcfFile;
   std::string svType;
+  std::string technology;
   boost::filesystem::path outfile;
   boost::filesystem::path vcffile;
   boost::filesystem::path genome;
@@ -1838,6 +1840,7 @@ int delly(int argc, char **argv) {
     ("type,t", boost::program_options::value<std::string>(&c.svType)->default_value("DEL"), "SV type (DEL, DUP, INV, TRA, INS)")
     ("outfile,o", boost::program_options::value<boost::filesystem::path>(&c.outfile)->default_value("sv.bcf"), "SV BCF output file")
     ("exclude,x", boost::program_options::value<boost::filesystem::path>(&c.exclude), "file with regions to exclude")
+    ("technology,e", boost::program_options::value<std::string>(&c.technology)->default_value("illumina"), "Technology (illumina, pacbio)")
     ;
 
   boost::program_options::options_description pem("PE options");
@@ -1989,17 +1992,25 @@ int delly(int argc, char **argv) {
   if (vm.count("noindels")) c.indels = false;
 
   // Run main program
-  if (c.svType == "DEL") return dellyRun(c, SVType<DeletionTag>());
-  else if (c.svType == "DUP") return dellyRun(c, SVType<DuplicationTag>());
-  else if (c.svType == "INV") return dellyRun(c, SVType<InversionTag>());
-  else if (c.svType == "TRA") return dellyRun(c, SVType<TranslocationTag>());
-  else if (c.svType == "INS") return dellyRun(c, SVType<InsertionTag>());
-  else {
-    std::cerr << "SV analysis type not supported by Delly: " << c.svType << std::endl;
+  if (c.technology == "illumina") {
+    if (c.svType == "DEL") return dellyRun(c, SVType<DeletionTag>());
+    else if (c.svType == "DUP") return dellyRun(c, SVType<DuplicationTag>());
+    else if (c.svType == "INV") return dellyRun(c, SVType<InversionTag>());
+    else if (c.svType == "TRA") return dellyRun(c, SVType<TranslocationTag>());
+    else if (c.svType == "INS") return dellyRun(c, SVType<InsertionTag>());
+    else {
+      std::cerr << "SV analysis type not supported by Delly: " << c.svType << std::endl;
+      return 1;
+    }
+  } else if (c.technology == "pacbio") {
+    //if (c.svType == "DEL") return pacbioRun(c, SVType<DeletionTag>());
+    std::cerr << "PacBio SV analysis not yet supported." << std::endl;
+    return 1;
+  } else {
+    std::cerr << "Technology " << c.technology << " is not supported by Delly." << std::endl;
     return 1;
   }
 }
-
 
 }
 
