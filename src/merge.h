@@ -297,9 +297,12 @@ void _outputSelectedIntervals(MergeConfig& c, TGenomeIntervals const& iSelected,
   bcf_hdr_append(hdr_out, "##INFO=<ID=SVMETHOD,Number=1,Type=String,Description=\"Type of approach used to detect SV\">");
   // Add reference contigs
   uint32_t numseq = 0;
-  for(typename TContigMap::iterator cIt = cMap.begin(); cIt != cMap.end(); ++cIt, ++numseq) {
+  typedef std::map<uint32_t, std::string> TReverseMap;
+  TReverseMap rMap;
+  for(typename TContigMap::iterator cIt = cMap.begin(); cIt != cMap.end(); ++cIt, ++numseq) rMap[cIt->second] = cIt->first;
+  for(typename TReverseMap::iterator rIt = rMap.begin(); rIt != rMap.end(); ++rIt) {
     std::string refname("##contig=<ID=");
-    refname += cIt->first + ">";
+    refname += rIt->second + ">";
     bcf_hdr_append(hdr_out, refname.c_str());
   }
   bcf_hdr_add_sample(hdr_out, NULL);
@@ -536,36 +539,103 @@ void _outputSelectedIntervals(MergeConfig& c, TGenomeIntervals const& iSelected,
   bcf_index_build(c.outfile.string().c_str(), 14);
 }
 
+inline void
+mergeBCFs(MergeConfig& c, std::vector<boost::filesystem::path> const& cts) {
+  boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
+  std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Merging CTs" << std::endl;
+  boost::progress_display show_progress( cts.size() );
+
+  // Parse temporary input VCF files
+  typedef std::vector<htsFile*> THtsFile;
+  typedef std::vector<bcf_hdr_t*> TBcfHeader;
+  typedef std::vector<bcf1_t*> TBcfRecord;
+  typedef std::vector<bool> TEof;
+  THtsFile ifile(cts.size());
+  TBcfHeader hdr(cts.size());
+  TBcfRecord rec(cts.size());
+  TEof eof(cts.size());
+  uint32_t allEOF = 0;
+  for(unsigned int file_c = 0; file_c < cts.size(); ++file_c) {
+    ifile[file_c] = bcf_open(cts[file_c].string().c_str(), "r");
+    hdr[file_c] = bcf_hdr_read(ifile[file_c]);
+    rec[file_c] = bcf_init();
+    if (bcf_read(ifile[file_c], hdr[file_c], rec[file_c]) == 0) {
+      bcf_unpack(rec[file_c], BCF_UN_INFO);
+      eof[file_c] = false;
+    } else {
+      ++allEOF;
+      eof[file_c] = true;
+    }
+  }
+
+  // Open output VCF file
+  htsFile *fp = hts_open(c.outfile.string().c_str(), "wb");
+  bcf_hdr_t *hdr_out = bcf_hdr_dup(hdr[0]);
+  bcf_hdr_write(fp, hdr_out);
+
+  // Merge files
+  while (allEOF < cts.size()) {
+    // Find next sorted record
+    int32_t idx = -1;
+    for(unsigned int file_c = 0; file_c < cts.size(); ++file_c) {
+      if (!eof[file_c]) {
+	if ((idx < 0) || (rec[idx]->rid > rec[file_c]->rid) || ((rec[idx]->rid == rec[file_c]->rid) && (rec[idx]->pos > rec[file_c]->pos))) idx = file_c;
+      }
+    }
+
+    // Write record
+    bcf_write1(fp, hdr_out, rec[idx]);
+
+    // Fetch next record
+    if (bcf_read(ifile[idx], hdr[idx], rec[idx]) == 0) bcf_unpack(rec[idx], BCF_UN_INFO);
+    else {
+      ++allEOF;
+      ++show_progress;
+      eof[idx] = true;
+    }
+  }
+
+  // Clean-up
+  for(unsigned int file_c = 0; file_c < cts.size(); ++file_c) {
+    bcf_hdr_destroy(hdr[file_c]);
+    bcf_close(ifile[file_c]);
+    bcf_destroy(rec[file_c]);
+  }
+
+  // Close VCF file
+  bcf_hdr_destroy(hdr_out);
+  hts_close(fp);
+
+  // Build index
+  bcf_index_build(c.outfile.string().c_str(), 14);
+
+  // End
+  now = boost::posix_time::second_clock::local_time();
+  std::cout << '[' << boost::posix_time::to_simple_string(now) << "] Done." << std::endl;
+}
 
 template<typename TSVType>
 inline int mergeRun(MergeConfig& c, TSVType svType) {
 
   // All files may use a different set of chromosomes
-  typedef boost::unordered_map<std::string, uint32_t> TContigMap;
+  typedef std::map<std::string, uint32_t> TContigMap;
   TContigMap contigMap;
   uint32_t numseq = 0;
   for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
-    const char **seqnames = NULL;
-    int nseq = 0;
-
     htsFile* ifile = bcf_open(c.files[file_c].string().c_str(), "r");
     if (!ifile) {
       std::cerr << "Fail to load " << c.files[file_c].string() << "!" << std::endl;
       return 1;
     }
     bcf_hdr_t* hdr = bcf_hdr_read(ifile);
+    const char** seqnames = NULL;
+    int nseq=0;
     seqnames = bcf_hdr_seqnames(hdr, &nseq);
-    if (nseq<=0) {
-      std::cerr << "Fail to load chromosome names. Please index files with tabix." << std::endl;
-      return 1;
-    }
-    for(int i = 0; i<nseq; ++i) {
-      std::string chrName(seqnames[i]);
+    for(int32_t i = 0; i<nseq;++i) {
+      std::string chrName(bcf_hdr_id2name(hdr, i));
       if (contigMap.find(chrName) == contigMap.end()) contigMap[chrName] = numseq++;
     }
-    // Clean-up
-    if (seqnames != NULL) free(seqnames);
-
+    if (seqnames!=NULL) free(seqnames);
     bcf_hdr_destroy(hdr);
     bcf_close(ifile);
   }
@@ -664,25 +734,37 @@ int merge(int argc, char **argv) {
   } else if (c.svType == "INV") {
     boost::filesystem::path oldPath = c.outfile;
     int rVal = 0;
+    std::vector<boost::filesystem::path> invCT(2);
     for(int i = 0; i<2; ++i) {
       c.reqCT = i;
-      std::string fileStem(oldPath.stem().stem().string());
-      fileStem += "." + _addOrientation(c.reqCT) + ".bcf";
-      if (oldPath.parent_path().string().size()) c.outfile=boost::filesystem::path(oldPath.parent_path().string() + "/" + fileStem);
-      else c.outfile=boost::filesystem::path(fileStem);
+      invCT[i] = boost::filesystem::unique_path();
+      c.outfile = invCT[i];
       rVal += mergeRun(c, SVType<InversionTag>());
+    }
+    // Merge temporary files
+    c.outfile = oldPath;
+    mergeBCFs(c, invCT);
+    for(int i = 0; i<2; ++i) {
+      boost::filesystem::remove(invCT[i]);
+      boost::filesystem::remove(boost::filesystem::path(invCT[i].string() + ".csi"));
     }
     return rVal;
   } else if (c.svType == "TRA") {
     boost::filesystem::path oldPath = c.outfile;
     int rVal = 0;
+    std::vector<boost::filesystem::path> traCT(4);
     for(int i = 0; i<4; ++i) {
       c.reqCT = i;
-      std::string fileStem(oldPath.stem().stem().string());
-      fileStem += "." + _addOrientation(c.reqCT) + ".bcf";
-      if (oldPath.parent_path().string().size()) c.outfile=boost::filesystem::path(oldPath.parent_path().string() + "/" + fileStem);
-      else c.outfile=boost::filesystem::path(fileStem);
+      traCT[i] = boost::filesystem::unique_path();
+      c.outfile = traCT[i];
       rVal += mergeRun(c, SVType<TranslocationTag>());
+    }
+    // Merge temporary files
+    c.outfile = oldPath;
+    mergeBCFs(c, traCT);
+    for(int i = 0; i<4; ++i) {
+      boost::filesystem::remove(traCT[i]);
+      boost::filesystem::remove(boost::filesystem::path(traCT[i].string() + ".csi"));
     }
     return rVal;
   } 
@@ -699,3 +781,4 @@ int merge(int argc, char **argv) {
 }
 
 #endif
+
