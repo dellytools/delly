@@ -119,7 +119,7 @@ inline int pacbioRun(TConfig const& c, TSVType svType) {
       if (istart + 1 < it->lower()) validRegions[i].insert(TIVal::right_open(istart, it->lower() - 1));
       istart = it->upper();
     }
-    if (istart + 1 < hdr->target_len[i]) validRegions[i].insert(TIVal::right_open(istart, hdr->target_len[i]));
+    if (istart + 1 < (int32_t) hdr->target_len[i]) validRegions[i].insert(TIVal::right_open(istart, hdr->target_len[i]));
   }
   exclg.clear();
 
@@ -178,7 +178,7 @@ inline int pacbioRun(TConfig const& c, TSVType svType) {
     for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
       // Read alignments
       for(typename TChrIntervals::const_iterator vRIt = validRegions[refIndex].begin(); vRIt != validRegions[refIndex].end(); ++vRIt) {
-	uint32_t interval_size = vRIt->upper() - vRIt->lower();
+	int32_t interval_size = vRIt->upper() - vRIt->lower();
 	std::vector<uint8_t> totalcount(interval_size, 0);
 	std::vector<uint8_t> gapcount(interval_size, 0);
 	std::vector<Peak> peaks;
@@ -213,13 +213,13 @@ inline int pacbioRun(TConfig const& c, TSVType svType) {
 	      if (bam_cigar_op(cigar[i]) == BAM_CMATCH) {
 		int32_t countpos = rec->core.pos - vRIt->lower() + rp;
 		// match or mismatch
-		for(int32_t k = 0; k<bam_cigar_oplen(cigar[i]);++k, ++countpos) 
+		for(uint32_t k = 0; k<bam_cigar_oplen(cigar[i]);++k, ++countpos) 
 		  if ((countpos >= 0) && (countpos < interval_size) && (totalcount[countpos] < 255)) ++totalcount[countpos];
 		rp += bam_cigar_oplen(cigar[i]);
 		sp += bam_cigar_oplen(cigar[i]);
 	      } else if (bam_cigar_op(cigar[i]) == BAM_CDEL) {
 		int32_t countpos = rec->core.pos - vRIt->lower() + rp;
-		for(int32_t k = 0; k<bam_cigar_oplen(cigar[i]);++k, ++countpos)
+		for(uint32_t k = 0; k<bam_cigar_oplen(cigar[i]);++k, ++countpos)
 		  if ((countpos >= 0) && (countpos < interval_size) && (gapcount[countpos] < 255)) ++gapcount[countpos];
 		rp += bam_cigar_oplen(cigar[i]);
 	      } else if (bam_cigar_op(cigar[i]) == BAM_CINS) {
@@ -258,7 +258,7 @@ inline int pacbioRun(TConfig const& c, TSVType svType) {
 	  if ((e < vRIt->lower()) || (s > vRIt->upper())) continue;
 	  std::string chrName = hdr->target_name[refIndex];
 	  int32_t from = std::max(s - vRIt->lower(), 0);
-	  int32_t to = std::min(e - vRIt->lower(), (int32_t) interval_size);
+	  int32_t to = std::min(e - vRIt->lower(), interval_size);
 	  double mmsum = 0;
 	  double gapsum = 0;
 	  for(int32_t i = from; i < to; ++i) {
@@ -270,12 +270,12 @@ inline int pacbioRun(TConfig const& c, TSVType svType) {
 	}
 
 	// Find deletions
-	uint32_t probe_size = 15;
+	int32_t probe_size = 15;
 	double mmsum = 0;
 	double gapsum = 0;
 	double gaprateUth = 0.3;
 	double gaprateLth = 0.1;
-	for(uint32_t i = 0; ((i<probe_size) && (i<interval_size)); ++i) {
+	for(int32_t i = 0; ((i<probe_size) && (i<interval_size)); ++i) {
 	  mmsum += totalcount[i];
 	  gapsum += gapcount[i];
 	}
@@ -317,7 +317,7 @@ inline int pacbioRun(TConfig const& c, TSVType svType) {
 	  int32_t svEndIdx = peaks[i].pos;
 	  double mmsum = 0;
 	  double gapsum = 0;
-	  for(uint32_t k = peaks[i].pos - probe_size; k < peaks[i].pos; ++k) {
+	  for(int32_t k = peaks[i].pos - probe_size; k < peaks[i].pos; ++k) {
 	    mmsum += totalcount[k];
 	    gapsum += gapcount[k];
 	  }
@@ -359,7 +359,7 @@ inline int pacbioRun(TConfig const& c, TSVType svType) {
 	  if (sup >= 2) {
 #pragma omp critical
 	    {
-	      for(TBitSet::size_type pos = vRIt->lower() + svStartIdx; pos < vRIt->lower() + svEndIdx; ++pos) gaps[pos] = 1;
+	      for(TBitSet::size_type pos = vRIt->lower() + svStartIdx; pos < (TBitSet::size_type) (vRIt->lower() + svEndIdx); ++pos) gaps[pos] = 1;
 	    }
 	  }
 	}
