@@ -83,6 +83,7 @@ struct Config {
   bool indels;
   bool hasExcludeFile;
   bool hasVcfFile;
+  DnaScore<int> aliscore;
   std::string svType;
   std::string technology;
   boost::filesystem::path outfile;
@@ -165,16 +166,6 @@ struct SortEdgeRecords : public std::binary_function<TRecord, TRecord, bool>
   inline bool operator()(TRecord const& e1, TRecord const& e2) const {
     return ((e1.weight < e2.weight) || ((e1.weight == e2.weight) && (e1.source < e2.source)) || ((e1.weight == e2.weight) && (e1.source == e2.source) && (e1.target < e2.target)));
   }
-};
-
-// Read count struct
-struct ReadCount {
-  int leftRC;
-  int rc;
-  int rightRC;
-
-  ReadCount() {}
-  ReadCount(int l, int m, int r) : leftRC(l), rc(m), rightRC(r) {}
 };
 
 // Convert string to char*
@@ -486,12 +477,14 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
       dvcount[file_c] = 0;
       rrcount[file_c] = 0;
       rvcount[file_c] = 0;
-      if (spanLeftIt->second.first.size()<spanRightIt->second.first.size()) {
-	drcount[file_c] = spanLeftIt->second.first.size();
-	dvcount[file_c] = spanLeftIt->second.second.size();
-      } else {
-	drcount[file_c] = spanRightIt->second.first.size();
-	dvcount[file_c] = spanRightIt->second.second.size();
+      if ((spanLeftIt!=spanCountMap.end()) && (spanRightIt!=spanCountMap.end())) {
+	if (spanLeftIt->second.first.size()<spanRightIt->second.first.size()) {
+	  drcount[file_c] = spanLeftIt->second.first.size();
+	  dvcount[file_c] = spanLeftIt->second.second.size();
+	} else {
+	  drcount[file_c] = spanRightIt->second.first.size();
+	  dvcount[file_c] = spanRightIt->second.second.size();
+	}
       }
       if (jctCountMapIt!=jctCountMap.end()) {
 	rrcount[file_c] = jctCountMapIt->second.first.size();
@@ -499,10 +492,28 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
       }
 
       // Compute GLs
-      if (svIter->precise) _computeGLs(jctCountMapIt->second.first, jctCountMapIt->second.second, gls, gqval, gts, file_c);
-      else {  // Imprecise SVs
-	if (spanLeftIt->second.first.size()<spanRightIt->second.first.size()) _computeGLs(spanLeftIt->second.first, spanLeftIt->second.second, gls, gqval, gts, file_c);
-	else _computeGLs(spanRightIt->second.first, spanRightIt->second.second, gls, gqval, gts, file_c);
+      if (svIter->precise) {
+	if (jctCountMapIt!=jctCountMap.end()) _computeGLs(jctCountMapIt->second.first, jctCountMapIt->second.second, gls, gqval, gts, file_c);
+	else {
+	  gls[file_c * 3 + 2] = 0;
+	  gls[file_c * 3 + 1] = 0;
+	  gls[file_c * 3] = 0;
+	  gqval[file_c] = 0;
+	  gts[file_c * 2] = bcf_gt_missing;
+	  gts[file_c * 2 + 1] = bcf_gt_missing;
+	}
+      } else {  // Imprecise SVs
+	if ((spanLeftIt!=spanCountMap.end()) && (spanRightIt!=spanCountMap.end())) {
+	  if (spanLeftIt->second.first.size()<spanRightIt->second.first.size()) _computeGLs(spanLeftIt->second.first, spanLeftIt->second.second, gls, gqval, gts, file_c);
+	  else _computeGLs(spanRightIt->second.first, spanRightIt->second.second, gls, gqval, gts, file_c);
+	} else {
+	  gls[file_c * 3 + 2] = 0;
+	  gls[file_c * 3 + 1] = 0;
+	  gls[file_c * 3] = 0;
+	  gqval[file_c] = 0;
+	  gts[file_c * 2] = bcf_gt_missing;
+	  gts[file_c * 2 + 1] = bcf_gt_missing;
+	}
       }
 
       // Compute RCs
@@ -727,7 +738,7 @@ findPutativeSplitReads(TConfig const& c, std::vector<TStructuralVariantRecord>& 
 	    totalSplitReadsAligned += splitReadSet.size();
 
 	    // MSA
-	    if (splitReadSet.size() > 1) svIt->srSupport = msa(splitReadSet, svIt->consensus);
+	    if (splitReadSet.size() > 1) svIt->srSupport = msa(c, splitReadSet, svIt->consensus);
 
 	    // Search true split in candidates
 	    if (!alignConsensus(c, *svIt, svRefStr, svType)) { svIt->consensus = ""; svIt->srSupport = 0; }
@@ -1993,6 +2004,7 @@ int delly(int argc, char **argv) {
 
   // Run main program
   if (c.technology == "illumina") {
+    c.aliscore = DnaScore<int>(5, -4, -10, -1);
     if (c.svType == "DEL") return dellyRun(c, SVType<DeletionTag>());
     else if (c.svType == "DUP") return dellyRun(c, SVType<DuplicationTag>());
     else if (c.svType == "INV") return dellyRun(c, SVType<InversionTag>());
@@ -2003,6 +2015,7 @@ int delly(int argc, char **argv) {
       return 1;
     }
   } else if (c.technology == "pacbio") {
+    c.aliscore = DnaScore<int>(2, -5, -2, -1);
     //if (c.svType == "DEL") return pacbioRun(c, SVType<DeletionTag>());
     std::cerr << "PacBio SV analysis not yet supported." << std::endl;
     return 1;

@@ -106,9 +106,9 @@ namespace torali {
     return (nn > 0) ? (nn - 1) : 0;
   }
 
-  template<typename TSplitReadSet, typename TPhylogeny, typename TDIndex, typename TAlign>
+  template<typename TConfig, typename TSplitReadSet, typename TPhylogeny, typename TDIndex, typename TAlign>
   inline void
-  palign(TSplitReadSet const& sps, TPhylogeny const& p, TDIndex root, TAlign& align) {
+  palign(TConfig const& c, TSplitReadSet const& sps, TPhylogeny const& p, TDIndex root, TAlign& align) {
     typedef typename TAlign::index TAIndex;
     if ((p[root][1] == -1) && (p[root][2] == -1)) {
       typename TSplitReadSet::const_iterator sIt = sps.begin();
@@ -118,11 +118,11 @@ namespace torali {
       for(typename std::string::const_iterator str = sIt->begin(); str != sIt->end(); ++str) align[0][ind++] = *str;
     } else {
       TAlign align1;
-      palign(sps, p, p[root][1], align1);
+      palign(c, sps, p, p[root][1], align1);
       TAlign align2;
-      palign(sps, p, p[root][2], align2);
+      palign(c, sps, p, p[root][2], align2);
       AlignConfig<true, true> endFreeAlign;
-      gotoh(align1, align2, align, endFreeAlign);
+      gotoh(align1, align2, align, endFreeAlign, c.aliscore);
     }
   }
 
@@ -242,9 +242,9 @@ namespace torali {
   }
 
 
-  template<typename TSplitReadSet>
+  template<typename TConfig, typename TSplitReadSet>
   inline int
-  msa(TSplitReadSet const& sps, std::string& cs) {
+  msa(TConfig const& c, TSplitReadSet const& sps, std::string& cs) {
     // Compute distance matrix
     typedef boost::multi_array<int, 2> TDistArray;
     typedef typename TDistArray::index TDIndex;
@@ -278,7 +278,7 @@ namespace torali {
     // Progressive Alignment
     typedef boost::multi_array<char, 2> TAlign;
     TAlign align;
-    palign(sps, p, root, align);
+    palign(c, sps, p, root, align);
 
     // Debug MSA
     //typedef typename TAlign::index TAIndex;

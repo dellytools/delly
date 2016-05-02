@@ -204,7 +204,8 @@ namespace torali {
 	      DnaScore<int> sc(5, -4, -5 * c.minimumFlankSize, 0);
 	      gotoh(itSV->consensus, svRefStr, alignFwd, semiglobal, sc);
 	      TAIndex cStart, cEnd, rStart, rEnd, gS, gE;
-	      _findSplit(alignFwd, cStart, cEnd, rStart, rEnd, gS, gE, svType);
+	      double percId = 0;
+	      _findSplit(alignFwd, cStart, cEnd, rStart, rEnd, gS, gE, percId, svType);
 	      int32_t homLeft = 0;
 	      int32_t homRight = 0;
 	      _findHomology(alignFwd, gS, gE, homLeft, homRight);

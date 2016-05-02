@@ -376,9 +376,9 @@ namespace torali
   }
 
 
-  template<typename TAlign, typename TAIndex, typename TSVType>
+  template<typename TAlign, typename TAIndex, typename TFloat, typename TSVType>
   inline bool
-    _findSplit(TAlign const& align, TAIndex& cStart, TAIndex& cEnd, TAIndex& rStart, TAIndex& rEnd, TAIndex& gS, TAIndex& gE, TSVType svt) {
+  _findSplit(TAlign const& align, TAIndex& cStart, TAIndex& cEnd, TAIndex& rStart, TAIndex& rEnd, TAIndex& gS, TAIndex& gE, TFloat& percId, TSVType svt) {
     // Initializiation
     gS=0;
     gE=0;
@@ -423,6 +423,39 @@ namespace torali
 	inGap=false;
       }
     }
+
+    // Find percent identity
+    if (rEnd > rStart) {
+      TAIndex rI=0;
+      TAIndex vI=0;
+      uint32_t gapMM = 0;
+      uint32_t mm = 0;
+      uint32_t ma = 0;
+      bool inGap=false;
+      for(TAIndex j = 0; j < (TAIndex) align.shape()[1]; ++j) {
+	//std::cerr << j << ',' << ma << ',' << mm << std::endl;
+	if (align[0][j] != '-') ++vI;
+	if (align[1][j] != '-') ++rI;
+	// Internal gap?
+	if ((align[0][j] == '-') || (align[1][j] == '-')) {
+	  if ((rI>0) && (vI>0)) {
+	    if (!inGap) {
+	      inGap = true;
+	      gapMM = 0;
+	    }
+	    if ((rI < rStart) || (rI >= rEnd)) gapMM += 1;
+	  }
+	} else {
+	  if (inGap) {
+	    mm += gapMM;
+	    inGap=false;
+	  }
+	  if (align[0][j] == align[1][j]) ma += 1;
+	  else mm += 1;
+	}
+      }
+      percId = (TFloat) ma / (TFloat) (ma + mm);
+    }
     return (rEnd > rStart);
   }
 
@@ -431,7 +464,8 @@ namespace torali
   _findSplit(TAlign const& align, TAIndex& cStart, TAIndex& cEnd, TAIndex& rStart, TAIndex& rEnd, TSVType svt) {
     TAIndex alignJ1 = 0;
     TAIndex alignJ2 = 0;
-    return _findSplit(align, cStart, cEnd, rStart, rEnd, alignJ1, alignJ2, svt);
+    double percId = 0;
+    return _findSplit(align, cStart, cEnd, rStart, rEnd, alignJ1, alignJ2, percId, svt);
   }
 
   template<typename TAlign, typename TAIndex, typename TLength>
@@ -525,26 +559,14 @@ namespace torali
     // Consensus to reference alignment
     TAlign alignFwd;
     AlignConfig<true, false> semiglobal;
-    DnaScore<int> sc(5, -4, -5 * c.minimumFlankSize, 0); // Don't penalize the split, ge=0 and make sure we have aligned segments > c.minimumFlankSize
+    DnaScore<int> sc(c.aliscore.match, c.aliscore.mismatch, -1 * c.aliscore.match * c.minimumFlankSize, 0); // Don't penalize the split, ge=0 and make sure we have aligned segments > c.minimumFlankSize
     int score = gotoh(cons, ref, alignFwd, semiglobal, sc);
-    score += 5 * c.minimumFlankSize; // Increase the score by allowing one internal gap
+    score += c.aliscore.match * c.minimumFlankSize; // Increase the score by allowing one internal gap
 
     // Check breakpoint
     TAIndex cStart, cEnd, rStart, rEnd, gS, gE;
-    if (!_findSplit(alignFwd, cStart, cEnd, rStart, rEnd, gS, gE, svType)) return false;
-    if (!_validSRAlignment(cStart, cEnd, rStart, rEnd, svType)) return false;
-    int32_t homLeft = 0;
-    int32_t homRight = 0;
-    _findHomology(alignFwd, gS, gE, homLeft, homRight);
-
-    // Check flanking alignment length
-    if ((homLeft + c.minimumFlankSize > (int32_t) cStart) || ( (int32_t) (sv.consensus.size() - cEnd) < homRight + c.minimumFlankSize)) return false;
-    if ((homLeft + c.minimumFlankSize > (int32_t) rStart) || ( (int32_t) (svRefStr.size() - rEnd) < homRight + c.minimumFlankSize)) return false;
-
-    // Check quality
-    double quality = (double) ((score < 0) ? 0 : score ) / (double) ( (sv.consensus.size() - (cEnd - cStart - 1)) * 5);
-    if (quality > 1) quality = 1;
-    if (quality < ((double) c.flankQuality / 100.0)) return false;
+    double quality = 0;
+    if (!_findSplit(alignFwd, cStart, cEnd, rStart, rEnd, gS, gE, quality, svType)) return false;
 
     // Debug consensus to reference alignment
     //for(TAIndex i = 0; i<alignFwd.shape()[0]; ++i) {
@@ -556,10 +578,29 @@ namespace torali
     //std::cerr << "Alignment score: " << score << " (Quality: " << quality << ")" << std::endl;
     //std::cerr << std::endl;
 
+    // Find homology
+    if (!_validSRAlignment(cStart, cEnd, rStart, rEnd, svType)) return false;
+    int32_t homLeft = 0;
+    int32_t homRight = 0;
+    _findHomology(alignFwd, gS, gE, homLeft, homRight);
+
+    // Check flanking alignment length
+    if ((homLeft + c.minimumFlankSize > (int32_t) cStart) || ( (int32_t) (sv.consensus.size() - cEnd) < homRight + c.minimumFlankSize)) return false;
+    if ((homLeft + c.minimumFlankSize > (int32_t) rStart) || ( (int32_t) (svRefStr.size() - rEnd) < homRight + c.minimumFlankSize)) return false;
+
+    // Check quality
+    //quality = (double) ((score < 0) ? 0 : score ) / (double) ( (sv.consensus.size() - (cEnd - cStart - 1)) * c.aliscore.match);
+    if (quality < ((double) c.flankQuality / 100.0)) return false;
+
     // Get the start and end of the structural variant
     unsigned int finalGapStart = 0;
     unsigned int finalGapEnd = 0;
-    if (!_coordTransform(svRefStr, sv, rStart, rEnd, finalGapStart, finalGapEnd, svType)) return false;
+    if (c.technology == "illumina") {
+      if (!_coordTransform(svRefStr, sv, rStart, rEnd, finalGapStart, finalGapEnd, svType)) return false;
+    } else if (c.technology == "pacbio") {
+      finalGapStart = sv.svStartBeg + rStart - 1;
+      finalGapEnd = sv.svStartBeg + rEnd - 1;
+    }
 
     // Set breakpoint & quality
     sv.precise=true;

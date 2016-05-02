@@ -61,6 +61,16 @@ namespace torali
     std::vector<int32_t> vecISize;
   };
 
+  // Read count struct
+  struct ReadCount {
+    int leftRC;
+    int rc;
+    int rightRC;
+
+    ReadCount() {}
+    ReadCount(int l, int m, int r) : leftRC(l), rc(m), rightRC(r) {}
+  };
+
 
   // Deletions
   inline std::string
