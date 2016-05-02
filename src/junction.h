@@ -284,18 +284,17 @@ namespace torali {
 		    for (int i = 0; i < rec->core.l_qseq; ++i) sequence[i] = "=ACMGRSVTWYHKDBN"[bam_seqi(seqptr, i)];
 		    _adjustOrientation(sequence, bpPoint, itSV->ct, svType);
 
-		    double qualityThres = (double) (c.flankQuality) / 100.0;
 		    // Compute alignment to alternative haplotype
 		    TAlign alignAlt;
 		    DnaScore<int> simple(5, -4, -4, -4);
 		    int32_t scoreA = needle(consProbe, sequence, alignAlt, semiglobal, simple);
-		    int32_t scoreAltThreshold = (int32_t) (qualityThres * consProbe.size() * 5 + (1.0 - qualityThres) * consProbe.size() * (-4));
+		    int32_t scoreAltThreshold = (int32_t) (c.flankQuality * consProbe.size() * 5 + (1.0 - c.flankQuality) * consProbe.size() * (-4));
 		    double scoreAlt = (double) scoreA / (double) scoreAltThreshold;
 
 		    // Compute alignment to reference haplotype
 		    TAlign alignRef;
 		    int32_t scoreR = needle(refProbe, sequence, alignRef, semiglobal, simple);
-		    int32_t scoreRefThreshold = (int32_t) (qualityThres * refProbe.size() * 5 + (1.0 - qualityThres) * refProbe.size() * (-4));
+		    int32_t scoreRefThreshold = (int32_t) (c.flankQuality * refProbe.size() * 5 + (1.0 - c.flankQuality) * refProbe.size() * (-4));
 		    double scoreRef = (double) scoreR / (double) scoreRefThreshold;
 		    
 		    // Any confident alignment?

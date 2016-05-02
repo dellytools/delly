@@ -560,13 +560,13 @@ namespace torali
     TAlign alignFwd;
     AlignConfig<true, false> semiglobal;
     DnaScore<int> sc(c.aliscore.match, c.aliscore.mismatch, -1 * c.aliscore.match * c.minimumFlankSize, 0); // Don't penalize the split, ge=0 and make sure we have aligned segments > c.minimumFlankSize
-    int score = gotoh(cons, ref, alignFwd, semiglobal, sc);
-    score += c.aliscore.match * c.minimumFlankSize; // Increase the score by allowing one internal gap
+    gotoh(cons, ref, alignFwd, semiglobal, sc);
 
     // Check breakpoint
     TAIndex cStart, cEnd, rStart, rEnd, gS, gE;
     double quality = 0;
     if (!_findSplit(alignFwd, cStart, cEnd, rStart, rEnd, gS, gE, quality, svType)) return false;
+    if (quality < c.flankQuality) return false;
 
     // Debug consensus to reference alignment
     //for(TAIndex i = 0; i<alignFwd.shape()[0]; ++i) {
@@ -575,7 +575,7 @@ namespace torali
     //}
     //std::cerr << std::endl;
     //}
-    //std::cerr << "Alignment score: " << score << " (Quality: " << quality << ")" << std::endl;
+    //std::cerr << "Flanking alignment percent identity: " << quality << std::endl;
     //std::cerr << std::endl;
 
     // Find homology
@@ -587,10 +587,6 @@ namespace torali
     // Check flanking alignment length
     if ((homLeft + c.minimumFlankSize > (int32_t) cStart) || ( (int32_t) (sv.consensus.size() - cEnd) < homRight + c.minimumFlankSize)) return false;
     if ((homLeft + c.minimumFlankSize > (int32_t) rStart) || ( (int32_t) (svRefStr.size() - rEnd) < homRight + c.minimumFlankSize)) return false;
-
-    // Check quality
-    //quality = (double) ((score < 0) ? 0 : score ) / (double) ( (sv.consensus.size() - (cEnd - cStart - 1)) * c.aliscore.match);
-    if (quality < ((double) c.flankQuality / 100.0)) return false;
 
     // Get the start and end of the structural variant
     unsigned int finalGapStart = 0;

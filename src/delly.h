@@ -75,10 +75,9 @@ struct Config {
   unsigned short minGenoQual;
   unsigned short madCutoff;
   int32_t minimumFlankSize;
-  uint32_t flankQuality;
   uint32_t graphPruning;
   uint32_t indelsize;
-
+  float flankQuality;
   float percentAbnormal;
   bool indels;
   bool hasExcludeFile;
@@ -1325,9 +1324,6 @@ inline int dellyRun(Config const& c, TSVType svType) {
   // Clique id counter
   unsigned int clique_count = 1;
 
-  // Quality threshold
-  double qualityThres = (double) (c.flankQuality) / 100.0;
-
   // Create library objects
   typedef boost::unordered_map<std::string, LibraryInfo> TLibraryMap;
   typedef boost::unordered_map<std::string, TLibraryMap> TSampleLibrary;
@@ -1511,7 +1507,7 @@ inline int dellyRun(Config const& c, TSVType svType) {
 			TAIndex cStart, cEnd, rStart, rEnd;
 			if (_findSplit(alignFwd, cStart, cEnd, rStart, rEnd, svType)) {
 			  if (_validSRAlignment(cStart, cEnd, rStart, rEnd, svType)) {
-			    int scoreThresholdAlt = (int) (qualityThres * (sequence.size() - (cEnd - cStart - 1)) * 5 + (1.0 - qualityThres) * (sequence.size() - (cEnd - cStart - 1)) * (-4));			    
+			    int scoreThresholdAlt = (int) (c.flankQuality * (sequence.size() - (cEnd - cStart - 1)) * 5 + (1.0 - c.flankQuality) * (sequence.size() - (cEnd - cStart - 1)) * (-4));			    
 			    if (altScore > scoreThresholdAlt) {
 				
 			      // Debug consensus to reference alignment
@@ -1851,14 +1847,13 @@ int delly(int argc, char **argv) {
     ("type,t", boost::program_options::value<std::string>(&c.svType)->default_value("DEL"), "SV type (DEL, DUP, INV, TRA, INS)")
     ("outfile,o", boost::program_options::value<boost::filesystem::path>(&c.outfile)->default_value("sv.bcf"), "SV BCF output file")
     ("exclude,x", boost::program_options::value<boost::filesystem::path>(&c.exclude), "file with regions to exclude")
-    ("technology,e", boost::program_options::value<std::string>(&c.technology)->default_value("illumina"), "Technology (illumina, pacbio)")
+    ("technology,e", boost::program_options::value<std::string>(&c.technology)->default_value("illumina"), "technology (illumina, pacbio)")
     ;
 
   boost::program_options::options_description pem("PE options");
   pem.add_options()
     ("map-qual,q", boost::program_options::value<unsigned short>(&c.minMapQual)->default_value(1), "min. paired-end mapping quality")
     ("mad-cutoff,s", boost::program_options::value<unsigned short>(&c.madCutoff)->default_value(9), "insert size cutoff, median+s*MAD (deletions only)")
-    ("flanking,f", boost::program_options::value<uint32_t>(&c.flankQuality)->default_value(90), "quality of the consensus alignment")
     ;
 
   boost::program_options::options_description breaks("SR options");
@@ -2005,6 +2000,7 @@ int delly(int argc, char **argv) {
   // Run main program
   if (c.technology == "illumina") {
     c.aliscore = DnaScore<int>(5, -4, -10, -1);
+    c.flankQuality = 0.95;
     if (c.svType == "DEL") return dellyRun(c, SVType<DeletionTag>());
     else if (c.svType == "DUP") return dellyRun(c, SVType<DuplicationTag>());
     else if (c.svType == "INV") return dellyRun(c, SVType<InversionTag>());
@@ -2016,6 +2012,7 @@ int delly(int argc, char **argv) {
     }
   } else if (c.technology == "pacbio") {
     c.aliscore = DnaScore<int>(2, -5, -2, -1);
+    c.flankQuality = 0.9;
     //if (c.svType == "DEL") return pacbioRun(c, SVType<DeletionTag>());
     std::cerr << "PacBio SV analysis not yet supported." << std::endl;
     return 1;
