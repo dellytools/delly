@@ -40,6 +40,43 @@ Contact: Tobias Rausch (rausch@embl.de)
 namespace torali {
 
 
+  template<typename TAlign>
+  inline double
+  _percentIdentity(TAlign const& align) {
+    typedef typename TAlign::index TAIndex;
+    TAIndex rI=0;
+    TAIndex vI=0;
+    uint32_t gapMM = 0;
+    uint32_t mm = 0;
+    uint32_t ma = 0;
+    bool inGap=false;
+    for(TAIndex j = 0; j < (TAIndex) align.shape()[1]; ++j) {
+      //std::cerr << j << ',' << ma << ',' << mm << std::endl;
+      if (align[0][j] != '-') ++vI;
+      if (align[1][j] != '-') ++rI;
+      // Internal gap?
+      if ((align[0][j] == '-') || (align[1][j] == '-')) {
+	if ((rI>0) && (vI>0)) {
+	  if (!inGap) {
+	    inGap = true;
+	    gapMM = 0;
+	  }
+	  gapMM += 1;
+	}
+      } else {
+	if (inGap) {
+	  mm += gapMM;
+	  inGap=false;
+	}
+	if (align[0][j] == align[1][j]) ma += 1;
+	else mm += 1;
+      }
+    }
+    return (double) ma / (double) (ma + mm);
+  }
+
+
+
   template<typename TConfig, typename TSVs, typename TCountMap, typename TTag>
   inline void
   annotatePacbioJunctionReads(TConfig const& c, TSVs& svs, TCountMap& countMap, SVType<TTag> svType)
@@ -129,7 +166,6 @@ namespace torali {
 		std::string sampleName(c.files[file_c].stem().string());
 		TQualVector altQual;
 		TQualVector refQual;
-		unsigned int refAlignedReadCount = 0;
 
 		// Region
 		int32_t regionChr = itSV->chr;
@@ -157,6 +193,8 @@ namespace torali {
 
 		  // Compute alignment to alternative haplotype
 		  TAlign alignAlt;
+		  //gotoh(consProbe, sequence, alignAlt, semiglobal, c.aliscore);
+		  //double scoreAlt = _percentIdentity(alignAlt);
 		  DnaScore<int> simple(5, -4, -4, -4);
 		  int32_t scoreA = needle(consProbe, sequence, alignAlt, semiglobal, simple);
 		  int32_t scoreAltThreshold = (int32_t) (c.flankQuality * consProbe.size() * 5 + (1.0 - c.flankQuality) * consProbe.size() * (-4));
@@ -164,11 +202,14 @@ namespace torali {
 
 		  // Compute alignment to reference haplotype
 		  TAlign alignRef;
+		  //gotoh(refProbe, sequence, alignRef, semiglobal, c.aliscore);
+		  //double scoreRef = _percentIdentity(alignRef);
 		  int32_t scoreR = needle(refProbe, sequence, alignRef, semiglobal, simple);
 		  int32_t scoreRefThreshold = (int32_t) (c.flankQuality * refProbe.size() * 5 + (1.0 - c.flankQuality) * refProbe.size() * (-4));
 		  double scoreRef = (double) scoreR / (double) scoreRefThreshold;
 		    
 		  // Any confident alignment?
+		  //if ((scoreRef > c.flankQuality) || (scoreAlt > c.flankQuality)) {
 		  if ((scoreRef > 1) || (scoreAlt > 1)) {
 		    // Debug alignment to REF and ALT
 		    //std::cerr << "Alt:\t" << scoreAlt << "\tRef:\t" << scoreRef << std::endl;
