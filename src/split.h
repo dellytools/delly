@@ -559,7 +559,7 @@ namespace torali
     // Consensus to reference alignment
     TAlign alignFwd;
     AlignConfig<true, false> semiglobal;
-    DnaScore<int> sc(c.aliscore.match, c.aliscore.mismatch, -1 * c.aliscore.match * c.minimumFlankSize, 0); // Don't penalize the split, ge=0 and make sure we have aligned segments > c.minimumFlankSize
+    DnaScore<int> sc(c.aliscore.match, c.aliscore.mismatch, -1 * c.aliscore.match * 15, 0); // Don't penalize the split, ge=0 and make sure we have aligned segments > minimum SV Size
     gotoh(cons, ref, alignFwd, semiglobal, sc);
 
     // Check breakpoint

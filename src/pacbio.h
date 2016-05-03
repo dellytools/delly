@@ -25,6 +25,7 @@ Contact: Tobias Rausch (rausch@embl.de)
 #define PACBIO_H
 
 #include <boost/dynamic_bitset.hpp>
+#include "pacbiojunction.h"
 
 namespace torali {
 
@@ -205,7 +206,7 @@ findGappedReads(TConfig const& c, std::vector<TStructuralVariantRecord>& svs,  S
 		    double gapRate = (double) gapcount / (double) (withinSvSize);
 		    if (gapRate >= 0.75) {
 		      unsigned int qualSum = 0;
-		      for(unsigned int pq = spStart; pq < spEnd; ++pq) qualSum += quality[pq];
+		      for(int32_t pq = spStart; pq < spEnd; ++pq) qualSum += quality[pq];
 #pragma omp critical
 		      {
 			splitReadSet.insert(sequence);
@@ -250,6 +251,7 @@ findGappedReads(TConfig const& c, std::vector<TStructuralVariantRecord>& svs,  S
     hts_idx_destroy(idx[file_c]);
     sam_close(samfile[file_c]);
   }
+  bam_hdr_destroy(hdr);
 
   return (totalSplitReadsAligned>0);
 }
@@ -642,8 +644,8 @@ inline int pacbioRun(TConfig const& c, TSVType svType) {
   typedef std::pair<std::vector<uint8_t>, std::vector<uint8_t> > TReadQual;
   typedef boost::unordered_map<TSampleSVPair, TReadQual> TJunctionCountMap;
   TJunctionCountMap junctionCountMap;
-  //if (boost::filesystem::exists(c.genome) && boost::filesystem::is_regular_file(c.genome) && boost::filesystem::file_size(c.genome))
-  //  _annotateJunctionReads(c, sampleLib, svs, junctionCountMap, svType);
+  if (boost::filesystem::exists(c.genome) && boost::filesystem::is_regular_file(c.genome) && boost::filesystem::file_size(c.genome)) 
+    annotatePacbioJunctionReads(c, svs, junctionCountMap, svType);
 
   // Annotate spanning coverage
   typedef boost::unordered_map<TSampleSVPair, TReadQual> TCountMap;

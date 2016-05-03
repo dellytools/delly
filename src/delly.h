@@ -986,14 +986,6 @@ _svSizeCheck(TSize const, TSize const, SVType<TranslocationTag>) {
 }
 
 
-template<typename TConfig, typename TSampleLibrary, typename TSVs, typename TCountMap, typename TTag>
-inline void
-_annotateJunctionReads(TConfig const& c, TSampleLibrary& sampleLib, TSVs& svs, TCountMap& junctionCountMap, SVType<TTag> svType) 
-{
-  annotateJunctionReads(c, sampleLib, svs, junctionCountMap, svType);
-}
-
-
 template<typename TConfig, typename TRefNames, typename TSampleLibrary, typename TSVs, typename TCountMap, typename TTag>
 inline void
 _annotateCoverage(TConfig const& c, TRefNames const& refnames, TSampleLibrary& sampleLib, TSVs& svs, TCountMap& countMap, SVType<TTag>) 
@@ -1499,9 +1491,9 @@ inline int dellyRun(Config const& c, TSVType svType) {
 			typedef typename TAlign::index TAIndex;
 			TAlign alignFwd;
 			AlignConfig<true, false> semiglobal;
-			DnaScore<int> sc(5, -4, -5 * c.minimumFlankSize, 0);
+			DnaScore<int> sc(5, -4, -1 * c.aliscore.match * 15, 0);
 			int altScore = gotoh(sequence, localref, alignFwd, semiglobal, sc);
-			altScore += 5 * c.minimumFlankSize;
+			altScore += c.aliscore.match * 15;
 			
 			// Candidate small indel?
 			TAIndex cStart, cEnd, rStart, rEnd;
@@ -1798,7 +1790,7 @@ inline int dellyRun(Config const& c, TSVType svType) {
   typedef boost::unordered_map<TSampleSVPair, TReadQual> TJunctionCountMap;
   TJunctionCountMap junctionCountMap;
   if (boost::filesystem::exists(c.genome) && boost::filesystem::is_regular_file(c.genome) && boost::filesystem::file_size(c.genome)) 
-    _annotateJunctionReads(c, sampleLib, svs, junctionCountMap, svType);
+    annotateJunctionReads(c, svs, junctionCountMap, svType);
 
   // Annotate spanning coverage
   typedef boost::unordered_map<TSampleSVPair, TReadQual> TCountMap;
@@ -1859,7 +1851,6 @@ int delly(int argc, char **argv) {
   boost::program_options::options_description breaks("SR options");
   breaks.add_options()
     ("genome,g", boost::program_options::value<boost::filesystem::path>(&c.genome), "genome fasta file")
-    ("min-flank,m", boost::program_options::value<int32_t>(&c.minimumFlankSize)->default_value(13), "minimum flanking sequence size")
     ("noindels,n", "no small InDel calling")
     ("indelsize,i", boost::program_options::value<uint32_t>(&c.indelsize)->default_value(500), "max. small InDel size")
     ;
@@ -2001,6 +1992,7 @@ int delly(int argc, char **argv) {
   if (c.technology == "illumina") {
     c.aliscore = DnaScore<int>(5, -4, -10, -1);
     c.flankQuality = 0.95;
+    c.minimumFlankSize = 13;
     if (c.svType == "DEL") return dellyRun(c, SVType<DeletionTag>());
     else if (c.svType == "DUP") return dellyRun(c, SVType<DuplicationTag>());
     else if (c.svType == "INV") return dellyRun(c, SVType<InversionTag>());
@@ -2013,6 +2005,7 @@ int delly(int argc, char **argv) {
   } else if (c.technology == "pacbio") {
     c.aliscore = DnaScore<int>(2, -5, -2, -1);
     c.flankQuality = 0.9;
+    c.minimumFlankSize = 13;
     //if (c.svType == "DEL") return pacbioRun(c, SVType<DeletionTag>());
     std::cerr << "PacBio SV analysis not yet supported." << std::endl;
     return 1;

@@ -112,9 +112,9 @@ namespace torali {
     }
   }
 
-  template<typename TConfig, typename TSampleLibrary, typename TSVs, typename TCountMap, typename TTag>
+  template<typename TConfig, typename TSVs, typename TCountMap, typename TTag>
   inline void
-  annotateJunctionReads(TConfig const& c, TSampleLibrary& sampleLib, TSVs& svs, TCountMap& countMap, SVType<TTag> svType)
+  annotateJunctionReads(TConfig const& c, TSVs& svs, TCountMap& countMap, SVType<TTag> svType)
   {
     typedef typename TCountMap::key_type TSampleSVPair;
     typedef typename TCountMap::mapped_type TCountPair;
@@ -122,10 +122,6 @@ namespace torali {
     typedef std::vector<uint8_t> TQuality;
 
     // Open file handles
-    typedef std::vector<std::string> TRefNames;
-    typedef std::vector<uint32_t> TRefLength;
-    TRefNames refnames;
-    TRefLength reflen;
     typedef std::vector<samFile*> TSamFile;
     typedef std::vector<hts_idx_t*> TIndex;
     TSamFile samfile;
@@ -135,27 +131,22 @@ namespace torali {
     for(std::size_t file_c = 0; file_c < c.files.size(); ++file_c) {
       samfile[file_c] = sam_open(c.files[file_c].string().c_str(), "r");
       idx[file_c] = sam_index_load(samfile[file_c], c.files[file_c].string().c_str());
-      if (!file_c) {
-	bam_hdr_t* hdr = sam_hdr_read(samfile[file_c]);
-	for (int i = 0; i<hdr->n_targets; ++i) {
-	  refnames.push_back(hdr->target_name[i]);
-	  reflen.push_back(hdr->target_len[i]);
-	}
-	bam_hdr_destroy(hdr);
-      }
-    }
+    }      
+    bam_hdr_t* hdr = sam_hdr_read(samfile[0]);
 
     // Sort Structural Variants
     sort(svs.begin(), svs.end(), SortSVs<StructuralVariantRecord>());
     
     // Initialize count map
-    for(typename TSampleLibrary::iterator sIt = sampleLib.begin(); sIt!=sampleLib.end();++sIt) 
-      for(typename TSVs::const_iterator itSV = svs.begin(); itSV!=svs.end(); ++itSV) countMap.insert(std::make_pair(std::make_pair(sIt->first, itSV->id), TCountPair()));
-    
+    for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
+      std::string sampleName(c.files[file_c].stem().string());
+      for(typename TSVs::const_iterator itSV = svs.begin(); itSV!=svs.end(); ++itSV) countMap.insert(std::make_pair(std::make_pair(sampleName, itSV->id), TCountPair()));
+    }
+
     // Process chromosome by chromosome
     boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
     std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Junction read annotation" << std::endl;
-    boost::progress_display show_progress( refnames.size() );
+    boost::progress_display show_progress( hdr->n_targets );
     
     // Get reference probes
     typedef boost::unordered_map<unsigned int, std::string> TProbes;
@@ -168,8 +159,8 @@ namespace torali {
     seq = kseq_init(fp);
     while ((l = kseq_read(seq)) >= 0) {
       // Find reference index
-      for(int32_t refIndex=0; refIndex < (int32_t) refnames.size(); ++refIndex) {
-	if (seq->name.s == refnames[refIndex]) {
+      for(int32_t refIndex=0; refIndex < (int32_t) hdr->n_targets; ++refIndex) {
+	if (std::string(seq->name.s) == std::string(hdr->target_name[refIndex])) {
 	  ++show_progress;
 	  
 	  // Iterate all structural variants
@@ -183,10 +174,10 @@ namespace torali {
 	    svRec.chr2 = itSV->chr2;
 	    svRec.svStartBeg = std::max(itSV->svStart - consLen, 0);
 	    svRec.svStart = itSV->svStart;
-	    svRec.svStartEnd = std::min((uint32_t) itSV->svStart + consLen, reflen[itSV->chr]);
+	    svRec.svStartEnd = std::min((uint32_t) itSV->svStart + consLen, hdr->target_len[itSV->chr]);
 	    svRec.svEndBeg = std::max(itSV->svEnd - consLen, 0);
 	    svRec.svEnd = itSV->svEnd;
-	    svRec.svEndEnd = std::min((uint32_t) itSV->svEnd + consLen, reflen[itSV->chr2]);
+	    svRec.svEndEnd = std::min((uint32_t) itSV->svEnd + consLen, hdr->target_len[itSV->chr2]);
 	    svRec.ct = itSV->ct;
 	    if ((itSV->chr != itSV->chr2) && (itSV->chr2 == refIndex)) {
 	      refProbes[itSV->id] = _getSVRef(seq->seq.s, svRec, refIndex, svType);
@@ -201,7 +192,7 @@ namespace torali {
 	      typedef typename TAlign::index TAIndex;
 	      TAlign alignFwd;
 	      AlignConfig<true, false> semiglobal;
-	      DnaScore<int> sc(5, -4, -5 * c.minimumFlankSize, 0);
+	      DnaScore<int> sc(c.aliscore.match, c.aliscore.mismatch, -1 * c.aliscore.match * c.minimumFlankSize, 0);
 	      gotoh(itSV->consensus, svRefStr, alignFwd, semiglobal, sc);
 	      TAIndex cStart, cEnd, rStart, rEnd, gS, gE;
 	      double percId = 0;
@@ -236,7 +227,7 @@ namespace torali {
 		  if (bpPoint) {
 		    regionChr = itSV->chr2;
 		    regionStart = std::max(0, itSV->svEnd - c.minimumFlankSize);
-		    regionEnd = std::min((uint32_t) (itSV->svEnd + c.minimumFlankSize), reflen[itSV->chr2]);
+		    regionEnd = std::min((uint32_t) (itSV->svEnd + c.minimumFlankSize), hdr->target_len[itSV->chr2]);
 		    cutConsStart = cEnd - homLeft - c.minimumFlankSize;
 		    cutConsEnd = cEnd + homRight + c.minimumFlankSize;
 		    cutRefStart = _cutRefStart((int32_t) rStart, (int32_t) rEnd, homLeft + c.minimumFlankSize, bpPoint, itSV->ct, svType);
@@ -244,7 +235,7 @@ namespace torali {
 		  } else {
 		    regionChr = itSV->chr;
 		    regionStart = std::max(0, itSV->svStart - c.minimumFlankSize);
-		    regionEnd = std::min((uint32_t) (itSV->svStart + c.minimumFlankSize), reflen[itSV->chr]);
+		    regionEnd = std::min((uint32_t) (itSV->svStart + c.minimumFlankSize), hdr->target_len[itSV->chr]);
 		    cutConsStart = cStart - homLeft - c.minimumFlankSize;
 		    cutConsEnd = cStart + homRight + c.minimumFlankSize;
 		    cutRefStart = _cutRefStart((int32_t) rStart, (int32_t) rEnd, homLeft + c.minimumFlankSize, bpPoint, itSV->ct, svType);
@@ -356,6 +347,7 @@ namespace torali {
       hts_idx_destroy(idx[file_c]);
       sam_close(samfile[file_c]);
     }
+    bam_hdr_destroy(hdr);
   }
 
 
