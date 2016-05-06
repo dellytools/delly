@@ -32,6 +32,144 @@ Contact: Tobias Rausch (rausch@embl.de)
 namespace torali
 {
 
+  template<typename TAlign, typename TAlignConfig, typename TScoreObject>
+  inline bool
+  longNeedle(std::string const& s1, std::string const& s2, TAlign& align, TAlignConfig const& ac, TScoreObject const& sc)
+  {
+    typedef typename TScoreObject::TValue TScoreValue;
+    typedef typename TAlign::index TAIndex;
+
+    // DP Matrix
+    typedef boost::multi_array<TScoreValue, 2> TMatrix;
+    std::size_t m = s1.size();
+    std::size_t n = s2.size();
+    TMatrix mat(boost::extents[m+1][n+1]);
+
+    // Initialization
+    mat[0][0] = 0;
+    for(std::size_t col = 1; col <= n; ++col) mat[0][col] = mat[0][col-1] + _horizontalGap(ac, 0, m, sc.ge);
+    for(std::size_t row = 1; row <= m; ++row) mat[row][0] = mat[row-1][0] + _verticalGap(ac, 0, n, sc.ge);
+
+    // Forward alignment
+    for(std::size_t row = 1; row <= m; ++row)
+      for(std::size_t col = 1; col <= n; ++col)
+	mat[row][col] = std::max(std::max(mat[row-1][col-1] + (s1[row-1] == s2[col-1] ? sc.match : sc.mismatch), mat[row-1][col] + _verticalGap(ac, col, n, sc.ge)), mat[row][col-1] + _horizontalGap(ac, row, m, sc.ge));
+
+    // Reverse input sequences
+    std::string sRev1 = s1;
+    reverseComplement(sRev1);
+    std::string sRev2 = s2;
+    reverseComplement(sRev2);
+
+    // Reverse alignment
+    TMatrix rev(boost::extents[m+1][n+1]);
+    rev[0][0] = 0;
+    for(std::size_t col = 1; col <= n; ++col) rev[0][col] = rev[0][col-1] + _horizontalGap(ac, 0, m, sc.ge);
+    for(std::size_t row = 1; row <= m; ++row) rev[row][0] = rev[row-1][0] + _verticalGap(ac, 0, n, sc.ge);
+    for(std::size_t row = 1; row <= m; ++row)
+      for(std::size_t col = 1; col <= n; ++col)
+	rev[row][col] = std::max(std::max(rev[row-1][col-1] + (sRev1[row-1] == sRev2[col-1] ? sc.match : sc.mismatch), rev[row-1][col] + _verticalGap(ac, col, n, sc.ge)), rev[row][col-1] + _horizontalGap(ac, row, m, sc.ge));
+
+    if (mat[m][n] != rev[m][n]) {
+      std::cerr << "Warning: Alignment scores disagree!" << std::endl;
+      return false;
+    } else {
+      // Find best join
+      TScoreValue bestScore = mat[m][n];
+      std::size_t consLeft = 0;
+      std::size_t consRight = 0;
+      std::size_t refLeft = 0;
+      std::size_t refRight = 0;
+      for(std::size_t fwdcut = 0; fwdcut<=m; ++fwdcut) {
+	std::size_t revcut = m - fwdcut;
+	// Iterate all valid collinear alignments on the reference
+	for(std::size_t left = 0; left<=n; ++left) {
+	  for(std::size_t right = 0; right<=(n-left); ++right) {
+	    if (mat[fwdcut][left] + rev[revcut][right] > bestScore) {
+	      bestScore = mat[fwdcut][left] + rev[revcut][right];
+	      consLeft = fwdcut;
+	      consRight = revcut;
+	      refLeft = left;
+	      refRight = right;
+	    }
+	  }
+	}
+      }
+      // Debug best join
+      //std::cerr << bestScore << ':' << s1.size() << ',' << s2.size() << ':' << consLeft << ',' << (m-consRight) << ',' << refLeft << ',' << (n-refRight) << std::endl;
+      if (bestScore == mat[m][n]) return false; // No split found
+
+      // Trace-back fwd
+      std::size_t rr = consLeft;
+      std::size_t cc = refLeft;
+      typedef std::vector<char> TTrace;
+      TTrace trace;
+      while ((rr>0) || (cc>0)) {
+	if ((rr>0) && (mat[rr][cc] == mat[rr-1][cc] + _verticalGap(ac, cc, n, sc.ge))) {
+	  --rr;
+	  trace.push_back('v');
+	} else if ((cc>0) && (mat[rr][cc] == mat[rr][cc-1] + _horizontalGap(ac, rr, m, sc.ge))) {
+	  --cc;
+	  trace.push_back('h');
+	} else {
+	  --rr;
+	  --cc;
+	  trace.push_back('s');
+	}
+      }
+      TAlign fwd;
+      _createAlignment(trace, s1.substr(0, consLeft), s2.substr(0, refLeft), fwd);
+
+      // Trace-back rev
+      rr = consRight;
+      cc = refRight;
+      typedef std::vector<char> TTrace;
+      TTrace rtrace;
+      while ((rr>0) || (cc>0)) {
+	if ((rr>0) && (rev[rr][cc] == rev[rr-1][cc] + _verticalGap(ac, cc, n, sc.ge))) {
+	  --rr;
+	  rtrace.push_back('v');
+	} else if ((cc>0) && (rev[rr][cc] == rev[rr][cc-1] + _horizontalGap(ac, rr, m, sc.ge))) {
+	  --cc;
+	  rtrace.push_back('h');
+	} else {
+	  --rr;
+	  --cc;
+	  rtrace.push_back('s');
+	}
+      }
+      TAlign rvs;
+      _createAlignment(rtrace, sRev1.substr(0, consRight), sRev2.substr(0, refRight), rvs);
+
+      // Concat alignments
+      std::size_t gapref = (n-refRight) - refLeft;
+      std::size_t alilen = fwd.shape()[1] + rvs.shape()[1] + gapref;
+      align.resize(boost::extents[2][alilen]);
+      TAIndex jEnd = rvs.shape()[1];
+      for(TAIndex i = 0; i<fwd.shape()[0]; ++i) {
+	TAIndex alicol = 0;
+	for(;alicol<fwd.shape()[1]; ++alicol) align[i][alicol]=fwd[i][alicol];
+	for(TAIndex j = refLeft; j<(n-refRight); ++j, ++alicol) {
+	  if (i==0) align[i][alicol] = '-';
+	  else align[i][alicol] = s2[j];
+	}
+	for(TAIndex j = 0; j<rvs.shape()[1]; ++j, ++alicol) {
+	  switch (rvs[i][jEnd-j-1]) {
+	  case 'A': align[i][alicol] = 'T'; break;
+	  case 'C': align[i][alicol] = 'G'; break;
+	  case 'G': align[i][alicol] = 'C'; break;
+	  case 'T': align[i][alicol] = 'A'; break;
+	  case 'N': align[i][alicol] = 'N'; break;
+	  case '-': align[i][alicol] = '-'; break;
+	  default: break;
+	  }
+	}
+      } 
+    }
+    return true;
+  }
+
+
   template<typename TAlign1, typename TAlign2, typename TAlign, typename TAlignConfig, typename TScoreObject>
   inline int
   needle(TAlign1 const& a1, TAlign2 const& a2, TAlign& align, TAlignConfig const& ac, TScoreObject const& sc)

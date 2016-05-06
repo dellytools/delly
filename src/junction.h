@@ -191,9 +191,7 @@ namespace torali {
 	      typedef boost::multi_array<char, 2> TAlign;
 	      typedef typename TAlign::index TAIndex;
 	      TAlign alignFwd;
-	      AlignConfig<true, false> semiglobal;
-	      DnaScore<int> sc(c.aliscore.match, c.aliscore.mismatch, -1 * c.aliscore.match * c.minimumFlankSize, 0);
-	      gotoh(itSV->consensus, svRefStr, alignFwd, semiglobal, sc);
+	      _consRefAlignment(itSV->consensus, svRefStr, alignFwd, svType);
 	      TAIndex cStart, cEnd, rStart, rEnd, gS, gE;
 	      double percId = 0;
 	      _findSplit(alignFwd, cStart, cEnd, rStart, rEnd, gS, gE, percId, svType);
@@ -278,14 +276,15 @@ namespace torali {
 		    // Compute alignment to alternative haplotype
 		    TAlign alignAlt;
 		    DnaScore<int> simple(5, -4, -4, -4);
+		    AlignConfig<true, false> semiglobal;
 		    int32_t scoreA = needle(consProbe, sequence, alignAlt, semiglobal, simple);
-		    int32_t scoreAltThreshold = (int32_t) (c.flankQuality * consProbe.size() * 5 + (1.0 - c.flankQuality) * consProbe.size() * (-4));
+		    int32_t scoreAltThreshold = (int32_t) (c.flankQuality * consProbe.size() * simple.match + (1.0 - c.flankQuality) * consProbe.size() * simple.mismatch);
 		    double scoreAlt = (double) scoreA / (double) scoreAltThreshold;
 
 		    // Compute alignment to reference haplotype
 		    TAlign alignRef;
 		    int32_t scoreR = needle(refProbe, sequence, alignRef, semiglobal, simple);
-		    int32_t scoreRefThreshold = (int32_t) (c.flankQuality * refProbe.size() * 5 + (1.0 - c.flankQuality) * refProbe.size() * (-4));
+		    int32_t scoreRefThreshold = (int32_t) (c.flankQuality * refProbe.size() * simple.match + (1.0 - c.flankQuality) * refProbe.size() * simple.mismatch);
 		    double scoreRef = (double) scoreR / (double) scoreRefThreshold;
 		    
 		    // Any confident alignment?

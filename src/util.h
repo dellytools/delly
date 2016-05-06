@@ -24,6 +24,7 @@ Contact: Tobias Rausch (rausch@embl.de)
 #ifndef UTIL_H
 #define UTIL_H
 
+#include <boost/multi_array.hpp>
 #include <boost/unordered_map.hpp>
 #include <boost/algorithm/string.hpp>
 #include <boost/iostreams/filtering_streambuf.hpp>
@@ -154,22 +155,22 @@ namespace torali
     return seed;
   }
 
-    inline void
-    reverseComplement(std::string& sequence) 
-    {
-      std::string rev = boost::to_upper_copy(std::string(sequence.rbegin(), sequence.rend()));
-      std::size_t i = 0;
-      for(std::string::iterator revIt = rev.begin(); revIt != rev.end(); ++revIt, ++i) {
-	switch (*revIt) {
-	case 'A': sequence[i]='T'; break;
-	case 'C': sequence[i]='G'; break;
-	case 'G': sequence[i]='C'; break;
-	case 'T': sequence[i]='A'; break;
-	case 'N': sequence[i]='N'; break;
-	default: break;
-	}
+  inline void
+  reverseComplement(std::string& sequence) 
+  {
+    std::string rev = boost::to_upper_copy(std::string(sequence.rbegin(), sequence.rend()));
+    std::size_t i = 0;
+    for(std::string::iterator revIt = rev.begin(); revIt != rev.end(); ++revIt, ++i) {
+      switch (*revIt) {
+      case 'A': sequence[i]='T'; break;
+      case 'C': sequence[i]='G'; break;
+      case 'G': sequence[i]='C'; break;
+      case 'T': sequence[i]='A'; break;
+      case 'N': sequence[i]='N'; break;
+      default: break;
       }
     }
+  }
 
   template<typename TSVId>
     inline unsigned int

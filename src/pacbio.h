@@ -95,10 +95,6 @@ findGappedReads(TConfig const& c, std::vector<TStructuralVariantRecord>& svs,  S
 	typename TSVs::iterator svItEnd = svs.end();
 	for(;svIt!=svItEnd; ++svIt) {
 	  if (svIt->chr == refIndex) {
-	    // Get the SV reference
-	    std::string svRefStr = boost::to_upper_copy(std::string(seq->seq.s + svIt->svStartBeg, seq->seq.s + svIt->svEndEnd));
-	    if (svRefStr.find('N') != std::string::npos) continue; // Ignore regions with nearby Ns in the reference for the time being
-
 	    typedef std::set<std::string> TSplitReadSet;
 	    TSplitReadSet splitReadSet;
 	    std::vector<uint8_t> mapQV;
@@ -166,29 +162,35 @@ findGappedReads(TConfig const& c, std::vector<TStructuralVariantRecord>& svs,  S
 		  } else if (bam_cigar_op(cigar[i]) == BAM_CSOFT_CLIP) {
 		    // Count leading or trailing soft-clips as Cigar D
 		    int32_t countpos = rec->core.pos + rp;
-		    double meanqual = 0;
-		    for(uint32_t spointer = sp; spointer < sp + bam_cigar_oplen(cigar[i]); ++spointer) meanqual += quality[spointer];
-		    meanqual /= (double) bam_cigar_oplen(cigar[i]);
-		    double clipfraction = (double) bam_cigar_oplen(cigar[i]) / (double) rec->core.l_qseq;
-		    if ((meanqual >= c.minMapQual) && (clipfraction < 0.3)) {
-		      if ((i == 0) && (std::abs(svIt->svEnd - countpos) < 25)) {
-			for(std::size_t k = 0; k < bam_cigar_oplen(cigar[i]); ++k, --countpos) {
-			  if ((countpos >= svIt->svStart) && (countpos < svIt->svEnd)) {
-			    if (spStart == -1) {
-			      spStart = sp;
-			      spEnd = sp;
+		    bool foundN = false;
+		    for(uint32_t spointer = sp; spointer < sp + bam_cigar_oplen(cigar[i]); ++spointer) {
+		      if (sequence[spointer] == 'N') { foundN = true; break;  }
+		    }
+		    if (!foundN) {
+		      double meanqual = 0;
+		      for(uint32_t spointer = sp; spointer < sp + bam_cigar_oplen(cigar[i]); ++spointer) meanqual += quality[spointer];
+		      meanqual /= (double) bam_cigar_oplen(cigar[i]);
+		      double clipfraction = (double) bam_cigar_oplen(cigar[i]) / (double) rec->core.l_qseq;
+		      if ((meanqual >= c.minMapQual) && (clipfraction < 0.3)) {
+			if ((i == 0) && (std::abs(svIt->svEnd - countpos) < 25)) {
+			  for(std::size_t k = 0; k < bam_cigar_oplen(cigar[i]); ++k, --countpos) {
+			    if ((countpos >= svIt->svStart) && (countpos < svIt->svEnd)) {
+			      if (spStart == -1) {
+				spStart = sp;
+				spEnd = sp;
+			      }
+			      ++gapcount;
 			    }
-			    ++gapcount;
 			  }
-			}
-		      } else if ((i == rec->core.n_cigar -1) && (std::abs(svIt->svStart - countpos) < 25)) {
-			for(std::size_t k = 0; k < bam_cigar_oplen(cigar[i]); ++k, ++countpos) {
-			  if ((countpos >= svIt->svStart) && (countpos < svIt->svEnd)) {
-			    if (spStart == -1) {
-			      spStart = sp;
-			      spEnd = sp;
+			} else if ((i == rec->core.n_cigar -1) && (std::abs(svIt->svStart - countpos) < 25)) {
+			  for(std::size_t k = 0; k < bam_cigar_oplen(cigar[i]); ++k, ++countpos) {
+			    if ((countpos >= svIt->svStart) && (countpos < svIt->svEnd)) {
+			      if (spStart == -1) {
+				spStart = sp;
+				spEnd = sp;
+			      }
+			      ++gapcount;
 			    }
-			    ++gapcount;
 			  }
 			}
 		      }
@@ -229,10 +231,16 @@ findGappedReads(TConfig const& c, std::vector<TStructuralVariantRecord>& svs,  S
 
 	      // Calculate MSA
 	      svIt->srSupport = msa(c, splitReadSet, svIt->consensus);
-	      
+
 	      //std::cerr << hdr->target_name[svIt->chr] << ',' << svIt->svStart << ',' << svIt->svEnd << ',' << (svIt->svEnd - svIt->svStart) << ',' << svIt->srSupport << ',' << svIt->consensus << std::endl;
-	      
-	      // Search true split in candidates
+	      	      
+	      // Get the SV reference
+	      int32_t rs = std::max(0, svIt->svStart - (int32_t) (svIt->consensus.size()));
+	      int32_t re = std::min((int32_t) (hdr->target_len[svIt->chr]), (int32_t) (svIt->svEnd + svIt->consensus.size()));
+	      std::string svRefStr = boost::to_upper_copy(std::string(seq->seq.s + rs, seq->seq.s + re));
+	      if (svRefStr.find('N') != std::string::npos) continue; // Ignore regions with nearby Ns in the reference for the time being
+
+	      // Align consensus to reference
 	      if (!alignConsensus(c, *svIt, svRefStr, svType)) {
 		svIt->consensus = ""; 
 		svIt->srSupport = 0; 
@@ -410,25 +418,29 @@ inline int pacbioRun(TConfig const& c, TSVType svType) {
 		  // ToDo
 		  sp += bam_cigar_oplen(cigar[i]);
 		} else if (bam_cigar_op(cigar[i]) == BAM_CSOFT_CLIP) {
-		  /*
 		  // Count leading or trailing soft-clips as Cigar D
 		  int32_t countpos = rec->core.pos - vRIt->lower() + rp;
-		  double meanqual = 0;
-		  for(uint32_t spointer = sp; spointer < sp + bam_cigar_oplen(cigar[i]); ++spointer) meanqual += quality[spointer];
-		  meanqual /= (double) bam_cigar_oplen(cigar[i]);
-		  double clipfraction = (double) bam_cigar_oplen(cigar[i]) / (double) rec->core.l_qseq;
-		  if ((meanqual >= c.minMapQual) && (clipfraction < 0.3)) {
-		    if (i == 0) {
-		      for(std::size_t k = 0; k < bam_cigar_oplen(cigar[i]); ++k, --countpos) {
-			if ((countpos >= 0) && (countpos < interval_size) && (gapcount[countpos] < 255)) ++gapcount[countpos];
-		      }
-		    } else if (i == rec->core.n_cigar -1) {
-		      for(std::size_t k = 0; k < bam_cigar_oplen(cigar[i]); ++k, ++countpos) {
-			if ((countpos >= 0) && (countpos < interval_size) && (gapcount[countpos] < 255)) ++gapcount[countpos];
+		  bool foundN = false;
+		  for(uint32_t spointer = sp; spointer < sp + bam_cigar_oplen(cigar[i]); ++spointer) {
+		    if (sequence[spointer] == 'N') { foundN = true; break;  }
+		  }
+		  if (!foundN) {
+		    double meanqual = 0;
+		    for(uint32_t spointer = sp; spointer < sp + bam_cigar_oplen(cigar[i]); ++spointer) meanqual += quality[spointer];
+		    meanqual /= (double) bam_cigar_oplen(cigar[i]);
+		    double clipfraction = (double) bam_cigar_oplen(cigar[i]) / (double) rec->core.l_qseq;
+		    if ((meanqual >= c.minMapQual) && (clipfraction < 0.3)) {
+		      if (i == 0) {
+			for(std::size_t k = 0; k < bam_cigar_oplen(cigar[i]); ++k, --countpos) {
+			  if ((countpos >= 0) && (countpos < interval_size) && (gapcount[countpos] < 255)) ++gapcount[countpos];
+			}
+		      } else if (i == rec->core.n_cigar -1) {
+			for(std::size_t k = 0; k < bam_cigar_oplen(cigar[i]); ++k, ++countpos) {
+			  if ((countpos >= 0) && (countpos < interval_size) && (gapcount[countpos] < 255)) ++gapcount[countpos];
+			}
 		      }
 		    }
 		  }
-		  */
 		  sp += bam_cigar_oplen(cigar[i]);
 		}
 	      }
@@ -436,26 +448,6 @@ inline int pacbioRun(TConfig const& c, TSVType svType) {
 	  }
 	  bam_destroy1(rec);
 	  hts_itr_destroy(iter);
-
-	  /*
-	  // Annotate deletions
-	  for(uint32_t i = 0; i < gi[refIndex].size(); ++i) {
-	  int32_t s = gi[refIndex][i].first;
-	  int32_t e = gi[refIndex][i].second;
-	  if ((e < vRIt->lower()) || (s > vRIt->upper())) continue;
-	  std::string chrName = hdr->target_name[refIndex];
-	  int32_t from = std::max(s - vRIt->lower(), 0);
-	  int32_t to = std::min(e - vRIt->lower(), interval_size);
-	  double mmsum = 0;
-	  double gapsum = 0;
-	  for(int32_t i = from; i < to; ++i) {
-	    mmsum += totalcount[i];
-	    gapsum += gapcount[i];
-	  }
-	  double gapcov = gapsum / (mmsum + gapsum);
-	  std::cerr << chrName << '\t' << s << '\t' << e << "\t" << mmsum << "\t" << gapsum << "\t" << gapcov << std::endl;
-	  }
-	  */
 
 	  // Find deletions
 	  double mmsum = 0;
@@ -472,21 +464,19 @@ inline int pacbioRun(TConfig const& c, TSVType svType) {
 	  int32_t bestGapIndex = 0;
 	  for(int32_t i = probe_size; i<interval_size; ++i) {
 	    int32_t support = (int32_t) (gapsum / probe_size);
-	    if (support >= 2) {
-	      double gaprate = gapsum / (mmsum + gapsum);
-	      if (gaprate >= gaprateUth) {
-		if (gaprate > bestGapRate) {
-		  bestGapRate = gaprate;
-		  bestGapIndex = i;
-		  bestSupport = support;
-		}
-	      } else if (gaprate < gaprateLth) {
-		if (bestGapIndex) {
-		  peaks.push_back(Peak(bestGapRate , bestSupport, bestGapIndex));
-		  bestGapIndex = 0;
-		  bestGapRate = 0;
-		  bestSupport = 0;
-		}
+	    double gaprate = gapsum / (mmsum + gapsum);
+	    if ((support >= 2) && (gaprate >= gaprateUth)) {
+	      if (gaprate > bestGapRate) {
+		bestGapRate = gaprate;
+		bestGapIndex = i;
+		bestSupport = support;
+	      }
+	    } else if (gaprate < gaprateLth) {
+	      if (bestGapIndex) {
+		peaks.push_back(Peak(bestGapRate , bestSupport, bestGapIndex));
+		bestGapIndex = 0;
+		bestGapRate = 0;
+		bestSupport = 0;
 	      }
 	    }
 	    mmsum -= totalcount[i - probe_size];
@@ -587,6 +577,7 @@ inline int pacbioRun(TConfig const& c, TSVType svType) {
 	    svRec.insLen = 0;
 	    svRec.id = clique_count++;
 	    svs.push_back(svRec);
+	    //std::cerr << hdr->target_name[svRec.chr] << ',' << svRec.svStart << ',' << svRec.svEnd << ',' << (svRec.svEnd - svRec.svStart) << std::endl;
 	    svStart = -1;
 	    svEnd = -1;
 	  }

@@ -1499,9 +1499,9 @@ inline int dellyRun(Config const& c, TSVType svType) {
 			TAIndex cStart, cEnd, rStart, rEnd;
 			if (_findSplit(alignFwd, cStart, cEnd, rStart, rEnd, svType)) {
 			  if (_validSRAlignment(cStart, cEnd, rStart, rEnd, svType)) {
-			    int scoreThresholdAlt = (int) (c.flankQuality * (sequence.size() - (cEnd - cStart - 1)) * 5 + (1.0 - c.flankQuality) * (sequence.size() - (cEnd - cStart - 1)) * (-4));			    
+			    int scoreThresholdAlt = (int) (c.flankQuality * (sequence.size() - (cEnd - cStart - 1)) * sc.match + (1.0 - c.flankQuality) * (sequence.size() - (cEnd - cStart - 1)) * sc.mismatch);
 			    if (altScore > scoreThresholdAlt) {
-				
+
 			      // Debug consensus to reference alignment
 			      //for(TAIndex i = 0; i<alignFwd.shape()[0]; ++i) {
 			      //for(TAIndex j = 0; j<alignFwd.shape()[1]; ++j) std::cerr << alignFwd[i][j];
@@ -2003,12 +2003,15 @@ int delly(int argc, char **argv) {
       return 1;
     }
   } else if (c.technology == "pacbio") {
-    c.aliscore = DnaScore<int>(2, -5, -2, -1);
-    c.flankQuality = 0.9;
+    //c.aliscore = DnaScore<int>(2, -5, -2, -1);
+    c.aliscore = DnaScore<int>(5, -4, -2, -1);
+    c.flankQuality = 0.8;
     c.minimumFlankSize = 13;
-    //if (c.svType == "DEL") return pacbioRun(c, SVType<DeletionTag>());
-    std::cerr << "PacBio SV analysis not yet supported." << std::endl;
-    return 1;
+    if (c.svType == "DEL") return pacbioRun(c, SVType<DeletionTag>());
+    else {
+      std::cerr << "PacBio SV analysis not yet supported." << std::endl;
+      return 1;
+    }
   } else {
     std::cerr << "Technology " << c.technology << " is not supported by Delly." << std::endl;
     return 1;

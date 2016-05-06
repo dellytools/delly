@@ -539,34 +539,47 @@ namespace torali
     }
   }
 
+  template<typename TAlign, typename TTag>
+  inline bool
+    _consRefAlignment(std::string const& cons, std::string const& svRefStr, TAlign& aln, SVType<TTag>)
+  {
+    AlignConfig<true, false> semiglobal;
+    DnaScore<int> lnsc(5, -4, -4, -4);
+    bool reNeedle = longNeedle(cons, svRefStr, aln, semiglobal, lnsc);
+    return reNeedle;
+  }
+
+  template<typename TAlign>
+  inline bool
+    _consRefAlignment(std::string const& cons, std::string const& svRefStr, TAlign& aln, SVType<InsertionTag>)
+  {
+    typedef typename TAlign::index TAIndex;
+    AlignConfig<false, true> semiglobal;
+    DnaScore<int> lnsc(5, -4, -4, -4);
+    bool reNeedle = longNeedle(svRefStr, cons, aln, semiglobal, lnsc);
+    for(TAIndex j = 0; j<aln.shape()[1]; ++j) {
+      char tmp = aln[0][j];
+      aln[0][j] = aln[1][j];
+      aln[1][j] = tmp;
+    }	
+    return reNeedle;
+  }
+
   template<typename TConfig, typename TStructuralVariantRecord, typename TTag>
   inline bool
   alignConsensus(TConfig const& c, TStructuralVariantRecord& sv, std::string const& svRefStr, SVType<TTag> svType) {
     if (sv.consensus.size() < 35) return false;
-
-    // Create input alignments
     typedef boost::multi_array<char, 2> TAlign;
     typedef typename TAlign::index TAIndex;
-    TAlign cons;
-    cons.resize(boost::extents[1][sv.consensus.size()]);
-    TAIndex ind = 0;
-    for(typename std::string::const_iterator str = sv.consensus.begin(); str != sv.consensus.end(); ++str) cons[0][ind++] = *str;
-    TAlign ref;
-    ref.resize(boost::extents[1][svRefStr.size()]);
-    ind = 0;
-    for(typename std::string::const_iterator str = svRefStr.begin(); str != svRefStr.end(); ++str) ref[0][ind++] = *str;
 
     // Consensus to reference alignment
     TAlign alignFwd;
-    AlignConfig<true, false> semiglobal;
-    DnaScore<int> sc(c.aliscore.match, c.aliscore.mismatch, -1 * c.aliscore.match * 15, 0); // Don't penalize the split, ge=0 and make sure we have aligned segments > minimum SV Size
-    gotoh(cons, ref, alignFwd, semiglobal, sc);
+    if (!_consRefAlignment(sv.consensus, svRefStr, alignFwd, svType)) return false;
 
     // Check breakpoint
     TAIndex cStart, cEnd, rStart, rEnd, gS, gE;
     double quality = 0;
     if (!_findSplit(alignFwd, cStart, cEnd, rStart, rEnd, gS, gE, quality, svType)) return false;
-    if (quality < c.flankQuality) return false;
 
     // Debug consensus to reference alignment
     //for(TAIndex i = 0; i<alignFwd.shape()[0]; ++i) {
@@ -576,7 +589,11 @@ namespace torali
     //std::cerr << std::endl;
     //}
     //std::cerr << "Flanking alignment percent identity: " << quality << std::endl;
+    //std::cerr << cStart << ',' << cEnd << ',' << rStart << ',' << rEnd << std::endl;
     //std::cerr << std::endl;
+
+    // Check quality
+    if (quality < c.flankQuality) return false;
 
     // Find homology
     if (!_validSRAlignment(cStart, cEnd, rStart, rEnd, svType)) return false;
@@ -594,8 +611,9 @@ namespace torali
     if (c.technology == "illumina") {
       if (!_coordTransform(svRefStr, sv, rStart, rEnd, finalGapStart, finalGapEnd, svType)) return false;
     } else if (c.technology == "pacbio") {
-      finalGapStart = sv.svStartBeg + rStart - 1;
-      finalGapEnd = sv.svStartBeg + rEnd - 1;
+      int32_t rs = std::max(0, sv.svStart - (int32_t) (sv.consensus.size()));
+      finalGapStart = rs + rStart - 1;
+      finalGapEnd = rs + rEnd - 1;
     }
 
     // Set breakpoint & quality
