@@ -75,28 +75,70 @@ namespace torali
       return false;
     } else {
       // Find best join
+      TMatrix bestMat(boost::extents[m+1][n+1]);
+      for(std::size_t row = 0; row <= m; ++row) {
+	bestMat[row][0] = mat[row][0];
+	for(std::size_t col = 1; col <= n; ++col) {
+	  if (mat[row][col] > bestMat[row][col-1]) bestMat[row][col] = mat[row][col];
+	  else bestMat[row][col] = bestMat[row][col-1];
+	}
+      }
+      TMatrix bestRev(boost::extents[m+1][n+1]);
+      for(std::size_t row = 0; row <= m; ++row) {
+	bestRev[row][0] = rev[row][0];
+	for(std::size_t col = 1; col <= n; ++col) {
+	  if (rev[row][col] > bestRev[row][col-1]) bestRev[row][col] = rev[row][col];
+	  else bestRev[row][col] = bestRev[row][col-1];
+	}
+      }
       TScoreValue bestScore = mat[m][n];
       std::size_t consLeft = 0;
-      std::size_t consRight = 0;
       std::size_t refLeft = 0;
+      for(std::size_t row = 0; row<=m; ++row) {
+	for(std::size_t col = 0; col<=n; ++col) {
+	  if (bestMat[row][col]+bestRev[m-row][n-col] > bestScore) {
+	    bestScore=bestMat[row][col]+bestRev[m-row][n-col];
+	    consLeft = row;
+	    refLeft = col;
+	  }
+	}
+      }
+      std::size_t consRight = m - consLeft;
       std::size_t refRight = 0;
+      // Find right bound
+      for(std::size_t right = 0; right<=(n-refLeft); ++right) {
+	if (mat[consLeft][refLeft] + rev[consRight][right] == bestScore) {
+	  refRight = right;
+	}
+      }
+
+      // Debug best join
+      /*
+      TScoreValue bScore = mat[m][n];
+      std::size_t cLeft = 0;
+      std::size_t cRight = 0;
+      std::size_t rLeft = 0;
+      std::size_t rRight = 0;
       for(std::size_t fwdcut = 0; fwdcut<=m; ++fwdcut) {
 	std::size_t revcut = m - fwdcut;
 	// Iterate all valid collinear alignments on the reference
 	for(std::size_t left = 0; left<=n; ++left) {
 	  for(std::size_t right = 0; right<=(n-left); ++right) {
-	    if (mat[fwdcut][left] + rev[revcut][right] > bestScore) {
-	      bestScore = mat[fwdcut][left] + rev[revcut][right];
-	      consLeft = fwdcut;
-	      consRight = revcut;
-	      refLeft = left;
-	      refRight = right;
+	    if (mat[fwdcut][left] + rev[revcut][right] > bScore) {
+	      bScore = mat[fwdcut][left] + rev[revcut][right];
+	      cLeft = fwdcut;
+	      cRight = revcut;
+	      rLeft = left;
+	      rRight = right;
 	    }
 	  }
 	}
       }
-      // Debug best join
-      //std::cerr << bestScore << ':' << s1.size() << ',' << s2.size() << ':' << consLeft << ',' << (m-consRight) << ',' << refLeft << ',' << (n-refRight) << std::endl;
+      std::cerr << mat[m][n] << ',' << bScore << ';' << s1.size() << ',' << s2.size() << ';' << cLeft << ',' << (m-cRight) << ',' << rLeft << ',' << (n-rRight) << std::endl;
+      std::cerr << mat[m][n] << ',' << bestScore << ';' << s1.size() << ',' << s2.size() << ';' << consLeft << ',' << (m-consRight) << ',' << refLeft << ',' << (n-refRight) << std::endl;
+      */
+
+      // Better split found?
       if (bestScore == mat[m][n]) return false; // No split found
 
       // Trace-back fwd

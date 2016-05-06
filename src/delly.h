@@ -89,7 +89,6 @@ struct Config {
   boost::filesystem::path vcffile;
   boost::filesystem::path genome;
   boost::filesystem::path exclude;
-  boost::filesystem::path peDump;
   std::vector<boost::filesystem::path> files;
 };
 
@@ -176,18 +175,14 @@ struct cstyle_str {
 
 
 // Parse Delly vcf file
-template<typename TConfig, typename TRefLen, typename TSize, typename TStructuralVariantRecord, typename TTag>
+template<typename TConfig, typename TSize, typename TStructuralVariantRecord, typename TTag>
 inline void
-vcfParse(TConfig const& c, TRefLen const& reflen, TSize const overallMaxISize, std::vector<TStructuralVariantRecord>& svs, SVType<TTag> svType)
+vcfParse(TConfig const& c, bam_hdr_t* hd, TSize const overallMaxISize, std::vector<TStructuralVariantRecord>& svs, SVType<TTag> svType)
 {
   // Load bcf file
   htsFile* ifile = bcf_open(c.vcffile.string().c_str(), "r");
   bcf_hdr_t* hdr = bcf_hdr_read(ifile);
   bcf1_t* rec = bcf_init();
-
-  // Load bam file
-  samFile* samfile = sam_open(c.files[0].string().c_str(), "r");
-  bam_hdr_t* hd = sam_hdr_read(samfile);
 
   // Parse bcf
   int32_t nsvend = 0;
@@ -255,9 +250,9 @@ vcfParse(TConfig const& c, TRefLen const& reflen, TSize const overallMaxISize, s
 
     // Assign remaining fields
     svRec.svStartBeg = std::max(svRec.svStart - 1 - overallMaxISize, 0);
-    svRec.svStartEnd = std::min((uint32_t) svRec.svStart - 1 + overallMaxISize, reflen[svRec.chr]);
+    svRec.svStartEnd = std::min((uint32_t) svRec.svStart - 1 + overallMaxISize, hd->target_len[svRec.chr]);
     svRec.svEndBeg = std::max(svRec.svEnd - 1 - overallMaxISize, 0);
-    svRec.svEndEnd = std::min((uint32_t) svRec.svEnd - 1 + overallMaxISize, reflen[svRec.chr2]);
+    svRec.svEndEnd = std::min((uint32_t) svRec.svEnd - 1 + overallMaxISize, hd->target_len[svRec.chr2]);
     if ((svRec.chr==svRec.chr2) && (svRec.svStartEnd > svRec.svEndBeg)) {
       unsigned int midPointDel = ((svRec.svEnd - svRec.svStart) / 2) + svRec.svStart;
       svRec.svStartEnd = midPointDel -1;
@@ -265,10 +260,6 @@ vcfParse(TConfig const& c, TRefLen const& reflen, TSize const overallMaxISize, s
     }
     svs.push_back(svRec);
   }
-  // Close bam
-  sam_close(samfile);
-  bam_hdr_destroy(hd);
-
   // Clean-up
   free(svend);
   free(svt);
@@ -607,8 +598,6 @@ findPutativeSplitReads(TConfig const& c, std::vector<TStructuralVariantRecord>& 
   typedef std::vector<TStructuralVariantRecord> TSVs;
 
   // Open file handles
-  typedef std::vector<std::string> TRefNames;
-  TRefNames refnames;
   typedef std::vector<samFile*> TSamFile;
   typedef std::vector<hts_idx_t*> TIndex;
   TSamFile samfile;
@@ -618,12 +607,9 @@ findPutativeSplitReads(TConfig const& c, std::vector<TStructuralVariantRecord>& 
   for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
     samfile[file_c] = sam_open(c.files[file_c].string().c_str(), "r");
     idx[file_c] = sam_index_load(samfile[file_c], c.files[file_c].string().c_str());
-    if (!file_c) {
-      bam_hdr_t* hdr = sam_hdr_read(samfile[file_c]);
-      for (int i = 0; i<hdr->n_targets; ++i) refnames.push_back(hdr->target_name[i]);
-      bam_hdr_destroy(hdr);
-    }
   }
+  bam_hdr_t* hdr = sam_hdr_read(samfile[0]);
+
 
   // Parse genome, no single-anchored reads anymore only soft-clipped reads
   unsigned int totalSplitReadsAligned = 0;
@@ -633,11 +619,11 @@ findPutativeSplitReads(TConfig const& c, std::vector<TStructuralVariantRecord>& 
   seq = kseq_init(fp);
   boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
   std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Split-read alignment" << std::endl;
-  boost::progress_display show_progress( refnames.size() );
+  boost::progress_display show_progress( hdr->n_targets );
   while ((l = kseq_read(seq)) >= 0) {
     // Find reference index
-    for(int32_t refIndex=0; refIndex < (int32_t) refnames.size(); ++refIndex) {
-      if (seq->name.s == refnames[refIndex]) {
+    for(int32_t refIndex=0; refIndex < hdr->n_targets; ++refIndex) {
+      if (std::string(seq->name.s) == std::string(hdr->target_name[refIndex])) {
 	++show_progress;
 
 	// Iterate all structural variants on this chromosome
@@ -750,6 +736,7 @@ findPutativeSplitReads(TConfig const& c, std::vector<TStructuralVariantRecord>& 
   gzclose(fp);
 
   // Clean-up
+  bam_hdr_destroy(hdr);
   for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
     hts_idx_destroy(idx[file_c]);
     sam_close(samfile[file_c]);
@@ -986,15 +973,15 @@ _svSizeCheck(TSize const, TSize const, SVType<TranslocationTag>) {
 }
 
 
-template<typename TConfig, typename TRefNames, typename TSampleLibrary, typename TSVs, typename TCountMap, typename TTag>
+template<typename TConfig, typename TSampleLibrary, typename TSVs, typename TCountMap, typename TTag>
 inline void
-_annotateCoverage(TConfig const& c, TRefNames const& refnames, TSampleLibrary& sampleLib, TSVs& svs, TCountMap& countMap, SVType<TTag>) 
+_annotateCoverage(TConfig const& c, bam_hdr_t* hdr, TSampleLibrary& sampleLib, TSVs& svs, TCountMap& countMap, SVType<TTag>) 
 {
   // Find Ns in the reference genome
   typedef boost::icl::interval_set<int> TNIntervals;
   typedef std::vector<TNIntervals> TNGenome;
   TNGenome ni;
-  ni.resize(refnames.size());
+  ni.resize( hdr->n_targets );
 
   if (boost::filesystem::exists(c.genome) && boost::filesystem::is_regular_file(c.genome) && boost::filesystem::file_size(c.genome)) {
     kseq_t *seq;
@@ -1002,8 +989,8 @@ _annotateCoverage(TConfig const& c, TRefNames const& refnames, TSampleLibrary& s
     gzFile fp = gzopen(c.genome.string().c_str(), "r");
     seq = kseq_init(fp);
     while ((l = kseq_read(seq)) >= 0) {
-      for(int32_t refIndex=0; refIndex < (int32_t) refnames.size(); ++refIndex) {
-	if (seq->name.s == refnames[refIndex]) {
+      for(int32_t refIndex=0; refIndex < hdr->n_targets; ++refIndex) {
+	if (std::string(seq->name.s) == std::string(hdr->target_name[refIndex])) {
 	  bool nrun = false;
 	  int nstart = l;
 	  for(int i=0; i<l; ++i) {
@@ -1089,16 +1076,16 @@ _annotateCoverage(TConfig const& c, TRefNames const& refnames, TSampleLibrary& s
   }
 }
 
-template<typename TConfig, typename TRefNames, typename TSampleLibrary, typename TSVs, typename TCountMap>
+template<typename TConfig, typename TSampleLibrary, typename TSVs, typename TCountMap>
 inline void
-_annotateCoverage(TConfig const&, TRefNames const&, TSampleLibrary&, TSVs&, TCountMap&, SVType<TranslocationTag>) 
+_annotateCoverage(TConfig const&, bam_hdr_t*, TSampleLibrary&, TSVs&, TCountMap&, SVType<TranslocationTag>) 
 {
   //Nop
 }
 
-template<typename TConfig, typename TRefNames, typename TSampleLibrary, typename TSVs, typename TCountMap>
+template<typename TConfig, typename TSampleLibrary, typename TSVs, typename TCountMap>
 inline void
-_annotateCoverage(TConfig const&, TRefNames const&, TSampleLibrary&, TSVs&, TCountMap&, SVType<InsertionTag>) 
+_annotateCoverage(TConfig const&, bam_hdr_t*, TSampleLibrary&, TSVs&, TCountMap&, SVType<InsertionTag>) 
 {
   //Nop
 }
@@ -1129,9 +1116,9 @@ _smallIndelDetection(SVType<InsertionTag>)
   return true;
 }
 
-template<typename TCompEdgeList, typename TBamRecord, typename TDumpFile, typename TRefLength, typename TRefNames, typename TSVs, typename TSVType>
+template<typename TCompEdgeList, typename TBamRecord, typename TSVs, typename TSVType>
 inline void
-_searchCliques(TCompEdgeList& compEdge, TBamRecord const& bamRecord, bool const dumpPe, TDumpFile& dumpPeFile, TRefLength const& reflen, TRefNames const& refnames, TSVs& svs, unsigned int& clique_count, int const overallMaxISize, TSVType svType) {
+_searchCliques(bam_hdr_t* hdr, TCompEdgeList& compEdge, TBamRecord const& bamRecord, TSVs& svs, unsigned int& clique_count, int const overallMaxISize, TSVType svType) {
   typedef typename TCompEdgeList::mapped_type TEdgeList;
   typedef typename TEdgeList::value_type TEdgeRecord;
 
@@ -1177,11 +1164,11 @@ _searchCliques(TCompEdgeList& compEdge, TBamRecord const& bamRecord, bool const 
       svRec.chr = clusterRefID;
       svRec.chr2 = clusterMateRefID;
       svRec.svStartBeg = std::max((int) svStart - overallMaxISize, 0);
-      svRec.svStart = std::min((uint32_t) svStart + 1, reflen[clusterRefID]);
-      svRec.svStartEnd = std::min((uint32_t) svStart + overallMaxISize, reflen[clusterRefID]);
+      svRec.svStart = std::min((uint32_t) svStart + 1, hdr->target_len[clusterRefID]);
+      svRec.svStartEnd = std::min((uint32_t) svStart + overallMaxISize, hdr->target_len[clusterRefID]);
       svRec.svEndBeg = std::max((int) svEnd - overallMaxISize, 0);
-      svRec.svEnd = std::min((uint32_t) svEnd+1, reflen[clusterMateRefID]);
-      svRec.svEndEnd = std::min((uint32_t) svEnd + overallMaxISize, reflen[clusterMateRefID]);
+      svRec.svEnd = std::min((uint32_t) svEnd+1, hdr->target_len[clusterMateRefID]);
+      svRec.svEndEnd = std::min((uint32_t) svEnd + overallMaxISize, hdr->target_len[clusterMateRefID]);
       svRec.peSupport = clique.size();
       svRec.wiggle = abs(wiggle);
       std::vector<uint8_t> mapQV;
@@ -1203,22 +1190,13 @@ _searchCliques(TCompEdgeList& compEdge, TBamRecord const& bamRecord, bool const 
       svRec.insLen = inslenV[inslenV.size()/2];
       svRec.id = clique_count++;
       svs.push_back(svRec);
-      
-      // Dump PEs
-      if (dumpPe) {
-	for(typename TCliqueMembers::const_iterator itC=clique.begin(); itC!=clique.end(); ++itC) {
-	  std::stringstream id;
-	  id << _addID(svType) << std::setw(8) << std::setfill('0') << svRec.id;
-	  dumpPeFile << id.str() << "\t" << refnames[bamRecord[*itC].tid] << "\t" << bamRecord[*itC].pos << "\t" <<  refnames[bamRecord[*itC].mtid] << "\t" << bamRecord[*itC].mpos << "\t" << (unsigned int) bamRecord[*itC].MapQuality << std::endl;
-	}
-      }
     }
   }
 }
 
-template<typename TIterator, typename TRefLength, typename TSVs, typename TSVType>
+template<typename TIterator, typename TSVs, typename TSVType>
 inline void
-_processSRCluster(TIterator itInit, TIterator itEnd, int32_t refIndex, int32_t bpWindowLen, TRefLength const& reflen, TSVs& svs, TSVs& splitSVs, unsigned int& clique_count, TSVType svType) 
+_processSRCluster(bam_hdr_t* hdr, TIterator itInit, TIterator itEnd, int32_t refIndex, int32_t bpWindowLen, TSVs& svs, TSVs& splitSVs, unsigned int& clique_count, TSVType svType) 
 {
   typedef typename TSVs::value_type TStructuralVariant;
 
@@ -1259,10 +1237,10 @@ _processSRCluster(TIterator itInit, TIterator itEnd, int32_t refIndex, int32_t b
 	// Augment existing SV call
 	itSV->svStartBeg = std::max(svStartBeg, 0);
 	itSV->svStart = svStart;
-	itSV->svStartEnd = std::min((uint32_t) svStart + bpWindowLen, reflen[itSV->chr]);
+	itSV->svStartEnd = std::min((uint32_t) svStart + bpWindowLen, hdr->target_len[itSV->chr]);
 	itSV->svEndBeg = std::max((int32_t) svEnd - bpWindowLen, 0);
 	itSV->svEnd = svEnd;
-	itSV->svEndEnd = std::min((uint32_t) svEndEnd, reflen[itSV->chr2]);
+	itSV->svEndEnd = std::min((uint32_t) svEndEnd, hdr->target_len[itSV->chr2]);
 	if ((itSV->chr == itSV->chr2) && (itSV->svStartEnd > itSV->svEndBeg)) {
 	  unsigned int midPointDel = ((itSV->svEnd - itSV->svStart) / 2) + itSV->svStart;
 	  itSV->svStartEnd = midPointDel -1;
@@ -1281,10 +1259,10 @@ _processSRCluster(TIterator itInit, TIterator itEnd, int32_t refIndex, int32_t b
       svRec.chr2 = refIndex;
       svRec.svStartBeg = std::max(svStartBeg, 0);
       svRec.svStart = svStart;
-      svRec.svStartEnd = std::min((uint32_t) svStart + bpWindowLen, reflen[svRec.chr]);
+      svRec.svStartEnd = std::min((uint32_t) svStart + bpWindowLen, hdr->target_len[svRec.chr]);
       svRec.svEndBeg = std::max((int32_t) svEnd - bpWindowLen, 0);
       svRec.svEnd = svEnd;
-      svRec.svEndEnd = std::min((uint32_t) svEndEnd, reflen[svRec.chr2]);
+      svRec.svEndEnd = std::min((uint32_t) svEndEnd, hdr->target_len[svRec.chr2]);
       svRec.peSupport = 0;
       svRec.wiggle = bpWindowLen;
       std::sort(mapQV.begin(), mapQV.end());
@@ -1327,10 +1305,6 @@ inline int dellyRun(Config const& c, TSVType svType) {
       if (libIt->second.maxNormalISize > overallMaxISize) overallMaxISize = libIt->second.maxNormalISize;
 
   // Open file handles
-  typedef std::vector<std::string> TRefNames;
-  typedef std::vector<uint32_t> TRefLength;
-  TRefNames refnames;
-  TRefLength reflen;
   typedef std::vector<samFile*> TSamFile;
   typedef std::vector<hts_idx_t*> TIndex;
   TSamFile samfile;
@@ -1342,10 +1316,6 @@ inline int dellyRun(Config const& c, TSVType svType) {
     idx[file_c] = sam_index_load(samfile[file_c], c.files[file_c].string().c_str());
   }
   bam_hdr_t* hdr = sam_hdr_read(samfile[0]);
-  for (int i = 0; i<hdr->n_targets; ++i) {
-    refnames.push_back(hdr->target_name[i]);
-    reflen.push_back(hdr->target_len[i]);
-  }
 
   // Exclude intervals
   typedef boost::icl::interval_set<uint32_t> TChrIntervals;
@@ -1392,15 +1362,6 @@ inline int dellyRun(Config const& c, TSVType svType) {
     if (istart + 1 < hdr->target_len[i]) validRegions[i].insert(TIVal::right_open(istart, hdr->target_len[i]));
   }
   exclg.clear();
-
-  // Dump PE
-  bool dumpPe=false;
-  std::ofstream dumpPeFile;
-  if (c.peDump.string().size()) {
-    dumpPe=true;
-    dumpPeFile.open(c.peDump.string().c_str());
-    dumpPeFile << "#id\tchr\tpos\tmatechr\tmatepos\tmapq" << std::endl;
-  }
 
   // Qualities
   typedef boost::unordered_map<std::size_t, uint8_t> TQualities;
@@ -1609,7 +1570,7 @@ inline int dellyRun(Config const& c, TSVType svType) {
 	if (bamItIndex > lastConnectedNode) {
 	  // Clean edge lists
 	  if (!compEdge.empty()) {
-	    _searchCliques(compEdge, bamRecord, dumpPe, dumpPeFile, reflen, refnames, svs, clique_count, overallMaxISize, svType);
+	    _searchCliques(hdr, compEdge, bamRecord, svs, clique_count, overallMaxISize, svType);
 	    lastConnectedNodeStart = lastConnectedNode;
 	    compEdge.clear();
 	  }
@@ -1680,7 +1641,7 @@ inline int dellyRun(Config const& c, TSVType svType) {
 	}
       }
       if (!compEdge.empty()) {
-	_searchCliques(compEdge, bamRecord, dumpPe, dumpPeFile, reflen, refnames, svs, clique_count, overallMaxISize, svType);
+	_searchCliques(hdr, compEdge, bamRecord, svs, clique_count, overallMaxISize, svType);
 	compEdge.clear();
       }
       
@@ -1699,7 +1660,7 @@ inline int dellyRun(Config const& c, TSVType svType) {
 	for(TSplitRecord::const_iterator splitIt = splitRecord.begin(); splitIt!=splitRecord.end(); ++splitIt) {
 	  if ((maxLookAhead) && (splitIt->splitbeg > maxLookAhead)) {
 	    // Process split read cluster
-	    _processSRCluster(splitClusterIt, splitIt, refIndex, bpWindowLen, reflen, svs, splitSVs, clique_count, svType);
+	    _processSRCluster(hdr, splitClusterIt, splitIt, refIndex, bpWindowLen, svs, splitSVs, clique_count, svType);
 	    maxLookAhead = 0;
 	    splitClusterIt = splitRecord.end();
 	  }
@@ -1709,7 +1670,7 @@ inline int dellyRun(Config const& c, TSVType svType) {
 	  }
 	}
 	TSplitRecord::const_iterator splitIt = splitRecord.end();
-	_processSRCluster(splitClusterIt, splitIt, refIndex, bpWindowLen, reflen, svs, splitSVs, clique_count, svType);
+	_processSRCluster(hdr, splitClusterIt, splitIt, refIndex, bpWindowLen, svs, splitSVs, clique_count, svType);
 	
 	// Append soft clip alignment records
 	svs.insert(svs.end(), splitSVs.begin(), splitSVs.end());
@@ -1719,16 +1680,6 @@ inline int dellyRun(Config const& c, TSVType svType) {
   kseq_destroy(seq);
   gzclose(fp);
   
-  // Close dump PE file
-  if (dumpPe) dumpPeFile.close();
-
-  // Clean-up
-  for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
-    hts_idx_destroy(idx[file_c]);
-    sam_close(samfile[file_c]);
-  }
-  bam_hdr_destroy(hdr);
-
   // Split-read search
   if (!c.hasVcfFile) {
     if (boost::filesystem::exists(c.genome) && boost::filesystem::is_regular_file(c.genome) && boost::filesystem::file_size(c.genome)) 
@@ -1771,7 +1722,7 @@ inline int dellyRun(Config const& c, TSVType svType) {
       }
   } else {
     // Read SV records from input vcffile
-    vcfParse(c, reflen, overallMaxISize, svs, svType);
+    vcfParse(c, hdr, overallMaxISize, svs, svType);
   }
 
   // Debug output
@@ -1800,11 +1751,18 @@ inline int dellyRun(Config const& c, TSVType svType) {
   // Annotate coverage
   typedef boost::unordered_map<TSampleSVPair, ReadCount> TRCMap;
   TRCMap rcMap;
-  _annotateCoverage(c, refnames, sampleLib, svs, rcMap, svType);
+  _annotateCoverage(c, hdr, sampleLib, svs, rcMap, svType);
 
   // VCF output
   if (svs.size()) {
     vcfOutput(c, svs, junctionCountMap, rcMap, spanCountMap, svType);
+  }
+
+  // Clean-up
+  bam_hdr_destroy(hdr);
+  for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
+    hts_idx_destroy(idx[file_c]);
+    sam_close(samfile[file_c]);
   }
 
   // Output library statistics
@@ -1865,7 +1823,6 @@ int delly(int argc, char **argv) {
   boost::program_options::options_description hidden("Hidden options");
   hidden.add_options()
     ("input-file", boost::program_options::value< std::vector<boost::filesystem::path> >(&c.files), "input file")
-    ("pe-dump,p", boost::program_options::value<boost::filesystem::path>(&c.peDump)->default_value(""), "outfile to dump PE info")
     ("pe-fraction,c", boost::program_options::value<float>(&c.percentAbnormal)->default_value(0.0), "fixed fraction c of discordant PEs, for c=0 MAD cutoff is used")
     ("pruning,j", boost::program_options::value<uint32_t>(&c.graphPruning)->default_value(1000), "PE graph pruning cutoff")
     ;

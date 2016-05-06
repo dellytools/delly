@@ -586,13 +586,6 @@ inline int pacbioRun(TConfig const& c, TSVType svType) {
     }
   }
 
-  // Clean-up
-  for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
-    hts_idx_destroy(idx[file_c]);
-    sam_close(samfile[file_c]);
-  }
-  bam_hdr_destroy(hdr);
-
   // Gapped alignment search
   if (!c.hasVcfFile) {
     if (boost::filesystem::exists(c.genome) && boost::filesystem::is_regular_file(c.genome) && boost::filesystem::file_size(c.genome)) {
@@ -620,7 +613,7 @@ inline int pacbioRun(TConfig const& c, TSVType svType) {
     }
   } else {
     // Read SV records from input vcffile
-    vcfParse(c, reflen, probe_size, svs, svType);
+    vcfParse(c, hdr, probe_size, svs, svType);
   }
 
   // Any SVs for genotyping
@@ -650,6 +643,13 @@ inline int pacbioRun(TConfig const& c, TSVType svType) {
 
   // VCF output
   if (svs.size()) vcfOutput(c, svs, junctionCountMap, rcMap, spanCountMap, svType);
+
+  // Clean-up
+  bam_hdr_destroy(hdr);
+  for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
+    hts_idx_destroy(idx[file_c]);
+    sam_close(samfile[file_c]);
+  }
 
 #ifdef PROFILE
   ProfilerStop();
