@@ -60,6 +60,7 @@ namespace torali
 
 struct MergeConfig {
   bool filterForPass;
+  bool filterForPrecise;
   uint8_t reqCT;
   uint32_t svcounter;
   uint32_t bpoffset;
@@ -161,6 +162,8 @@ void _fillIntervalMap(MergeConfig const& c, TGenomeIntervals& iScore, TContigMap
       if ((std::string(svt) != "TRA") && ((svEnd - svStart < c.minsize) || (svEnd - svStart > c.maxsize))) continue;
       bool precise = false;
       if (bcf_get_info_flag(hdr, rec, "PRECISE", 0, 0) > 0) precise=true;
+      if ((c.filterForPrecise) && (!precise)) continue;
+
       unsigned int peSupport = 0;
       if (bcf_get_info_int32(hdr, rec, "PE", &pe, &npe) > 0) peSupport = *pe;
       unsigned int srSupport = 0;
@@ -377,10 +380,16 @@ void _outputSelectedIntervals(MergeConfig& c, TGenomeIntervals const& iSelected,
       bool pass = true;
       if (c.filterForPass) pass = (bcf_has_filter(hdr[idx], rec[idx], const_cast<char*>("PASS"))==1);
 
+      // Check PRECISE
+      bool precise = false;
+      bool passPrecise = true;
+      if (bcf_get_info_flag(hdr[idx], rec[idx], "PRECISE", 0, 0) > 0) precise=true;
+      if ((c.filterForPrecise) && (!precise)) passPrecise = false;
+
       // Correct CT
       uint8_t ict = 0;
       if (bcf_get_info_string(hdr[idx], rec[idx], "CT", &ct, &nct) > 0) ict = _decodeOrientation(std::string(ct));
-      if ((pass) && (ict == c.reqCT)) {
+      if ((passPrecise) && (pass) && (ict == c.reqCT)) {
 	// Correct size
 	std::string chrName(bcf_hdr_id2name(hdr[idx], rec[idx]->rid));
 	uint32_t tid = cMap[chrName];
@@ -390,8 +399,6 @@ void _outputSelectedIntervals(MergeConfig& c, TGenomeIntervals const& iSelected,
 
 	// Parse INFO fields
 	if ((std::string(svt) == "TRA") || ((std::string(svt) != "TRA") && (svEnd - svStart >= c.minsize) && (svEnd - svStart <= c.maxsize))) {
-	  bool precise = false;
-	  if (bcf_get_info_flag(hdr[idx], rec[idx], "PRECISE", 0, 0) > 0) precise=true;
 	  unsigned int peSupport = 0;
 	  if (bcf_get_info_int32(hdr[idx], rec[idx], "PE", &pe, &npe) > 0) peSupport = *pe;
 	  unsigned int srSupport = 0;
@@ -677,6 +684,7 @@ int merge(int argc, char **argv) {
     ("outfile,o", boost::program_options::value<boost::filesystem::path>(&c.outfile)->default_value("sv.bcf"), "Merged SV BCF output file")
     ("minsize,m", boost::program_options::value<uint32_t>(&c.minsize)->default_value(0), "min. SV size")
     ("maxsize,n", boost::program_options::value<uint32_t>(&c.maxsize)->default_value(1000000), "max. SV size")
+    ("precise,c", "Filter sites for PRECISE")
     ("pass,p", "Filter sites for PASS")
     ;
 
@@ -716,6 +724,10 @@ int merge(int argc, char **argv) {
   // Filter for PASS
   if (vm.count("pass")) c.filterForPass = true;
   else c.filterForPass = false;
+
+  // Filter for PRECISE
+  if (vm.count("precise")) c.filterForPrecise = true;
+  else c.filterForPrecise = false;
 
   // Show cmd
   boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
