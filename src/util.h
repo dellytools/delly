@@ -364,7 +364,7 @@ namespace torali
     for(unsigned int file_c = 0; file_c < files.size(); ++file_c) {
       // Minimum and maximum number of pairs used to estimate library parameters for each RG library
       unsigned int maxNumPairs=1000000;
-      unsigned int minNumPairs=1000;
+      unsigned int minNumPairs=10000;
 
       // Store the counts in an object for each RG librar
       typedef boost::unordered_map<std::string, _LibraryParams> TParams;
