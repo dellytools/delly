@@ -59,7 +59,7 @@ namespace torali
     double median;
     double mad;
     double percentileCutoff;
-    std::vector<int32_t> vecISize;
+    std::vector<uint16_t> vecISize;
   };
 
   // Read count struct
@@ -363,7 +363,7 @@ namespace torali
 #pragma omp parallel for default(shared)
     for(unsigned int file_c = 0; file_c < files.size(); ++file_c) {
       // Minimum and maximum number of pairs used to estimate library parameters for each RG library
-      unsigned int maxNumPairs=5000000;
+      unsigned int maxNumPairs=1000000;
       unsigned int minNumPairs=1000;
 
       // Store the counts in an object for each RG librar
@@ -420,7 +420,7 @@ namespace torali
 	    rG = std::string(rg);
 	  }
 	  TParams::iterator paramIt = params.find(rG);
-	  if (paramIt->second.processedNumPairs < maxNumPairs) {
+	  if ((paramIt->second.processedNumPairs < maxNumPairs) && (abs(rec->core.isize) < 65000)) {
 	    paramIt->second.vecISize[paramIt->second.processedNumPairs] = abs(rec->core.isize);
 	    ++paramIt->second.orient[getStrandIndependentOrientation(rec->core)];
 	    ++paramIt->second.processedNumPairs;
@@ -450,7 +450,7 @@ namespace torali
 	  double libmed = 0;
 	  getMedian(paramIt->second.vecISize.begin(), paramIt->second.vecISize.end(), libmed);
 	  if (libmed >= 1000) {
-	    typedef std::vector<int32_t> TVecISize;
+	    typedef std::vector<uint16_t> TVecISize;
 	    TVecISize vecISizeTmp;
 	    typename TVecISize::const_iterator iSizeBeg = paramIt->second.vecISize.begin();
 	    typename TVecISize::const_iterator iSizeEnd = paramIt->second.vecISize.end();
