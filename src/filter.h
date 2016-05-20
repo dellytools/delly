@@ -61,7 +61,7 @@ Contact: Tobias Rausch (rausch@embl.de)
 #include "util.h"
 #include "modvcf.h"
 
-namespace torali 
+namespace torali
 {
 
 
@@ -103,7 +103,7 @@ filterRun(TFilterConfig const& c, TSVType svType) {
 
   // Open output VCF file
   htsFile *ofile = hts_open(c.outfile.string().c_str(), "wb");
-  bcf_hdr_t *hdr_out = bcf_hdr_dup(hdr);  
+  bcf_hdr_t *hdr_out = bcf_hdr_dup(hdr);
   if (c.filter == "somatic") {
     bcf_hdr_remove(hdr_out, BCF_HL_INFO, "RDRATIO");
     bcf_hdr_append(hdr_out, "##INFO=<ID=RDRATIO,Number=1,Type=Float,Description=\"Read-depth ratio of tumor vs. normal.\">");
@@ -316,7 +316,7 @@ filterRun(TFilterConfig const& c, TSVType svType) {
 	    float af = (float) ac[1] / (float) (ac[0] + ac[1]);
 
 	    //std::cerr << bcf_hdr_id2name(hdr, rec->rid) << '\t' << (rec->pos + 1) << '\t' << *svend << '\t' << rec->d.id << '\t' << svlen << '\t' << ac[1] << '\t' << af << '\t' << genotypeRatio << '\t' << std::string(svt) << '\t' << precise << '\t' << rrefvarpercentile << '\t' << raltvarmed << '\t' << gqrefmed << '\t' << gqaltmed << '\t' << rdRatio << '\t' << rcrawmed << '\t' << srqval << std::endl;
-	    
+
 	    if ((af>0) && (gqaltmed >= c.gq) && (gqrefmed >= c.gq) && (raltvarmed >= c.altaf) && (genotypeRatio >= c.ratiogeno)) {
 	      if ((std::string(svt)=="DEL") && (svlen >= c.rdsize) && (rdRatio > c.rddel)) continue;
 	      if ((std::string(svt)=="DEL") && (svlen < c.rdsize) && (precise) && (srqval<0.95)) continue;
@@ -339,7 +339,7 @@ filterRun(TFilterConfig const& c, TSVType svType) {
   }
   kseq_destroy(seq);
   gzclose(fp);
-  
+
   // Clean-up
   if (svend != NULL) free(svend);
   if (svt != NULL) free(svt);
@@ -434,13 +434,13 @@ int filter(int argc, char **argv) {
   if ((vm.count("help")) || (!vm.count("input-file"))) {
     std::cout << std::endl;
     std::cout << "Usage: delly " << argv[0] << " [OPTIONS] -g <genome.fa> <input.bcf>" << std::endl;
-    std::cout << visible_options << "\n"; 
-    return 0; 
+    std::cout << visible_options << "\n";
+    return 0;
   }
 
   // Filter for PASS
   if (vm.count("pass")) c.filterForPass = true;
-  else c.filterForPass = false; 
+  else c.filterForPass = false;
 
   // Check reference
   if (!(boost::filesystem::exists(c.genome) && boost::filesystem::is_regular_file(c.genome) && boost::filesystem::file_size(c.genome))) {

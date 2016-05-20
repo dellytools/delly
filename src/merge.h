@@ -503,8 +503,7 @@ void _outputSelectedIntervals(MergeConfig& c, TGenomeIntervals const& iSelected,
 	
 	    // Write record
 	    bcf_write1(fp, hdr_out, rout);
-	    bcf_clear1(rout);
-	  
+	    bcf_clear1(rout);	  
 	    //std::cerr << bcf_hdr_id2name(hdr[idx], tid) << '\t' << svStart << '\t' << svEnd << std::endl;
 	  }
 	}
