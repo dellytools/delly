@@ -59,6 +59,7 @@ Contact: Tobias Rausch (rausch@embl.de)
 #include "msa.h"
 #include "split.h"
 #include "pacbio.h"
+#include "json.h"
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -1749,7 +1750,8 @@ inline int dellyRun(Config const& c, TSVType svType) {
 
   // VCF output
   if (svs.size()) {
-    vcfOutput(c, svs, junctionCountMap, rcMap, spanCountMap, svType);
+    if (c.format == "json.gz") jsonOutput(c, svs, junctionCountMap, rcMap, spanCountMap, svType);
+    else vcfOutput(c, svs, junctionCountMap, rcMap, spanCountMap, svType);
   }
 
   // Clean-up
@@ -1788,7 +1790,7 @@ int delly(int argc, char **argv) {
     ("help,?", "show help message")
     ("type,t", boost::program_options::value<std::string>(&c.svType)->default_value("DEL"), "SV type (DEL, DUP, INV, TRA, INS)")
     ("outfile,o", boost::program_options::value<boost::filesystem::path>(&c.outfile)->default_value("sv.bcf"), "SV BCF output file")
-    ("format,f", boost::program_options::value<std::string>(&c.format)->default_value("bcf"), "output format (bcf, ldj)")
+    ("format,f", boost::program_options::value<std::string>(&c.format)->default_value("bcf"), "output format (bcf, json.gz)")
     ("exclude,x", boost::program_options::value<boost::filesystem::path>(&c.exclude), "file with regions to exclude")
     ("technology,e", boost::program_options::value<std::string>(&c.technology)->default_value("illumina"), "technology (illumina, pacbio)")
     ;
