@@ -182,7 +182,7 @@ findGappedReads(TConfig const& c, std::vector<TStructuralVariantRecord>& svs,  S
 			      ++gapcount;
 			    }
 			  }
-			} else if ((i == rec->core.n_cigar -1) && (std::abs(svIt->svStart - countpos) < 25)) {
+			} else if ((i + 1 == rec->core.n_cigar) && (std::abs(svIt->svStart - countpos) < 25)) {
 			  for(std::size_t k = 0; k < bam_cigar_oplen(cigar[i]); ++k, ++countpos) {
 			    if ((countpos >= svIt->svStart) && (countpos < svIt->svEnd)) {
 			      if (spStart == -1) {
@@ -434,7 +434,7 @@ inline int pacbioRun(TConfig const& c, TSVType svType) {
 			for(std::size_t k = 0; k < bam_cigar_oplen(cigar[i]); ++k, --countpos) {
 			  if ((countpos >= 0) && (countpos < interval_size) && (gapcount[countpos] < 255)) ++gapcount[countpos];
 			}
-		      } else if (i == rec->core.n_cigar -1) {
+		      } else if (i + 1 == rec->core.n_cigar) {
 			for(std::size_t k = 0; k < bam_cigar_oplen(cigar[i]); ++k, ++countpos) {
 			  if ((countpos >= 0) && (countpos < interval_size) && (gapcount[countpos] < 255)) ++gapcount[countpos];
 			}
