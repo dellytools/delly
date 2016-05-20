@@ -557,7 +557,7 @@ namespace torali
     AlignConfig<false, true> semiglobal;
     DnaScore<int> lnsc(5, -4, -4, -4);
     bool reNeedle = longNeedle(svRefStr, cons, aln, semiglobal, lnsc);
-    for(TAIndex j = 0; j<aln.shape()[1]; ++j) {
+    for(TAIndex j = 0; j < (TAIndex) aln.shape()[1]; ++j) {
       char tmp = aln[0][j];
       aln[0][j] = aln[1][j];
       aln[1][j] = tmp;

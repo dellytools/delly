@@ -188,14 +188,14 @@ namespace torali
       std::size_t alilen = fwd.shape()[1] + rvs.shape()[1] + gapref;
       align.resize(boost::extents[2][alilen]);
       TAIndex jEnd = rvs.shape()[1];
-      for(TAIndex i = 0; i<fwd.shape()[0]; ++i) {
+      for(TAIndex i = 0; i < (TAIndex) fwd.shape()[0]; ++i) {
 	TAIndex alicol = 0;
-	for(;alicol<fwd.shape()[1]; ++alicol) align[i][alicol]=fwd[i][alicol];
-	for(TAIndex j = refLeft; j<(n-refRight); ++j, ++alicol) {
+	for(;alicol < (TAIndex) fwd.shape()[1]; ++alicol) align[i][alicol]=fwd[i][alicol];
+	for(TAIndex j = refLeft; j < (TAIndex) (n-refRight); ++j, ++alicol) {
 	  if (i==0) align[i][alicol] = '-';
 	  else align[i][alicol] = s2[j];
 	}
-	for(TAIndex j = 0; j<rvs.shape()[1]; ++j, ++alicol) {
+	for(TAIndex j = 0; j < (TAIndex) rvs.shape()[1]; ++j, ++alicol) {
 	  switch (rvs[i][jEnd-j-1]) {
 	  case 'A': align[i][alicol] = 'T'; break;
 	  case 'C': align[i][alicol] = 'G'; break;
