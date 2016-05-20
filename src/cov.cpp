@@ -73,12 +73,6 @@ struct Config {
 inline int
 run(Config const& c)
 {
-  // Create library objects
-  typedef boost::unordered_map<std::string, LibraryInfo> TLibraryMap;
-  typedef boost::unordered_map<std::string, TLibraryMap> TSampleLibrary;
-  TSampleLibrary sampleLib;
-  getLibraryParams(c.files, sampleLib, 0, 5);
-
   // Get references
   typedef std::vector<std::string> TRefNames;
   typedef std::vector<uint32_t> TRefLength;
@@ -160,25 +154,14 @@ run(Config const& c)
   }
 
   // Output data types
-  typedef std::pair<std::string, int> TSampleSVPair;
+  typedef std::pair<int32_t, int32_t> TSampleSVPair;
   typedef std::pair<int, int> TBpRead;
   typedef std::map<TSampleSVPair, TBpRead> TCountMap;
   TCountMap countMap;
 
   // Annotate coverage
-  if (c.inclCigar) annotateCoverage(c.files, c.minGenoQual, sampleLib, svs, countMap, BpLevelType<BpLevelCount>());
-  else annotateCoverage(c.files, c.minGenoQual, sampleLib, svs, countMap, BpLevelType<NoBpLevelCount>());
-
-  // Output library statistics
-  std::cout << "Library statistics" << std::endl;
-  TSampleLibrary::const_iterator sampleIt=sampleLib.begin();
-  for(;sampleIt!=sampleLib.end();++sampleIt) {
-    std::cout << "Sample: " << sampleIt->first << std::endl;
-    TLibraryMap::const_iterator libIt=sampleIt->second.begin();
-    for(;libIt!=sampleIt->second.end();++libIt) {
-      std::cout << "RG: ID=" << libIt->first << ",Median=" << libIt->second.median << ",MAD=" << libIt->second.mad << ",Orientation=" << (int) libIt->second.defaultOrient << std::endl;
-    }
-  }
+  if (c.inclCigar) annotateCoverage(c.files, c.minGenoQual, svs, countMap, BpLevelType<BpLevelCount>());
+  else annotateCoverage(c.files, c.minGenoQual, svs, countMap, BpLevelType<NoBpLevelCount>());
 
   // Output file
   boost::iostreams::filtering_ostream dataOut;
@@ -204,10 +187,7 @@ run(Config const& c)
     dataOut << refnames[itSV->chr] << "\t" << itSV->svStart << "\t" << itSV->svEnd << "\t" << idToName.find(itSV->id)->second;
     // Iterate all samples
     for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
-      // Get the sample name
-      std::string sampleName(c.files[file_c].stem().string());
-      TSampleSVPair sampleSVPair = std::make_pair(sampleName, itSV->id);
-      TCountMap::iterator countMapIt=countMap.find(sampleSVPair);
+      TCountMap::iterator countMapIt=countMap.find(std::make_pair(file_c, itSV->id));
       dataOut << "\t";
       if (c.avg_flag) dataOut << ( (countMapIt->second.first) / (double) (itSV->svEnd - itSV->svStart)) << "\t";
       if (c.bp_flag) dataOut << countMapIt->second.first << "\t";

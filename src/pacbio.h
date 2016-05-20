@@ -624,7 +624,7 @@ inline int pacbioRun(TConfig const& c, TSVType svType) {
   }
 
   // Annotate junction reads
-  typedef std::pair<std::string, int> TSampleSVPair;
+  typedef std::pair<int32_t, int32_t> TSampleSVPair;
   typedef std::pair<std::vector<uint8_t>, std::vector<uint8_t> > TReadQual;
   typedef boost::unordered_map<TSampleSVPair, TReadQual> TJunctionCountMap;
   TJunctionCountMap junctionCountMap;

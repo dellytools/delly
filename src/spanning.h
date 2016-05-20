@@ -60,7 +60,7 @@ namespace torali {
   {
     typedef typename TCountMap::key_type TSampleSVPair;
     typedef typename TCountMap::mapped_type TCountPair;
-    typedef typename TSampleLibrary::mapped_type TLibraryMap;
+    typedef typename TSampleLibrary::value_type TLibraryMap;
 
     // Open file handles
     typedef std::vector<samFile*> TSamFile;
@@ -76,24 +76,20 @@ namespace torali {
 
     // Get maximum insert size
     int maxInsertSize = 0;
-    typename TSampleLibrary::iterator sampleIt=sampleLib.begin();
-    for(;sampleIt!=sampleLib.end();++sampleIt) {
-      typename TLibraryMap::iterator libIt=sampleIt->second.begin();
-      for(;libIt!=sampleIt->second.end();++libIt) {
+    for(unsigned int file_c = 0; file_c < files.size(); ++file_c)
+      for(typename TLibraryMap::iterator libIt = sampleLib[file_c].begin(); libIt != sampleLib[file_c].end(); ++libIt)
 	if (libIt->second.median > maxInsertSize) maxInsertSize=libIt->second.median;
-      }
-    }
-
+    
     // Sort Structural Variants
     std::sort(svs.begin(), svs.end(), SortSVs<StructuralVariantRecord>());
 
     // Initialize count map
-    for(typename TSampleLibrary::iterator sIt = sampleLib.begin(); sIt!=sampleLib.end();++sIt) {
+    for(unsigned int file_c = 0; file_c < files.size(); ++file_c) {
       for(typename TSVs::const_iterator itSV = svs.begin(); itSV!=svs.end(); ++itSV) {
 	// Left breakpoint
-	spanCountMap.insert(std::make_pair(std::make_pair(sIt->first, -itSV->id), TCountPair()));
+	spanCountMap.insert(std::make_pair(std::make_pair(file_c, -itSV->id), TCountPair()));
 	// Right breakpoint
-	spanCountMap.insert(std::make_pair(std::make_pair(sIt->first, itSV->id), TCountPair()));
+	spanCountMap.insert(std::make_pair(std::make_pair(file_c, itSV->id), TCountPair()));
       }
     }
 
@@ -103,10 +99,6 @@ namespace torali {
     boost::progress_display show_progress( (svs.end() - svs.begin()) );
 #pragma omp parallel for default(shared)
     for(unsigned int file_c = 0; file_c < files.size(); ++file_c) {
-      // Get a sample name
-      std::string sampleName(files[file_c].stem().string());
-      typename TSampleLibrary::iterator sampleIt=sampleLib.find(sampleName);
-
       // Read alignments
       typename TSVs::const_iterator itSV = svs.begin();
       typename TSVs::const_iterator itSVEnd = svs.end();
@@ -115,9 +107,9 @@ namespace torali {
 	if (itSV->peSupport == 0) continue;
 
 	// Set up the mapping quality iterators
-	TSampleSVPair svSample = std::make_pair(sampleName, -itSV->id);
+	TSampleSVPair svSample = std::make_pair(file_c, -itSV->id);
 	typename TCountMap::iterator leftIt = spanCountMap.find(svSample);
-	svSample = std::make_pair(sampleName, itSV->id);
+	svSample = std::make_pair(file_c, itSV->id);
 	typename TCountMap::iterator rightIt = spanCountMap.find(svSample);
 
 	// Qualities
@@ -168,7 +160,7 @@ namespace torali {
 	      char* rg = (char*) (rgptr + 1);
 	      rG = std::string(rg);
 	    }
-	    typename TLibraryMap::iterator libIt=sampleIt->second.find(rG);
+	    typename TLibraryMap::iterator libIt = sampleLib[file_c].find(rG);
 	    if (libIt->second.median == 0) continue; // Single-end library
 	    int outerISize = std::abs(rec->core.pos - rec->core.mpos) + rec->core.l_qseq;
 

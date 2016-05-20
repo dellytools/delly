@@ -85,11 +85,13 @@ struct Config {
   DnaScore<int> aliscore;
   std::string svType;
   std::string technology;
+  std::string format;
   boost::filesystem::path outfile;
   boost::filesystem::path vcffile;
   boost::filesystem::path genome;
   boost::filesystem::path exclude;
   std::vector<boost::filesystem::path> files;
+  std::vector<std::string> sampleName;
 };
 
 // Reduced split alignment record
@@ -360,10 +362,7 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
     bcf_hdr_append(hdr, refname.c_str());
   }
   // Add samples
-  for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
-    std::string sampleName(c.files[file_c].stem().string());
-    bcf_hdr_add_sample(hdr, sampleName.c_str());
-  }
+  for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) bcf_hdr_add_sample(hdr, c.sampleName[file_c].c_str());
   bcf_hdr_add_sample(hdr, NULL);
   bcf_hdr_write(fp, hdr);
 
@@ -450,10 +449,8 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
 
     // Add genotype columns
     for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
-      // Get the sample name
-      std::string sampleName(c.files[file_c].stem().string());
-      TSampleSVPair sampleSVPairLeft = std::make_pair(sampleName, svIter->id);
-      TSampleSVPair sampleSVPairRight = std::make_pair(sampleName, -svIter->id);
+      TSampleSVPair sampleSVPairLeft = std::make_pair(file_c, svIter->id);
+      TSampleSVPair sampleSVPairRight = std::make_pair(file_c, -svIter->id);
       typename TJunctionCountMap::const_iterator jctCountMapIt=jctCountMap.find(sampleSVPairLeft);
       typename TCountMap::const_iterator spanLeftIt=spanCountMap.find(sampleSVPairLeft);
       typename TCountMap::const_iterator spanRightIt=spanCountMap.find(sampleSVPairRight);
@@ -973,10 +970,12 @@ _svSizeCheck(TSize const, TSize const, SVType<TranslocationTag>) {
 }
 
 
-template<typename TConfig, typename TSampleLibrary, typename TSVs, typename TCountMap, typename TTag>
+template<typename TConfig, typename TSVs, typename TCountMap, typename TTag>
 inline void
-_annotateCoverage(TConfig const& c, bam_hdr_t* hdr, TSampleLibrary& sampleLib, TSVs& svs, TCountMap& countMap, SVType<TTag>) 
+_annotateCoverage(TConfig const& c, bam_hdr_t* hdr, TSVs& svs, TCountMap& countMap, SVType<TTag>) 
 {
+  typedef typename TCountMap::key_type TSampleSVPair;
+
   // Find Ns in the reference genome
   typedef boost::icl::interval_set<int> TNIntervals;
   typedef std::vector<TNIntervals> TNGenome;
@@ -1058,11 +1057,10 @@ _annotateCoverage(TConfig const& c, bam_hdr_t* hdr, TSampleLibrary& sampleLib, T
     //std::cerr << itSV->id << ':' << sLeft.svStart << '-' << sLeft.svEnd << ',' << itSV->svStart << '-' << itSV->svEnd << ',' << sRight.svStart << '-' << sRight.svEnd << std::endl;
   }
   
-  typedef std::pair<std::string, int> TSampleSVPair;
   typedef std::pair<int, int> TBpRead;
   typedef boost::unordered_map<TSampleSVPair, TBpRead> TReadCountMap;
   TReadCountMap readCountMap;
-  annotateCoverage(c.files, c.minGenoQual, sampleLib, svc, readCountMap, BpLevelType<NoBpLevelCount>());
+  annotateCoverage(c.files, c.minGenoQual, svc, readCountMap, BpLevelType<NoBpLevelCount>());
   for (typename TReadCountMap::const_iterator rcIt = readCountMap.begin(); rcIt != readCountMap.end(); ++rcIt) {
     // Map control regions back to original id
     int svID = rcIt->first.second;
@@ -1076,16 +1074,16 @@ _annotateCoverage(TConfig const& c, bam_hdr_t* hdr, TSampleLibrary& sampleLib, T
   }
 }
 
-template<typename TConfig, typename TSampleLibrary, typename TSVs, typename TCountMap>
+template<typename TConfig, typename TSVs, typename TCountMap>
 inline void
-_annotateCoverage(TConfig const&, bam_hdr_t*, TSampleLibrary&, TSVs&, TCountMap&, SVType<TranslocationTag>) 
+_annotateCoverage(TConfig const&, bam_hdr_t*, TSVs&, TCountMap&, SVType<TranslocationTag>) 
 {
   //Nop
 }
 
-template<typename TConfig, typename TSampleLibrary, typename TSVs, typename TCountMap>
+template<typename TConfig, typename TSVs, typename TCountMap>
 inline void
-_annotateCoverage(TConfig const&, bam_hdr_t*, TSampleLibrary&, TSVs&, TCountMap&, SVType<InsertionTag>) 
+_annotateCoverage(TConfig const&, bam_hdr_t*, TSVs&, TCountMap&, SVType<InsertionTag>) 
 {
   //Nop
 }
@@ -1296,14 +1294,14 @@ inline int dellyRun(Config const& c, TSVType svType) {
 
   // Create library objects
   typedef boost::unordered_map<std::string, LibraryInfo> TLibraryMap;
-  typedef boost::unordered_map<std::string, TLibraryMap> TSampleLibrary;
-  TSampleLibrary sampleLib;
+  typedef std::vector<TLibraryMap> TSampleLibrary;
+  TSampleLibrary sampleLib(c.files.size());
   int overallMaxISize = 0;
   getLibraryParams(c.files, sampleLib, c.percentAbnormal, c.madCutoff);
-  for(TSampleLibrary::const_iterator sampleIt=sampleLib.begin(); sampleIt!=sampleLib.end();++sampleIt)
-    for(TLibraryMap::const_iterator libIt=sampleIt->second.begin();libIt!=sampleIt->second.end();++libIt)
+  for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c)
+    for(TLibraryMap::const_iterator libIt=sampleLib[file_c].begin();libIt!=sampleLib[file_c].end();++libIt)
       if (libIt->second.maxNormalISize > overallMaxISize) overallMaxISize = libIt->second.maxNormalISize;
-
+  
   // Open file handles
   typedef std::vector<samFile*> TSamFile;
   typedef std::vector<hts_idx_t*> TIndex;
@@ -1396,10 +1394,6 @@ inline int dellyRun(Config const& c, TSVType svType) {
       // Iterate all samples
 #pragma omp parallel for default(shared)
       for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
-	// Get a sample name
-	std::string sampleName(c.files[file_c].stem().string());
-	TSampleLibrary::iterator sampleIt=sampleLib.find(sampleName);
-	
 	// Read alignments
 	for(typename TChrIntervals::const_iterator vRIt = validRegions[refIndex].begin(); vRIt != validRegions[refIndex].end(); ++vRIt) {
 	  hts_itr_t* iter = sam_itr_queryi(idx[file_c], refIndex, vRIt->lower(), vRIt->upper());
@@ -1499,8 +1493,8 @@ inline int dellyRun(Config const& c, TSVType svType) {
 		char* rg = (char*) (rgptr + 1);
 		rG = std::string(rg);
 	      }
-	      TLibraryMap::iterator libIt=sampleIt->second.find(rG);
-	      if (libIt==sampleIt->second.end()) std::cerr << "Missing read group: " << rG << std::endl;
+	      TLibraryMap::iterator libIt = sampleLib[file_c].find(rG);
+	      if (libIt == sampleLib[file_c].end()) std::cerr << "Missing read group: " << rG << std::endl;
 	      if (_acceptedInsertSize(libIt->second, abs(rec->core.isize), svType)) continue; 
 	      if (_acceptedOrientation(libIt->second.defaultOrient, getStrandIndependentOrientation(rec->core), svType)) continue;
 	      
@@ -1736,7 +1730,7 @@ inline int dellyRun(Config const& c, TSVType svType) {
   }
 
   // Annotate junction reads
-  typedef std::pair<std::string, int> TSampleSVPair;
+  typedef std::pair<int32_t, int32_t> TSampleSVPair;
   typedef std::pair<std::vector<uint8_t>, std::vector<uint8_t> > TReadQual;
   typedef boost::unordered_map<TSampleSVPair, TReadQual> TJunctionCountMap;
   TJunctionCountMap junctionCountMap;
@@ -1751,7 +1745,7 @@ inline int dellyRun(Config const& c, TSVType svType) {
   // Annotate coverage
   typedef boost::unordered_map<TSampleSVPair, ReadCount> TRCMap;
   TRCMap rcMap;
-  _annotateCoverage(c, hdr, sampleLib, svs, rcMap, svType);
+  _annotateCoverage(c, hdr, svs, rcMap, svType);
 
   // VCF output
   if (svs.size()) {
@@ -1768,18 +1762,16 @@ inline int dellyRun(Config const& c, TSVType svType) {
   // Output library statistics
   now = boost::posix_time::second_clock::local_time();
   std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Library statistics" << std::endl;
-  TSampleLibrary::const_iterator sampleIt=sampleLib.begin();
-  for(;sampleIt!=sampleLib.end();++sampleIt) {
-    std::cout << "Sample: " << sampleIt->first << std::endl;
-    TLibraryMap::const_iterator libIt=sampleIt->second.begin();
-    for(;libIt!=sampleIt->second.end();++libIt) {
+  for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
+    std::cout << "Sample: " << c.sampleName[file_c] << std::endl;
+    for(TLibraryMap::const_iterator libIt = sampleLib[file_c].begin(); libIt != sampleLib[file_c].end(); ++libIt) {
       std::cout << "RG: ID=" << libIt->first << ",Median=" << libIt->second.median << ",MAD=" << libIt->second.mad << ",LibLayout=" << (int) libIt->second.defaultOrient << ",MaxSizeCut=" << libIt->second.maxISizeCutoff << ",MinSizeCut=" << libIt->second.minISizeCutoff << ",UniqueDiscordantPairs=" << libIt->second.abnormal_pairs << std::endl;
     }
   }
 #ifdef PROFILE
   ProfilerStop();
 #endif
-
+  
   // End
   now = boost::posix_time::second_clock::local_time();
   std::cout << '[' << boost::posix_time::to_simple_string(now) << "] Done." << std::endl;;
@@ -1796,6 +1788,7 @@ int delly(int argc, char **argv) {
     ("help,?", "show help message")
     ("type,t", boost::program_options::value<std::string>(&c.svType)->default_value("DEL"), "SV type (DEL, DUP, INV, TRA, INS)")
     ("outfile,o", boost::program_options::value<boost::filesystem::path>(&c.outfile)->default_value("sv.bcf"), "SV BCF output file")
+    ("format,f", boost::program_options::value<std::string>(&c.format)->default_value("bcf"), "output format (bcf, ldj)")
     ("exclude,x", boost::program_options::value<boost::filesystem::path>(&c.exclude), "file with regions to exclude")
     ("technology,e", boost::program_options::value<std::string>(&c.technology)->default_value("illumina"), "technology (illumina, pacbio)")
     ;
@@ -1871,6 +1864,7 @@ int delly(int argc, char **argv) {
   }
 
   // Check input files
+  c.sampleName.resize(c.files.size());
   for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
     if (!(boost::filesystem::exists(c.files[file_c]) && boost::filesystem::is_regular_file(c.files[file_c]) && boost::filesystem::file_size(c.files[file_c]))) {
       std::cerr << "Alignment file is missing: " << c.files[file_c].string() << std::endl;
@@ -1896,6 +1890,11 @@ int delly(int argc, char **argv) {
       std::cerr << "Reference chromosome names disagree with bam header for " << c.files[file_c].string() << std::endl;
       return 1;
     }
+    std::string sampleName;
+    if (!getSMTag(std::string(hdr->text), c.files[file_c].stem().string(), sampleName)) {
+      std::cerr << "Only one sample (@RG:SM) is allowed per input BAM file " << c.files[file_c].string() << std::endl;
+      return 1;
+    } else c.sampleName[file_c] = sampleName;
     bam_hdr_destroy(hdr);
     hts_idx_destroy(idx);
     sam_close(samfile);

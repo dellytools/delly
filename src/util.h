@@ -232,6 +232,49 @@ namespace torali
   }
 
 
+  inline bool
+  getSMTag(std::string const& header, std::string const& fileName, std::string& sampleName) {
+    std::set<std::string> smIdentifiers;
+    std::string delimiters("\n");
+    typedef std::vector<std::string> TStrParts;
+    TStrParts lines;
+    boost::split(lines, header, boost::is_any_of(delimiters));
+    TStrParts::const_iterator itH = lines.begin();
+    TStrParts::const_iterator itHEnd = lines.end();
+    bool rgPresent = false;
+    for(;itH!=itHEnd; ++itH) {
+      if (itH->find("@RG")==0) {
+	std::string delim("\t ");
+	TStrParts keyval;
+	boost::split(keyval, *itH, boost::is_any_of(delim));
+	TStrParts::const_iterator itKV = keyval.begin();
+	TStrParts::const_iterator itKVEnd = keyval.end();
+	for(;itKV != itKVEnd; ++itKV) {
+	  size_t sp = itKV->find(":");
+	  if (sp != std::string::npos) {
+	    std::string field = itKV->substr(0, sp);
+	    if (field == "SM") {
+	      rgPresent = true;
+	      std::string rgSM = itKV->substr(sp+1);
+	      smIdentifiers.insert(rgSM);
+	    }
+	  }
+	}
+      }
+    }
+    if (!rgPresent) {
+      sampleName = fileName;
+      return true;
+    } else if (smIdentifiers.size() == 1) {
+      sampleName = *(smIdentifiers.begin());
+      return true;
+    } else {
+      sampleName = "";
+      return false;
+    }
+  }
+
+
   template<typename TIterator, typename TValue>
   inline
     void getMedian(TIterator begin, TIterator end, TValue& median) 
@@ -302,20 +345,19 @@ namespace torali
 
   template<typename TFiles, typename TSampleLibrary>
     inline void getLibraryParams(TFiles const& files, TSampleLibrary& sampleLib, double const percentile, unsigned short const madCutoff) {
-    typedef typename TSampleLibrary::mapped_type TLibraryMap;
+    typedef typename TSampleLibrary::value_type TLibraryMap;
 
     // Open file handles
     typedef std::vector<samFile*> TSamFile;
+    typedef std::vector<bam_hdr_t*> TSamHeader;
     TSamFile samfile;
+    TSamHeader hdr;
     samfile.resize(files.size());
+    hdr.resize(files.size());
     for(unsigned int file_c = 0; file_c < files.size(); ++file_c) {
       samfile[file_c] = sam_open(files[file_c].string().c_str(), "r");
-      if (samfile[file_c] == NULL) {
-	std::cerr << "Fail to open file " << files[file_c].string() << std::endl;
-	return;
-      }
-      std::string sampleName(files[file_c].stem().string());
-      sampleLib.insert(std::make_pair(sampleName, TLibraryMap()));
+      hdr[file_c] = sam_hdr_read(samfile[file_c]);
+      sampleLib[file_c] = TLibraryMap();
     }
 
 #pragma omp parallel for default(shared)
@@ -328,11 +370,8 @@ namespace torali
       typedef boost::unordered_map<std::string, _LibraryParams> TParams;
       TParams params;
 
-      // Create SAM Object
-      bam_hdr_t* hdr = sam_hdr_read(samfile[file_c]);
-
       // Get read groups
-      std::string header(hdr->text);
+      std::string header(hdr[file_c]->text);
       std::string delimiters("\n");
       typedef std::vector<std::string> TStrParts;
       TStrParts lines;
@@ -364,15 +403,15 @@ namespace torali
 
       // Initialize arrays
       for(TParams::iterator paramIt = params.begin(); paramIt!=params.end(); ++paramIt) {
+	paramIt->second.vecISize.resize(maxNumPairs);
 	paramIt->second.processedNumPairs=0;
 	for(unsigned int i=0;i<4;++i) paramIt->second.orient[i]=0;
-	paramIt->second.vecISize.clear();
       }
       
       // Collect insert sizes
-      bool missingPairs=true;
+      uint32_t libCount = 0;
       bam1_t* rec = bam_init1();
-      while ((sam_read1(samfile[file_c], hdr, rec) >=0) && (missingPairs)) {
+      while ((sam_read1(samfile[file_c], hdr[file_c], rec) >=0) && (libCount < params.size())) {
 	if ((rec->core.flag & BAM_FPAIRED) && !(rec->core.flag & BAM_FUNMAP) && !(rec->core.flag & BAM_FMUNMAP) && (rec->core.flag & BAM_FREAD1) && (rec->core.tid==rec->core.mtid) && !(rec->core.flag & BAM_FSECONDARY) && !(rec->core.flag & BAM_FQCFAIL)  && !(rec->core.flag & BAM_FDUP) && !(rec->core.flag & BAM_FSUPPLEMENTARY)) {
 	  std::string rG = "DefaultLib";
 	  uint8_t *rgptr = bam_aux_get(rec, "RG");
@@ -380,32 +419,23 @@ namespace torali
 	    char* rg = (char*) (rgptr + 1);
 	    rG = std::string(rg);
 	  }
-	  TParams::iterator paramIt= params.find(rG);
-	  ++paramIt->second.processedNumPairs;
-	  if (paramIt->second.processedNumPairs>=maxNumPairs) {
-	    // Check every now and then if we have a good estimate of the library complexity
-	    if (paramIt->second.processedNumPairs % minNumPairs == 0) {
-	      TParams::const_iterator paramIter = params.begin();
-	      missingPairs=false;
-	      for(;paramIter!=params.end();++paramIter) {
-		if (paramIter->second.processedNumPairs<maxNumPairs) {
-		  missingPairs=true;
-		  break;
-		}
-	      }
-	    }
-	    continue;
+	  TParams::iterator paramIt = params.find(rG);
+	  if (paramIt->second.processedNumPairs < maxNumPairs) {
+	    paramIt->second.vecISize[paramIt->second.processedNumPairs] = abs(rec->core.isize);
+	    ++paramIt->second.orient[getStrandIndependentOrientation(rec->core)];
+	    ++paramIt->second.processedNumPairs;
+	    if (paramIt->second.processedNumPairs == maxNumPairs) ++libCount;
 	  }
-	  paramIt->second.vecISize.push_back(abs(rec->core.isize));
-	  ++paramIt->second.orient[getStrandIndependentOrientation(rec->core)];
 	}
       }
-      
       // Clean-up
       bam_destroy1(rec);
 
-      // Get default library orientation
       for(TParams::iterator paramIt=params.begin(); paramIt != params.end(); ++paramIt) {
+	// Trim to actual size
+	paramIt->second.vecISize.resize(paramIt->second.processedNumPairs);
+
+	// Get default library orientation
 	paramIt->second.defaultOrient=0;
 	unsigned int maxOrient=paramIt->second.orient[0];
 	for(unsigned int i=1;i<4;++i) {
@@ -436,14 +466,11 @@ namespace torali
 	  getLibraryStats(paramIt->second.vecISize.begin(), paramIt->second.vecISize.end(), percentile, paramIt->second.median, paramIt->second.mad, paramIt->second.percentileCutoff);
 	}
       }
-      bam_hdr_destroy(hdr);
 
 #pragma omp critical
       {
-	std::string sampleName(files[file_c].stem().string());
-	typename TSampleLibrary::iterator sampleIt=sampleLib.find(sampleName);
 	for(TParams::iterator paramIt=params.begin(); paramIt != params.end(); ++paramIt) {
-	  typename TLibraryMap::iterator libInfoIt = sampleIt->second.insert(std::make_pair(paramIt->first, LibraryInfo())).first;
+	  typename TLibraryMap::iterator libInfoIt = sampleLib[file_c].insert(std::make_pair(paramIt->first, LibraryInfo())).first;
 	  if ((paramIt->second.median >= 50) && (paramIt->second.median<=100000)) {
 	    libInfoIt->second.defaultOrient = paramIt->second.defaultOrient;
 	    libInfoIt->second.median = (int) paramIt->second.median;
@@ -462,7 +489,10 @@ namespace torali
     }
 
     // Clean-up
-    for(unsigned int file_c = 0; file_c < files.size(); ++file_c) sam_close(samfile[file_c]);
+    for(unsigned int file_c = 0; file_c < files.size(); ++file_c) {
+      bam_hdr_destroy(hdr[file_c]);
+      sam_close(samfile[file_c]);
+    }
   }
 
 

@@ -67,9 +67,9 @@ _addBpCounts(bam1_t*, TWindow, TWindow, TCount, BpLevelType<NoBpLevelCount>)
   //Nop
 }
 
-template<typename TFiles, typename TSampleLibrary, typename TSVs, typename TCountMap, typename TBpLevelType>
+template<typename TFiles, typename TSVs, typename TCountMap, typename TBpLevelType>
 inline void
-annotateCoverage(TFiles const& files, uint16_t minMapQual, TSampleLibrary& sampleLib, TSVs& svs, TCountMap& countMap, TBpLevelType bpLevel)
+annotateCoverage(TFiles const& files, uint16_t minMapQual, TSVs& svs, TCountMap& countMap, TBpLevelType bpLevel)
 {
   typedef typename TSVs::value_type TSV;
 
@@ -92,11 +92,9 @@ annotateCoverage(TFiles const& files, uint16_t minMapQual, TSampleLibrary& sampl
   sort(svs.begin(), svs.end(), SortSVs<TSV>());
 
   // Initialize count maps
-  for(typename TSampleLibrary::iterator sIt = sampleLib.begin(); sIt!=sampleLib.end(); ++sIt) {
-    for(typename TSVs::const_iterator itSV = svs.begin(); itSV!=svs.end(); ++itSV) {
-      countMap.insert(std::make_pair(std::make_pair(sIt->first, itSV->id), std::make_pair(0,0)));
-    }
-  }
+  for(unsigned int file_c = 0; file_c < files.size(); ++file_c)
+    for(typename TSVs::const_iterator itSV = svs.begin(); itSV!=svs.end(); ++itSV)
+      countMap.insert(std::make_pair(std::make_pair(file_c, itSV->id), std::make_pair(0,0)));
 
   // Iterate all samples
   boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
@@ -104,9 +102,6 @@ annotateCoverage(TFiles const& files, uint16_t minMapQual, TSampleLibrary& sampl
   boost::progress_display show_progress( (svs.end() - svs.begin()) );
 #pragma omp parallel for default(shared)
   for(unsigned int file_c = 0; file_c < files.size(); ++file_c) {
-    // Get a sample name
-    std::string sampleName(files[file_c].stem().string());
-
     // Read alignments
     int32_t oldChr = -1;
     typedef std::vector< std::pair<int32_t, int32_t> > TInterval;
@@ -193,7 +188,7 @@ annotateCoverage(TFiles const& files, uint16_t minMapQual, TSampleLibrary& sampl
 #pragma omp critical
       {
 	typedef typename TCountMap::key_type TSampleSVPair;
-	TSampleSVPair svSample = std::make_pair(sampleName, itSV->id);
+	TSampleSVPair svSample = std::make_pair(file_c, itSV->id);
 	typename TCountMap::iterator countMapIt=countMap.find(svSample);
 	//std::cerr << itSV->id << ':' << cumBpSum << ',' << cumReadSum << std::endl;
 	countMapIt->second.first=cumBpSum;

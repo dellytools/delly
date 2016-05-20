@@ -138,10 +138,8 @@ namespace torali {
     sort(svs.begin(), svs.end(), SortSVs<StructuralVariantRecord>());
     
     // Initialize count map
-    for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
-      std::string sampleName(c.files[file_c].stem().string());
-      for(typename TSVs::const_iterator itSV = svs.begin(); itSV!=svs.end(); ++itSV) countMap.insert(std::make_pair(std::make_pair(sampleName, itSV->id), TCountPair()));
-    }
+    for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c)
+      for(typename TSVs::const_iterator itSV = svs.begin(); itSV!=svs.end(); ++itSV) countMap.insert(std::make_pair(std::make_pair(file_c, itSV->id), TCountPair()));
 
     // Process chromosome by chromosome
     boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
@@ -215,7 +213,6 @@ namespace torali {
 	      // Iterate all samples
 #pragma omp parallel for default(shared)
 	      for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
-		std::string sampleName(c.files[file_c].stem().string());
 		TQualVector altQual;
 		TQualVector refQual;
 		unsigned int refAlignedReadCount = 0;
@@ -325,7 +322,7 @@ namespace torali {
 		}
 
 		// Insert counts
-		TSampleSVPair svSample = std::make_pair(sampleName, itSV->id);
+		TSampleSVPair svSample = std::make_pair(file_c, itSV->id);
 #pragma omp critical
 		{
 		  typename TCountMap::iterator countMapIt=countMap.find(svSample);
