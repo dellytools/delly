@@ -1716,8 +1716,9 @@ inline int dellyRun(Config const& c, TSVType svType) {
 	}
       }
   } else {
-    // Read SV records from input vcffile
-    vcfParse(c, hdr, overallMaxISize, svs, svType);
+    // Read SV records from input file
+    if (c.format == "json.gz") jsonParse(c, hdr, overallMaxISize, svs, svType);
+    else vcfParse(c, hdr, overallMaxISize, svs, svType);
   }
 
   // Debug output
@@ -1917,18 +1918,20 @@ int delly(int argc, char **argv) {
       std::cerr << "Input VCF/BCF file is missing: " << c.vcffile.string() << std::endl;
       return 1;
     }
-    htsFile* ifile = bcf_open(c.vcffile.string().c_str(), "r");
-    if (ifile == NULL) {
-      std::cerr << "Fail to open file " << c.vcffile.string() << std::endl;
-      return 1;
+    if (c.format != "json.gz") {
+      htsFile* ifile = bcf_open(c.vcffile.string().c_str(), "r");
+      if (ifile == NULL) {
+	std::cerr << "Fail to open file " << c.vcffile.string() << std::endl;
+	return 1;
+      }
+      bcf_hdr_t* hdr = bcf_hdr_read(ifile);
+      if (hdr == NULL) {
+	std::cerr << "Fail to open index file " << c.vcffile.string() << std::endl;
+	return 1;
+      }
+      bcf_hdr_destroy(hdr);
+      bcf_close(ifile);
     }
-    bcf_hdr_t* hdr = bcf_hdr_read(ifile);
-    if (hdr == NULL) {
-      std::cerr << "Fail to open index file " << c.vcffile.string() << std::endl;
-      return 1;
-    }
-    bcf_hdr_destroy(hdr);
-    bcf_close(ifile);
     c.hasVcfFile = true;
   } else c.hasVcfFile = false;
 

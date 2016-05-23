@@ -26,6 +26,7 @@ Contact: Tobias Rausch (rausch@embl.de)
 
 #include <iostream>
 #include <fstream>
+#include <boost/property_tree/json_parser.hpp>
 #include <boost/date_time/posix_time/posix_time.hpp>
 #include <boost/date_time/gregorian/gregorian.hpp>
 #include <boost/iostreams/stream.hpp>
@@ -40,6 +41,70 @@ Contact: Tobias Rausch (rausch@embl.de)
 
 namespace torali
 {
+
+  inline void
+    printPt(boost::property_tree::ptree const& pt) {
+    for(boost::property_tree::ptree::const_iterator it = pt.begin(); it!=pt.end(); ++it) {
+      std::cout << it->first << ": " << it->second.get_value<std::string>() << std::endl;
+      printPt(it->second);
+    }
+  }
+      
+
+  // Parse json file
+  template<typename TConfig, typename TSize, typename TStructuralVariantRecord, typename TTag>
+  inline void
+  jsonParse(TConfig const& c, bam_hdr_t* hd, TSize const overallMaxISize, std::vector<TStructuralVariantRecord>& svs, SVType<TTag> svType) {
+    std::ifstream file(c.vcffile.string().c_str(), std::ios_base::in | std::ios_base::binary);
+    boost::iostreams::filtering_streambuf<boost::iostreams::input> dataIn;
+    dataIn.push(boost::iostreams::gzip_decompressor());
+    dataIn.push(file);
+    std::istream instream(&dataIn);
+    std::string line;
+    while(std::getline(instream, line)) {
+      boost::property_tree::ptree pt;
+      std::stringstream iss(line);
+      boost::property_tree::read_json(iss, pt);
+      if (pt.get<std::string>("info.svtype", "None") != _addID(svType)) continue;      
+
+      // Fill SV record
+      StructuralVariantRecord svRec;
+      std::string chrName(pt.get<std::string>("chrom", "None"));
+      int32_t tid = bam_name2id(hd, chrName.c_str());
+      svRec.chr = tid;
+      svRec.svStart = pt.get<int32_t>("start", 0) + 1;
+      svRec.svEnd = pt.get<int32_t>("info.end", 0);
+      svRec.id = pt.get<int32_t>("id", 0);
+      if (pt.get<bool>("info.precise", false)) svRec.precise = true;
+      else svRec.precise = false;
+      svRec.peSupport = pt.get<int32_t>("info.pe", 0);
+      svRec.insLen = pt.get<int32_t>("info.inslen", 0);
+      svRec.srSupport = pt.get<int32_t>("info.sr", 0);
+      svRec.consensus = pt.get<std::string>("info.consensus", "");
+      boost::property_tree::ptree::const_iterator it = pt.get_child("info.cipos.").begin();
+      svRec.wiggle = -1 * it->second.get_value<int32_t>();
+      svRec.peMapQuality = pt.get<uint8_t>("info.mapq", 0);
+      svRec.srAlignQuality = pt.get<double>("info.srq", 0);
+      svRec.ct = _decodeOrientation(pt.get<std::string>("info.ct", "NtoN"));
+      std::string chr2Name(pt.get<std::string>("info.chr2", "None"));
+      svRec.chr2 = bam_name2id(hd, chr2Name.c_str());
+
+      // Assign remaining fields
+      svRec.svStartBeg = std::max(svRec.svStart - 1 - overallMaxISize, 0);
+      svRec.svStartEnd = std::min((uint32_t) svRec.svStart - 1 + overallMaxISize, hd->target_len[svRec.chr]);
+      svRec.svEndBeg = std::max(svRec.svEnd - 1 - overallMaxISize, 0);
+      svRec.svEndEnd = std::min((uint32_t) svRec.svEnd - 1 + overallMaxISize, hd->target_len[svRec.chr2]);
+      if ((svRec.chr==svRec.chr2) && (svRec.svStartEnd > svRec.svEndBeg)) {
+	unsigned int midPointDel = ((svRec.svEnd - svRec.svStart) / 2) + svRec.svStart;
+	svRec.svStartEnd = midPointDel -1;
+	svRec.svEndBeg = midPointDel;
+      }
+      svs.push_back(svRec);
+    }
+
+    // Close JSON file
+    file.close();
+  }
 
   template<typename TConfig, typename TStructuralVariantRecord, typename TJunctionCountMap, typename TReadCountMap, typename TCountMap, typename TTag>
     inline void
@@ -115,6 +180,8 @@ namespace torali
       dataOut << "\"precise\": " << preciseVal << ", ";
       dataOut << "\"svtype\": \"" << _addID(svType) << "\", ";
       dataOut << "\"svmethod\": \"" << dellyVersion << "\", ";
+      dataOut << "\"chr2\": \"" << bamhd->target_name[svIter->chr2] << "\", ";
+      dataOut << "\"end\": \"" << svIter->svEnd << "\", ";
       dataOut << "\"inslen\": " << (int) _addInsertionLength(svIter->insLen, svType) << ", ";
       dataOut << "\"pe\": " << svIter->peSupport << ", ";
       dataOut << "\"mapq\": " << (int) (svIter->peMapQuality) << ", ";
