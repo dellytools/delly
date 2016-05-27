@@ -305,6 +305,9 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
   // Typedefs
   typedef typename TCountMap::key_type TSampleSVPair;
 
+  // BoLog class
+  BoLog<double> bl;
+
   // Open one bam file header
   samFile* samfile = sam_open(c.files[0].string().c_str(), "r");
   bam_hdr_t* bamhd = sam_hdr_read(samfile);
@@ -481,7 +484,7 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
 
       // Compute GLs
       if (svIter->precise) {
-	if (jctCountMapIt!=jctCountMap.end()) _computeGLs(jctCountMapIt->second.first, jctCountMapIt->second.second, gls, gqval, gts, file_c);
+	if (jctCountMapIt!=jctCountMap.end()) _computeGLs(bl, jctCountMapIt->second.first, jctCountMapIt->second.second, gls, gqval, gts, file_c);
 	else {
 	  gls[file_c * 3 + 2] = 0;
 	  gls[file_c * 3 + 1] = 0;
@@ -492,8 +495,8 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
 	}
       } else {  // Imprecise SVs
 	if ((spanLeftIt!=spanCountMap.end()) && (spanRightIt!=spanCountMap.end())) {
-	  if (spanLeftIt->second.first.size()<spanRightIt->second.first.size()) _computeGLs(spanLeftIt->second.first, spanLeftIt->second.second, gls, gqval, gts, file_c);
-	  else _computeGLs(spanRightIt->second.first, spanRightIt->second.second, gls, gqval, gts, file_c);
+	  if (spanLeftIt->second.first.size()<spanRightIt->second.first.size()) _computeGLs(bl, spanLeftIt->second.first, spanLeftIt->second.second, gls, gqval, gts, file_c);
+	  else _computeGLs(bl, spanRightIt->second.first, spanRightIt->second.second, gls, gqval, gts, file_c);
 	} else {
 	  gls[file_c * 3 + 2] = 0;
 	  gls[file_c * 3 + 1] = 0;

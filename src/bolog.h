@@ -32,6 +32,8 @@ namespace torali {
 
 template<typename TPrecision>
 struct BoLog {
+  typedef TPrecision value_type;
+
   std::vector<TPrecision> phred2prob;
 
   BoLog() {
@@ -40,15 +42,13 @@ struct BoLog {
 };
 
 
- template<typename TMapqVector>
+ template<typename TBoLog, typename TMapqVector>
  inline void
- _computeGLs(TMapqVector const& mapqRef, TMapqVector const& mapqAlt, float* gls, int32_t* gqval, int32_t* gts, int const file_c) {
-   typedef double FLP;
+ _computeGLs(TBoLog const& bl, TMapqVector const& mapqRef, TMapqVector const& mapqAlt, float* gls, int32_t* gqval, int32_t* gts, int const file_c) {
+   typedef typename TBoLog::value_type FLP;
    FLP gl[3];
 
    // Compute genotype likelihoods
-   BoLog<FLP> bl;
-   
    for(unsigned int geno=0; geno<=2; ++geno) gl[geno]=0;
    unsigned int peDepth=mapqRef.size() + mapqAlt.size();
    for(typename TMapqVector::const_iterator mapqRefIt = mapqRef.begin();mapqRefIt!=mapqRef.end();++mapqRefIt) {

@@ -113,6 +113,9 @@ namespace torali
     // Typedefs
     typedef typename TCountMap::key_type TSampleSVPair;
 
+    // BoLog class
+    BoLog<double> bl;
+
     boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
     std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Genotyping" << std::endl;
     boost::progress_display show_progress( svs.size() );
@@ -231,7 +234,7 @@ namespace torali
 	
 	// Compute GLs
 	if (svIter->precise) {
-	  if (jctCountMapIt!=jctCountMap.end()) _computeGLs(jctCountMapIt->second.first, jctCountMapIt->second.second, gls, gqval, gts, file_c);
+	  if (jctCountMapIt!=jctCountMap.end()) _computeGLs(bl, jctCountMapIt->second.first, jctCountMapIt->second.second, gls, gqval, gts, file_c);
 	  else {
 	    gls[file_c * 3 + 2] = 0;
 	    gls[file_c * 3 + 1] = 0;
@@ -242,8 +245,8 @@ namespace torali
 	  }
 	} else {  // Imprecise SVs
 	  if ((spanLeftIt!=spanCountMap.end()) && (spanRightIt!=spanCountMap.end())) {
-	    if (spanLeftIt->second.first.size()<spanRightIt->second.first.size()) _computeGLs(spanLeftIt->second.first, spanLeftIt->second.second, gls, gqval, gts, file_c);
-	    else _computeGLs(spanRightIt->second.first, spanRightIt->second.second, gls, gqval, gts, file_c);
+	    if (spanLeftIt->second.first.size()<spanRightIt->second.first.size()) _computeGLs(bl, spanLeftIt->second.first, spanLeftIt->second.second, gls, gqval, gts, file_c);
+	    else _computeGLs(bl, spanRightIt->second.first, spanRightIt->second.second, gls, gqval, gts, file_c);
 	  } else {
 	    gls[file_c * 3 + 2] = 0;
 	    gls[file_c * 3 + 1] = 0;
