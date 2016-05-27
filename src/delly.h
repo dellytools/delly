@@ -1722,7 +1722,7 @@ inline int dellyRun(Config const& c, TSVType svType) {
   }
 
   // Debug output
-  //for (TVariants::const_iterator s = svs.begin();s!=svs.end();++s) std::cerr << s->svStart << ',' << s->svEnd << ',' <<  s->svStartBeg << ',' << s->svStartEnd << ',' << s->svEndBeg << ',' << s->svEndEnd << ',' << s->peSupport << ',' << s->srSupport << ',' << s->wiggle << ',' << s->srAlignQuality << ',' << s->precise << ',' << s->ct << ',' << s->peMapQuality << ',' << s->chr << ',' << s->chr2 << ',' << s->consensus << std::endl;
+  //for (TVariants::const_iterator s = svs.begin();s!=svs.end();++s) std::cerr << s->svStart << ',' << s->svEnd << ',' <<  s->svStartBeg << ',' << s->svStartEnd << ',' << s->svEndBeg << ',' << s->svEndEnd << ',' << s->peSupport << ',' << s->srSupport << ',' << s->wiggle << ',' << s->srAlignQuality << ',' << s->precise << ',' << (int32_t) s->peMapQuality << ',' << s->chr << ',' << s->chr2 << ",Consensus:" << s->consensus << ',' << s->id << ',' << s->insLen << ',' << _addOrientation(s->ct) << std::endl;
 
   // Any SVs for genotyping
   if (svs.empty()) {

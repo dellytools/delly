@@ -76,17 +76,18 @@ annotateCoverage(TFiles const& files, uint16_t minMapQual, TSVs& svs, TCountMap&
   // Open file handles
   typedef std::vector<samFile*> TSamFile;
   typedef std::vector<hts_idx_t*> TIndex;
+  typedef std::vector<bam_hdr_t*> THeader;
   TSamFile samfile;
   TIndex idx;
+  THeader hdr;
   samfile.resize(files.size());
   idx.resize(files.size());
+  hdr.resize(files.size());
   for(unsigned int file_c = 0; file_c < files.size(); ++file_c) {
     samfile[file_c] = sam_open(files[file_c].string().c_str(), "r");
     idx[file_c] = sam_index_load(samfile[file_c], files[file_c].string().c_str());
+    hdr[file_c] = sam_hdr_read(samfile[file_c]);
   }
-
-  // For alignment midpoint, maximum read-length
-  int32_t maxReadLen = 1000;
 
   // Sort Structural Variants
   sort(svs.begin(), svs.end(), SortSVs<TSV>());
@@ -121,38 +122,44 @@ annotateCoverage(TFiles const& files, uint16_t minMapQual, TSVs& svs, TCountMap&
 	intervals.clear();
 	bpSum.clear();
 	readSum.clear();
-	typedef std::set<int32_t> TBreaks;
+	typedef std::vector<int32_t> TBreaks;
 	TBreaks iBounds;
-	iBounds.insert(itSV->svStart);
-	iBounds.insert(itSV->svEnd);
+	iBounds.push_back(itSV->svStart);
+	iBounds.push_back(itSV->svEnd);
 	int32_t maxPos = itSV->svEnd;
 	typename TSVs::const_iterator itSVFor = itSV;
 	for(++itSVFor;itSVFor!=itSVEnd; ++itSVFor) {
 	  if (oldChr!=itSVFor->chr) break;
 	  if (itSVFor->svStart>maxPos) {
+	    std::sort(iBounds.begin(), iBounds.end());
 	    typename TBreaks::const_iterator itBreak = iBounds.begin();
 	    typename TBreaks::const_iterator itBreakNext = iBounds.begin();
-	    for(++itBreakNext; itBreakNext!=iBounds.end(); ++itBreakNext, ++itBreak) intervals.push_back(std::make_pair(*itBreak, *itBreakNext));
+	    for(++itBreakNext; itBreakNext!=iBounds.end(); ++itBreakNext, ++itBreak)
+	      if (*itBreak < *itBreakNext) intervals.push_back(std::make_pair(*itBreak, *itBreakNext));
 	    maxPos=itSVFor->svEnd;
 	    iBounds.clear();
 	  }
-	  iBounds.insert(itSVFor->svStart);
-	  iBounds.insert(itSVFor->svEnd);
+	  iBounds.push_back(itSVFor->svStart);
+	  iBounds.push_back(itSVFor->svEnd);
 	  if (itSVFor->svEnd > maxPos) maxPos=itSVFor->svEnd;
 	}
+	std::sort(iBounds.begin(), iBounds.end());
 	typename TBreaks::const_iterator itBreak = iBounds.begin();
 	typename TBreaks::const_iterator itBreakNext = iBounds.begin();
-	for(++itBreakNext; itBreakNext!=iBounds.end(); ++itBreakNext, ++itBreak) intervals.push_back(std::make_pair(*itBreak, *itBreakNext));
+	for(++itBreakNext; itBreakNext!=iBounds.end(); ++itBreakNext, ++itBreak) 
+	  if (*itBreak < *itBreakNext) intervals.push_back(std::make_pair(*itBreak, *itBreakNext));
+	iBounds.clear();
 
 	// Process sub-intervals
-	typename TInterval::const_iterator itInt = intervals.begin();
-	for(;itInt!=intervals.end(); ++itInt) {
+	for(typename TInterval::const_iterator itInt = intervals.begin(); itInt!=intervals.end(); ++itInt) {
 	  // Count reads / aligned base-pairs
 	  unsigned int bp_sum = 0;
 	  unsigned int read_sum = 0;
 
-	  // Read alignments
-	  hts_itr_t* iter = sam_itr_queryi(idx[file_c], oldChr, std::max(0, (int32_t) itInt->first - maxReadLen), itInt->second);
+	  // Read alignment
+	  //std::cerr << hdr[file_c]->target_name[oldChr] << '\t' << itInt->first << '\t' << itInt->second << std::endl;
+
+	  hts_itr_t* iter = sam_itr_queryi(idx[file_c], oldChr, itInt->first, itInt->second);
 	  bam1_t* rec = bam_init1();
 	  while (sam_itr_next(samfile[file_c], iter, rec) >= 0) {
 	    if (rec->core.flag & (BAM_FSECONDARY | BAM_FQCFAIL | BAM_FDUP | BAM_FSUPPLEMENTARY | BAM_FUNMAP)) continue;
@@ -172,16 +179,15 @@ annotateCoverage(TFiles const& files, uint16_t minMapQual, TSVs& svs, TCountMap&
       // Sum up sub-intervals
       unsigned int cumBpSum = 0;
       unsigned int cumReadSum = 0;
-      typename TInterval::const_iterator itInt = intervals.begin();
+      typename TInterval::const_iterator itInt = std::lower_bound(intervals.begin(), intervals.end(), std::make_pair(itSV->svStart, 0));
       typename TIntervalSum::const_iterator itRead = readSum.begin();
+      itRead += (itInt - intervals.begin());
       typename TIntervalSum::const_iterator itBp = bpSum.begin();
+      itBp += (itInt -intervals.begin());
       for(;itInt!=intervals.end(); ++itInt, ++itRead, ++itBp) {
-	//std::cerr << itInt->first << ',' << itInt->second << ':' << *itRead << ',' << *itBp << '(' << itSV->svStart << ',' << itSV->svEnd << ')' << cumReadSum << std::endl;
-	if (itInt->first > itSV->svEnd) break;
-	if ((itInt->first >= itSV->svStart) && (itInt->second <= itSV->svEnd)) {
-	  cumBpSum+=(*itBp);
-	  cumReadSum+=(*itRead);
-	}
+	if (itInt->first >= itSV->svEnd) break;
+	cumBpSum+=(*itBp);
+	cumReadSum+=(*itRead);
       }
 
       // Store counts
@@ -198,6 +204,7 @@ annotateCoverage(TFiles const& files, uint16_t minMapQual, TSVs& svs, TCountMap&
   }
   // Clean-up
   for(unsigned int file_c = 0; file_c < files.size(); ++file_c) {
+    bam_hdr_destroy(hdr[file_c]);
     hts_idx_destroy(idx[file_c]);
     sam_close(samfile[file_c]);
   }
