@@ -1746,7 +1746,7 @@ inline int dellyRun(Config const& c, TSVType svType) {
   typedef boost::unordered_map<TSampleSVPair, TReadQual> TCountMap;
   TCountMap spanCountMap;
   _annotateSpanningCoverage(c, sampleLib, svs, spanCountMap, svType);
-
+  
   // Annotate coverage
   typedef boost::unordered_map<TSampleSVPair, ReadCount> TRCMap;
   TRCMap rcMap;

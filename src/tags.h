@@ -271,8 +271,8 @@ namespace torali {
     int32_t chr2;
     std::string consensus;
 
-    StructuralVariantRecord() {}
-  StructuralVariantRecord(int32_t const c, int const s, int const e) : svStart(s), svEnd(e), chr(c) {}
+  StructuralVariantRecord() : svStartBeg(0), svStartEnd(0), svEndBeg(0), svEndEnd(0), svStart(0), svEnd(0), peSupport(0), srSupport(0), wiggle(0), insLen(0), srAlignQuality(0), id(0), precise(false), ct(0), peMapQuality(0), chr(0), chr2(0) {}
+  StructuralVariantRecord(int32_t const c, int const s, int const e) : svStartBeg(0), svStartEnd(0), svEndBeg(0), svEndEnd(0), svStart(s), svEnd(e), peSupport(0), srSupport(0), wiggle(0), insLen(0), srAlignQuality(0), id(0), precise(false), ct(0), peMapQuality(0), chr(c), chr2(c) {}
   };
 
   template<typename TSV>
