@@ -4,7 +4,7 @@
 
 from __future__ import division, print_function
 import click
-from flask import Flask, render_template, request
+from flask import Flask, render_template, request, abort
 import h5py
 import os
 import json
@@ -51,7 +51,11 @@ ct_re = re.compile(r'\bCT=([^;\s]+)')
 def calls(chrom):
     dataset = []
     if cfg['vcf']:
-        f = pysam.Tabixfile(cfg['vcf'])
+        try:
+            f = pysam.Tabixfile(cfg['vcf'])
+        except Exception as e:
+            print(e, file=sys.stderr)
+            abort(500)
         try:
             for row in csv.reader(f.fetch(str(chrom)), delimiter='\t'):
                 chrom2 = chr2_re.search(row[7]).group(1)
@@ -73,7 +77,7 @@ def calls(chrom):
                     'chr2': chrom2
                 })
         # no calls for this chrom...
-        except (ValueError, AttributeError) as e:
+        except Exception as e:
             print('Error parsing VCF file for chromosome {}'.format(chrom), file = sys.stderr)
             print('Note: There might be no calls; Also keys CHR2 and END',
                   'need to be present in every variant.', file = sys.stderr)
