@@ -30,9 +30,13 @@ var suave = function () {
   var innerHeight = arc.height + depth.height + brush.height;
   var outerHeight = innerHeight + margin.top + margin.bottom;
 
-  // TODO this needs to be dynamic based on the actual VCF
-  // also: use colorbrewer palette
-  var svColors = {'INV': 'orange', 'DUP': '#666', 'DEL': 'DodgerBlue'};
+  // TODO needs to be dynamic
+  var svColors = {
+    'INV': '#66c2a5',
+    'DUP': '#fc8d62',
+    'DEL': '#8da0cb',
+    'TRA': '#e78ac3'
+  };
 
   function populateChroms(s1, s2) {
     $.getJSON('/chroms/' + s1 + '/' + s2, function (res) {
@@ -259,6 +263,7 @@ var suave = function () {
         .append('path')
         .filter(function (d) {
           return checked.get(d['type'])
+              && my.chrom === d['chr2']
               && d['start'] >= xDepth.invert(0)
               && d['end'] <= xDepth.invert(my.arc.width);
         })
@@ -292,13 +297,16 @@ var suave = function () {
           + ' ('
           + d['ct']
           + ')\x0A'
-          + 'start: '
+          + my.chrom
+          + ':'
           + posFormat(d['start'])
-          + ' end: '
+          + '-'
+          + d['chr2']
+          + ':'
           + posFormat(d['end']);
       });
 
-      // single breakpoints
+      // single breakpoints & translocations
       // FIXME code dup
       arcG.selectAll('path.line')
         .data(my.data.calls)
@@ -306,15 +314,21 @@ var suave = function () {
         .append('path')
         .filter(function (d) {
           return checked.get(d['type'])
-            && inRange(d['start'],
+            && inRange(my.chrom,
+                       my.chrom,
+                       d['start'],
                        xDepth.invert(0),
                        xDepth.invert(my.arc.width))
-              != inRange(d['end'],
+              != inRange(my.chrom,
+                         d['chr2'],
+                         d['end'],
                          xDepth.invert(0),
                          xDepth.invert(my.arc.width));
         })
         .attr('d', function (d) {
-          var point = inRange(d['start'],
+          var point = inRange(my.chrom,
+                              my.chrom,
+                              d['start'],
                               xDepth.invert(0), 
                               xDepth.invert(my.arc.width))
             ? d['start'] 
@@ -347,9 +361,12 @@ var suave = function () {
           + ' ('
           + d['ct']
           + ')\x0A'
-          + 'start: '
+          + my.chrom
+          + ':'
           + posFormat(d['start'])
-          + ' end: '
+          + '-'
+          + d['chr2']
+          + ':'
           + posFormat(d['end']);
       });
 
@@ -361,7 +378,10 @@ var suave = function () {
 
     }
 
-    function inRange(x, s, e) {
+    function inRange(chr1, chr2, x, s, e) {
+      if (chr1 !== chr2) {
+        return false;
+      }
       return x >= s && x <= e ? true : false;
     }
 
