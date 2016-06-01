@@ -1018,7 +1018,8 @@ _annotateCoverage(TConfig const& c, bam_hdr_t* hdr, TSVs& svs, TCountMap& countM
   }
 
   // Add control regions
-  TSVs svc = svs;
+  typedef std::vector<CovRecord> TCovRecord;
+  TCovRecord svc;  
   unsigned int maxId = 0;
   for (typename TSVs::const_iterator itSV = svs.begin(); itSV != svs.end(); ++itSV)
     if (itSV->id > maxId) maxId = itSV->id;  
@@ -1030,11 +1031,12 @@ _annotateCoverage(TConfig const& c, bam_hdr_t* hdr, TSVs& svs, TCountMap& countM
     int halfSize = (itSV->svEnd - itSV->svStart)/2;
 
     // Left control region
-    StructuralVariantRecord sLeft;
+    CovRecord sLeft;
     sLeft.chr = itSV->chr;
     sLeft.id = ++maxId;
     sLeft.svStart = std::max(itSV->svStart - halfSize, 0);
     sLeft.svEnd = itSV->svStart;
+    sLeft.peSupport = 0;
     typename TNIntervals::const_iterator itO = ni[sLeft.chr].find(boost::icl::discrete_interval<int>::right_open(sLeft.svStart, sLeft.svEnd));
     while (itO != ni[sLeft.chr].end()) {
       sLeft.svStart = std::max(itO->lower() - halfSize, 0);
@@ -1044,12 +1046,22 @@ _annotateCoverage(TConfig const& c, bam_hdr_t* hdr, TSVs& svs, TCountMap& countM
     svMap.insert(std::make_pair(sLeft.id, std::make_pair(itSV->id, true)));
     svc.push_back(sLeft);
 
+    // Actual SV
+    CovRecord sMiddle;
+    sMiddle.chr = itSV->chr;
+    sMiddle.id = itSV->id;
+    sMiddle.svStart = itSV->svStart;
+    sMiddle.svEnd = itSV->svEnd;
+    sMiddle.peSupport = itSV->peSupport;
+    svc.push_back(sMiddle);
+
     // Right control region
-    StructuralVariantRecord sRight;
+    CovRecord sRight;
     sRight.chr = itSV->chr;
     sRight.id = ++maxId;
     sRight.svStart = itSV->svEnd;
     sRight.svEnd = itSV->svEnd + halfSize;
+    sRight.peSupport = 0;
     itO = ni[sRight.chr].find(boost::icl::discrete_interval<int>::right_open(sRight.svStart, sRight.svEnd));
     while (itO != ni[sRight.chr].end()) {
       sRight.svStart = itO->upper();

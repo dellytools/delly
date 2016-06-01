@@ -246,8 +246,8 @@ namespace torali {
     int32_t peSupport;
     uint32_t id;
 
-    CovRecord() {}
-    CovRecord(int32_t const c, int32_t const s, int32_t const e) : chr(c), svStart(s), svEnd(e) {}
+  CovRecord() : chr(0), svStart(0), svEnd(0), peSupport(0), id(0) {}
+  CovRecord(int32_t const c, int32_t const s, int32_t const e) : chr(c), svStart(s), svEnd(e), peSupport(0), id(0) {}
   };
 
   // Structural variant record
