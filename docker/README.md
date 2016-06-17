@@ -9,7 +9,7 @@ You can then run DELLY from that image. Below we assume your bam files are in /v
 
 `docker run -it -v /var/data:/data trausch/delly /bin/bash`
 
-`/delly/src/delly call -t DEL -o /data/del.bcf -g /data/ref.fa /data/s1.bam /data/s2.bam`
+`delly call -t DEL -o /data/del.bcf -g /data/ref.fa /data/s1.bam /data/s2.bam`
 
 Once DELLY is finished you can just exit the Docker image:
 
