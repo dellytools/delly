@@ -10,7 +10,7 @@ FROM ubuntu:14.04
 MAINTAINER Tobias Rausch rausch@embl.de
 
 # install g++, git, zlib, cmake, ant, python
-RUN apt-get update && apt-get install -y build-essential g++ git cmake zlib1g-dev ant libbz2-dev libboost-date-time-dev libboost-program-options-dev libboost-system-dev libboost-filesystem-dev libboost-iostreams-dev python python-dev python-pip gfortran libncurses-dev hdf5-tools libhdf5-dev &&  && apt-get clean
+RUN apt-get update && apt-get install -y build-essential g++ git cmake zlib1g-dev ant libbz2-dev libboost-date-time-dev libboost-program-options-dev libboost-system-dev libboost-filesystem-dev libboost-iostreams-dev python python-dev python-pip gfortran libncurses-dev hdf5-tools libhdf5-dev && apt-get clean
 
 # set environment
 ENV BOOST_ROOT /usr
