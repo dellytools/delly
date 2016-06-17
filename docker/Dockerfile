@@ -9,11 +9,8 @@ FROM ubuntu:14.04
 
 MAINTAINER Tobias Rausch rausch@embl.de
 
-# update package repository
-RUN apt-get update
-
 # install g++, git, zlib, cmake, ant, python
-RUN apt-get install -y build-essential g++ git cmake zlib1g-dev ant libbz2-dev libboost-date-time-dev libboost-program-options-dev libboost-system-dev libboost-filesystem-dev libboost-iostreams-dev python python-dev python-pip gfortran libncurses-dev hdf5-tools libhdf5-dev
+RUN apt-get update && apt-get install -y build-essential g++ git cmake zlib1g-dev ant libbz2-dev libboost-date-time-dev libboost-program-options-dev libboost-system-dev libboost-filesystem-dev libboost-iostreams-dev python python-dev python-pip gfortran libncurses-dev hdf5-tools libhdf5-dev &&  && apt-get clean
 
 # set environment
 ENV BOOST_ROOT /usr
@@ -30,7 +27,5 @@ RUN git clone https://github.com/tobiasrausch/delly.git
 RUN cd delly/ && touch .bcftools .htslib .boost && make all && cd ..
 
 # install python variant filtering dependencies
-RUN pip install -r delly/complexVariants/requirements.txt
-
-
+#RUN pip install -r delly/complexVariants/requirements.txt
 
