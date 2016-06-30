@@ -1,4 +1,5 @@
 #!/usr/bin/env cwl-runner
+
 class: CommandLineTool
 id: "Delly"
 label: "Delly tool"
@@ -40,7 +41,7 @@ inputs:
       type: array
       items: File
       secondaryFiles:
-        - ^.bai
+        - .bai
     inputBinding:
       position: 5
 outputs: []
