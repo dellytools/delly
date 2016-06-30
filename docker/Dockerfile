@@ -59,3 +59,9 @@ RUN cd /opt \
 # install python variant filtering dependencies
 #RUN pip install -r delly/complexVariants/requirements.txt
 
+# add user
+RUN groupadd -r -g 1000 ubuntu && useradd -r -g ubuntu -u 1000 -m ubuntu
+USER ubuntu
+
+# by default /bin/bash is executed
+CMD ["/bin/bash"]
