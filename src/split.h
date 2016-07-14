@@ -31,6 +31,18 @@ Contact: Tobias Rausch (rausch@embl.de)
 namespace torali
 {
 
+  struct AlignDescriptor {
+    int32_t cStart;
+    int32_t cEnd;
+    int32_t rStart;
+    int32_t rEnd;
+    int32_t homLeft;
+    int32_t homRight;
+    float percId;
+    
+    AlignDescriptor() : cStart(0), cEnd(0), rStart(0), rEnd(0), homLeft(0), homRight(0), percId(0) {}
+  };
+
   template<typename TBPoint, typename TCT>
   inline void
   _adjustOrientation(std::string&, TBPoint, TCT, SVType<DeletionTag>) 
@@ -271,80 +283,80 @@ namespace torali
 
 
   // Deletions
-  template<typename TString, typename TSvRecord, typename TAIndex, typename TPosition>
+  template<typename TString, typename TSvRecord, typename TAlignDescriptor, typename TPosition>
   inline bool
-  _coordTransform(TString const&, TSvRecord const& sv, TAIndex rStart, TAIndex rEnd, TPosition& finalGapStart, TPosition& finalGapEnd, SVType<DeletionTag>) {
-    TAIndex annealed = sv.svStartEnd - sv.svStartBeg;
-    if ((rStart >= annealed) || (rEnd < annealed)) return false;
-    finalGapStart = sv.svStartBeg + rStart - 1;
-    finalGapEnd = sv.svEndBeg + (rEnd - annealed);
+  _coordTransform(TString const&, TSvRecord const& sv, TAlignDescriptor const& ad, TPosition& finalGapStart, TPosition& finalGapEnd, SVType<DeletionTag>) {
+    int32_t annealed = sv.svStartEnd - sv.svStartBeg;
+    if ((ad.rStart >= annealed) || (ad.rEnd < annealed)) return false;
+    finalGapStart = sv.svStartBeg + ad.rStart;
+    finalGapEnd = sv.svEndBeg + (ad.rEnd - annealed);
     return true;
   }
 
   // Duplications
-  template<typename TString, typename TSvRecord, typename TAIndex, typename TPosition>
+  template<typename TString, typename TSvRecord, typename TAlignDescriptor, typename TPosition>
   inline bool
-  _coordTransform(TString const&, TSvRecord const& sv, TAIndex rStart, TAIndex rEnd, TPosition& finalGapStart, TPosition& finalGapEnd, SVType<DuplicationTag>) {
-    TAIndex annealed = sv.svEndEnd - sv.svEndBeg;
-    if ((rStart >= annealed) || (rEnd < annealed)) return false;
-    finalGapStart = sv.svStartBeg + (rEnd - annealed);
-    finalGapEnd = sv.svEndBeg + rStart - 1;
+  _coordTransform(TString const&, TSvRecord const& sv, TAlignDescriptor const& ad, TPosition& finalGapStart, TPosition& finalGapEnd, SVType<DuplicationTag>) {
+    int32_t annealed = sv.svEndEnd - sv.svEndBeg;
+    if ((ad.rStart >= annealed) || (ad.rEnd < annealed)) return false;
+    finalGapStart = sv.svStartBeg + (ad.rEnd - annealed);
+    finalGapEnd = sv.svEndBeg + ad.rStart;
     return true;
   }
 
   // Inversion
-  template<typename TString, typename TSvRecord, typename TAIndex, typename TPosition>
+  template<typename TString, typename TSvRecord, typename TAlignDescriptor, typename TPosition>
   inline bool
-  _coordTransform(TString const& ref, TSvRecord const& sv, TAIndex rStart, TAIndex rEnd, TPosition& finalGapStart, TPosition& finalGapEnd, SVType<InversionTag>) {
-    TAIndex annealed = sv.svStartEnd - sv.svStartBeg;
-    if ((rStart >= annealed) || (rEnd < annealed)) return false;
+  _coordTransform(TString const& ref, TSvRecord const& sv, TAlignDescriptor const& ad, TPosition& finalGapStart, TPosition& finalGapEnd, SVType<InversionTag>) {
+    int32_t annealed = sv.svStartEnd - sv.svStartBeg;
+    if ((ad.rStart >= annealed) || (ad.rEnd < annealed)) return false;
     if (!sv.ct) {
-      finalGapStart = sv.svStartBeg + rStart - 1;
-      finalGapEnd = sv.svEndBeg + (ref.size() - rEnd) + 1;
+      finalGapStart = sv.svStartBeg + ad.rStart;
+      finalGapEnd = sv.svEndBeg + (ref.size() - ad.rEnd) + 1;
     } else {
-      finalGapStart = sv.svStartBeg + (annealed - rStart) + 2;
-      finalGapEnd = sv.svEndBeg + (rEnd - annealed);
+      finalGapStart = sv.svStartBeg + (annealed - ad.rStart) + 1;
+      finalGapEnd = sv.svEndBeg + (ad.rEnd - annealed);
     } 
     return true;
   }
 
   // Translocation
-  template<typename TString, typename TSvRecord, typename TAIndex, typename TPosition>
+  template<typename TString, typename TSvRecord, typename TAlignDescriptor, typename TPosition>
   inline bool
-  _coordTransform(TString const& ref, TSvRecord const& sv, TAIndex rStart, TAIndex rEnd, TPosition& finalGapStart, TPosition& finalGapEnd, SVType<TranslocationTag>) {
+  _coordTransform(TString const& ref, TSvRecord const& sv, TAlignDescriptor const& ad, TPosition& finalGapStart, TPosition& finalGapEnd, SVType<TranslocationTag>) {
     if (sv.ct == 0) {
-      TAIndex annealed = sv.svStartEnd - sv.svStartBeg;
-      if ((rStart >= annealed) || (rEnd < annealed)) return false;
-      finalGapStart = sv.svStartBeg + rStart -1;
-      finalGapEnd = sv.svEndBeg + (ref.size() - rEnd) + 1;
+      int32_t annealed = sv.svStartEnd - sv.svStartBeg;
+      if ((ad.rStart >= annealed) || (ad.rEnd < annealed)) return false;
+      finalGapStart = sv.svStartBeg + ad.rStart;
+      finalGapEnd = sv.svEndBeg + (ref.size() - ad.rEnd) + 1;
     }
     else if (sv.ct == 1) {
-      TAIndex annealed = sv.svStartEnd - sv.svStartBeg;
-      if ((rStart >= annealed) || (rEnd < annealed)) return false;
-      finalGapStart = sv.svStartBeg + (annealed - rStart) + 2;
-      finalGapEnd = sv.svEndBeg + (rEnd - annealed);
+      int32_t annealed = sv.svStartEnd - sv.svStartBeg;
+      if ((ad.rStart >= annealed) || (ad.rEnd < annealed)) return false;
+      finalGapStart = sv.svStartBeg + (annealed - ad.rStart) + 1;
+      finalGapEnd = sv.svEndBeg + (ad.rEnd - annealed);
     }
     else if (sv.ct == 2) {
-      TAIndex annealed = sv.svStartEnd - sv.svStartBeg;
-      if ((rStart >= annealed) || (rEnd < annealed)) return false;
-      finalGapStart = sv.svStartBeg + rStart - 1;
-      finalGapEnd = sv.svEndBeg + (rEnd - annealed);
+      int32_t annealed = sv.svStartEnd - sv.svStartBeg;
+      if ((ad.rStart >= annealed) || (ad.rEnd < annealed)) return false;
+      finalGapStart = sv.svStartBeg + ad.rStart;
+      finalGapEnd = sv.svEndBeg + (ad.rEnd - annealed);
     } 
     else if (sv.ct == 3) {
-      TAIndex annealed = sv.svEndEnd - sv.svEndBeg;
-      if ((rStart >= annealed) || (rEnd < annealed)) return false;
-      finalGapStart = sv.svStartBeg + (rEnd - annealed);
-      finalGapEnd = sv.svEndBeg + rStart - 1;
+      int32_t annealed = sv.svEndEnd - sv.svEndBeg;
+      if ((ad.rStart >= annealed) || (ad.rEnd < annealed)) return false;
+      finalGapStart = sv.svStartBeg + (ad.rEnd - annealed);
+      finalGapEnd = sv.svEndBeg + ad.rStart;
     }
     else return false;
     return true;
   }
 
-  template<typename TString, typename TSvRecord, typename TAIndex, typename TPosition>
+  template<typename TString, typename TSvRecord, typename TAlignDescriptor, typename TPosition>
   inline bool
-  _coordTransform(TString const&, TSvRecord const& sv, TAIndex rStart, TAIndex rEnd, TPosition& finalGapStart, TPosition& finalGapEnd, SVType<InsertionTag>) {
-    finalGapStart = sv.svStartBeg + rStart;
-    finalGapEnd = sv.svStartBeg + rEnd;
+  _coordTransform(TString const&, TSvRecord const& sv, TAlignDescriptor const& ad, TPosition& finalGapStart, TPosition& finalGapEnd, SVType<InsertionTag>) {
+    finalGapStart = sv.svStartBeg + ad.rStart;
+    finalGapEnd = sv.svStartBeg + ad.rEnd;
     return true;
   }
 
@@ -376,74 +388,28 @@ namespace torali
   }
 
 
-  template<typename TAlign, typename TAIndex, typename TFloat, typename TSVType>
-  inline bool
-  _findSplit(TAlign const& align, TAIndex& cStart, TAIndex& cEnd, TAIndex& rStart, TAIndex& rEnd, TAIndex& gS, TAIndex& gE, TFloat& percId, TSVType svt) {
-    // Initializiation
-    gS=0;
-    gE=0;
-    cStart=0;
-    cEnd=0;
-    rStart=0;
-    rEnd=0;
-
-    // Find longest internal gap
-    TAIndex refIndex=0;
-    TAIndex varIndex=0;
-    TAIndex gapStartRefIndex=0;
-    TAIndex gapEndRefIndex=0;
-    TAIndex gapStartVarIndex=0;
-    TAIndex gapEndVarIndex=0;
-    TAIndex a1 = 0;
-    TAIndex a2 = 0;
+  template<typename TAlign, typename TAIndex, typename TFloat>
+  inline void
+  _percentIdentity(TAlign const& align, TAIndex const gS, TAIndex const gE, TFloat& percId) {
+    // Find percent identity
+    bool varSeen = false;
+    bool refSeen = false;
+    uint32_t gapMM = 0;
+    uint32_t mm = 0;
+    uint32_t ma = 0;
     bool inGap=false;
     for(TAIndex j = 0; j < (TAIndex) align.shape()[1]; ++j) {
-      if (align[0][j] != '-') ++varIndex;
-      if (align[1][j] != '-') ++refIndex;
-      // Internal gap?
-      if (((align[0][j] == '-') || (align[1][j] == '-')) && (refIndex>0) && (varIndex>0)) {
-	if (!inGap) {
-	  gapStartRefIndex=refIndex;
-	  gapStartVarIndex=varIndex;
-	  a1 = j;
-	  inGap = true;
-	}
-	gapEndRefIndex=refIndex + 1;
-	gapEndVarIndex=varIndex + 1;
-	a2 = j;
-      } else {
-	if ((inGap) && (_checkSVGap((gapEndRefIndex - gapStartRefIndex), (rEnd - rStart), (gapEndVarIndex - gapStartVarIndex), (cEnd - cStart), svt))) {
-	  rStart=gapStartRefIndex;
-	  rEnd=gapEndRefIndex;
-	  cStart=gapStartVarIndex;
-	  cEnd=gapEndVarIndex;
-	  gS = a1;
-	  gE = a2;
-	}
-	inGap=false;
-      }
-    }
-
-    // Find percent identity
-    if (rEnd > rStart) {
-      TAIndex rI=0;
-      TAIndex vI=0;
-      uint32_t gapMM = 0;
-      uint32_t mm = 0;
-      uint32_t ma = 0;
-      bool inGap=false;
-      for(TAIndex j = 0; j < (TAIndex) align.shape()[1]; ++j) {
-	//std::cerr << j << ',' << ma << ',' << mm << std::endl;
-	if (align[0][j] != '-') ++vI;
-	if (align[1][j] != '-') ++rI;
+      if ((j < gS) || (j > gE)) {
+	if (align[0][j] != '-') varSeen = true;
+	if (align[1][j] != '-') refSeen = true;
 	// Internal gap?
 	if ((align[0][j] == '-') || (align[1][j] == '-')) {
-	  if ((rI>0) && (vI>0)) {
+	  if ((refSeen) && (varSeen)) {
 	    if (!inGap) {
 	      inGap = true;
 	      gapMM = 0;
 	    }
-	    if ((rI < rStart) || (rI >= rEnd)) gapMM += 1;
+	    gapMM += 1;
 	  }
 	} else {
 	  if (inGap) {
@@ -454,19 +420,10 @@ namespace torali
 	  else mm += 1;
 	}
       }
-      percId = (TFloat) ma / (TFloat) (ma + mm);
     }
-    return (rEnd > rStart);
+    percId = (TFloat) ma / (TFloat) (ma + mm);
   }
 
-  template<typename TAlign, typename TAIndex, typename TSVType>
-  inline bool
-  _findSplit(TAlign const& align, TAIndex& cStart, TAIndex& cEnd, TAIndex& rStart, TAIndex& rEnd, TSVType svt) {
-    TAIndex alignJ1 = 0;
-    TAIndex alignJ2 = 0;
-    double percId = 0;
-    return _findSplit(align, cStart, cEnd, rStart, rEnd, alignJ1, alignJ2, percId, svt);
-  }
 
   template<typename TAlign, typename TAIndex, typename TLength>
   inline void
@@ -539,9 +496,67 @@ namespace torali
     }
   }
 
+  
+  template<typename TConfig, typename TAlign, typename TAlignDescriptor, typename TSVType>
+  inline bool
+  _findSplit(TConfig const& c, TAlign const& align, TAlignDescriptor& ad, TSVType svt) {
+    // Initializiation
+    int32_t gS=0;
+    int32_t gE=0;
+
+    // Find longest internal gap
+    int32_t refIndex=0;
+    int32_t varIndex=0;
+    int32_t gapStartRefIndex=0;
+    int32_t gapStartVarIndex=0;
+    int32_t a1 = 0;
+    bool inGap=false;
+    for(int32_t j = 0; j < (int32_t) align.shape()[1]; ++j) {
+      if (align[0][j] != '-') ++varIndex;
+      if (align[1][j] != '-') ++refIndex;
+      // Internal gap?
+      if (((align[0][j] == '-') || (align[1][j] == '-')) && (refIndex>0) && (varIndex>0)) {
+	if (!inGap) {
+	  gapStartVarIndex = (align[0][j] != '-') ? (varIndex - 1) : varIndex;
+	  gapStartRefIndex = (align[1][j] != '-') ? (refIndex - 1) : refIndex;
+	  a1 = j;
+	  inGap = true;
+	}
+      } else {
+	if ((inGap) && (_checkSVGap((refIndex - gapStartRefIndex), (ad.rEnd - ad.rStart), (varIndex - gapStartVarIndex), (ad.cEnd - ad.cStart), svt))) {
+	  ad.rStart=gapStartRefIndex;
+	  ad.rEnd=refIndex;
+	  ad.cStart=gapStartVarIndex;
+	  ad.cEnd=varIndex;
+	  gS = a1;
+	  gE = j - 1;
+	}
+	inGap=false;
+      }
+    }
+    if (ad.rEnd <= ad.rStart) return false;
+    
+    // Is this a valid split-read alignment?
+    if (!_validSRAlignment(ad.cStart, ad.cEnd, ad.rStart, ad.rEnd, svt)) return false;
+
+    // Check percent identity
+    _percentIdentity(align, gS, gE, ad.percId);
+    if (ad.percId < c.flankQuality) return false;
+
+    // Find homology
+    _findHomology(align, gS, gE, ad.homLeft, ad.homRight);
+
+    // Check flanking alignment length
+    if ((ad.homLeft + c.minimumFlankSize > ad.cStart) || ( varIndex < ad.cEnd + ad.homRight + c.minimumFlankSize)) return false;
+    if ((ad.homLeft + c.minimumFlankSize > ad.rStart) || ( refIndex < ad.rEnd + ad.homRight + c.minimumFlankSize)) return false;
+
+    // Valid split-read alignment
+    return true;
+  }
+
   template<typename TAlign, typename TTag>
   inline bool
-    _consRefAlignment(std::string const& cons, std::string const& svRefStr, TAlign& aln, SVType<TTag>)
+  _consRefAlignment(std::string const& cons, std::string const& svRefStr, TAlign& aln, SVType<TTag>)
   {
     AlignConfig<true, false> semiglobal;
     DnaScore<int> lnsc(5, -4, -4, -4);
@@ -551,7 +566,7 @@ namespace torali
 
   template<typename TAlign>
   inline bool
-    _consRefAlignment(std::string const& cons, std::string const& svRefStr, TAlign& aln, SVType<InsertionTag>)
+  _consRefAlignment(std::string const& cons, std::string const& svRefStr, TAlign& aln, SVType<InsertionTag>)
   {
     typedef typename TAlign::index TAIndex;
     AlignConfig<false, true> semiglobal;
@@ -568,60 +583,43 @@ namespace torali
   template<typename TConfig, typename TStructuralVariantRecord, typename TTag>
   inline bool
   alignConsensus(TConfig const& c, TStructuralVariantRecord& sv, std::string const& svRefStr, SVType<TTag> svType) {
-    if (sv.consensus.size() < 35) return false;
-    typedef boost::multi_array<char, 2> TAlign;
-    typedef typename TAlign::index TAIndex;
+    if ( (int32_t) sv.consensus.size() < (2 * c.minimumFlankSize)) return false;
 
     // Consensus to reference alignment
-    TAlign alignFwd;
-    if (!_consRefAlignment(sv.consensus, svRefStr, alignFwd, svType)) return false;
+    typedef boost::multi_array<char, 2> TAlign;
+    TAlign align;
+    if (!_consRefAlignment(sv.consensus, svRefStr, align, svType)) return false;
 
     // Check breakpoint
-    TAIndex cStart, cEnd, rStart, rEnd, gS, gE;
-    double quality = 0;
-    if (!_findSplit(alignFwd, cStart, cEnd, rStart, rEnd, gS, gE, quality, svType)) return false;
+    AlignDescriptor ad;
+    if (!_findSplit(c, align, ad, svType)) return false;
 
     // Debug consensus to reference alignment
-    //for(TAIndex i = 0; i<alignFwd.shape()[0]; ++i) {
-    //for(TAIndex j = 0; j<alignFwd.shape()[1]; ++j) {
-    //std::cerr << alignFwd[i][j];
+    //for(TAIndex i = 0; i<align.shape()[0]; ++i) {
+    //for(TAIndex j = 0; j<align.shape()[1]; ++j) {
+    //std::cerr << align[i][j];
     //}
     //std::cerr << std::endl;
     //}
-    //std::cerr << "Flanking alignment percent identity: " << quality << std::endl;
-    //std::cerr << cStart << ',' << cEnd << ',' << rStart << ',' << rEnd << std::endl;
     //std::cerr << std::endl;
-
-    // Check quality
-    if (quality < c.flankQuality) return false;
-
-    // Find homology
-    if (!_validSRAlignment(cStart, cEnd, rStart, rEnd, svType)) return false;
-    int32_t homLeft = 0;
-    int32_t homRight = 0;
-    _findHomology(alignFwd, gS, gE, homLeft, homRight);
-
-    // Check flanking alignment length
-    if ((homLeft + c.minimumFlankSize > (int32_t) cStart) || ( (int32_t) (sv.consensus.size() - cEnd) < homRight + c.minimumFlankSize)) return false;
-    if ((homLeft + c.minimumFlankSize > (int32_t) rStart) || ( (int32_t) (svRefStr.size() - rEnd) < homRight + c.minimumFlankSize)) return false;
 
     // Get the start and end of the structural variant
     unsigned int finalGapStart = 0;
     unsigned int finalGapEnd = 0;
     if (c.technology == "illumina") {
-      if (!_coordTransform(svRefStr, sv, rStart, rEnd, finalGapStart, finalGapEnd, svType)) return false;
+      if (!_coordTransform(svRefStr, sv, ad, finalGapStart, finalGapEnd, svType)) return false;
     } else if (c.technology == "pacbio") {
       int32_t rs = std::max(0, sv.svStart - (int32_t) (sv.consensus.size()));
-      finalGapStart = rs + rStart - 1;
-      finalGapEnd = rs + rEnd - 1;
+      finalGapStart = rs + ad.rStart - 1;
+      finalGapEnd = rs + ad.rEnd - 1;
     }
 
     // Set breakpoint & quality
     sv.precise=true;
     sv.svStart=finalGapStart;
     sv.svEnd=finalGapEnd;
-    sv.srAlignQuality=quality;
-    sv.insLen=cEnd - cStart - 1;
+    sv.srAlignQuality = ad.percId;
+    sv.insLen=ad.cEnd - ad.cStart - 1;
     return true;
   }
 

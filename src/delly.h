@@ -1459,31 +1459,28 @@ inline int dellyRun(Config const& c, TSVType svType) {
 			}
 			std::string localref = boost::to_upper_copy(std::string(seq->seq.s + localrefStart, seq->seq.s + localrefEnd));
 			typedef boost::multi_array<char, 2> TAlign;
-			typedef typename TAlign::index TAIndex;
-			TAlign alignFwd;
+			TAlign align;
 			AlignConfig<true, false> semiglobal;
 			DnaScore<int> sc(5, -4, -1 * c.aliscore.match * 15, 0);
-			int altScore = gotoh(sequence, localref, alignFwd, semiglobal, sc);
+			int altScore = gotoh(sequence, localref, align, semiglobal, sc);
 			altScore += c.aliscore.match * 15;
 			
 			// Candidate small indel?
-			TAIndex cStart, cEnd, rStart, rEnd;
-			if (_findSplit(alignFwd, cStart, cEnd, rStart, rEnd, svType)) {
-			  if (_validSRAlignment(cStart, cEnd, rStart, rEnd, svType)) {
-			    int scoreThresholdAlt = (int) (c.flankQuality * (sequence.size() - (cEnd - cStart - 1)) * sc.match + (1.0 - c.flankQuality) * (sequence.size() - (cEnd - cStart - 1)) * sc.mismatch);
-			    if (altScore > scoreThresholdAlt) {
+			AlignDescriptor ad;
+			if (_findSplit(c, align, ad, svType)) {
+			  int scoreThresholdAlt = (int) (c.flankQuality * (sequence.size() - (ad.cEnd - ad.cStart - 1)) * sc.match + (1.0 - c.flankQuality) * (sequence.size() - (ad.cEnd - ad.cStart - 1)) * sc.mismatch);
+			  if (altScore > scoreThresholdAlt) {
 
 			      // Debug consensus to reference alignment
-			      //for(TAIndex i = 0; i<alignFwd.shape()[0]; ++i) {
-			      //for(TAIndex j = 0; j<alignFwd.shape()[1]; ++j) std::cerr << alignFwd[i][j];
+			      //for(TAIndex i = 0; i<align.shape()[0]; ++i) {
+			      //for(TAIndex j = 0; j<align.shape()[1]; ++j) std::cerr << align[i][j];
 			      //std::cerr << std::endl;
 			      //}
 			      //std::cerr << bpPoint << ',' << cStart << ',' << cEnd << ',' << rStart << ',' << rEnd << std::endl;
 			      
 #pragma omp critical
-			      {
-				splitRecord.push_back(SplitAlignRecord(localrefStart + rStart - cStart, localrefStart + rStart, localrefStart + rEnd, localrefStart + rEnd + seqLeftOver + 25, rec->core.qual));
-			      }
+			    {
+			      splitRecord.push_back(SplitAlignRecord(localrefStart + ad.rStart - ad.cStart, localrefStart + ad.rStart, localrefStart + ad.rEnd, localrefStart + ad.rEnd + seqLeftOver + 25, rec->core.qual));
 			    }
 			  }
 			}

@@ -187,27 +187,17 @@ namespace torali {
 
 	      // Find breakpoint to reference
 	      typedef boost::multi_array<char, 2> TAlign;
-	      typedef typename TAlign::index TAIndex;
-	      TAlign alignFwd;
-	      _consRefAlignment(itSV->consensus, svRefStr, alignFwd, svType);
-	      TAIndex cStart, cEnd, rStart, rEnd, gS, gE;
-	      double percId = 0;
-	      _findSplit(alignFwd, cStart, cEnd, rStart, rEnd, gS, gE, percId, svType);
-	      int32_t homLeft = 0;
-	      int32_t homRight = 0;
-	      _findHomology(alignFwd, gS, gE, homLeft, homRight);
-	      if ((homLeft + c.minimumFlankSize > (int32_t) cStart) || ( (int32_t) (itSV->consensus.size() - cEnd) < homRight + c.minimumFlankSize)) continue;
-	      if ((homLeft + c.minimumFlankSize > (int32_t) rStart) || ( (int32_t) (svRefStr.size() - rEnd) < homRight + c.minimumFlankSize)) continue;
-
+	      TAlign align;
+	      if (!_consRefAlignment(itSV->consensus, svRefStr, align, svType)) continue;
+	      AlignDescriptor ad;
+	      if (!_findSplit(c, align, ad, svType)) continue;
 
 	      // Debug consensus to reference alignment
-	      //for(TAIndex i = 0; i<alignFwd.shape()[0]; ++i) {
-	      //for(TAIndex j = 0; j<alignFwd.shape()[1]; ++j) std::cerr << alignFwd[i][j];
+	      //for(TAIndex i = 0; i<align.shape()[0]; ++i) {
+	      //for(TAIndex j = 0; j<align.shape()[1]; ++j) std::cerr << align[i][j];
 	      //std::cerr << std::endl;
 	      //}
-	      //std::cerr << "Consensus-to-reference: " << homLeft << ',' << homRight << std::endl;
-	      //std::cerr << cStart << ',' << cEnd << ',' << rStart << ',' << rEnd << std::endl;
-	      //std::cerr << homLeft << ',' << homRight << std::endl;
+	      //std::cerr << std::endl;
 
 
 	      // Iterate all samples
@@ -223,18 +213,18 @@ namespace torali {
 		    regionChr = itSV->chr2;
 		    regionStart = std::max(0, itSV->svEnd - c.minimumFlankSize);
 		    regionEnd = std::min((uint32_t) (itSV->svEnd + c.minimumFlankSize), hdr->target_len[itSV->chr2]);
-		    cutConsStart = cEnd - homLeft - c.minimumFlankSize;
-		    cutConsEnd = cEnd + homRight + c.minimumFlankSize;
-		    cutRefStart = _cutRefStart((int32_t) rStart, (int32_t) rEnd, homLeft + c.minimumFlankSize, bpPoint, itSV->ct, svType);
-		    cutRefEnd = _cutRefEnd((int32_t) rStart, (int32_t) rEnd, homRight + c.minimumFlankSize, bpPoint, itSV->ct, svType);
+		    cutConsStart = ad.cEnd - ad.homLeft - c.minimumFlankSize;
+		    cutConsEnd = ad.cEnd + ad.homRight + c.minimumFlankSize;
+		    cutRefStart = _cutRefStart(ad.rStart, ad.rEnd, ad.homLeft + c.minimumFlankSize, bpPoint, itSV->ct, svType);
+		    cutRefEnd = _cutRefEnd(ad.rStart, ad.rEnd, ad.homRight + c.minimumFlankSize, bpPoint, itSV->ct, svType);
 		  } else {
 		    regionChr = itSV->chr;
 		    regionStart = std::max(0, itSV->svStart - c.minimumFlankSize);
 		    regionEnd = std::min((uint32_t) (itSV->svStart + c.minimumFlankSize), hdr->target_len[itSV->chr]);
-		    cutConsStart = cStart - homLeft - c.minimumFlankSize;
-		    cutConsEnd = cStart + homRight + c.minimumFlankSize;
-		    cutRefStart = _cutRefStart((int32_t) rStart, (int32_t) rEnd, homLeft + c.minimumFlankSize, bpPoint, itSV->ct, svType);
-		    cutRefEnd = _cutRefEnd((int32_t) rStart, (int32_t) rEnd, homRight + c.minimumFlankSize, bpPoint, itSV->ct, svType);
+		    cutConsStart = ad.cStart - ad.homLeft - c.minimumFlankSize;
+		    cutConsEnd = ad.cStart + ad.homRight + c.minimumFlankSize;
+		    cutRefStart = _cutRefStart(ad.rStart, ad.rEnd, ad.homLeft + c.minimumFlankSize, bpPoint, itSV->ct, svType);
+		    cutRefEnd = _cutRefEnd(ad.rStart, ad.rEnd, ad.homRight + c.minimumFlankSize, bpPoint, itSV->ct, svType);
 		  }
 		  std::string consProbe = itSV->consensus.substr(cutConsStart, (cutConsEnd - cutConsStart));
 		  std::string refProbe = svRefStr.substr(cutRefStart, (cutRefEnd - cutRefStart));
@@ -248,7 +238,7 @@ namespace torali {
 		  while (sam_itr_next(samfile[file_c], iter, rec) >= 0) {
 		    if (rec->core.flag & (BAM_FSECONDARY | BAM_FQCFAIL | BAM_FDUP | BAM_FSUPPLEMENTARY | BAM_FUNMAP)) continue;
 		    // Check read length & quality
-		    if ((rec->core.l_qseq < 35) || (rec->core.qual < c.minGenoQual)) continue;
+		    if ((rec->core.l_qseq < (2 * c.minimumFlankSize)) || (rec->core.qual < c.minGenoQual)) continue;
 
 		    // Valid soft clip or no soft-clip read?
 		    bool hasSoftClip = false;
@@ -257,9 +247,9 @@ namespace torali {
 		      if (bam_cigar_op(cigar[i]) == BAM_CSOFT_CLIP) hasSoftClip = true;
 		    if (!hasSoftClip) {
 		      if (bpPoint) {
-			if ((rec->core.pos + c.minimumFlankSize + homLeft > itSV->svEnd) || (rec->core.pos + rec->core.l_qseq < itSV->svEnd + c.minimumFlankSize + homRight)) continue;
+			if ((rec->core.pos + c.minimumFlankSize + ad.homLeft > itSV->svEnd) || (rec->core.pos + rec->core.l_qseq < itSV->svEnd + c.minimumFlankSize + ad.homRight)) continue;
 		      } else {
-			if ((rec->core.pos + c.minimumFlankSize + homLeft > itSV->svStart) || (rec->core.pos + rec->core.l_qseq < itSV->svStart + c.minimumFlankSize + homRight)) continue;
+			if ((rec->core.pos + c.minimumFlankSize + ad.homLeft > itSV->svStart) || (rec->core.pos + rec->core.l_qseq < itSV->svStart + c.minimumFlankSize + ad.homRight)) continue;
 		      }
 		    }
 

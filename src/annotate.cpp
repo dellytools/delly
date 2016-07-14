@@ -74,6 +74,10 @@ using namespace torali;
 
 struct ConfigAnnotate {
   int32_t maxlen;
+  int32_t minimumFlankSize;
+  float flankQuality;
+  DnaScore<int> aliscore;
+  std::string technology;
   std::string svType;
   boost::filesystem::path genome;
   boost::filesystem::path outfile;
@@ -176,44 +180,39 @@ runAnnotate(ConfigAnnotate const& c, TSVType svType)
 	  TAlign alignFwd;
 	  if (!_consRefAlignment(consensus, svRefStr, alignFwd, svType)) useTags = true;
 	  else {
-	    TAIndex cStart, cEnd, rStart, rEnd, gS, gE;
-	    double quality = 0;
-	    if (!_findSplit(alignFwd, cStart, cEnd, rStart, rEnd, gS, gE, quality, svType)) useTags = true;
+	    AlignDescriptor ad;
+	    if (!_findSplit(c, alignFwd, ad, svType)) useTags = true;
 	    else {
-	      int32_t homLeft = 0;
-	      int32_t homRight = 0;
-	      _findHomology(alignFwd, gS, gE, homLeft, homRight);
-	  
 	      // Debug consensus to reference alignment
-	      //for(TAIndex i = 0; i < (TAIndex) alignFwd.shape()[0]; ++i) {
-	      //	for(TAIndex j = 0; j< (TAIndex) alignFwd.shape()[1]; ++j) std::cerr << alignFwd[i][j];
-	      //	std::cerr << std::endl;
-	      //}
-	      //std::cerr << "Consensus-to-reference: " << homLeft << ',' << homRight << std::endl;
-	      //std::cerr << cStart << ',' << cEnd << ',' << rStart << ',' << rEnd << std::endl;
-	      //std::cerr << homLeft << ',' << homRight << std::endl;
-
+	      for(TAIndex i = 0; i < (TAIndex) alignFwd.shape()[0]; ++i) {
+	      	for(TAIndex j = 0; j< (TAIndex) alignFwd.shape()[1]; ++j) std::cerr << alignFwd[i][j];
+	      	std::cerr << std::endl;
+	      }
+	      std::cerr << ad.cStart << ',' << ad.cEnd << ',' << ad.rStart << ',' << ad.rEnd << std::endl;
+	      std::cerr << ad.percId << ',' << ad.homLeft << ',' << ad.homRight << std::endl;
+	      std::cerr << std::endl;
+	      
 	      //int32_t micrhl = 5;
 	      //_remove_info_tag(hdr_out, rec, "MICROHOMLEN");
 	      //bcf_update_info_int32(hdr_out, rec, "MICROHOMLEN", &micrhl, 1);
 
-	      std::string precChar = svRefStr.substr(rStart-2, 1);
+	      std::string precChar = svRefStr.substr(ad.rStart - 1, 1);
 	      std::string refPart = precChar;
-	      if (rEnd > rStart + 1) refPart += svRefStr.substr(rStart - 1, (rEnd-rStart));
+	      if (ad.rEnd > ad.rStart + 1) refPart += svRefStr.substr(ad.rStart, (ad.rEnd - ad.rStart) - 1);
 	      std::string altPart = precChar;
-	      if (cEnd > cStart + 1) altPart += consensus.substr(cStart - 1, (cEnd-cStart));
+	      if (ad.cEnd > ad.cStart + 1) altPart += consensus.substr(ad.cStart, (ad.cEnd - ad.cStart) - 1);
 	    
 	      // Update BCF record
-	      rec->pos = regStart + rStart - 2;
+	      rec->pos = regStart + ad.rStart - 1;
 	      std::string alleles;
 	      alleles += refPart + "," + altPart;
 	      bcf_update_alleles_str(hdr_out, rec, alleles.c_str());
 
-	      int32_t tmpi = regStart + rEnd;
+	      int32_t tmpi = regStart + ad.rEnd;
 	      bcf_update_info_int32(hdr_out, rec, "END", &tmpi, 1);
-	      tmpi = cEnd - cStart - 1;
+	      tmpi = ad.cEnd - ad.cStart - 1;
 	      bcf_update_info_int32(hdr_out, rec, "INSLEN", &tmpi, 1);
-	      float tmpf = quality;
+	      float tmpf = ad.percId;
 	      bcf_update_info_float(hdr_out, rec, "SRQ", &tmpf, 1);
 	      tmpf = entropy(consensus);
 	      bcf_update_info_float(hdr_out, rec, "CE", &tmpf, 1);
@@ -272,6 +271,7 @@ int main(int argc, char **argv) {
     ("genome,g", boost::program_options::value<boost::filesystem::path>(&c.genome), "Genomic reference file")
     ("maxlen,m", boost::program_options::value<int32_t>(&c.maxlen)->default_value(500), "max. SV size before tags (<DEL>) are used")
     ("outfile,f", boost::program_options::value<boost::filesystem::path>(&c.outfile)->default_value("out.bcf"), "output BCF file")
+    ("technology,e", boost::program_options::value<std::string>(&c.technology)->default_value("illumina"), "technology (illumina, pacbio)")
     ;
 
   // Define hidden options
@@ -318,6 +318,17 @@ int main(int argc, char **argv) {
   if (!(boost::filesystem::exists(c.genome) && boost::filesystem::is_regular_file(c.genome) && boost::filesystem::file_size(c.genome))) {
     std::cerr << "Reference file is missing: " << c.genome.string() << std::endl;
     return 1;
+  }
+
+  // Check technology
+  if (c.technology == "illumina") {
+    c.aliscore = DnaScore<int>(5, -4, -10, -1);
+    c.flankQuality = 0.95;
+    c.minimumFlankSize = 13;
+  } else if (c.technology == "pacbio") {
+    c.aliscore = DnaScore<int>(5, -4, -2, -1);
+    c.flankQuality = 0.8;
+    c.minimumFlankSize = 13;
   }
   
   // Run SV annotation

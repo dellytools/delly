@@ -133,28 +133,17 @@ namespace torali {
 
 	      // Find breakpoint to reference
 	      typedef boost::multi_array<char, 2> TAlign;
-	      typedef typename TAlign::index TAIndex;
-	      TAlign alignFwd;
-	      _consRefAlignment(itSV->consensus, svRefStr, alignFwd, svType);
-	      TAIndex cStart, cEnd, rStart, rEnd, gS, gE;
-	      double percId = 0;
-	      _findSplit(alignFwd, cStart, cEnd, rStart, rEnd, gS, gE, percId, svType);
-	      int32_t homLeft = 0;
-	      int32_t homRight = 0;
-	      _findHomology(alignFwd, gS, gE, homLeft, homRight);
-	      if ((homLeft + c.minimumFlankSize > (int32_t) cStart) || ( (int32_t) (itSV->consensus.size() - cEnd) < homRight + c.minimumFlankSize)) continue;
-	      if ((homLeft + c.minimumFlankSize > (int32_t) rStart) || ( (int32_t) (svRefStr.size() - rEnd) < homRight + c.minimumFlankSize)) continue;
-
+	      TAlign align;
+	      if (!_consRefAlignment(itSV->consensus, svRefStr, align, svType)) continue;
+	      AlignDescriptor ad;
+	      if (!_findSplit(c, align, ad, svType)) continue;
 
 	      // Debug consensus to reference alignment
-	      //for(TAIndex i = 0; i<alignFwd.shape()[0]; ++i) {
-	      //for(TAIndex j = 0; j<alignFwd.shape()[1]; ++j) std::cerr << alignFwd[i][j];
+	      //for(TAIndex i = 0; i<align.shape()[0]; ++i) {
+	      //for(TAIndex j = 0; j<align.shape()[1]; ++j) std::cerr << align[i][j];
 	      //std::cerr << std::endl;
 	      //}
-	      //std::cerr << "Consensus-to-reference: " << homLeft << ',' << homRight << std::endl;
-	      //std::cerr << cStart << ',' << cEnd << ',' << rStart << ',' << rEnd << std::endl;
-	      //std::cerr << homLeft << ',' << homRight << std::endl;
-
+	      //std::cerr << std::endl;
 
 	      // Iterate all samples
 #pragma omp parallel for default(shared)
@@ -166,11 +155,11 @@ namespace torali {
 		int32_t regionChr = itSV->chr;
 		int32_t regionStart = std::max(0, itSV->svStart - c.minimumFlankSize);
 		int32_t regionEnd = std::min((uint32_t) (itSV->svEnd + c.minimumFlankSize), hdr->target_len[itSV->chr2]);
-		int32_t cutConsStart = cStart - homLeft - c.minimumFlankSize;
-		int32_t cutConsEnd = cEnd + homRight + c.minimumFlankSize;
+		int32_t cutConsStart = ad.cStart - ad.homLeft - c.minimumFlankSize;
+		int32_t cutConsEnd = ad.cEnd + ad.homRight + c.minimumFlankSize;
 		std::string consProbe = itSV->consensus.substr(cutConsStart, (cutConsEnd - cutConsStart));
-		int32_t cutRefStart = rStart - homLeft - c.minimumFlankSize;
-		int32_t cutRefEnd = rStart + homRight + c.minimumFlankSize;
+		int32_t cutRefStart = ad.rStart - ad.homLeft - c.minimumFlankSize;
+		int32_t cutRefEnd = ad.rStart + ad.homRight + c.minimumFlankSize;
 		std::string refProbe = svRefStr.substr(cutRefStart, (cutRefEnd - cutRefStart));
 
 		hts_itr_t* iter = sam_itr_queryi(idx[file_c], regionChr, regionStart, regionEnd);
@@ -178,7 +167,7 @@ namespace torali {
 		while (sam_itr_next(samfile[file_c], iter, rec) >= 0) {
 		  if (rec->core.flag & (BAM_FSECONDARY | BAM_FQCFAIL | BAM_FDUP | BAM_FSUPPLEMENTARY | BAM_FUNMAP)) continue;
 		  // Check read length & quality
-		  if ((rec->core.l_qseq < 35) || (rec->core.qual < c.minGenoQual)) continue;
+		  if ((rec->core.l_qseq < (2 * c.minimumFlankSize)) || (rec->core.qual < c.minGenoQual)) continue;
 
 		  // Get sequence
 		  std::string sequence;
