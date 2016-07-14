@@ -190,7 +190,7 @@ namespace torali {
 	      TAlign align;
 	      if (!_consRefAlignment(itSV->consensus, svRefStr, align, svType)) continue;
 	      AlignDescriptor ad;
-	      if (!_findSplit(c, align, ad, svType)) continue;
+	      if (!_findSplit(c, itSV->consensus, svRefStr, align, ad, svType)) continue;
 
 	      // Debug consensus to reference alignment
 	      //for(TAIndex i = 0; i<align.shape()[0]; ++i) {

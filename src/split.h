@@ -425,81 +425,9 @@ namespace torali
   }
 
 
-  template<typename TAlign, typename TAIndex, typename TLength>
-  inline void
-  _findHomology(TAlign const& align, TAIndex const gS, TAIndex const gE, TLength& homLeft, TLength& homRight) {
-    int32_t mmThres = 1;
-    if (align[1][gS] == '-') {
-      // Insertion
-      int32_t mismatch = 0;
-      int32_t offset = 0;
-      for(TAIndex i = 0; i < gS; ++i, ++homLeft) {
-	if (align[1][gS-i-1] != align[0][gE-i-offset]) ++mismatch;
-	if (mismatch > mmThres) {
-	  // Try 1bp insertion
-	  if (!offset) {
-	    if (align[1][gS-i-1] == align[0][gE-i-(++offset)]) {
-	      --mismatch;
-	      continue;
-	    }
-	  }
-	  break;
-	}
-      }
-      mismatch = 0;
-      offset = 0;
-      for(TAIndex i = 0; i < (TAIndex) (align.shape()[1] - gE - 1); ++i, ++homRight) {
-	if (align[0][gS+i] != align[1][gE+i+1]) ++mismatch;
-	if (mismatch > mmThres) {
-	  // Try 1bp insertion
-	  if (!offset) {
-	    if (align[0][gS+i+(++offset)] == align[1][gE+i+1]) {
-	      --mismatch;
-	      continue;
-	    }
-	  }
-	  break;
-	}
-      }
-    } else if (align[0][gS] == '-') {
-      // Deletion
-      int32_t mismatch = 0;
-      int32_t offset = 0;
-      for(TAIndex i = 0; i < gS; ++i, ++homLeft) {
-	if (align[0][gS-i-1] != align[1][gE-i-offset]) ++mismatch;
-	if (mismatch > mmThres) {
-	  // Try 1bp deletion
-	  if (!offset) {
-	    if (align[0][gS-i-1] == align[1][gE-i-(++offset)]) {
-	      --mismatch;
-	      continue;
-	    }
-	  }
-	  break;
-	}
-      }
-      mismatch = 0;
-      offset = 0;
-      for(TAIndex i = 0; i < (TAIndex) (align.shape()[1] - gE - 1); ++i, ++homRight) {
-	if (align[1][gS+i] != align[0][gE+i+1]) ++mismatch;
-	if (mismatch > mmThres) {
-	  // Try 1bp deletion
-	  if (!offset) {
-	    if (align[1][gS+i+(++offset)] == align[0][gE+i+1]) {
-	      --mismatch;
-	      continue;
-	    }
-	  }
-	  break;
-	}
-      }
-    }
-  }
-
-  
   template<typename TConfig, typename TAlign, typename TAlignDescriptor, typename TSVType>
   inline bool
-  _findSplit(TConfig const& c, TAlign const& align, TAlignDescriptor& ad, TSVType svt) {
+  _findSplit(TConfig const& c, std::string const& consensus, std::string const& svRefStr, TAlign const& align, TAlignDescriptor& ad, TSVType svt) {
     // Initializiation
     int32_t gS=0;
     int32_t gE=0;
@@ -544,7 +472,12 @@ namespace torali
     if (ad.percId < c.flankQuality) return false;
 
     // Find homology
-    _findHomology(align, gS, gE, ad.homLeft, ad.homRight);
+    ad.homRight = longestHomology(consensus.substr(ad.cEnd - 1), svRefStr.substr(ad.rStart), -1);
+    std::string preC = consensus.substr(0, ad.cStart);
+    std::string preR = svRefStr.substr(0, ad.rEnd - 1);
+    std::reverse(preC.begin(), preC.end());
+    std::reverse(preR.begin(), preR.end());
+    ad.homLeft = longestHomology(preC, preR, -1);
 
     // Check flanking alignment length
     if ((ad.homLeft + c.minimumFlankSize > ad.cStart) || ( varIndex < ad.cEnd + ad.homRight + c.minimumFlankSize)) return false;
@@ -592,7 +525,7 @@ namespace torali
 
     // Check breakpoint
     AlignDescriptor ad;
-    if (!_findSplit(c, align, ad, svType)) return false;
+    if (!_findSplit(c, sv.consensus, svRefStr, align, ad, svType)) return false;
 
     // Debug consensus to reference alignment
     //for(TAIndex i = 0; i<align.shape()[0]; ++i) {
@@ -620,6 +553,7 @@ namespace torali
     sv.svEnd=finalGapEnd;
     sv.srAlignQuality = ad.percId;
     sv.insLen=ad.cEnd - ad.cStart - 1;
+    sv.homLen=std::max(0, ad.homLeft + ad.homRight - 2); 
     return true;
   }
 

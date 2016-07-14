@@ -32,6 +32,39 @@ Contact: Tobias Rausch (rausch@embl.de)
 namespace torali
 {
 
+  inline int32_t
+  longestHomology(std::string const& s1, std::string const& s2, int32_t scoreThreshold)
+  {
+    // DP Matrix
+    typedef boost::multi_array<int32_t, 2> TMatrix;
+    int32_t m = s1.size();
+    int32_t n = s2.size();
+    TMatrix mat(boost::extents[m+1][n+1]);
+
+    // Initialization
+    int32_t k = std::abs(scoreThreshold);
+    mat[0][0] = 0;
+    for(int32_t col = 1; col <= k; ++col) mat[0][col] = mat[0][col-1] - 1;
+    for(int32_t row = 1; row <= k; ++row) mat[row][0] = mat[row-1][0] - 1;
+
+    // Edit distance
+    for(int32_t row = 1; row <= m; ++row) {
+      int32_t bestCol = scoreThreshold - 1;
+      for(int32_t h = -k; h <= k; ++h) {
+	int32_t col = row + h;
+	if ((col >= 1) && (col <= n)) {
+	  mat[row][col] = mat[row-1][col-1] + (s1[row-1] == s2[col-1] ? 0 : -1);
+	  if ((row - 1 - col >= -k) && (row - 1 - col <= k)) mat[row][col] = std::max(mat[row][col], mat[row-1][col] - 1);
+	  if ((row - col + 1 >= -k) && (row - col + 1 <= k)) mat[row][col] = std::max(mat[row][col], mat[row][col-1] - 1);
+	  if (mat[row][col] > bestCol) bestCol = mat[row][col];
+	}
+      }
+      if (bestCol < scoreThreshold) return row - 1;
+    }
+    return 0;
+  }
+
+  
   template<typename TAlign, typename TAlignConfig, typename TScoreObject>
   inline bool
   longNeedle(std::string const& s1, std::string const& s2, TAlign& align, TAlignConfig const& ac, TScoreObject const& sc)

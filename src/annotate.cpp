@@ -85,6 +85,23 @@ struct ConfigAnnotate {
 };
 
 
+template<typename TTag>
+inline bool
+_addRefAltAllele(SVType<TTag>) {
+  return false;
+}
+
+inline bool
+_addRefAltAllele(SVType<InsertionTag>) {
+  return true;
+}
+
+inline bool
+_addRefAltAllele(SVType<DeletionTag>) {
+  return true;
+}
+
+
 template<typename TSVType>
 inline int
 runAnnotate(ConfigAnnotate const& c, TSVType svType)
@@ -105,8 +122,8 @@ runAnnotate(ConfigAnnotate const& c, TSVType svType)
   bcf_hdr_append(hdr_out, "##INFO=<ID=SRQ,Number=1,Type=Float,Description=\"Split-read consensus alignment quality\">");
   bcf_hdr_remove(hdr_out, BCF_HL_INFO, "CE");
   bcf_hdr_append(hdr_out, "##INFO=<ID=CE,Number=1,Type=Float,Description=\"Consensus sequence entropy\">");
-  bcf_hdr_remove(hdr_out, BCF_HL_INFO, "MICROHOMLEN");
-  bcf_hdr_append(hdr_out, "##INFO=<ID=MICROHOMLEN,Number=1,Type=Integer,Description=\"Breakpoint micro-homology length.\">");
+  bcf_hdr_remove(hdr_out, BCF_HL_INFO, "HOMLEN");
+  bcf_hdr_append(hdr_out, "##INFO=<ID=HOMLEN,Number=1,Type=Integer,Description=\"Predicted microhomology length using a max. edit distance of 2\">");
   bcf_hdr_write(ofile, hdr_out);
 
   // VCF fields
@@ -160,7 +177,7 @@ runAnnotate(ConfigAnnotate const& c, TSVType svType)
 
 	// Try re-alignment
 	bool useTags = true;
-	if ((svlen <= c.maxlen) && (precise)) {
+	if ((svlen <= c.maxlen) && (precise) && (_addRefAltAllele(svType))) {
 	  useTags = false;
 	  std::string chrName(bcf_hdr_id2name(hdr, rec->rid));
 	    
@@ -176,26 +193,12 @@ runAnnotate(ConfigAnnotate const& c, TSVType svType)
 
 	  // Find breakpoint to reference
 	  typedef boost::multi_array<char, 2> TAlign;
-	  typedef typename TAlign::index TAIndex;
-	  TAlign alignFwd;
-	  if (!_consRefAlignment(consensus, svRefStr, alignFwd, svType)) useTags = true;
+	  TAlign align;
+	  if (!_consRefAlignment(consensus, svRefStr, align, svType)) useTags = true;
 	  else {
 	    AlignDescriptor ad;
-	    if (!_findSplit(c, alignFwd, ad, svType)) useTags = true;
+	    if (!_findSplit(c, consensus, svRefStr, align, ad, svType)) useTags = true;
 	    else {
-	      // Debug consensus to reference alignment
-	      for(TAIndex i = 0; i < (TAIndex) alignFwd.shape()[0]; ++i) {
-	      	for(TAIndex j = 0; j< (TAIndex) alignFwd.shape()[1]; ++j) std::cerr << alignFwd[i][j];
-	      	std::cerr << std::endl;
-	      }
-	      std::cerr << ad.cStart << ',' << ad.cEnd << ',' << ad.rStart << ',' << ad.rEnd << std::endl;
-	      std::cerr << ad.percId << ',' << ad.homLeft << ',' << ad.homRight << std::endl;
-	      std::cerr << std::endl;
-	      
-	      //int32_t micrhl = 5;
-	      //_remove_info_tag(hdr_out, rec, "MICROHOMLEN");
-	      //bcf_update_info_int32(hdr_out, rec, "MICROHOMLEN", &micrhl, 1);
-
 	      std::string precChar = svRefStr.substr(ad.rStart - 1, 1);
 	      std::string refPart = precChar;
 	      if (ad.rEnd > ad.rStart + 1) refPart += svRefStr.substr(ad.rStart, (ad.rEnd - ad.rStart) - 1);
@@ -207,11 +210,12 @@ runAnnotate(ConfigAnnotate const& c, TSVType svType)
 	      std::string alleles;
 	      alleles += refPart + "," + altPart;
 	      bcf_update_alleles_str(hdr_out, rec, alleles.c_str());
-
 	      int32_t tmpi = regStart + ad.rEnd;
 	      bcf_update_info_int32(hdr_out, rec, "END", &tmpi, 1);
 	      tmpi = ad.cEnd - ad.cStart - 1;
 	      bcf_update_info_int32(hdr_out, rec, "INSLEN", &tmpi, 1);
+	      tmpi = std::max(0, ad.homLeft + ad.homRight - 2);
+	      bcf_update_info_int32(hdr_out, rec, "HOMLEN", &tmpi, 1);
 	      float tmpf = ad.percId;
 	      bcf_update_info_float(hdr_out, rec, "SRQ", &tmpf, 1);
 	      tmpf = entropy(consensus);
@@ -270,7 +274,7 @@ int main(int argc, char **argv) {
     ("type,t", boost::program_options::value<std::string>(&c.svType)->default_value("DEL"), "SV type (DEL, DUP, INV, INS)")
     ("genome,g", boost::program_options::value<boost::filesystem::path>(&c.genome), "Genomic reference file")
     ("maxlen,m", boost::program_options::value<int32_t>(&c.maxlen)->default_value(500), "max. SV size before tags (<DEL>) are used")
-    ("outfile,f", boost::program_options::value<boost::filesystem::path>(&c.outfile)->default_value("out.bcf"), "output BCF file")
+    ("outfile,o", boost::program_options::value<boost::filesystem::path>(&c.outfile)->default_value("out.bcf"), "output BCF file")
     ("technology,e", boost::program_options::value<std::string>(&c.technology)->default_value("illumina"), "technology (illumina, pacbio)")
     ;
 
@@ -334,8 +338,11 @@ int main(int argc, char **argv) {
   // Run SV annotation
   if (c.svType == "DEL") return runAnnotate(c, SVType<DeletionTag>());
   else if (c.svType == "INS") return runAnnotate(c, SVType<InsertionTag>());
+  else if (c.svType == "DUP") return runAnnotate(c, SVType<DuplicationTag>());
+  else if (c.svType == "INV") return runAnnotate(c, SVType<InversionTag>());
+  else if (c.svType == "TRA") return runAnnotate(c, SVType<TranslocationTag>());
   else {
-    std::cerr << "SV analysis type not yet supported " << c.svType << std::endl;
+    std::cerr << "SV analysis type not supported " << c.svType << std::endl;
     return 1;
   }
 }

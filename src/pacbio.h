@@ -575,6 +575,7 @@ inline int pacbioRun(TConfig const& c, TSVType svType) {
 	    svRec.precise=true;
 	    svRec.ct=_getCT(svType);
 	    svRec.insLen = 0;
+	    svRec.homLen = 0;
 	    svRec.id = clique_count++;
 	    svs.push_back(svRec);
 	    //std::cerr << hdr->target_name[svRec.chr] << ',' << svRec.svStart << ',' << svRec.svEnd << ',' << (svRec.svEnd - svRec.svStart) << std::endl;

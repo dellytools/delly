@@ -79,6 +79,7 @@ namespace torali
       else svRec.precise = false;
       svRec.peSupport = pt.get<int32_t>("info.pe", 0);
       svRec.insLen = pt.get<int32_t>("info.inslen", 0);
+      svRec.homLen = pt.get<int32_t>("info.homlen", 0);
       svRec.srSupport = pt.get<int32_t>("info.sr", 0);
       svRec.consensus = pt.get<std::string>("info.consensus", "");
       boost::property_tree::ptree::const_iterator it = pt.get_child("info.cipos.").begin();
@@ -185,7 +186,8 @@ namespace torali
       dataOut << "\"svmethod\": \"" << dellyVersion << "\", ";
       dataOut << "\"chr2\": \"" << bamhd->target_name[svIter->chr2] << "\", ";
       dataOut << "\"end\": \"" << svIter->svEnd << "\", ";
-      dataOut << "\"inslen\": " << (int) _addInsertionLength(svIter->insLen, svType) << ", ";
+      dataOut << "\"inslen\": " << svIter->insLen << ", ";
+      dataOut << "\"homlen\": " << svIter->homLen << ", ";
       dataOut << "\"pe\": " << svIter->peSupport << ", ";
       dataOut << "\"mapq\": " << (int) (svIter->peMapQuality) << ", ";
       dataOut << "\"cipos\": [" << -svIter->wiggle << ", " << svIter->wiggle << "], ";

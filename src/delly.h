@@ -194,6 +194,8 @@ vcfParse(TConfig const& c, bam_hdr_t* hd, TSize const overallMaxISize, std::vect
   int32_t* pe = NULL;
   int32_t ninslen = 0;
   int32_t* inslen = NULL;
+  int32_t nhomlen = 0;
+  int32_t* homlen = NULL;
   int32_t nsr = 0;
   int32_t* sr = NULL;
   int32_t ncipos = 0;
@@ -233,6 +235,8 @@ vcfParse(TConfig const& c, bam_hdr_t* hd, TSize const overallMaxISize, std::vect
     else svRec.peSupport = 0;
     if (bcf_get_info_int32(hdr, rec, "INSLEN", &inslen, &ninslen) > 0) svRec.insLen = *inslen;
     else svRec.insLen = 0;
+    if (bcf_get_info_int32(hdr, rec, "HOMLEN", &homlen, &nhomlen) > 0) svRec.homLen = *homlen;
+    else svRec.homLen = 0;
     if (bcf_get_info_int32(hdr, rec, "SR", &sr, &nsr) > 0) svRec.srSupport = *sr;
     else svRec.srSupport = 0;
     if (bcf_get_info_int32(hdr, rec, "END", &svend, &nsvend) > 0) svRec.svEnd = *svend;
@@ -268,6 +272,7 @@ vcfParse(TConfig const& c, bam_hdr_t* hd, TSize const overallMaxISize, std::vect
   free(svt);
   free(pe);
   free(inslen);
+  free(homlen);
   free(sr);
   free(cons);
   free(cipos);
@@ -280,21 +285,6 @@ vcfParse(TConfig const& c, bam_hdr_t* hd, TSize const overallMaxISize, std::vect
   bcf_hdr_destroy(hdr);
   bcf_close(ifile);
   bcf_destroy(rec);
-}
-
-
-// Insertion length
-template<typename TSize, typename TTag>
-inline TSize
-_addInsertionLength(TSize, SVType<TTag>) {
-  return 0;
-}
-
-// Insertion length
-template<typename TSize>
-inline TSize
-_addInsertionLength(TSize l, SVType<InsertionTag>) {
-  return l;
 }
 
 
@@ -344,6 +334,7 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
   bcf_hdr_append(hdr, "##INFO=<ID=SVTYPE,Number=1,Type=String,Description=\"Type of structural variant\">");
   bcf_hdr_append(hdr, "##INFO=<ID=SVMETHOD,Number=1,Type=String,Description=\"Type of approach used to detect SV\">");
   bcf_hdr_append(hdr, "##INFO=<ID=INSLEN,Number=1,Type=Integer,Description=\"Predicted length of the insertion\">");
+  bcf_hdr_append(hdr, "##INFO=<ID=HOMLEN,Number=1,Type=Integer,Description=\"Predicted microhomology length using a max. edit distance of 2\">");
   bcf_hdr_append(hdr, "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">");
   bcf_hdr_append(hdr, "##FORMAT=<ID=GL,Number=G,Type=Float,Description=\"Log10-scaled genotype likelihoods for RR,RA,AA genotypes\">");
   bcf_hdr_append(hdr, "##FORMAT=<ID=GQ,Number=1,Type=Integer,Description=\"Genotype Quality\">");
@@ -425,8 +416,10 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
     bcf_update_info_string(hdr,rec, "CHR2", bamhd->target_name[svIter->chr2]);
     tmpi = svIter->svEnd;
     bcf_update_info_int32(hdr, rec, "END", &tmpi, 1);
-    tmpi = _addInsertionLength(svIter->insLen, svType);
+    tmpi = svIter->insLen;
     bcf_update_info_int32(hdr, rec, "INSLEN", &tmpi, 1);
+    tmpi = svIter->homLen;
+    bcf_update_info_int32(hdr, rec, "HOMLEN", &tmpi, 1);
     tmpi = svIter->peSupport;
     bcf_update_info_int32(hdr, rec, "PE", &tmpi, 1);
     tmpi = svIter->peMapQuality;
@@ -1198,10 +1191,8 @@ _searchCliques(bam_hdr_t* hdr, TCompEdgeList& compEdge, TBamRecord const& bamRec
       svRec.srAlignQuality=0;
       svRec.precise=false;
       svRec.ct=connectionType;
-      std::vector<int32_t> inslenV;
-      for(typename TCliqueMembers::const_iterator itC = clique.begin(); itC!=clique.end(); ++itC) inslenV.push_back(bamRecord[*itC].Median - (abs(bamRecord[*itC].pos - bamRecord[*itC].mpos) + bamRecord[*itC].alen));
-      std::sort(inslenV.begin(), inslenV.end());
-      svRec.insLen = inslenV[inslenV.size()/2];
+      svRec.insLen = 0;
+      svRec.homLen = 0;
       svRec.id = clique_count++;
       svs.push_back(svRec);
     }
@@ -1286,6 +1277,7 @@ _processSRCluster(bam_hdr_t* hdr, TIterator itInit, TIterator itEnd, int32_t ref
       svRec.precise=true;
       svRec.ct=_getCT(svType);
       svRec.insLen = 0;
+      svRec.homLen = 0;
       svRec.id = clique_count++;
       if ((svRec.svStartBeg < svRec.svStart) && (svRec.svEnd < svRec.svEndEnd)) splitSVs.push_back(svRec);
     }
@@ -1467,7 +1459,7 @@ inline int dellyRun(Config const& c, TSVType svType) {
 			
 			// Candidate small indel?
 			AlignDescriptor ad;
-			if (_findSplit(c, align, ad, svType)) {
+			if (_findSplit(c, sequence, localref, align, ad, svType)) {
 			  int scoreThresholdAlt = (int) (c.flankQuality * (sequence.size() - (ad.cEnd - ad.cStart - 1)) * sc.match + (1.0 - c.flankQuality) * (sequence.size() - (ad.cEnd - ad.cStart - 1)) * sc.mismatch);
 			  if (altScore > scoreThresholdAlt) {
 
@@ -1734,7 +1726,7 @@ inline int dellyRun(Config const& c, TSVType svType) {
   }
 
   // Debug output
-  //for (TVariants::const_iterator s = svs.begin();s!=svs.end();++s) std::cerr << s->svStart << ',' << s->svEnd << ',' <<  s->svStartBeg << ',' << s->svStartEnd << ',' << s->svEndBeg << ',' << s->svEndEnd << ',' << s->peSupport << ',' << s->srSupport << ',' << s->wiggle << ',' << s->srAlignQuality << ',' << s->precise << ',' << (int32_t) s->peMapQuality << ',' << s->chr << ',' << s->chr2 << ",Consensus:" << s->consensus << ',' << s->id << ',' << s->insLen << ',' << _addOrientation(s->ct) << std::endl;
+  //for (TVariants::const_iterator s = svs.begin();s!=svs.end();++s) std::cerr << s->svStart << ',' << s->svEnd << ',' <<  s->svStartBeg << ',' << s->svStartEnd << ',' << s->svEndBeg << ',' << s->svEndEnd << ',' << s->peSupport << ',' << s->srSupport << ',' << s->wiggle << ',' << s->srAlignQuality << ',' << s->precise << ',' << (int32_t) s->peMapQuality << ',' << s->chr << ',' << s->chr2 << ",Consensus:" << s->consensus << ',' << s->id << ',' << s->insLen << ',' << s->homLen << ',' << _addOrientation(s->ct) << std::endl;
 
   // Any SVs for genotyping
   if (svs.empty()) {
