@@ -199,6 +199,17 @@ runAnnotate(ConfigAnnotate const& c, TSVType svType)
 	    AlignDescriptor ad;
 	    if (!_findSplit(c, consensus, svRefStr, align, ad, svType)) useTags = true;
 	    else {
+	      // Debug consensus to reference alignment
+	      //for(uint32_t i = 0; i<align.shape()[0]; ++i) {
+	      //for(uint32_t j = 0; j<align.shape()[1]; ++j) {
+	      //std::cerr << align[i][j];
+	      //}
+	      //std::cerr << std::endl;
+	      //}
+	      //std::cerr << ad.cStart << ',' << ad.cEnd << ',' << ad.rStart << ',' << ad.rEnd << std::endl;
+	      //std::cerr << ad.percId << ',' << ad.homLeft << ',' << ad.homRight << std::endl;
+	      //std::cerr << std::endl;
+	      	      
 	      std::string precChar = svRefStr.substr(ad.rStart - 1, 1);
 	      std::string refPart = precChar;
 	      if (ad.rEnd > ad.rStart + 1) refPart += svRefStr.substr(ad.rStart, (ad.rEnd - ad.rStart) - 1);

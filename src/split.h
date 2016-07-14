@@ -387,6 +387,27 @@ namespace torali
     return (varGap > oldVarGap);
   }
 
+  template<typename TAlignDescriptor, typename TTag>
+  inline void
+  _findHomology(std::string const& consensus, std::string const& svRefStr, TAlignDescriptor& ad, SVType<TTag>) {
+    ad.homRight = longestHomology(consensus.substr(ad.cEnd - 1), svRefStr.substr(ad.rStart), -1);
+    std::string preC = consensus.substr(0, ad.cStart);
+    std::string preR = svRefStr.substr(0, ad.rEnd - 1);
+    std::reverse(preC.begin(), preC.end());
+    std::reverse(preR.begin(), preR.end());
+    ad.homLeft = longestHomology(preC, preR, -1);
+  }
+
+  template<typename TAlignDescriptor>
+  inline void
+  _findHomology(std::string const& consensus, std::string const& svRefStr, TAlignDescriptor& ad, SVType<InsertionTag>) {
+    ad.homRight = longestHomology(consensus.substr(ad.cStart), svRefStr.substr(ad.rEnd -1), -1);
+    std::string preC = consensus.substr(0, ad.cEnd - 1);
+    std::string preR = svRefStr.substr(0, ad.rStart);
+    std::reverse(preC.begin(), preC.end());
+    std::reverse(preR.begin(), preR.end());
+    ad.homLeft = longestHomology(preC, preR, -1);
+  }
 
   template<typename TAlign, typename TAIndex, typename TFloat>
   inline void
@@ -472,12 +493,7 @@ namespace torali
     if (ad.percId < c.flankQuality) return false;
 
     // Find homology
-    ad.homRight = longestHomology(consensus.substr(ad.cEnd - 1), svRefStr.substr(ad.rStart), -1);
-    std::string preC = consensus.substr(0, ad.cStart);
-    std::string preR = svRefStr.substr(0, ad.rEnd - 1);
-    std::reverse(preC.begin(), preC.end());
-    std::reverse(preR.begin(), preR.end());
-    ad.homLeft = longestHomology(preC, preR, -1);
+    _findHomology(consensus, svRefStr, ad, svt);
 
     // Check flanking alignment length
     if ((ad.homLeft + c.minimumFlankSize > ad.cStart) || ( varIndex < ad.cEnd + ad.homRight + c.minimumFlankSize)) return false;
