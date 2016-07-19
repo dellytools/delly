@@ -231,12 +231,13 @@ findPutativeSplitReads(TConfig const& c, std::vector<TStructuralVariantRecord>& 
     for(typename TSVs::iterator svIt = svs.begin();svIt!=svs.end(); ++svIt) {
       if ((svIt->chr != svIt->chr2) && (svIt->chr2 == refIndex)) {
 	// For translocations temporarily store the first reference part in the consensus string
-	svIt->consensus = _getSVRef(seq, *svIt, refIndex, svType);
+	svIt->consensus = _getSVRef(c, seq, *svIt, refIndex, svType);
       }
       if (svIt->chr == refIndex) {
 	// Get the SV reference
-	std::string svRefStr = _getSVRef(seq, *svIt, refIndex, svType);
+	std::string svRefStr = _getSVRef(c, seq, *svIt, refIndex, svType);
 	svIt->consensus = "";
+	svIt->alleles = boost::to_upper_copy(std::string(seq + svIt->svStart - 1, seq + svIt->svStart)) + ",<" + _addID(svType) + ">";
 	typedef std::vector<std::pair<int, std::string> > TOffsetSplit;
 	typedef std::vector<int> TSplitPoints;
 	TOffsetSplit osp0;

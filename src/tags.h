@@ -270,6 +270,7 @@ namespace torali {
     uint8_t peMapQuality;
     int32_t chr;
     int32_t chr2;
+    std::string alleles;
     std::string consensus;
 
   StructuralVariantRecord() : svStartBeg(0), svStartEnd(0), svEndBeg(0), svEndEnd(0), svStart(0), svEnd(0), peSupport(0), srSupport(0), wiggle(0), insLen(0), homLen(0), id(0), srAlignQuality(0), precise(false), ct(0), peMapQuality(0), chr(0), chr2(0) {}

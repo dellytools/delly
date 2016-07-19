@@ -176,6 +176,9 @@ vcfParse(TConfig const& c, bam_hdr_t* hd, TSize const overallMaxISize, std::vect
     svRec.chr = tid;
     svRec.svStart = rec->pos + 1;
     svRec.id = svs.size();
+    std::string refAllele = rec->d.allele[0];
+    std::string altAllele = rec->d.allele[1];
+    svRec.alleles = refAllele + "," + altAllele;
 
     // Parse INFO
     if (bcf_get_info_flag(hdr, rec, "PRECISE", 0, 0) > 0) svRec.precise=true;
@@ -346,9 +349,7 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
     padNumber.insert(padNumber.begin(), 8 - padNumber.length(), '0');
     id += padNumber;
     bcf_update_id(hdr, rec, id.c_str());
-    std::string alleles;
-    alleles += "N,<" + _addID(svType) + ">";
-    bcf_update_alleles_str(hdr, rec, alleles.c_str());
+    bcf_update_alleles_str(hdr, rec, svIter->alleles.c_str());
     bcf_update_filter(hdr, rec, &tmpi, 1);
 
     // Add INFO fields

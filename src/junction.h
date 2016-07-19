@@ -171,12 +171,12 @@ namespace torali {
 	svRec.svEndEnd = std::min((uint32_t) itSV->svEnd + consLen, hdr->target_len[itSV->chr2]);
 	svRec.ct = itSV->ct;
 	if ((itSV->chr != itSV->chr2) && (itSV->chr2 == refIndex)) {
-	  refProbes[itSV->id] = _getSVRef(seq, svRec, refIndex, svType);
+	  refProbes[itSV->id] = _getSVRef(c, seq, svRec, refIndex, svType);
 	}
 	if (itSV->chr == refIndex) {
 	  // Get the reference string
 	  if (itSV->chr != itSV->chr2) svRec.consensus=refProbes[itSV->id];
-	  std::string svRefStr = _getSVRef(seq, svRec, refIndex, svType);
+	  std::string svRefStr = _getSVRef(c, seq, svRec, refIndex, svType);
 	  
 	  // Find breakpoint to reference
 	  typedef boost::multi_array<char, 2> TAlign;
