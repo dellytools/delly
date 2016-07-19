@@ -77,184 +77,178 @@ findGappedReads(TConfig const& c, std::vector<TStructuralVariantRecord>& svs,  S
 
   // Parse genome
   unsigned int totalSplitReadsAligned = 0;
-  kseq_t *seq;
-  int l;
-  gzFile fp = gzopen(c.genome.string().c_str(), "r");
-  seq = kseq_init(fp);
   boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
   std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Multiple sequence alignment" << std::endl;
   boost::progress_display show_progress( hdr->n_targets );
-  while ((l = kseq_read(seq)) >= 0) {
-    // Find reference index
-    for(int32_t refIndex=0; refIndex < hdr->n_targets; ++refIndex) {
-      if (std::string(seq->name.s) == std::string(hdr->target_name[refIndex])) {
-	++show_progress;
+
+  faidx_t* fai = fai_load(c.genome.string().c_str());
+  // Find reference index
+  for(int32_t refIndex=0; refIndex < hdr->n_targets; ++refIndex) {
+    ++show_progress;
+    std::string tname(hdr->target_name[refIndex]);
+    int32_t seqlen = -1;
+    char* seq = faidx_fetch_seq(fai, tname.c_str(), 0, hdr->target_len[refIndex], &seqlen);
 	
-	// Iterate all structural variants on this chromosome
-	typename TSVs::iterator svIt = svs.begin();
-	typename TSVs::iterator svItEnd = svs.end();
-	for(;svIt!=svItEnd; ++svIt) {
-	  if (svIt->chr == refIndex) {
-	    typedef std::set<std::string> TSplitReadSet;
-	    TSplitReadSet splitReadSet;
-	    std::vector<uint8_t> mapQV;
+    // Iterate all structural variants on this chromosome
+    for(typename TSVs::iterator svIt = svs.begin(); svIt!=svs.end(); ++svIt) {
+      if (svIt->chr == refIndex) {
+	typedef std::set<std::string> TSplitReadSet;
+	TSplitReadSet splitReadSet;
+	std::vector<uint8_t> mapQV;
 
 #pragma omp parallel for default(shared)
-	    for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
-	      hts_itr_t* iter = sam_itr_queryi(idx[file_c], svIt->chr, svIt->svStartBeg, svIt->svEndEnd);
-	      bam1_t* rec = bam_init1();
-	      while (sam_itr_next(samfile[file_c], iter, rec) >= 0) {
-		if (rec->core.flag & (BAM_FSECONDARY | BAM_FQCFAIL | BAM_FDUP | BAM_FSUPPLEMENTARY | BAM_FUNMAP)) continue;
-		if ((rec->core.qual < c.minMapQual) || (rec->core.tid<0)) continue;
+	for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
+	  hts_itr_t* iter = sam_itr_queryi(idx[file_c], svIt->chr, svIt->svStartBeg, svIt->svEndEnd);
+	  bam1_t* rec = bam_init1();
+	  while (sam_itr_next(samfile[file_c], iter, rec) >= 0) {
+	    if (rec->core.flag & (BAM_FSECONDARY | BAM_FQCFAIL | BAM_FDUP | BAM_FSUPPLEMENTARY | BAM_FUNMAP)) continue;
+	    if ((rec->core.qual < c.minMapQual) || (rec->core.tid<0)) continue;
 	    
-		// Get the sequence
-		std::string sequence;
-		sequence.resize(rec->core.l_qseq);
-		uint8_t* seqptr = bam_get_seq(rec);
-		for (int i = 0; i < rec->core.l_qseq; ++i) sequence[i] = "=ACMGRSVTWYHKDBN"[bam_seqi(seqptr, i)];
-	      
-		// Get the quality vector
-		typedef std::vector<uint8_t> TQuality;
-		TQuality quality;
-		quality.resize(rec->core.l_qseq);
-		uint8_t* qualptr = bam_get_qual(rec);
-		for (int i = 0; i < rec->core.l_qseq; ++i) quality[i] = qualptr[i];
-	      
-		// Get the reference slice
-		int32_t rp = 0; // reference pointer
-		int32_t sp = 0; // sequence pointer
-		int32_t spStart = -1;
-		int32_t spEnd = -1;
-	      
-		// Count gaps and aligned bases
-		uint32_t totalcount = 0;
-		uint32_t gapcount = 0;
-		uint32_t* cigar = bam_get_cigar(rec);
-		for (std::size_t i = 0; i < rec->core.n_cigar; ++i) {
-		  if (bam_cigar_op(cigar[i]) == BAM_CMATCH) {
-		    int32_t countpos = rec->core.pos + rp;
-		    // match or mismatch
-		    for(uint32_t k = 0; k<bam_cigar_oplen(cigar[i]);++k, ++countpos) 
-		      if ((countpos >= svIt->svStart) && (countpos < svIt->svEnd)) {
-			if (spStart == -1) {
-			  spStart = sp;
-			  spEnd = sp;
-			}
-			++totalcount;
-			++spEnd;
-		      }
-		    rp += bam_cigar_oplen(cigar[i]);
-		    sp += bam_cigar_oplen(cigar[i]);
-		  } else if (bam_cigar_op(cigar[i]) == BAM_CDEL) {
-		    int32_t countpos = rec->core.pos + rp;
-		    for(uint32_t k = 0; k<bam_cigar_oplen(cigar[i]);++k, ++countpos)
-		      if ((countpos >= svIt->svStart) && (countpos < svIt->svEnd)) {
-			if (spStart == -1) {
-			  spStart = sp;
-			  spEnd = sp;
-			}
-			++gapcount;
-		      }
-		    rp += bam_cigar_oplen(cigar[i]);
-		  } else if (bam_cigar_op(cigar[i]) == BAM_CINS) {
-		    // ToDo
-		    sp += bam_cigar_oplen(cigar[i]);
-		  } else if (bam_cigar_op(cigar[i]) == BAM_CSOFT_CLIP) {
-		    // Count leading or trailing soft-clips as Cigar D
-		    int32_t countpos = rec->core.pos + rp;
-		    bool foundN = false;
-		    for(uint32_t spointer = sp; spointer < sp + bam_cigar_oplen(cigar[i]); ++spointer) {
-		      if (sequence[spointer] == 'N') { foundN = true; break;  }
+	    // Get the sequence
+	    std::string sequence;
+	    sequence.resize(rec->core.l_qseq);
+	    uint8_t* seqptr = bam_get_seq(rec);
+	    for (int i = 0; i < rec->core.l_qseq; ++i) sequence[i] = "=ACMGRSVTWYHKDBN"[bam_seqi(seqptr, i)];
+	    
+	    // Get the quality vector
+	    typedef std::vector<uint8_t> TQuality;
+	    TQuality quality;
+	    quality.resize(rec->core.l_qseq);
+	    uint8_t* qualptr = bam_get_qual(rec);
+	    for (int i = 0; i < rec->core.l_qseq; ++i) quality[i] = qualptr[i];
+	    
+	    // Get the reference slice
+	    int32_t rp = 0; // reference pointer
+	    int32_t sp = 0; // sequence pointer
+	    int32_t spStart = -1;
+	    int32_t spEnd = -1;
+	    
+	    // Count gaps and aligned bases
+	    uint32_t totalcount = 0;
+	    uint32_t gapcount = 0;
+	    uint32_t* cigar = bam_get_cigar(rec);
+	    for (std::size_t i = 0; i < rec->core.n_cigar; ++i) {
+	      if (bam_cigar_op(cigar[i]) == BAM_CMATCH) {
+		int32_t countpos = rec->core.pos + rp;
+		// match or mismatch
+		for(uint32_t k = 0; k<bam_cigar_oplen(cigar[i]);++k, ++countpos) 
+		  if ((countpos >= svIt->svStart) && (countpos < svIt->svEnd)) {
+		    if (spStart == -1) {
+		      spStart = sp;
+		      spEnd = sp;
 		    }
-		    if (!foundN) {
-		      double meanqual = 0;
-		      for(uint32_t spointer = sp; spointer < sp + bam_cigar_oplen(cigar[i]); ++spointer) meanqual += quality[spointer];
-		      meanqual /= (double) bam_cigar_oplen(cigar[i]);
-		      double clipfraction = (double) bam_cigar_oplen(cigar[i]) / (double) rec->core.l_qseq;
-		      if ((meanqual >= c.minMapQual) && (clipfraction < 0.3)) {
-			if ((i == 0) && (std::abs(svIt->svEnd - countpos) < 25)) {
-			  for(std::size_t k = 0; k < bam_cigar_oplen(cigar[i]); ++k, --countpos) {
-			    if ((countpos >= svIt->svStart) && (countpos < svIt->svEnd)) {
-			      if (spStart == -1) {
-				spStart = sp;
-				spEnd = sp;
-			      }
-			      ++gapcount;
-			    }
+		    ++totalcount;
+		    ++spEnd;
+		  }
+		rp += bam_cigar_oplen(cigar[i]);
+		sp += bam_cigar_oplen(cigar[i]);
+	      } else if (bam_cigar_op(cigar[i]) == BAM_CDEL) {
+		int32_t countpos = rec->core.pos + rp;
+		for(uint32_t k = 0; k<bam_cigar_oplen(cigar[i]);++k, ++countpos)
+		  if ((countpos >= svIt->svStart) && (countpos < svIt->svEnd)) {
+		    if (spStart == -1) {
+		      spStart = sp;
+		      spEnd = sp;
+		    }
+		    ++gapcount;
+		  }
+		rp += bam_cigar_oplen(cigar[i]);
+	      } else if (bam_cigar_op(cigar[i]) == BAM_CINS) {
+		// ToDo
+		sp += bam_cigar_oplen(cigar[i]);
+	      } else if (bam_cigar_op(cigar[i]) == BAM_CSOFT_CLIP) {
+		// Count leading or trailing soft-clips as Cigar D
+		int32_t countpos = rec->core.pos + rp;
+		bool foundN = false;
+		for(uint32_t spointer = sp; spointer < sp + bam_cigar_oplen(cigar[i]); ++spointer) {
+		  if (sequence[spointer] == 'N') { foundN = true; break;  }
+		}
+		if (!foundN) {
+		  double meanqual = 0;
+		  for(uint32_t spointer = sp; spointer < sp + bam_cigar_oplen(cigar[i]); ++spointer) meanqual += quality[spointer];
+		  meanqual /= (double) bam_cigar_oplen(cigar[i]);
+		  double clipfraction = (double) bam_cigar_oplen(cigar[i]) / (double) rec->core.l_qseq;
+		  if ((meanqual >= c.minMapQual) && (clipfraction < 0.3)) {
+		    if ((i == 0) && (std::abs(svIt->svEnd - countpos) < 25)) {
+		      for(std::size_t k = 0; k < bam_cigar_oplen(cigar[i]); ++k, --countpos) {
+			if ((countpos >= svIt->svStart) && (countpos < svIt->svEnd)) {
+			  if (spStart == -1) {
+			    spStart = sp;
+			    spEnd = sp;
 			  }
-			} else if ((i + 1 == rec->core.n_cigar) && (std::abs(svIt->svStart - countpos) < 25)) {
-			  for(std::size_t k = 0; k < bam_cigar_oplen(cigar[i]); ++k, ++countpos) {
-			    if ((countpos >= svIt->svStart) && (countpos < svIt->svEnd)) {
-			      if (spStart == -1) {
-				spStart = sp;
-				spEnd = sp;
-			      }
-			      ++gapcount;
-			    }
+			  ++gapcount;
+			}
+		      }
+		    } else if ((i + 1 == rec->core.n_cigar) && (std::abs(svIt->svStart - countpos) < 25)) {
+		      for(std::size_t k = 0; k < bam_cigar_oplen(cigar[i]); ++k, ++countpos) {
+			if ((countpos >= svIt->svStart) && (countpos < svIt->svEnd)) {
+			  if (spStart == -1) {
+			    spStart = sp;
+			    spEnd = sp;
 			  }
+			  ++gapcount;
 			}
 		      }
 		    }
-		    sp += bam_cigar_oplen(cigar[i]);
 		  }
 		}
-
-		spStart = std::max(spStart - 500, 0);
-		spEnd = std::min(spEnd + 500, (int32_t) sequence.size());
-		sequence = boost::to_upper_copy(sequence.substr(spStart, spEnd - spStart));
-		if (sequence.find('N') == std::string::npos) {
-		  uint32_t withinSvSize = gapcount + totalcount;
-		  if (withinSvSize > 0) {
-		    double gapRate = (double) gapcount / (double) (withinSvSize);
-		    if (gapRate >= 0.75) {
-		      unsigned int qualSum = 0;
-		      for(int32_t pq = spStart; pq < spEnd; ++pq) qualSum += quality[pq];
+		sp += bam_cigar_oplen(cigar[i]);
+	      }
+	    }
+	    
+	    spStart = std::max(spStart - 500, 0);
+	    spEnd = std::min(spEnd + 500, (int32_t) sequence.size());
+	    sequence = boost::to_upper_copy(sequence.substr(spStart, spEnd - spStart));
+	    if (sequence.find('N') == std::string::npos) {
+	      uint32_t withinSvSize = gapcount + totalcount;
+	      if (withinSvSize > 0) {
+		double gapRate = (double) gapcount / (double) (withinSvSize);
+		if (gapRate >= 0.75) {
+		  unsigned int qualSum = 0;
+		  for(int32_t pq = spStart; pq < spEnd; ++pq) qualSum += quality[pq];
 #pragma omp critical
-		      {
-			splitReadSet.insert(sequence);
-			mapQV.push_back((uint8_t)(qualSum / (spEnd - spStart)));
-		      }
-		    }
+		  {
+		    splitReadSet.insert(sequence);
+		    mapQV.push_back((uint8_t)(qualSum / (spEnd - spStart)));
 		  }
 		}
 	      }
-	      bam_destroy1(rec);
-	      hts_itr_destroy(iter);
 	    }
-	    totalSplitReadsAligned += splitReadSet.size();
-
-	    // Process reads for this SV
-	    if (splitReadSet.size() > 1) {
-	      // Set median base quality
-	      std::sort(mapQV.begin(), mapQV.end());
-	      svIt->peMapQuality = mapQV[mapQV.size()/2];
-
-	      // Calculate MSA
-	      svIt->srSupport = msa(c, splitReadSet, svIt->consensus);
-
-	      //std::cerr << hdr->target_name[svIt->chr] << ',' << svIt->svStart << ',' << svIt->svEnd << ',' << (svIt->svEnd - svIt->svStart) << ',' << svIt->srSupport << ',' << svIt->consensus << std::endl;
-	      	      
-	      // Get the SV reference
-	      int32_t rs = std::max(0, svIt->svStart - (int32_t) (svIt->consensus.size()));
-	      int32_t re = std::min((int32_t) (hdr->target_len[svIt->chr]), (int32_t) (svIt->svEnd + svIt->consensus.size()));
-	      std::string svRefStr = boost::to_upper_copy(std::string(seq->seq.s + rs, seq->seq.s + re));
-	      if (svRefStr.find('N') != std::string::npos) continue; // Ignore regions with nearby Ns in the reference for the time being
-
-	      // Align consensus to reference
-	      if (!alignConsensus(c, *svIt, svRefStr, svType)) {
-		svIt->consensus = ""; 
-		svIt->srSupport = 0; 
-	      }
-	    }
+	  }
+	  bam_destroy1(rec);
+	  hts_itr_destroy(iter);
+	}
+	totalSplitReadsAligned += splitReadSet.size();
+	
+	// Process reads for this SV
+	if (splitReadSet.size() > 1) {
+	  // Set median base quality
+	  std::sort(mapQV.begin(), mapQV.end());
+	  svIt->peMapQuality = mapQV[mapQV.size()/2];
+	  
+	  // Calculate MSA
+	  svIt->srSupport = msa(c, splitReadSet, svIt->consensus);
+	  
+	  //std::cerr << hdr->target_name[svIt->chr] << ',' << svIt->svStart << ',' << svIt->svEnd << ',' << (svIt->svEnd - svIt->svStart) << ',' << svIt->srSupport << ',' << svIt->consensus << std::endl;
+	  
+	  // Get the SV reference
+	  int32_t rs = std::max(0, svIt->svStart - (int32_t) (svIt->consensus.size()));
+	  int32_t re = std::min((int32_t) (hdr->target_len[svIt->chr]), (int32_t) (svIt->svEnd + svIt->consensus.size()));
+	  std::string svRefStr = boost::to_upper_copy(std::string(seq + rs, seq + re));
+	  if (svRefStr.find('N') != std::string::npos) continue; // Ignore regions with nearby Ns in the reference for the time being
+	  
+	  // Align consensus to reference
+	  if (!alignConsensus(c, *svIt, svRefStr, svType)) {
+	    svIt->consensus = ""; 
+	    svIt->srSupport = 0; 
 	  }
 	}
       }
     }
+    if (seqlen) free(seq);
   }
-  kseq_destroy(seq);
-  gzclose(fp);
-
   // Clean-up
+  fai_destroy(fai);
   for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
     hts_idx_destroy(idx[file_c]);
     sam_close(samfile[file_c]);
@@ -625,23 +619,24 @@ inline int pacbioRun(TConfig const& c, TSVType svType) {
   }
 
   // Annotate junction reads
-  typedef std::pair<int32_t, int32_t> TSampleSVPair;
   typedef std::pair<std::vector<uint8_t>, std::vector<uint8_t> > TReadQual;
-  typedef boost::unordered_map<TSampleSVPair, TReadQual> TJunctionCountMap;
-  TJunctionCountMap junctionCountMap;
-  if (boost::filesystem::exists(c.genome) && boost::filesystem::is_regular_file(c.genome) && boost::filesystem::file_size(c.genome)) 
-    annotatePacbioJunctionReads(c, svs, junctionCountMap, svType);
+  typedef std::vector<TReadQual> TSVJunctionMap;
+  typedef std::vector<TSVJunctionMap> TSampleSVJunctionMap;
+  TSampleSVJunctionMap junctionCountMap;
+  annotatePacbioJunctionReads(c, svs, junctionCountMap, svType);
 
   // Annotate spanning coverage
-  typedef boost::unordered_map<TSampleSVPair, TReadQual> TCountMap;
-  TCountMap spanCountMap;
-  //_annotateSpanningCoverage(c, sampleLib, svs, spanCountMap, svType);
-
+  typedef std::vector<TReadQual> TSVSpanningMap;
+  typedef std::vector<TSVSpanningMap> TSampleSVSpanningMap;
+  TSampleSVSpanningMap spanCountMap;
+  //annotateSpanningCoverage(c.files, c.minGenoQual, sampleLib, svs, spanCountMap, svType);
+  
   // Annotate coverage
-  typedef boost::unordered_map<TSampleSVPair, ReadCount> TRCMap;
-  TRCMap rcMap;
-  //_annotateCoverage(c, refnames, sampleLib, svs, rcMap, svType);
-
+  typedef std::vector<ReadCount> TSVReadCount;
+  typedef std::vector<TSVReadCount> TSampleSVReadCount;
+  TSampleSVReadCount rcMap;
+  _annotateCoverage(c, hdr, svs, rcMap, svType);
+  
   // VCF output
   if (svs.size()) vcfOutput(c, svs, junctionCountMap, rcMap, spanCountMap, svType);
 

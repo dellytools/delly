@@ -31,7 +31,7 @@ else ifeq (${DEBUG}, 2)
 	CXXFLAGS += -g -O0 -fno-inline -DPROFILE
 	LDFLAGS += -lprofiler -ltcmalloc
 else
-	CXXFLAGS += -O3 -DNDEBUG
+	CXXFLAGS += -O2 -DNDEBUG
 endif
 
 

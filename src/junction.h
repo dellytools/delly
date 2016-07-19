@@ -26,7 +26,9 @@ Contact: Tobias Rausch (rausch@embl.de)
 
 
 #include <boost/multiprecision/cpp_int.hpp>
-#include <htslib/kseq.h>
+
+#include <htslib/faidx.h>
+
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -36,7 +38,6 @@ Contact: Tobias Rausch (rausch@embl.de)
 #include "msa.h"
 #include "split.h"
 
-KSEQ_INIT(gzFile, gzread)
 
 namespace torali {
 
@@ -116,18 +117,14 @@ namespace torali {
   inline void
   annotateJunctionReads(TConfig const& c, TSVs& svs, TCountMap& countMap, SVType<TTag> svType)
   {
-    typedef typename TCountMap::key_type TSampleSVPair;
-    typedef typename TCountMap::mapped_type TCountPair;
-    typedef typename TCountPair::first_type TQualVector;
+    typedef typename TCountMap::value_type::value_type TCountPair;
     typedef std::vector<uint8_t> TQuality;
 
     // Open file handles
     typedef std::vector<samFile*> TSamFile;
     typedef std::vector<hts_idx_t*> TIndex;
-    TSamFile samfile;
-    TIndex idx;
-    samfile.resize(c.files.size());
-    idx.resize(c.files.size());
+    TSamFile samfile(c.files.size());
+    TIndex idx(c.files.size());
     for(std::size_t file_c = 0; file_c < c.files.size(); ++file_c) {
       samfile[file_c] = sam_open(c.files[file_c].string().c_str(), "r");
       idx[file_c] = sam_index_load(samfile[file_c], c.files[file_c].string().c_str());
@@ -138,8 +135,8 @@ namespace torali {
     sort(svs.begin(), svs.end(), SortSVs<StructuralVariantRecord>());
     
     // Initialize count map
-    for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c)
-      for(typename TSVs::const_iterator itSV = svs.begin(); itSV!=svs.end(); ++itSV) countMap.insert(std::make_pair(std::make_pair(file_c, itSV->id), TCountPair()));
+    countMap.resize(c.files.size());
+    for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) countMap[file_c].resize(svs.size(), TCountPair());
 
     // Process chromosome by chromosome
     boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
@@ -151,184 +148,177 @@ namespace torali {
     TProbes refProbes;
 
     // Parse genome
-    kseq_t *seq;
-    int l;
-    gzFile fp = gzopen(c.genome.string().c_str(), "r");
-    seq = kseq_init(fp);
-    while ((l = kseq_read(seq)) >= 0) {
-      // Find reference index
-      for(int32_t refIndex=0; refIndex < (int32_t) hdr->n_targets; ++refIndex) {
-	if (std::string(seq->name.s) == std::string(hdr->target_name[refIndex])) {
-	  ++show_progress;
+    faidx_t* fai = fai_load(c.genome.string().c_str());
+    for(int32_t refIndex=0; refIndex < (int32_t) hdr->n_targets; ++refIndex) {
+      ++show_progress;
+      std::string tname(hdr->target_name[refIndex]);
+      int32_t seqlen = -1;
+      char* seq = faidx_fetch_seq(fai, tname.c_str(), 0, hdr->target_len[refIndex], &seqlen);
+      // Iterate all structural variants
+      for(typename TSVs::iterator itSV = svs.begin(); itSV != svs.end(); ++itSV) {
+	if (!itSV->precise) continue;
+	int consLen = itSV->consensus.size();
+
+	// Create a pseudo structural variant record
+	StructuralVariantRecord svRec;
+	svRec.chr = itSV->chr;
+	svRec.chr2 = itSV->chr2;
+	svRec.svStartBeg = std::max(itSV->svStart - consLen, 0);
+	svRec.svStart = itSV->svStart;
+	svRec.svStartEnd = std::min((uint32_t) itSV->svStart + consLen, hdr->target_len[itSV->chr]);
+	svRec.svEndBeg = std::max(itSV->svEnd - consLen, 0);
+	svRec.svEnd = itSV->svEnd;
+	svRec.svEndEnd = std::min((uint32_t) itSV->svEnd + consLen, hdr->target_len[itSV->chr2]);
+	svRec.ct = itSV->ct;
+	if ((itSV->chr != itSV->chr2) && (itSV->chr2 == refIndex)) {
+	  refProbes[itSV->id] = _getSVRef(seq, svRec, refIndex, svType);
+	}
+	if (itSV->chr == refIndex) {
+	  // Get the reference string
+	  if (itSV->chr != itSV->chr2) svRec.consensus=refProbes[itSV->id];
+	  std::string svRefStr = _getSVRef(seq, svRec, refIndex, svType);
 	  
-	  // Iterate all structural variants
-	  for(typename TSVs::iterator itSV = svs.begin(); itSV != svs.end(); ++itSV) {
-	    if (!itSV->precise) continue;
-	    int consLen = itSV->consensus.size();
-
-	    // Create a pseudo structural variant record
-	    StructuralVariantRecord svRec;
-	    svRec.chr = itSV->chr;
-	    svRec.chr2 = itSV->chr2;
-	    svRec.svStartBeg = std::max(itSV->svStart - consLen, 0);
-	    svRec.svStart = itSV->svStart;
-	    svRec.svStartEnd = std::min((uint32_t) itSV->svStart + consLen, hdr->target_len[itSV->chr]);
-	    svRec.svEndBeg = std::max(itSV->svEnd - consLen, 0);
-	    svRec.svEnd = itSV->svEnd;
-	    svRec.svEndEnd = std::min((uint32_t) itSV->svEnd + consLen, hdr->target_len[itSV->chr2]);
-	    svRec.ct = itSV->ct;
-	    if ((itSV->chr != itSV->chr2) && (itSV->chr2 == refIndex)) {
-	      refProbes[itSV->id] = _getSVRef(seq->seq.s, svRec, refIndex, svType);
-	    }
-	    if (itSV->chr == refIndex) {
-	      // Get the reference string
-	      if (itSV->chr != itSV->chr2) svRec.consensus=refProbes[itSV->id];
-	      std::string svRefStr = _getSVRef(seq->seq.s, svRec, refIndex, svType);
-
-	      // Find breakpoint to reference
-	      typedef boost::multi_array<char, 2> TAlign;
-	      TAlign align;
-	      if (!_consRefAlignment(itSV->consensus, svRefStr, align, svType)) continue;
-	      AlignDescriptor ad;
-	      if (!_findSplit(c, itSV->consensus, svRefStr, align, ad, svType)) continue;
-
-	      // Debug consensus to reference alignment
-	      //for(TAIndex i = 0; i<align.shape()[0]; ++i) {
-	      //for(TAIndex j = 0; j<align.shape()[1]; ++j) std::cerr << align[i][j];
-	      //std::cerr << std::endl;
-	      //}
-	      //std::cerr << std::endl;
-
-
-	      // Iterate all samples
+	  // Find breakpoint to reference
+	  typedef boost::multi_array<char, 2> TAlign;
+	  TAlign align;
+	  if (!_consRefAlignment(itSV->consensus, svRefStr, align, svType)) continue;
+	  AlignDescriptor ad;
+	  if (!_findSplit(c, itSV->consensus, svRefStr, align, ad, svType)) continue;
+	  
+	  // Debug consensus to reference alignment
+	  //for(TAIndex i = 0; i<align.shape()[0]; ++i) {
+	  //for(TAIndex j = 0; j<align.shape()[1]; ++j) std::cerr << align[i][j];
+	  //std::cerr << std::endl;
+	  //}
+	  //std::cerr << std::endl;
+	  
+	  
+	  // Iterate all samples
 #pragma omp parallel for default(shared)
-	      for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
-		TQualVector altQual;
-		TQualVector refQual;
-		unsigned int refAlignedReadCount = 0;
-
-		for (unsigned int bpPoint = 0; bpPoint<2; ++bpPoint) {
-		  int32_t regionChr, regionStart, regionEnd, cutConsStart, cutConsEnd, cutRefStart, cutRefEnd;
+	  for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
+	    unsigned int refAlignedReadCount = 0;
+	    
+	    for (unsigned int bpPoint = 0; bpPoint<2; ++bpPoint) {
+	      int32_t regionChr, regionStart, regionEnd, cutConsStart, cutConsEnd, cutRefStart, cutRefEnd;
+	      if (bpPoint) {
+		regionChr = itSV->chr2;
+		regionStart = std::max(0, itSV->svEnd - c.minimumFlankSize);
+		regionEnd = std::min((uint32_t) (itSV->svEnd + c.minimumFlankSize), hdr->target_len[itSV->chr2]);
+		cutConsStart = ad.cEnd - ad.homLeft - c.minimumFlankSize;
+		cutConsEnd = ad.cEnd + ad.homRight + c.minimumFlankSize;
+		cutRefStart = _cutRefStart(ad.rStart, ad.rEnd, ad.homLeft + c.minimumFlankSize, bpPoint, itSV->ct, svType);
+		cutRefEnd = _cutRefEnd(ad.rStart, ad.rEnd, ad.homRight + c.minimumFlankSize, bpPoint, itSV->ct, svType);
+	      } else {
+		regionChr = itSV->chr;
+		regionStart = std::max(0, itSV->svStart - c.minimumFlankSize);
+		regionEnd = std::min((uint32_t) (itSV->svStart + c.minimumFlankSize), hdr->target_len[itSV->chr]);
+		cutConsStart = ad.cStart - ad.homLeft - c.minimumFlankSize;
+		cutConsEnd = ad.cStart + ad.homRight + c.minimumFlankSize;
+		cutRefStart = _cutRefStart(ad.rStart, ad.rEnd, ad.homLeft + c.minimumFlankSize, bpPoint, itSV->ct, svType);
+		cutRefEnd = _cutRefEnd(ad.rStart, ad.rEnd, ad.homRight + c.minimumFlankSize, bpPoint, itSV->ct, svType);
+	      }
+	      std::string consProbe = itSV->consensus.substr(cutConsStart, (cutConsEnd - cutConsStart));
+	      std::string refProbe = svRefStr.substr(cutRefStart, (cutRefEnd - cutRefStart));
+	      
+	      //std::cerr << "Junction probes" << std::endl;
+	      //std::cerr << bpPoint << "," << consProbe << "," << refProbe << std::endl;
+	      
+	      
+	      hts_itr_t* iter = sam_itr_queryi(idx[file_c], regionChr, regionStart, regionEnd);
+	      bam1_t* rec = bam_init1();
+	      while (sam_itr_next(samfile[file_c], iter, rec) >= 0) {
+		if (rec->core.flag & (BAM_FSECONDARY | BAM_FQCFAIL | BAM_FDUP | BAM_FSUPPLEMENTARY | BAM_FUNMAP)) continue;
+		// Check read length & quality
+		if ((rec->core.l_qseq < (2 * c.minimumFlankSize)) || (rec->core.qual < c.minGenoQual)) continue;
+		
+		// Valid soft clip or no soft-clip read?
+		bool hasSoftClip = false;
+		uint32_t* cigar = bam_get_cigar(rec);
+		for (std::size_t i = 0; i < rec->core.n_cigar; ++i)
+		  if (bam_cigar_op(cigar[i]) == BAM_CSOFT_CLIP) hasSoftClip = true;
+		if (!hasSoftClip) {
 		  if (bpPoint) {
-		    regionChr = itSV->chr2;
-		    regionStart = std::max(0, itSV->svEnd - c.minimumFlankSize);
-		    regionEnd = std::min((uint32_t) (itSV->svEnd + c.minimumFlankSize), hdr->target_len[itSV->chr2]);
-		    cutConsStart = ad.cEnd - ad.homLeft - c.minimumFlankSize;
-		    cutConsEnd = ad.cEnd + ad.homRight + c.minimumFlankSize;
-		    cutRefStart = _cutRefStart(ad.rStart, ad.rEnd, ad.homLeft + c.minimumFlankSize, bpPoint, itSV->ct, svType);
-		    cutRefEnd = _cutRefEnd(ad.rStart, ad.rEnd, ad.homRight + c.minimumFlankSize, bpPoint, itSV->ct, svType);
+		    if ((rec->core.pos + c.minimumFlankSize + ad.homLeft > itSV->svEnd) || (rec->core.pos + rec->core.l_qseq < itSV->svEnd + c.minimumFlankSize + ad.homRight)) continue;
 		  } else {
-		    regionChr = itSV->chr;
-		    regionStart = std::max(0, itSV->svStart - c.minimumFlankSize);
-		    regionEnd = std::min((uint32_t) (itSV->svStart + c.minimumFlankSize), hdr->target_len[itSV->chr]);
-		    cutConsStart = ad.cStart - ad.homLeft - c.minimumFlankSize;
-		    cutConsEnd = ad.cStart + ad.homRight + c.minimumFlankSize;
-		    cutRefStart = _cutRefStart(ad.rStart, ad.rEnd, ad.homLeft + c.minimumFlankSize, bpPoint, itSV->ct, svType);
-		    cutRefEnd = _cutRefEnd(ad.rStart, ad.rEnd, ad.homRight + c.minimumFlankSize, bpPoint, itSV->ct, svType);
+		    if ((rec->core.pos + c.minimumFlankSize + ad.homLeft > itSV->svStart) || (rec->core.pos + rec->core.l_qseq < itSV->svStart + c.minimumFlankSize + ad.homRight)) continue;
 		  }
-		  std::string consProbe = itSV->consensus.substr(cutConsStart, (cutConsEnd - cutConsStart));
-		  std::string refProbe = svRefStr.substr(cutRefStart, (cutRefEnd - cutRefStart));
-
-		  //std::cerr << "Junction probes" << std::endl;
-		  //std::cerr << bpPoint << "," << consProbe << "," << refProbe << std::endl;
-
-
-		  hts_itr_t* iter = sam_itr_queryi(idx[file_c], regionChr, regionStart, regionEnd);
-		  bam1_t* rec = bam_init1();
-		  while (sam_itr_next(samfile[file_c], iter, rec) >= 0) {
-		    if (rec->core.flag & (BAM_FSECONDARY | BAM_FQCFAIL | BAM_FDUP | BAM_FSUPPLEMENTARY | BAM_FUNMAP)) continue;
-		    // Check read length & quality
-		    if ((rec->core.l_qseq < (2 * c.minimumFlankSize)) || (rec->core.qual < c.minGenoQual)) continue;
-
-		    // Valid soft clip or no soft-clip read?
-		    bool hasSoftClip = false;
-		    uint32_t* cigar = bam_get_cigar(rec);
-		    for (std::size_t i = 0; i < rec->core.n_cigar; ++i)
-		      if (bam_cigar_op(cigar[i]) == BAM_CSOFT_CLIP) hasSoftClip = true;
-		    if (!hasSoftClip) {
-		      if (bpPoint) {
-			if ((rec->core.pos + c.minimumFlankSize + ad.homLeft > itSV->svEnd) || (rec->core.pos + rec->core.l_qseq < itSV->svEnd + c.minimumFlankSize + ad.homRight)) continue;
-		      } else {
-			if ((rec->core.pos + c.minimumFlankSize + ad.homLeft > itSV->svStart) || (rec->core.pos + rec->core.l_qseq < itSV->svStart + c.minimumFlankSize + ad.homRight)) continue;
-		      }
-		    }
-
-		    // Get sequence
-		    std::string sequence;
-		    sequence.resize(rec->core.l_qseq);
-		    uint8_t* seqptr = bam_get_seq(rec);
-		    for (int i = 0; i < rec->core.l_qseq; ++i) sequence[i] = "=ACMGRSVTWYHKDBN"[bam_seqi(seqptr, i)];
-		    _adjustOrientation(sequence, bpPoint, itSV->ct, svType);
-
-		    // Compute alignment to alternative haplotype
-		    TAlign alignAlt;
-		    DnaScore<int> simple(5, -4, -4, -4);
-		    AlignConfig<true, false> semiglobal;
-		    int32_t scoreA = needle(consProbe, sequence, alignAlt, semiglobal, simple);
-		    int32_t scoreAltThreshold = (int32_t) (c.flankQuality * consProbe.size() * simple.match + (1.0 - c.flankQuality) * consProbe.size() * simple.mismatch);
-		    double scoreAlt = (double) scoreA / (double) scoreAltThreshold;
-
-		    // Compute alignment to reference haplotype
-		    TAlign alignRef;
-		    int32_t scoreR = needle(refProbe, sequence, alignRef, semiglobal, simple);
-		    int32_t scoreRefThreshold = (int32_t) (c.flankQuality * refProbe.size() * simple.match + (1.0 - c.flankQuality) * refProbe.size() * simple.mismatch);
-		    double scoreRef = (double) scoreR / (double) scoreRefThreshold;
-		    
-		    // Any confident alignment?
-		    if ((scoreRef > 1) || (scoreAlt > 1)) {
-		      // Debug alignment to REF and ALT
-		      //std::cerr << "Alt:\t" << scoreAlt << "\tRef:\t" << scoreRef << std::endl;
-		      //for(TAIndex i = 0; i< (TAIndex) alignAlt.shape()[0]; ++i) {
-		      //for(TAIndex j = 0; j< (TAIndex) alignAlt.shape()[1]; ++j) std::cerr << alignAlt[i][j];
-		      //std::cerr << std::endl;
-		      //}
-		      //for(TAIndex i = 0; i< (TAIndex) alignRef.shape()[0]; ++i) {
-		      //for(TAIndex j = 0; j< (TAIndex) alignRef.shape()[1]; ++j) std::cerr << alignRef[i][j];
-		      //std::cerr << std::endl;
-		      //}
-		      
-		      if (scoreRef > scoreAlt) {
-			// Take only every second read because we sample both breakpoints
-			if (++refAlignedReadCount % 2) {
-			  TQuality quality;
-			  quality.resize(rec->core.l_qseq);
-			  uint8_t* qualptr = bam_get_qual(rec);
-			  for (int i = 0; i < rec->core.l_qseq; ++i) quality[i] = qualptr[i];
-			  uint32_t rq = _getAlignmentQual(alignRef, quality);
-			  if (rq >= c.minGenoQual) refQual.push_back((uint8_t) std::min(rq, (uint32_t) rec->core.qual));
-			}
-		      } else {
-			TQuality quality;
-			quality.resize(rec->core.l_qseq);
-			uint8_t* qualptr = bam_get_qual(rec);
-			for (int i = 0; i < rec->core.l_qseq; ++i) quality[i] = qualptr[i];
-			uint32_t aq = _getAlignmentQual(alignAlt, quality);
-			if (aq >= c.minGenoQual) altQual.push_back((uint8_t) std::min(aq, (uint32_t) rec->core.qual));
-		      }
-		    }
-		  }
-		  bam_destroy1(rec);
-		  hts_itr_destroy(iter);
 		}
+		
+		// Get sequence
+		std::string sequence;
+		sequence.resize(rec->core.l_qseq);
+		uint8_t* seqptr = bam_get_seq(rec);
+		for (int i = 0; i < rec->core.l_qseq; ++i) sequence[i] = "=ACMGRSVTWYHKDBN"[bam_seqi(seqptr, i)];
+		_adjustOrientation(sequence, bpPoint, itSV->ct, svType);
+		
+		// Compute alignment to alternative haplotype
+		TAlign alignAlt;
+		DnaScore<int> simple(5, -4, -4, -4);
+		AlignConfig<true, false> semiglobal;
+		int32_t scoreA = needle(consProbe, sequence, alignAlt, semiglobal, simple);
+		int32_t scoreAltThreshold = (int32_t) (c.flankQuality * consProbe.size() * simple.match + (1.0 - c.flankQuality) * consProbe.size() * simple.mismatch);
+		double scoreAlt = (double) scoreA / (double) scoreAltThreshold;
 
-		// Insert counts
-		TSampleSVPair svSample = std::make_pair(file_c, itSV->id);
+		// Compute alignment to reference haplotype
+		TAlign alignRef;
+		int32_t scoreR = needle(refProbe, sequence, alignRef, semiglobal, simple);
+		int32_t scoreRefThreshold = (int32_t) (c.flankQuality * refProbe.size() * simple.match + (1.0 - c.flankQuality) * refProbe.size() * simple.mismatch);
+		double scoreRef = (double) scoreR / (double) scoreRefThreshold;
+		
+		// Any confident alignment?
+		if ((scoreRef > 1) || (scoreAlt > 1)) {
+		  // Debug alignment to REF and ALT
+		  //std::cerr << "Alt:\t" << scoreAlt << "\tRef:\t" << scoreRef << std::endl;
+		  //for(TAIndex i = 0; i< (TAIndex) alignAlt.shape()[0]; ++i) {
+		  //for(TAIndex j = 0; j< (TAIndex) alignAlt.shape()[1]; ++j) std::cerr << alignAlt[i][j];
+		  //std::cerr << std::endl;
+		  //}
+		  //for(TAIndex i = 0; i< (TAIndex) alignRef.shape()[0]; ++i) {
+		  //for(TAIndex j = 0; j< (TAIndex) alignRef.shape()[1]; ++j) std::cerr << alignRef[i][j];
+		  //std::cerr << std::endl;
+		  //}
+		  
+		  if (scoreRef > scoreAlt) {
+		    // Take only every second read because we sample both breakpoints
+		    if (++refAlignedReadCount % 2) {
+		      TQuality quality;
+		      quality.resize(rec->core.l_qseq);
+		      uint8_t* qualptr = bam_get_qual(rec);
+		      for (int i = 0; i < rec->core.l_qseq; ++i) quality[i] = qualptr[i];
+		      uint32_t rq = _getAlignmentQual(alignRef, quality);
+		      if (rq >= c.minGenoQual) {
 #pragma omp critical
-		{
-		  typename TCountMap::iterator countMapIt=countMap.find(svSample);
-		  countMapIt->second.first=refQual;
-		  countMapIt->second.second=altQual;
+			{
+			  countMap[file_c][itSV->id].first.push_back((uint8_t) std::min(rq, (uint32_t) rec->core.qual));
+			}
+		      }
+		    }
+		  } else {
+		    TQuality quality;
+		    quality.resize(rec->core.l_qseq);
+		    uint8_t* qualptr = bam_get_qual(rec);
+		    for (int i = 0; i < rec->core.l_qseq; ++i) quality[i] = qualptr[i];
+		    uint32_t aq = _getAlignmentQual(alignAlt, quality);
+		    if (aq >= c.minGenoQual) {
+#pragma omp critical
+		      {
+			countMap[file_c][itSV->id].second.push_back((uint8_t) std::min(aq, (uint32_t) rec->core.qual));
+		      }
+		    }
+		  }
 		}
 	      }
+	      bam_destroy1(rec);
+	      hts_itr_destroy(iter);
 	    }
 	  }
 	}
       }
+      if (seqlen) free(seq);
     }
-    kseq_destroy(seq);
-    gzclose(fp);
 
     // Clean-up
+    fai_destroy(fai);
     for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
       hts_idx_destroy(idx[file_c]);
       sam_close(samfile[file_c]);

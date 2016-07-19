@@ -111,9 +111,6 @@ namespace torali
     inline void
     jsonOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJunctionCountMap const& jctCountMap, TReadCountMap const& readCountMap, TCountMap const& spanCountMap, SVType<TTag> svType) 
   {
-    // Typedefs
-    typedef typename TCountMap::key_type TSampleSVPair;
-
     // BoLog class
     BoLog<double> bl;
 
@@ -147,6 +144,7 @@ namespace torali
 
     // Iterate all structural variants
     typedef std::vector<TStructuralVariantRecord> TSVs;
+    uint32_t lastId = svs.size();
     for(typename TSVs::const_iterator svIter = svs.begin(); svIter!=svs.end(); ++svIter) {
       ++show_progress;
       
@@ -205,12 +203,6 @@ namespace torali
 
       // Add genotype columns
       for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
-	TSampleSVPair sampleSVPairLeft = std::make_pair(file_c, svIter->id);
-	TSampleSVPair sampleSVPairRight = std::make_pair(file_c, -svIter->id);
-	typename TJunctionCountMap::const_iterator jctCountMapIt=jctCountMap.find(sampleSVPairLeft);
-	typename TCountMap::const_iterator spanLeftIt=spanCountMap.find(sampleSVPairLeft);
-	typename TCountMap::const_iterator spanRightIt=spanCountMap.find(sampleSVPairRight);
-
 	// Counters
 	rcl[file_c] = 0;
 	rc[file_c] = 0;
@@ -220,52 +212,30 @@ namespace torali
 	dvcount[file_c] = 0;
 	rrcount[file_c] = 0;
 	rvcount[file_c] = 0;
-	if ((spanLeftIt!=spanCountMap.end()) && (spanRightIt!=spanCountMap.end())) {
-	  if (spanLeftIt->second.first.size()<spanRightIt->second.first.size()) {
-	    drcount[file_c] = spanLeftIt->second.first.size();
-	    dvcount[file_c] = spanLeftIt->second.second.size();
-	  } else {
-	    drcount[file_c] = spanRightIt->second.first.size();
-	    dvcount[file_c] = spanRightIt->second.second.size();
-	  }
+
+	if (spanCountMap[file_c][svIter->id].first.size() < spanCountMap[file_c][lastId + svIter->id].first.size()) {
+	  drcount[file_c] = spanCountMap[file_c][svIter->id].first.size();
+	  dvcount[file_c] = spanCountMap[file_c][svIter->id].second.size();
+	} else {
+	  drcount[file_c] = spanCountMap[file_c][lastId + svIter->id].first.size();
+	  dvcount[file_c] = spanCountMap[file_c][lastId + svIter->id].second.size();
 	}
-	if (jctCountMapIt!=jctCountMap.end()) {
-	  rrcount[file_c] = jctCountMapIt->second.first.size();
-	  rvcount[file_c] = jctCountMapIt->second.second.size();
-	}
+	rrcount[file_c] = jctCountMap[file_c][svIter->id].first.size();
+	rvcount[file_c] = jctCountMap[file_c][svIter->id].second.size();
 	
 	// Compute GLs
-	if (svIter->precise) {
-	  if (jctCountMapIt!=jctCountMap.end()) _computeGLs(bl, jctCountMapIt->second.first, jctCountMapIt->second.second, gls, gqval, gts, file_c);
-	  else {
-	    gls[file_c * 3 + 2] = 0;
-	    gls[file_c * 3 + 1] = 0;
-	    gls[file_c * 3] = 0;
-	    gqval[file_c] = 0;
-	    gts[file_c * 2] = bcf_gt_missing;
-	    gts[file_c * 2 + 1] = bcf_gt_missing;
-	  }
-	} else {  // Imprecise SVs
-	  if ((spanLeftIt!=spanCountMap.end()) && (spanRightIt!=spanCountMap.end())) {
-	    if (spanLeftIt->second.first.size()<spanRightIt->second.first.size()) _computeGLs(bl, spanLeftIt->second.first, spanLeftIt->second.second, gls, gqval, gts, file_c);
-	    else _computeGLs(bl, spanRightIt->second.first, spanRightIt->second.second, gls, gqval, gts, file_c);
-	  } else {
-	    gls[file_c * 3 + 2] = 0;
-	    gls[file_c * 3 + 1] = 0;
-	    gls[file_c * 3] = 0;
-	    gqval[file_c] = 0;
-	    gts[file_c * 2] = bcf_gt_missing;
-	    gts[file_c * 2 + 1] = bcf_gt_missing;
-	  }
+	if (svIter->precise) _computeGLs(bl, jctCountMap[file_c][svIter->id].first, jctCountMap[file_c][svIter->id].second, gls, gqval, gts, file_c);
+	else {  // Imprecise SVs
+	  if (spanCountMap[file_c][svIter->id].first.size() < spanCountMap[file_c][lastId + svIter->id].first.size())
+	    _computeGLs(bl, spanCountMap[file_c][svIter->id].first, spanCountMap[file_c][svIter->id].second, gls, gqval, gts, file_c);
+	  else
+	    _computeGLs(bl, spanCountMap[file_c][lastId + svIter->id].first, spanCountMap[file_c][lastId + svIter->id].second, gls, gqval, gts, file_c);
 	}
 	
 	// Compute RCs
-	typename TReadCountMap::const_iterator readCountMapIt=readCountMap.find(sampleSVPairLeft);
-	if (readCountMapIt!=readCountMap.end()) {
-	  rcl[file_c] = readCountMapIt->second.leftRC;
-	  rc[file_c] = readCountMapIt->second.rc;
-	  rcr[file_c] = readCountMapIt->second.rightRC;
-	}	
+	rcl[file_c] = readCountMap[file_c][svIter->id].leftRC;
+	rc[file_c] = readCountMap[file_c][svIter->id].rc;
+	rcr[file_c] = readCountMap[file_c][svIter->id].rightRC;
 	cnest[file_c] = -1;
 	if ((rcl[file_c] + rcr[file_c]) > 0) cnest[file_c] = boost::math::iround( 2.0 * (double) rc[file_c] / (double) (rcl[file_c] + rcr[file_c]) );
       

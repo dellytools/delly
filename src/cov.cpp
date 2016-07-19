@@ -93,7 +93,7 @@ run(Config const& c)
   typedef std::vector<CovRecord> TSVs;
   TSVs svs;
   std::map<unsigned int, std::string> idToName;
-  unsigned int intervalCount=1;
+  unsigned int intervalCount=0;
   if (boost::filesystem::exists(c.int_file) && boost::filesystem::is_regular_file(c.int_file) && boost::filesystem::file_size(c.int_file)) {
     typedef boost::unordered_map<std::string, unsigned int> TMapChr;
     TMapChr mapChr;
@@ -154,10 +154,10 @@ run(Config const& c)
   }
 
   // Output data types
-  typedef std::pair<int32_t, int32_t> TSampleSVPair;
   typedef std::pair<int, int> TBpRead;
-  typedef std::map<TSampleSVPair, TBpRead> TCountMap;
-  TCountMap countMap;
+  typedef std::vector<TBpRead> TSVReadCount;
+  typedef std::vector<TSVReadCount> TSampleSVReadCount;
+  TSampleSVReadCount countMap;
 
   // Annotate coverage
   if (c.inclCigar) annotateCoverage(c.files, c.minGenoQual, svs, countMap, BpLevelType<BpLevelCount>());
@@ -187,11 +187,10 @@ run(Config const& c)
     dataOut << refnames[itSV->chr] << "\t" << itSV->svStart << "\t" << itSV->svEnd << "\t" << idToName.find(itSV->id)->second;
     // Iterate all samples
     for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
-      TCountMap::iterator countMapIt=countMap.find(std::make_pair(file_c, itSV->id));
       dataOut << "\t";
-      if (c.avg_flag) dataOut << ( (countMapIt->second.first) / (double) (itSV->svEnd - itSV->svStart)) << "\t";
-      if (c.bp_flag) dataOut << countMapIt->second.first << "\t";
-      dataOut << countMapIt->second.second;
+      if (c.avg_flag) dataOut << ( (countMap[file_c][itSV->id].first) / (double) (itSV->svEnd - itSV->svStart)) << "\t";
+      if (c.bp_flag) dataOut << countMap[file_c][itSV->id].first << "\t";
+      dataOut << countMap[file_c][itSV->id].second;
     }
     dataOut << std::endl;
   }

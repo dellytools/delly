@@ -26,7 +26,9 @@ Contact: Tobias Rausch (rausch@embl.de)
 
 
 #include <boost/multiprecision/cpp_int.hpp>
-#include <htslib/kseq.h>
+
+#include <htslib/faidx.h>
+
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -81,9 +83,7 @@ namespace torali {
   inline void
   annotatePacbioJunctionReads(TConfig const& c, TSVs& svs, TCountMap& countMap, SVType<TTag> svType)
   {
-    typedef typename TCountMap::key_type TSampleSVPair;
-    typedef typename TCountMap::mapped_type TCountPair;
-    typedef typename TCountPair::first_type TQualVector;
+    typedef typename TCountMap::value_type::value_type TCountPair;
     typedef std::vector<uint8_t> TQuality;
 
     // Open file handles
@@ -103,8 +103,8 @@ namespace torali {
     sort(svs.begin(), svs.end(), SortSVs<StructuralVariantRecord>());
     
     // Initialize count map
-    for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c)
-      for(typename TSVs::const_iterator itSV = svs.begin(); itSV!=svs.end(); ++itSV) countMap.insert(std::make_pair(std::make_pair(file_c, itSV->id), TCountPair()));
+    countMap.resize(c.files.size());
+    for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) countMap[file_c].resize(svs.size(), TCountPair());
 
     // Process chromosome by chromosome
     boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
@@ -112,136 +112,128 @@ namespace torali {
     boost::progress_display show_progress( hdr->n_targets );
     
     // Parse genome
-    kseq_t *seq;
-    int l;
-    gzFile fp = gzopen(c.genome.string().c_str(), "r");
-    seq = kseq_init(fp);
-    while ((l = kseq_read(seq)) >= 0) {
-      // Find reference index
-      for(int32_t refIndex=0; refIndex < (int32_t) hdr->n_targets; ++refIndex) {
-	if (std::string(seq->name.s) == std::string(hdr->target_name[refIndex])) {
-	  ++show_progress;
+    faidx_t* fai = fai_load(c.genome.string().c_str());
+    for(int32_t refIndex=0; refIndex < (int32_t) hdr->n_targets; ++refIndex) {
+      ++show_progress;
+      std::string tname(hdr->target_name[refIndex]);
+      int32_t seqlen = -1;
+      char* seq = faidx_fetch_seq(fai, tname.c_str(), 0, hdr->target_len[refIndex], &seqlen);
 	  
-	  // Iterate all structural variants
-	  for(typename TSVs::iterator itSV = svs.begin(); itSV != svs.end(); ++itSV) {
-	    if (!itSV->precise) continue;
-	    int32_t consLen = itSV->consensus.size();
-
-	    if (itSV->chr == refIndex) {
-	      // Get the reference string
-	      std::string svRefStr = boost::to_upper_copy(std::string(seq->seq.s + itSV->svStart - consLen, seq->seq.s + itSV->svEnd + consLen));
-
-	      // Find breakpoint to reference
-	      typedef boost::multi_array<char, 2> TAlign;
-	      TAlign align;
-	      if (!_consRefAlignment(itSV->consensus, svRefStr, align, svType)) continue;
-	      AlignDescriptor ad;
-	      if (!_findSplit(c, itSV->consensus, svRefStr, align, ad, svType)) continue;
-
-	      // Debug consensus to reference alignment
-	      //for(TAIndex i = 0; i<align.shape()[0]; ++i) {
-	      //for(TAIndex j = 0; j<align.shape()[1]; ++j) std::cerr << align[i][j];
-	      //std::cerr << std::endl;
-	      //}
-	      //std::cerr << std::endl;
-
-	      // Iterate all samples
+      // Iterate all structural variants
+      for(typename TSVs::iterator itSV = svs.begin(); itSV != svs.end(); ++itSV) {
+	if (!itSV->precise) continue;
+	int32_t consLen = itSV->consensus.size();
+	
+	if (itSV->chr == refIndex) {
+	  // Get the reference string
+	  std::string svRefStr = boost::to_upper_copy(std::string(seq + itSV->svStart - consLen, seq + itSV->svEnd + consLen));
+	  
+	  // Find breakpoint to reference
+	  typedef boost::multi_array<char, 2> TAlign;
+	  TAlign align;
+	  if (!_consRefAlignment(itSV->consensus, svRefStr, align, svType)) continue;
+	  AlignDescriptor ad;
+	  if (!_findSplit(c, itSV->consensus, svRefStr, align, ad, svType)) continue;
+	  
+	  // Debug consensus to reference alignment
+	  //for(TAIndex i = 0; i<align.shape()[0]; ++i) {
+	  //for(TAIndex j = 0; j<align.shape()[1]; ++j) std::cerr << align[i][j];
+	  //std::cerr << std::endl;
+	  //}
+	  //std::cerr << std::endl;
+	  
+	  // Iterate all samples
 #pragma omp parallel for default(shared)
-	      for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
-		TQualVector altQual;
-		TQualVector refQual;
-
-		// Region
-		int32_t regionChr = itSV->chr;
-		int32_t regionStart = std::max(0, itSV->svStart - c.minimumFlankSize);
-		int32_t regionEnd = std::min((uint32_t) (itSV->svEnd + c.minimumFlankSize), hdr->target_len[itSV->chr2]);
-		int32_t cutConsStart = ad.cStart - ad.homLeft - c.minimumFlankSize;
-		int32_t cutConsEnd = ad.cEnd + ad.homRight + c.minimumFlankSize;
-		std::string consProbe = itSV->consensus.substr(cutConsStart, (cutConsEnd - cutConsStart));
-		int32_t cutRefStart = ad.rStart - ad.homLeft - c.minimumFlankSize;
-		int32_t cutRefEnd = ad.rStart + ad.homRight + c.minimumFlankSize;
-		std::string refProbe = svRefStr.substr(cutRefStart, (cutRefEnd - cutRefStart));
-
-		hts_itr_t* iter = sam_itr_queryi(idx[file_c], regionChr, regionStart, regionEnd);
-		bam1_t* rec = bam_init1();
-		while (sam_itr_next(samfile[file_c], iter, rec) >= 0) {
-		  if (rec->core.flag & (BAM_FSECONDARY | BAM_FQCFAIL | BAM_FDUP | BAM_FSUPPLEMENTARY | BAM_FUNMAP)) continue;
-		  // Check read length & quality
-		  if ((rec->core.l_qseq < (2 * c.minimumFlankSize)) || (rec->core.qual < c.minGenoQual)) continue;
-
-		  // Get sequence
-		  std::string sequence;
-		  sequence.resize(rec->core.l_qseq);
-		  uint8_t* seqptr = bam_get_seq(rec);
-		  for (int i = 0; i < rec->core.l_qseq; ++i) sequence[i] = "=ACMGRSVTWYHKDBN"[bam_seqi(seqptr, i)];
-
-		  // Compute alignment to alternative haplotype
-		  TAlign alignAlt;
-		  AlignConfig<true, false> semiglobal;
-		  DnaScore<int> simple(5, -4, -4, -4);
-		  int32_t scoreA = needle(consProbe, sequence, alignAlt, semiglobal, simple);
-		  int32_t scoreAltThreshold = (int32_t) (c.flankQuality * consProbe.size() * simple.match + (1.0 - c.flankQuality) * consProbe.size() * simple.mismatch);
-		  double scoreAlt = (double) scoreA / (double) scoreAltThreshold;
-
-		  // Compute alignment to reference haplotype
-		  TAlign alignRef;
-		  int32_t scoreR = needle(refProbe, sequence, alignRef, semiglobal, simple);
-		  int32_t scoreRefThreshold = (int32_t) (c.flankQuality * refProbe.size() * simple.match + (1.0 - c.flankQuality) * refProbe.size() * simple.mismatch);
-		  double scoreRef = (double) scoreR / (double) scoreRefThreshold;
-		    
-		  // Any confident alignment?
-		  //if ((scoreRef > c.flankQuality) || (scoreAlt > c.flankQuality)) {
-		  if ((scoreRef > 1) || (scoreAlt > 1)) {
-		    // Debug alignment to REF and ALT
-		    //std::cerr << "Alt:\t" << scoreAlt << "\tRef:\t" << scoreRef << std::endl;
-		    //for(TAIndex i = 0; i< (TAIndex) alignAlt.shape()[0]; ++i) {
-		    //for(TAIndex j = 0; j< (TAIndex) alignAlt.shape()[1]; ++j) std::cerr << alignAlt[i][j];
-		    //std::cerr << std::endl;
-		    //}
-		    //for(TAIndex i = 0; i< (TAIndex) alignRef.shape()[0]; ++i) {
-		    //for(TAIndex j = 0; j< (TAIndex) alignRef.shape()[1]; ++j) std::cerr << alignRef[i][j];
-		    //std::cerr << std::endl;
-		    //}
-		      
-		    if (scoreRef > scoreAlt) {
-		      // Take only every second read because we sample both breakpoints
-		      TQuality quality;
-		      quality.resize(rec->core.l_qseq);
-		      uint8_t* qualptr = bam_get_qual(rec);
-		      for (int i = 0; i < rec->core.l_qseq; ++i) quality[i] = qualptr[i];
-		      uint32_t rq = _getAlignmentQual(alignRef, quality);
-		      if (rq >= c.minGenoQual) refQual.push_back((uint8_t) std::min(rq, (uint32_t) rec->core.qual));
-		    } else {
-		      TQuality quality;
-		      quality.resize(rec->core.l_qseq);
-		      uint8_t* qualptr = bam_get_qual(rec);
-		      for (int i = 0; i < rec->core.l_qseq; ++i) quality[i] = qualptr[i];
-		      uint32_t aq = _getAlignmentQual(alignAlt, quality);
-		      if (aq >= c.minGenoQual) altQual.push_back((uint8_t) std::min(aq, (uint32_t) rec->core.qual));
+	  for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
+	    // Region
+	    int32_t regionChr = itSV->chr;
+	    int32_t regionStart = std::max(0, itSV->svStart - c.minimumFlankSize);
+	    int32_t regionEnd = std::min((uint32_t) (itSV->svEnd + c.minimumFlankSize), hdr->target_len[itSV->chr2]);
+	    int32_t cutConsStart = ad.cStart - ad.homLeft - c.minimumFlankSize;
+	    int32_t cutConsEnd = ad.cEnd + ad.homRight + c.minimumFlankSize;
+	    std::string consProbe = itSV->consensus.substr(cutConsStart, (cutConsEnd - cutConsStart));
+	    int32_t cutRefStart = ad.rStart - ad.homLeft - c.minimumFlankSize;
+	    int32_t cutRefEnd = ad.rStart + ad.homRight + c.minimumFlankSize;
+	    std::string refProbe = svRefStr.substr(cutRefStart, (cutRefEnd - cutRefStart));
+	    
+	    hts_itr_t* iter = sam_itr_queryi(idx[file_c], regionChr, regionStart, regionEnd);
+	    bam1_t* rec = bam_init1();
+	    while (sam_itr_next(samfile[file_c], iter, rec) >= 0) {
+	      if (rec->core.flag & (BAM_FSECONDARY | BAM_FQCFAIL | BAM_FDUP | BAM_FSUPPLEMENTARY | BAM_FUNMAP)) continue;
+	      // Check read length & quality
+	      if ((rec->core.l_qseq < (2 * c.minimumFlankSize)) || (rec->core.qual < c.minGenoQual)) continue;
+	      
+	      // Get sequence
+	      std::string sequence;
+	      sequence.resize(rec->core.l_qseq);
+	      uint8_t* seqptr = bam_get_seq(rec);
+	      for (int i = 0; i < rec->core.l_qseq; ++i) sequence[i] = "=ACMGRSVTWYHKDBN"[bam_seqi(seqptr, i)];
+	      
+	      // Compute alignment to alternative haplotype
+	      TAlign alignAlt;
+	      AlignConfig<true, false> semiglobal;
+	      DnaScore<int> simple(5, -4, -4, -4);
+	      int32_t scoreA = needle(consProbe, sequence, alignAlt, semiglobal, simple);
+	      int32_t scoreAltThreshold = (int32_t) (c.flankQuality * consProbe.size() * simple.match + (1.0 - c.flankQuality) * consProbe.size() * simple.mismatch);
+	      double scoreAlt = (double) scoreA / (double) scoreAltThreshold;
+	      
+	      // Compute alignment to reference haplotype
+	      TAlign alignRef;
+	      int32_t scoreR = needle(refProbe, sequence, alignRef, semiglobal, simple);
+	      int32_t scoreRefThreshold = (int32_t) (c.flankQuality * refProbe.size() * simple.match + (1.0 - c.flankQuality) * refProbe.size() * simple.mismatch);
+	      double scoreRef = (double) scoreR / (double) scoreRefThreshold;
+	      
+	      // Any confident alignment?
+	      //if ((scoreRef > c.flankQuality) || (scoreAlt > c.flankQuality)) {
+	      if ((scoreRef > 1) || (scoreAlt > 1)) {
+		// Debug alignment to REF and ALT
+		//std::cerr << "Alt:\t" << scoreAlt << "\tRef:\t" << scoreRef << std::endl;
+		//for(TAIndex i = 0; i< (TAIndex) alignAlt.shape()[0]; ++i) {
+		//for(TAIndex j = 0; j< (TAIndex) alignAlt.shape()[1]; ++j) std::cerr << alignAlt[i][j];
+		//std::cerr << std::endl;
+		//}
+		//for(TAIndex i = 0; i< (TAIndex) alignRef.shape()[0]; ++i) {
+		//for(TAIndex j = 0; j< (TAIndex) alignRef.shape()[1]; ++j) std::cerr << alignRef[i][j];
+		//std::cerr << std::endl;
+		//}
+		
+		if (scoreRef > scoreAlt) {
+		  // Take only every second read because we sample both breakpoints
+		  TQuality quality;
+		  quality.resize(rec->core.l_qseq);
+		  uint8_t* qualptr = bam_get_qual(rec);
+		  for (int i = 0; i < rec->core.l_qseq; ++i) quality[i] = qualptr[i];
+		  uint32_t rq = _getAlignmentQual(alignRef, quality);
+		  if (rq >= c.minGenoQual) {
+#pragma omp critical
+		    {
+		      countMap[file_c][itSV->id].first.push_back((uint8_t) std::min(rq, (uint32_t) rec->core.qual));
+		    }
+		  }
+		} else {
+		  TQuality quality;
+		  quality.resize(rec->core.l_qseq);
+		  uint8_t* qualptr = bam_get_qual(rec);
+		  for (int i = 0; i < rec->core.l_qseq; ++i) quality[i] = qualptr[i];
+		  uint32_t aq = _getAlignmentQual(alignAlt, quality);
+		  if (aq >= c.minGenoQual) {
+#pragma omp critical
+		    {
+		      countMap[file_c][itSV->id].second.push_back((uint8_t) std::min(aq, (uint32_t) rec->core.qual));
 		    }
 		  }
 		}
-		bam_destroy1(rec);
-		hts_itr_destroy(iter);
-		
-		// Insert counts
-		TSampleSVPair svSample = std::make_pair(file_c, itSV->id);
-#pragma omp critical
-		{
-		  typename TCountMap::iterator countMapIt=countMap.find(svSample);
-		  countMapIt->second.first=refQual;
-		  countMapIt->second.second=altQual;
-		}
 	      }
 	    }
+	    bam_destroy1(rec);
+	    hts_itr_destroy(iter);
 	  }
 	}
       }
+      if (seqlen) free(seq);
     }
-    kseq_destroy(seq);
-    gzclose(fp);
-
     // Clean-up
+    fai_destroy(fai);
     for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
       hts_idx_destroy(idx[file_c]);
       sam_close(samfile[file_c]);

@@ -32,16 +32,6 @@ Contact: Tobias Rausch (rausch@embl.de)
 namespace torali {
 
 
-template<typename TCigarVec>
-inline std::string cigarString(TCigarVec const& cigarOperations) {
-  std::stringstream cigar;
-  typename TCigarVec::const_iterator coIter = cigarOperations.begin();
-  if (coIter == cigarOperations.end()) cigar << "*";
-  else
-    for(; coIter != cigarOperations.end(); ++coIter) cigar << coIter->Length << coIter->Type;
-  return cigar.str();
-}
-
 template<typename TWindow, typename TCount>
 inline void
 _addBpCounts(bam1_t* rec, TWindow posBeg, TWindow posEnd, TCount& bp_sum, BpLevelType<BpLevelCount>)
@@ -76,26 +66,19 @@ annotateCoverage(TFiles const& files, uint16_t minMapQual, TSVs& svs, TCountMap&
   // Open file handles
   typedef std::vector<samFile*> TSamFile;
   typedef std::vector<hts_idx_t*> TIndex;
-  typedef std::vector<bam_hdr_t*> THeader;
-  TSamFile samfile;
-  TIndex idx;
-  THeader hdr;
-  samfile.resize(files.size());
-  idx.resize(files.size());
-  hdr.resize(files.size());
+  TSamFile samfile(files.size());
+  TIndex idx(files.size());
   for(unsigned int file_c = 0; file_c < files.size(); ++file_c) {
     samfile[file_c] = sam_open(files[file_c].string().c_str(), "r");
     idx[file_c] = sam_index_load(samfile[file_c], files[file_c].string().c_str());
-    hdr[file_c] = sam_hdr_read(samfile[file_c]);
   }
 
   // Sort Structural Variants
   sort(svs.begin(), svs.end(), SortSVs<TSV>());
 
   // Initialize count maps
-  for(unsigned int file_c = 0; file_c < files.size(); ++file_c)
-    for(typename TSVs::const_iterator itSV = svs.begin(); itSV!=svs.end(); ++itSV)
-      countMap.insert(std::make_pair(std::make_pair(file_c, itSV->id), std::make_pair(0,0)));
+  countMap.resize(files.size());
+  for(uint32_t file_c = 0; file_c < files.size(); ++file_c) countMap[file_c].resize(svs.size());
 
   // Iterate all samples
   boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
@@ -156,9 +139,6 @@ annotateCoverage(TFiles const& files, uint16_t minMapQual, TSVs& svs, TCountMap&
 	  unsigned int bp_sum = 0;
 	  unsigned int read_sum = 0;
 
-	  // Read alignment
-	  //std::cerr << hdr[file_c]->target_name[oldChr] << '\t' << itInt->first << '\t' << itInt->second << std::endl;
-
 	  hts_itr_t* iter = sam_itr_queryi(idx[file_c], oldChr, itInt->first, itInt->second);
 	  bam1_t* rec = bam_init1();
 	  while (sam_itr_next(samfile[file_c], iter, rec) >= 0) {
@@ -193,18 +173,12 @@ annotateCoverage(TFiles const& files, uint16_t minMapQual, TSVs& svs, TCountMap&
       // Store counts
 #pragma omp critical
       {
-	typedef typename TCountMap::key_type TSampleSVPair;
-	TSampleSVPair svSample = std::make_pair(file_c, itSV->id);
-	typename TCountMap::iterator countMapIt=countMap.find(svSample);
-	//std::cerr << itSV->id << ':' << cumBpSum << ',' << cumReadSum << std::endl;
-	countMapIt->second.first=cumBpSum;
-	countMapIt->second.second=cumReadSum;
+	countMap[file_c][itSV->id] = std::make_pair(cumBpSum, cumReadSum);
       }
     }
   }
   // Clean-up
   for(unsigned int file_c = 0; file_c < files.size(); ++file_c) {
-    bam_hdr_destroy(hdr[file_c]);
     hts_idx_destroy(idx[file_c]);
     sam_close(samfile[file_c]);
   }

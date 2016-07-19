@@ -45,10 +45,12 @@ Contact: Tobias Rausch (rausch@embl.de)
 #include <boost/filesystem.hpp>
 #include <boost/tokenizer.hpp>
 #include <boost/progress.hpp>
+
+#include <htslib/faidx.h>
 #include <htslib/sam.h>
 #include <htslib/vcf.h>
 #include <htslib/tbx.h>
-#include <htslib/kseq.h>
+
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -143,34 +145,26 @@ filterRun(TFilterConfig const& c, TSVType svType) {
   int32_t* rv = NULL;
   int nrr = 0;
   int32_t* rr = NULL;
-
-  // Get #sequences
-  const char **seqnames = NULL;
-  int nseq = 0;
-  seqnames = bcf_hdr_seqnames(hdr, &nseq);
-  if (seqnames != NULL) free(seqnames);
   bool germline = false;
   if (c.filter == "germline") germline = true;
 
-
+  // Parse genome
+  faidx_t* fai = fai_load(c.genome.string().c_str());
   boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
   std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Filtering VCF/BCF file" << std::endl;
-  boost::progress_display show_progress(nseq);
+  boost::progress_display show_progress( faidx_nseq(fai) );
   //std::cerr << "chr\tstart\tend\tid\tsize\tvac\tvaf\tgenotyperatio\tsvtype\tprecise\tratioVarGT0\tratioVarGT1\trefgq\taltgq\trdratio\trcmed\trsq\tsrq" << std::endl;
 
-  // Parse genome
-  kseq_t *seq;
-  int l;
-  gzFile fp = gzopen(c.genome.string().c_str(), "r");
-  seq = kseq_init(fp);
-  while ((l = kseq_read(seq)) >= 0) {
-    std::string seqname(seq->name.s);
+  for(int32_t refIndex=0; refIndex < faidx_nseq(fai); ++refIndex) {
+    ++show_progress;
+    std::string seqname(faidx_iseq(fai, refIndex));
     int32_t chrid = bcf_hdr_name2id(hdr, seqname.c_str());
     if (chrid < 0) continue;
-    ++show_progress;
+    int32_t seqlen = -1;
+    char* seq = faidx_fetch_seq(fai, seqname.c_str(), 0, faidx_seq_len(fai, seqname.c_str()), &seqlen);
     hts_itr_t* itervcf = NULL;
-    if (tbx) itervcf = tbx_itr_queryi(tbx, chrid, 0, seq->seq.l);
-    else itervcf = bcf_itr_queryi(bcfidx, chrid, 0, seq->seq.l);
+    if (tbx) itervcf = tbx_itr_queryi(tbx, chrid, 0, seqlen);
+    else itervcf = bcf_itr_queryi(bcfidx, chrid, 0, seqlen);
     if (itervcf != NULL) {
       bcf1_t* rec = bcf_init1();
       while (true) {
@@ -277,7 +271,7 @@ filterRun(TFilterConfig const& c, TSVType svType) {
 	    }
 	  }
 	  std::string alleles;
-	  std::string refAllele = boost::to_upper_copy(std::string(seq->seq.s + rec->pos, seq->seq.s + rec->pos + 1));
+	  std::string refAllele = boost::to_upper_copy(std::string(seq + rec->pos, seq + rec->pos + 1));
 	  alleles += refAllele + ",<" + _addID(svType) + ">";
 	  bcf_update_alleles_str(hdr_out, rec, alleles.c_str());
 	  if (c.filter == "somatic") {
@@ -336,9 +330,10 @@ filterRun(TFilterConfig const& c, TSVType svType) {
     }
     if (tbx) tbx_itr_destroy(itervcf);
     else hts_itr_destroy(itervcf);
+
+    if (seqlen) free(seq);
   }
-  kseq_destroy(seq);
-  gzclose(fp);
+  fai_destroy(fai);
 
   // Clean-up
   if (svend != NULL) free(svend);

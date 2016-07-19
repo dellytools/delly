@@ -55,20 +55,17 @@ namespace torali {
   }   
 
   template<typename TFiles, typename TSampleLibrary, typename TSVs, typename TCountMap, typename TSVType>
-    inline void
-    annotateSpanningCoverage(TFiles const& files, uint8_t const minMapQual, TSampleLibrary& sampleLib, TSVs& svs, TCountMap& spanCountMap, TSVType svType)
+  inline void
+  annotateSpanningCoverage(TFiles const& files, uint8_t const minMapQual, TSampleLibrary& sampleLib, TSVs& svs, TCountMap& spanCountMap, TSVType svType)
   {
-    typedef typename TCountMap::key_type TSampleSVPair;
-    typedef typename TCountMap::mapped_type TCountPair;
+    typedef typename TCountMap::value_type::value_type TCountPair;
     typedef typename TSampleLibrary::value_type TLibraryMap;
 
     // Open file handles
     typedef std::vector<samFile*> TSamFile;
     typedef std::vector<hts_idx_t*> TIndex;
-    TSamFile samfile;
-    TIndex idx;
-    samfile.resize(files.size());
-    idx.resize(files.size());
+    TSamFile samfile(files.size());
+    TIndex idx(files.size());
     for(unsigned int file_c = 0; file_c < files.size(); ++file_c) {
       samfile[file_c] = sam_open(files[file_c].string().c_str(), "r");
       idx[file_c] = sam_index_load(samfile[file_c], files[file_c].string().c_str());
@@ -84,14 +81,10 @@ namespace torali {
     std::sort(svs.begin(), svs.end(), SortSVs<StructuralVariantRecord>());
 
     // Initialize count map
-    for(unsigned int file_c = 0; file_c < files.size(); ++file_c) {
-      for(typename TSVs::const_iterator itSV = svs.begin(); itSV!=svs.end(); ++itSV) {
-	// Left breakpoint
-	spanCountMap.insert(std::make_pair(std::make_pair(file_c, -itSV->id), TCountPair()));
-	// Right breakpoint
-	spanCountMap.insert(std::make_pair(std::make_pair(file_c, itSV->id), TCountPair()));
-      }
-    }
+    spanCountMap.resize(files.size());
+    uint32_t lastId = svs.size();
+    for(unsigned int file_c = 0; file_c < files.size(); ++file_c) spanCountMap[file_c].resize(2 * lastId, TCountPair());
+
 
     // Iterate all samples
     boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
@@ -105,12 +98,6 @@ namespace torali {
       for(;itSV!=itSVEnd;++itSV) {
 	if (file_c==(files.size()-1)) ++show_progress;
 	if (itSV->peSupport == 0) continue;
-
-	// Set up the mapping quality iterators
-	TSampleSVPair svSample = std::make_pair(file_c, -itSV->id);
-	typename TCountMap::iterator leftIt = spanCountMap.find(svSample);
-	svSample = std::make_pair(file_c, itSV->id);
-	typename TCountMap::iterator rightIt = spanCountMap.find(svSample);
 
 	// Qualities
 	typedef boost::unordered_map<std::size_t, uint8_t> TQualities;
@@ -207,13 +194,7 @@ namespace torali {
 	      
 	      // Insert the interval
 	      if ((getStrandIndependentOrientation(rec->core) == libIt->second.defaultOrient) && (outerISize >= libIt->second.minNormalISize) && (outerISize <= libIt->second.maxNormalISize) && (rec->core.tid==rec->core.mtid)) {
-		// Normal spanning coverage, take inner insert-size
-		//int32_t sPosStart = std::min(rec->core.pos, rec->core.mpos);
-		//int32_t ePosStart = std::min(rec->core.pos, rec->core.mpos) + rec->core.l_qseq;
-		//int32_t sPosEnd = std::max(rec->core.pos, rec->core.mpos);
-		//int32_t ePosEnd = std::max(rec->core.pos, rec->core.mpos) + rec->core.l_qseq;
-		//if ((itSV->chr==rec->core.tid) && (itSV->svStart>=sPosStart) && (itSV->svStart<=ePosStart)) leftIt->second.first.push_back(pairQuality);
-		//if ((itSV->chr2==rec->core.tid) && (itSV->svEnd>=sPosEnd) && (itSV->svEnd<=ePosEnd)) rightIt->second.first.push_back(pairQuality);
+		// Normal spanning coverage
 		int32_t sPos = std::min(rec->core.pos, rec->core.mpos);
 		int32_t ePos = std::max(rec->core.pos, rec->core.mpos) + rec->core.l_qseq;
 		int32_t midPoint = sPos+(ePos-sPos)/2;
@@ -225,26 +206,33 @@ namespace torali {
 		  sPos = innerSPos;
 		  ePos = innerEPos;
 		}
-		if (std::abs(midPoint - itSV->svStart) < std::abs(itSV->svEnd - midPoint)) {
-		  if ((itSV->chr==rec->core.tid) && (itSV->svStart>=sPos) && (itSV->svStart<=ePos)) leftIt->second.first.push_back(pairQuality);
-		} else {
-		  if ((itSV->chr2==rec->core.tid) && (itSV->svEnd>=sPos) && (itSV->svEnd<=ePos)) rightIt->second.first.push_back(pairQuality);
+
+#pragma omp critical
+		{
+		  if (std::abs(midPoint - itSV->svStart) < std::abs(itSV->svEnd - midPoint)) {
+		    if ((itSV->chr==rec->core.tid) && (itSV->svStart>=sPos) && (itSV->svStart<=ePos)) spanCountMap[file_c][itSV->id].first.push_back(pairQuality);
+		  } else {
+		    if ((itSV->chr2==rec->core.tid) && (itSV->svEnd>=sPos) && (itSV->svEnd<=ePos)) spanCountMap[file_c][itSV->id + lastId].first.push_back(pairQuality);
+		  }
 		}
 	      } else if ((getStrandIndependentOrientation(rec->core) != libIt->second.defaultOrient) || (outerISize < libIt->second.minNormalISize) || (outerISize > libIt->second.maxNormalISize) || (rec->core.tid!=rec->core.mtid)) {
-		// Missing spanning coverage
-		if (_mateIsUpstream(libIt->second.defaultOrient, (rec->core.flag & BAM_FREAD1), (rec->core.flag & BAM_FREVERSE))) {
-		  if ((itSV->chr==rec->core.tid) && (itSV->svStart>=rec->core.pos) && (itSV->svStart<=(rec->core.pos + libIt->second.maxNormalISize))) leftIt->second.second.push_back(pairQuality);
-		  if ((itSV->chr2==rec->core.tid) && (itSV->svEnd>=rec->core.pos) && (itSV->svEnd<=(rec->core.pos + libIt->second.maxNormalISize))) rightIt->second.second.push_back(pairQuality);
-		} else {
-		  if ((itSV->chr==rec->core.tid) && (itSV->svStart>=std::max(0, rec->core.pos + rec->core.l_qseq - libIt->second.maxNormalISize)) && (itSV->svStart<=(rec->core.pos + rec->core.l_qseq))) leftIt->second.second.push_back(pairQuality);
-		  if ((itSV->chr2==rec->core.tid) && (itSV->svEnd>=std::max(0, rec->core.pos + rec->core.l_qseq - libIt->second.maxNormalISize)) && (itSV->svEnd<=(rec->core.pos + rec->core.l_qseq))) rightIt->second.second.push_back(pairQuality);
-		}
-		if (_mateIsUpstream(libIt->second.defaultOrient, !(rec->core.flag & BAM_FREAD1), (rec->core.flag & BAM_FMREVERSE))) {
-		  if ((itSV->chr==rec->core.mtid) && (itSV->svStart>=rec->core.mpos) && (itSV->svStart<=(rec->core.mpos + libIt->second.maxNormalISize))) leftIt->second.second.push_back(pairQuality);
-		  if ((itSV->chr2==rec->core.mtid) && (itSV->svEnd>=rec->core.mpos) && (itSV->svEnd<=(rec->core.mpos + libIt->second.maxNormalISize))) rightIt->second.second.push_back(pairQuality);
-		} else {
-		  if ((itSV->chr==rec->core.mtid) && (itSV->svStart>=std::max(0, rec->core.mpos + rec->core.l_qseq - libIt->second.maxNormalISize)) && (itSV->svStart<=(rec->core.mpos + rec->core.l_qseq))) leftIt->second.second.push_back(pairQuality);
-		  if ((itSV->chr2==rec->core.mtid) && (itSV->svEnd>=std::max(0,rec->core.mpos + rec->core.l_qseq - libIt->second.maxNormalISize)) && (itSV->svEnd<=(rec->core.mpos + rec->core.l_qseq))) rightIt->second.second.push_back(pairQuality);
+#pragma omp critical
+		{
+		  // Missing spanning coverage
+		  if (_mateIsUpstream(libIt->second.defaultOrient, (rec->core.flag & BAM_FREAD1), (rec->core.flag & BAM_FREVERSE))) {
+		    if ((itSV->chr==rec->core.tid) && (itSV->svStart>=rec->core.pos) && (itSV->svStart<=(rec->core.pos + libIt->second.maxNormalISize))) spanCountMap[file_c][itSV->id].second.push_back(pairQuality);
+		    if ((itSV->chr2==rec->core.tid) && (itSV->svEnd>=rec->core.pos) && (itSV->svEnd<=(rec->core.pos + libIt->second.maxNormalISize))) spanCountMap[file_c][itSV->id + lastId].second.push_back(pairQuality);
+		  } else {
+		    if ((itSV->chr==rec->core.tid) && (itSV->svStart>=std::max(0, rec->core.pos + rec->core.l_qseq - libIt->second.maxNormalISize)) && (itSV->svStart<=(rec->core.pos + rec->core.l_qseq))) spanCountMap[file_c][itSV->id].second.push_back(pairQuality);
+		    if ((itSV->chr2==rec->core.tid) && (itSV->svEnd>=std::max(0, rec->core.pos + rec->core.l_qseq - libIt->second.maxNormalISize)) && (itSV->svEnd<=(rec->core.pos + rec->core.l_qseq))) spanCountMap[file_c][itSV->id + lastId].second.push_back(pairQuality);
+		  }
+		  if (_mateIsUpstream(libIt->second.defaultOrient, !(rec->core.flag & BAM_FREAD1), (rec->core.flag & BAM_FMREVERSE))) {
+		    if ((itSV->chr==rec->core.mtid) && (itSV->svStart>=rec->core.mpos) && (itSV->svStart<=(rec->core.mpos + libIt->second.maxNormalISize))) spanCountMap[file_c][itSV->id].second.push_back(pairQuality);
+		    if ((itSV->chr2==rec->core.mtid) && (itSV->svEnd>=rec->core.mpos) && (itSV->svEnd<=(rec->core.mpos + libIt->second.maxNormalISize))) spanCountMap[file_c][itSV->id + lastId].second.push_back(pairQuality);
+		  } else {
+		    if ((itSV->chr==rec->core.mtid) && (itSV->svStart>=std::max(0, rec->core.mpos + rec->core.l_qseq - libIt->second.maxNormalISize)) && (itSV->svStart<=(rec->core.mpos + rec->core.l_qseq))) spanCountMap[file_c][itSV->id].second.push_back(pairQuality);
+		    if ((itSV->chr2==rec->core.mtid) && (itSV->svEnd>=std::max(0,rec->core.mpos + rec->core.l_qseq - libIt->second.maxNormalISize)) && (itSV->svEnd<=(rec->core.mpos + rec->core.l_qseq))) spanCountMap[file_c][itSV->id + lastId].second.push_back(pairQuality);
+		  }
 		}
 	      }
 	    }
