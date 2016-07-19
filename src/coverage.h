@@ -171,10 +171,8 @@ annotateCoverage(TFiles const& files, uint16_t minMapQual, TSVs& svs, TCountMap&
       }
 
       // Store counts
-#pragma omp critical
-      {
-	countMap[file_c][itSV->id] = std::make_pair(cumBpSum, cumReadSum);
-      }
+      countMap[file_c][itSV->id].first = cumBpSum;
+      countMap[file_c][itSV->id].second = cumReadSum;
     }
   }
   // Clean-up
