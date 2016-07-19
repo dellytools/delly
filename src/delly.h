@@ -213,7 +213,6 @@ vcfParse(TConfig const& c, bam_hdr_t* hd, TSize const overallMaxISize, std::vect
   char* cons = NULL;
   int32_t nchr2 = 0;
   char* chr2 = NULL;
-  unsigned int clique_count = 0;
   while (bcf_read(ifile, hdr, rec) == 0) {
     bcf_unpack(rec, BCF_UN_INFO);
 
@@ -227,7 +226,7 @@ vcfParse(TConfig const& c, bam_hdr_t* hd, TSize const overallMaxISize, std::vect
     int32_t tid = bam_name2id(hd, chrName.c_str());
     svRec.chr = tid;
     svRec.svStart = rec->pos + 1;
-    svRec.id = clique_count++;
+    svRec.id = svs.size();
 
     // Parse INFO
     if (bcf_get_info_flag(hdr, rec, "PRECISE", 0, 0) > 0) svRec.precise=true;
@@ -1065,7 +1064,7 @@ _smallIndelDetection(SVType<InsertionTag>)
 
 template<typename TCompEdgeList, typename TBamRecord, typename TSVs, typename TSVType>
 inline void
-_searchCliques(bam_hdr_t* hdr, TCompEdgeList& compEdge, TBamRecord const& bamRecord, TSVs& svs, unsigned int& clique_count, int const overallMaxISize, TSVType svType) {
+_searchCliques(bam_hdr_t* hdr, TCompEdgeList& compEdge, TBamRecord const& bamRecord, TSVs& svs, int const overallMaxISize, TSVType svType) {
   typedef typename TCompEdgeList::mapped_type TEdgeList;
   typedef typename TEdgeList::value_type TEdgeRecord;
 
@@ -1133,7 +1132,7 @@ _searchCliques(bam_hdr_t* hdr, TCompEdgeList& compEdge, TBamRecord const& bamRec
       svRec.ct=connectionType;
       svRec.insLen = 0;
       svRec.homLen = 0;
-      svRec.id = clique_count++;
+      svRec.id = svs.size();
       svs.push_back(svRec);
     }
   }
@@ -1141,7 +1140,7 @@ _searchCliques(bam_hdr_t* hdr, TCompEdgeList& compEdge, TBamRecord const& bamRec
 
 template<typename TIterator, typename TSVs, typename TSVType>
 inline void
-_processSRCluster(bam_hdr_t* hdr, TIterator itInit, TIterator itEnd, int32_t refIndex, int32_t bpWindowLen, TSVs& svs, TSVs& splitSVs, unsigned int& clique_count, TSVType svType) 
+_processSRCluster(bam_hdr_t* hdr, TIterator itInit, TIterator itEnd, int32_t refIndex, int32_t bpWindowLen, TSVs& svs, TSVType svType) 
 {
   typedef typename TSVs::value_type TStructuralVariant;
 
@@ -1218,8 +1217,8 @@ _processSRCluster(bam_hdr_t* hdr, TIterator itInit, TIterator itEnd, int32_t ref
       svRec.ct=_getCT(svType);
       svRec.insLen = 0;
       svRec.homLen = 0;
-      svRec.id = clique_count++;
-      if ((svRec.svStartBeg < svRec.svStart) && (svRec.svEnd < svRec.svEndEnd)) splitSVs.push_back(svRec);
+      svRec.id = svs.size();
+      if ((svRec.svStartBeg < svRec.svStart) && (svRec.svEnd < svRec.svEndEnd)) svs.push_back(svRec);
     }
   }
 }
@@ -1236,9 +1235,6 @@ inline int dellyRun(Config const& c, TSVType svType) {
   // Collect all promising structural variants
   typedef std::vector<StructuralVariantRecord> TVariants;
   TVariants svs;
-
-  // Clique id counter
-  unsigned int clique_count = 0;
 
   // Create library objects
   typedef boost::unordered_map<std::string, LibraryInfo> TLibraryMap;
@@ -1508,7 +1504,7 @@ inline int dellyRun(Config const& c, TSVType svType) {
       if (bamItIndex > lastConnectedNode) {
 	// Clean edge lists
 	if (!compEdge.empty()) {
-	  _searchCliques(hdr, compEdge, bamRecord, svs, clique_count, overallMaxISize, svType);
+	  _searchCliques(hdr, compEdge, bamRecord, svs, overallMaxISize, svType);
 	  lastConnectedNodeStart = lastConnectedNode;
 	  compEdge.clear();
 	}
@@ -1579,7 +1575,7 @@ inline int dellyRun(Config const& c, TSVType svType) {
       }
     }
     if (!compEdge.empty()) {
-      _searchCliques(hdr, compEdge, bamRecord, svs, clique_count, overallMaxISize, svType);
+      _searchCliques(hdr, compEdge, bamRecord, svs, overallMaxISize, svType);
       compEdge.clear();
     }
     
@@ -1588,9 +1584,6 @@ inline int dellyRun(Config const& c, TSVType svType) {
       
     // Add the soft clip SV records
     if ((c.indels) && (_smallIndelDetection(svType))) {
-      // Collect all promising structural variants
-      TVariants splitSVs;
-      
       int32_t bpWindowLen = 10;
       int32_t maxLookAhead = 0;
       TSplitRecord::const_iterator splitClusterIt = splitRecord.end();
@@ -1598,7 +1591,7 @@ inline int dellyRun(Config const& c, TSVType svType) {
       for(TSplitRecord::const_iterator splitIt = splitRecord.begin(); splitIt!=splitRecord.end(); ++splitIt) {
 	if ((maxLookAhead) && (splitIt->splitbeg > maxLookAhead)) {
 	  // Process split read cluster
-	  _processSRCluster(hdr, splitClusterIt, splitIt, refIndex, bpWindowLen, svs, splitSVs, clique_count, svType);
+	  _processSRCluster(hdr, splitClusterIt, splitIt, refIndex, bpWindowLen, svs, svType);
 	  maxLookAhead = 0;
 	  splitClusterIt = splitRecord.end();
 	}
@@ -1608,10 +1601,7 @@ inline int dellyRun(Config const& c, TSVType svType) {
 	}
       }
       TSplitRecord::const_iterator splitIt = splitRecord.end();
-      _processSRCluster(hdr, splitClusterIt, splitIt, refIndex, bpWindowLen, svs, splitSVs, clique_count, svType);
-      
-      // Append soft clip alignment records
-      svs.insert(svs.end(), splitSVs.begin(), splitSVs.end());
+      _processSRCluster(hdr, splitClusterIt, splitIt, refIndex, bpWindowLen, svs, svType);
     }
     if (seqlen) free(seq);
   }
@@ -1654,6 +1644,9 @@ inline int dellyRun(Config const& c, TSVType svType) {
 	
 	// Final set of precise and imprecise SVs
 	svs = svc;
+	// Re-number SVs
+	uint32_t cliqueCount = 0;
+	for(typename TVariants::iterator svIt = svs.begin(); svIt != svs.end(); ++svIt) svIt->id = cliqueCount++;
       }
     }
   } else {
@@ -1661,10 +1654,6 @@ inline int dellyRun(Config const& c, TSVType svType) {
     if (c.format == "json.gz") jsonParse(c, hdr, overallMaxISize, svs, svType);
     else vcfParse(c, hdr, overallMaxISize, svs, svType);
   }
-
-  // Re-number SVs
-  uint32_t cliqueCount = 0;
-  for(typename TVariants::iterator svIt = svs.begin(); svIt != svs.end(); ++svIt) svIt->id = cliqueCount++;
 
 
   // Debug output
