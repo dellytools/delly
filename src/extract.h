@@ -36,10 +36,10 @@ Contact: Tobias Rausch (rausch@embl.de)
 #include <boost/filesystem.hpp>
 #include <boost/progress.hpp>
 
-#include <zlib.h>
-#include <htslib/kseq.h>
-KSEQ_INIT(gzFile, gzread)
 
+#include <htslib/faidx.h>
+
+#include <zlib.h>
 
 namespace torali {
 
@@ -118,18 +118,18 @@ namespace torali {
       std::ofstream ofile(c.outfile.string().c_str());
       
       // Print genomic intervals
-      kseq_t *seq;
-      int l;
-      gzFile fp = gzopen(c.genome.string().c_str(), "r");
-      seq = kseq_init(fp);
       boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
       std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Extracting Regions" << std::endl;
       boost::progress_display show_progress( rec.size() );
       unsigned int countProcessed = 0;
-      while (((l = kseq_read(seq)) >= 0) && (countProcessed<rec.size())) {
+      faidx_t* fai = fai_load(c.genome.string().c_str());
+      for(int32_t refIndex=0; ((refIndex < faidx_nseq(fai)) && (countProcessed<rec.size())); ++refIndex) {
+	std::string seqname(faidx_iseq(fai, refIndex));
+	int32_t seqlen = -1;
+	char* seq = faidx_fetch_seq(fai, seqname.c_str(), 0, faidx_seq_len(fai, seqname.c_str()), &seqlen);
 	TGenInt::const_iterator genIntIter = rec.begin();
 	for(;genIntIter!=rec.end(); ++genIntIter) {
-	  if (genIntIter->chr == seq->name.s) {
+	  if (genIntIter->chr == seqname) {
 	    ofile << ">" << genIntIter->id << std::endl;
 	    typedef std::vector<unsigned int> TPosition;
 	    TPosition::const_iterator posIt = genIntIter->breaks.begin();
@@ -140,7 +140,7 @@ namespace torali {
 	      if (++posIt==posItEnd) break;
 	      unsigned int end = *posIt; 
 	      if (start <= end) {
-		std::string fasta = boost::to_upper_copy(std::string(seq->seq.s + start, seq->seq.s + std::min((unsigned int) seq->seq.l, end + (int) c.closed)));
+		std::string fasta = boost::to_upper_copy(std::string(seq + start, seq + std::min((unsigned int) seqlen, end + (int) c.closed)));
 		std::string::iterator itF = fasta.begin();
 		std::string::iterator itFEnd = fasta.end();
 		for (; itF!=itFEnd; ++itF, ++count) {
@@ -148,7 +148,7 @@ namespace torali {
 		  if (count % c.linesize == 0) ofile << std::endl;
 		}
 	      } else {
-		std::string fasta = boost::to_upper_copy(std::string(seq->seq.s + end, seq->seq.s + std::min((unsigned int) seq->seq.l, start + (int) c.closed)));
+		std::string fasta = boost::to_upper_copy(std::string(seq + end, seq + std::min((unsigned int) seqlen, start + (int) c.closed)));
 		std::string::reverse_iterator itR = fasta.rbegin();
 		std::string::reverse_iterator itREnd = fasta.rend();
 		for(; itR!=itREnd; ++itR, ++count) {
@@ -169,10 +169,10 @@ namespace torali {
 	    ++countProcessed;
 	  }
 	}
+	if (seqlen) free(seq);
       }
       ofile.close();
-      kseq_destroy(seq);
-      gzclose(fp);
+      fai_destroy(fai);
 
       // End
       now = boost::posix_time::second_clock::local_time();
