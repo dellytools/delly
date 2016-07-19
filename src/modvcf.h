@@ -27,6 +27,9 @@ Contact: Tobias Rausch (rausch@embl.de)
 #include <htslib/sam.h>
 #include <htslib/vcf.h>
 
+#include "bolog.h"
+
+
 
 namespace torali
 {
