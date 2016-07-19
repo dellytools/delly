@@ -48,7 +48,7 @@ Contact: Tobias Rausch (rausch@embl.de)
 
 #include <htslib/vcf.h>
 #include <htslib/sam.h>
-#include <htslib/kseq.h>
+#include <htslib/faidx.h>
 
 #ifdef OPENMP
 #include <omp.h>
@@ -133,28 +133,21 @@ runAnnotate(ConfigAnnotate const& c, TSVType svType)
   char* svt = NULL;
   int32_t ncons = 0;
   char* cons = NULL;
-  
-  // Get #sequences
-  const char **seqnames = NULL;
-  int nseq = 0;
-  seqnames = bcf_hdr_seqnames(hdr, &nseq);
-  if (seqnames != NULL) free(seqnames);
-
-  boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
-  std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Annotating BCF file" << std::endl;
-  boost::progress_display show_progress(nseq);
 
   // Parse genome
-  kseq_t *seq;
-  int l;
-  gzFile fp = gzopen(c.genome.string().c_str(), "r");
-  seq = kseq_init(fp);
-  while ((l = kseq_read(seq)) >= 0) {
-    std::string seqname(seq->name.s);
+  faidx_t* fai = fai_load(c.genome.string().c_str());
+  boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
+  std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Annotating BCF file" << std::endl;
+  boost::progress_display show_progress( faidx_nseq(fai) );
+
+  for(int32_t refIndex=0; refIndex < faidx_nseq(fai); ++refIndex) {
+    ++show_progress;
+    std::string seqname(faidx_iseq(fai, refIndex));
     int32_t chrid = bcf_hdr_name2id(hdr, seqname.c_str());
     if (chrid < 0) continue;
-    ++show_progress;
-    hts_itr_t* itervcf = bcf_itr_queryi(bcfidx, chrid, 0, seq->seq.l);
+    int32_t seqlen = -1;
+    char* seq = faidx_fetch_seq(fai, seqname.c_str(), 0, faidx_seq_len(fai, seqname.c_str()), &seqlen);
+    hts_itr_t* itervcf = bcf_itr_queryi(bcfidx, chrid, 0, seqlen);
     if (itervcf != NULL) {
       bcf1_t* rec = bcf_init1();
       while (true) {
@@ -188,8 +181,8 @@ runAnnotate(ConfigAnnotate const& c, TSVType svType)
 
 	  // Get reference sequence
 	  int32_t regStart = std::max(rec->pos - consLen, 0);
-	  int32_t regEnd = std::min((uint32_t) *svend + consLen, (uint32_t) seq->seq.l);
-	  std::string svRefStr = boost::to_upper_copy(std::string(seq->seq.s + regStart, seq->seq.s + regEnd));
+	  int32_t regEnd = std::min((uint32_t) *svend + consLen, (uint32_t) seqlen);
+	  std::string svRefStr = boost::to_upper_copy(std::string(seq + regStart, seq + regEnd));
 
 	  // Find breakpoint to reference
 	  typedef boost::multi_array<char, 2> TAlign;
@@ -237,7 +230,7 @@ runAnnotate(ConfigAnnotate const& c, TSVType svType)
 	if (useTags) {
 	  // Use tags
 	  std::string alleles;
-	  std::string refAllele = boost::to_upper_copy(std::string(seq->seq.s + rec->pos, seq->seq.s + rec->pos + 1));
+	  std::string refAllele = boost::to_upper_copy(std::string(seq + rec->pos, seq + rec->pos + 1));
 	  alleles += refAllele + ",<" + _addID(svType) + ">";
 	  bcf_update_alleles_str(hdr_out, rec, alleles.c_str());
 	}
@@ -246,10 +239,10 @@ runAnnotate(ConfigAnnotate const& c, TSVType svType)
       bcf_destroy(rec);
     }
     hts_itr_destroy(itervcf);
+    if (seqlen) free(seq);
   }
-  kseq_destroy(seq);
-  gzclose(fp);
-
+  fai_destroy(fai);
+  
   // Clean-up
   if (svend != NULL) free(svend);
   if (svt != NULL) free(svt);
