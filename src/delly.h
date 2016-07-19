@@ -1043,25 +1043,6 @@ _annotateCoverage(TConfig const& c, bam_hdr_t*, TSVs& svs, TCountMap& countMap, 
   for(uint32_t file_c = 0; file_c < c.files.size(); ++file_c) countMap[file_c].resize(svs.size());
 }
 
-template<typename TTag>
-inline bool
-_smallIndelDetection(SVType<TTag>)
-{
-  return false;
-}
-
-inline bool
-_smallIndelDetection(SVType<DeletionTag>)
-{
-  return true;
-}
-
-inline bool
-_smallIndelDetection(SVType<InsertionTag>)
-{
-  return true;
-}
-
 template<typename TCompEdgeList, typename TBamRecord, typename TSVs, typename TSVType>
 inline void
 _searchCliques(bam_hdr_t* hdr, TCompEdgeList& compEdge, TBamRecord const& bamRecord, TSVs& svs, int const overallMaxISize, TSVType svType) {
@@ -1231,7 +1212,7 @@ inline int dellyRun(Config const& c, TSVType svType) {
 #ifdef PROFILE
   ProfilerStart("delly.prof");
 #endif
-  
+
   // Collect all promising structural variants
   typedef std::vector<StructuralVariantRecord> TVariants;
   TVariants svs;
@@ -1346,7 +1327,7 @@ inline int dellyRun(Config const& c, TSVType svType) {
 	  if ((rec->core.qual < c.minMapQual) || (rec->core.tid<0)) continue;
 	  
 	  // Small indel detection using soft clips
-	  if ((c.indels) && (_smallIndelDetection(svType))) {
+	  if (c.indels) {
 	    int clipSize = 0;
 	    int splitPoint = 0;
 	    bool leadingSoftClip = false;
@@ -1583,7 +1564,7 @@ inline int dellyRun(Config const& c, TSVType svType) {
     sort(svs.begin(), svs.end(), SortSVs<StructuralVariantRecord>());
       
     // Add the soft clip SV records
-    if ((c.indels) && (_smallIndelDetection(svType))) {
+    if (c.indels) {
       int32_t bpWindowLen = 10;
       int32_t maxLookAhead = 0;
       TSplitRecord::const_iterator splitClusterIt = splitRecord.end();
@@ -1612,7 +1593,7 @@ inline int dellyRun(Config const& c, TSVType svType) {
     if (!svs.empty()) {
       findPutativeSplitReads(c, svs, svType);
       
-      if (_smallIndelDetection(svType)) {
+      if (c.indels) {
 	// Sort SVs for look-up and by decreasing PE support
 	sort(svs.begin(), svs.end(), SortSVs<StructuralVariantRecord>());
 	
@@ -1879,8 +1860,10 @@ int delly(int argc, char **argv) {
   if (c.minGenoQual<5) c.minGenoQual=5;
 
   // Small InDels?
-  c.indels = true;
-  if (vm.count("noindels")) c.indels = false;
+  c.indels = false;
+  if (!vm.count("noindels")) {
+    if ((c.svType == "DEL") || (c.svType == "INS")) c.indels = true;
+  }
 
   // Run main program
   if (c.technology == "illumina") {

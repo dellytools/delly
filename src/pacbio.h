@@ -376,7 +376,7 @@ inline int pacbioRun(TConfig const& c, TSVType svType) {
 	    if ((rec->core.qual < c.minMapQual) || (rec->core.tid<0)) continue;
 	    
 	    // Small indel detection
-	    if ((c.indels) && (_smallIndelDetection(svType))) {
+	    if (c.indels) {
 	      // Get the sequence
 	      std::string sequence;
 	      sequence.resize(rec->core.l_qseq);
@@ -585,7 +585,7 @@ inline int pacbioRun(TConfig const& c, TSVType svType) {
   if (!c.hasVcfFile) {
     if (boost::filesystem::exists(c.genome) && boost::filesystem::is_regular_file(c.genome) && boost::filesystem::file_size(c.genome)) {
       if (!svs.empty()) {
-	if (_smallIndelDetection(svType)) {
+	if (c.indels) {
 	  findGappedReads(c, svs, svType);
 	  
 	  // Sort SVs for look-up and by decreasing PE support
