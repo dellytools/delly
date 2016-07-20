@@ -73,7 +73,6 @@ struct FilterConfig {
   int32_t minsize;
   int32_t maxsize;
   int32_t coverage;
-  int32_t rdsize;
   float ratiogeno;
   float altaf;
   float controlcont;
@@ -120,10 +119,6 @@ filterRun(TFilterConfig const& c, TSVType svType) {
   // VCF fields
   int32_t nsvend = 0;
   int32_t* svend = NULL;
-  int32_t nrsq = 0;
-  float* rsq = NULL;
-  int32_t nsrq = 0;
-  float* srq = NULL;
   int32_t nsvt = 0;
   char* svt = NULL;
   int ngt = 0;
@@ -153,7 +148,6 @@ filterRun(TFilterConfig const& c, TSVType svType) {
   boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
   std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Filtering VCF/BCF file" << std::endl;
   boost::progress_display show_progress( faidx_nseq(fai) );
-  //std::cerr << "chr\tstart\tend\tid\tsize\tvac\tvaf\tgenotyperatio\tsvtype\tprecise\tratioVarGT0\tratioVarGT1\trefgq\taltgq\trdratio\trcmed\trsq\tsrq" << std::endl;
 
   for(int32_t refIndex=0; refIndex < faidx_nseq(fai); ++refIndex) {
     ++show_progress;
@@ -193,16 +187,6 @@ filterRun(TFilterConfig const& c, TSVType svType) {
 	  bcf_unpack(rec, BCF_UN_ALL);
 	  bool precise = false;
 	  if (bcf_get_info_flag(hdr, rec, "PRECISE", 0, 0) > 0) precise = true;
-	  float srqval = 1;
-	  if (_isKeyPresent(hdr, "SRQ")) {
-	    bcf_get_info_float(hdr, rec, "SRQ", &srq, &nsrq);
-	    if (srq != NULL) srqval = *srq;
-	  }
-	  //float rsqval = 1;
-	  if (_isKeyPresent(hdr, "RSQ")) {
-	    bcf_get_info_float(hdr, rec, "RSQ", &rsq, &nrsq);
-	    //if (rsq != NULL) rsqval = *rsq;
-	  }
 	  bcf_get_format_int32(hdr, rec, "GT", &gt, &ngt);
 	  if (_getFormatType(hdr, "GQ") == BCF_HT_INT) bcf_get_format_int32(hdr, rec, "GQ", &gq, &ngq);
 	  else if (_getFormatType(hdr, "GQ") == BCF_HT_REAL) bcf_get_format_float(hdr, rec, "GQ", &gqf, &ngq);
@@ -309,13 +293,11 @@ filterRun(TFilterConfig const& c, TSVType svType) {
 	    if (!rcraw.empty()) getMedian(rcraw.begin(), rcraw.end(), rcrawmed);
 	    float af = (float) ac[1] / (float) (ac[0] + ac[1]);
 
-	    //std::cerr << bcf_hdr_id2name(hdr, rec->rid) << '\t' << (rec->pos + 1) << '\t' << *svend << '\t' << rec->d.id << '\t' << svlen << '\t' << ac[1] << '\t' << af << '\t' << genotypeRatio << '\t' << std::string(svt) << '\t' << precise << '\t' << rrefvarpercentile << '\t' << raltvarmed << '\t' << gqrefmed << '\t' << gqaltmed << '\t' << rdRatio << '\t' << rcrawmed << '\t' << srqval << std::endl;
+	    //std::cerr << bcf_hdr_id2name(hdr, rec->rid) << '\t' << (rec->pos + 1) << '\t' << *svend << '\t' << rec->d.id << '\t' << svlen << '\t' << ac[1] << '\t' << af << '\t' << genotypeRatio << '\t' << std::string(svt) << '\t' << precise << '\t' << rrefvarpercentile << '\t' << raltvarmed << '\t' << gqrefmed << '\t' << gqaltmed << '\t' << rdRatio << '\t' << rcrawmed << std::endl;
 
 	    if ((af>0) && (gqaltmed >= c.gq) && (gqrefmed >= c.gq) && (raltvarmed >= c.altaf) && (genotypeRatio >= c.ratiogeno)) {
-	      if ((std::string(svt)=="DEL") && (svlen >= c.rdsize) && (rdRatio > c.rddel)) continue;
-	      if ((std::string(svt)=="DEL") && (svlen < c.rdsize) && (precise) && (srqval<0.95)) continue;
-	      if ((std::string(svt)=="DUP") && (svlen >= c.rdsize) && (rdRatio < c.rddup)) continue;
-	      if ((std::string(svt)=="DUP") && (svlen < c.rdsize) && (precise) && (srqval<0.95)) continue;
+	      if ((std::string(svt)=="DEL") && (rdRatio > c.rddel)) continue;
+	      if ((std::string(svt)=="DUP") && (rdRatio < c.rddup)) continue;
 	      if ((std::string(svt)!="DEL") && (std::string(svt)!="DUP") && (rrefvarpercentile > 0)) continue;
 	      _remove_info_tag(hdr_out, rec, "RDRATIO");
 	      bcf_update_info_float(hdr_out, rec, "RDRATIO", &rdRatio, 1);
@@ -338,8 +320,6 @@ filterRun(TFilterConfig const& c, TSVType svType) {
   // Clean-up
   if (svend != NULL) free(svend);
   if (svt != NULL) free(svt);
-  if (rsq != NULL) free(rsq);
-  if (srq != NULL) free(srq);
   if (gt != NULL) free(gt);
   if (gq != NULL) free(gq);
   if (gqf != NULL) free(gqf);
@@ -402,7 +382,6 @@ int filter(int argc, char **argv) {
   boost::program_options::options_description germline("Germline options");
   germline.add_options()
     ("gq,q", boost::program_options::value<float>(&c.gq)->default_value(15), "min. median GQ for carriers and non-carriers")
-    ("rdsize,z", boost::program_options::value<int32_t>(&c.rdsize)->default_value(200), "SVs greater this value are filtered using read-depth (DEL, DUP)")
     ("rddel,e", boost::program_options::value<float>(&c.rddel)->default_value(0.8), "max. read-depth ratio of carrier vs. non-carrier for a deletion")
     ("rddup,u", boost::program_options::value<float>(&c.rddup)->default_value(1.2), "min. read-depth ratio of carrier vs. non-carrier for a duplication")
     ;

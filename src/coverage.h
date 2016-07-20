@@ -36,17 +36,18 @@ template<typename TWindow, typename TCount>
 inline void
 _addBpCounts(bam1_t* rec, TWindow posBeg, TWindow posEnd, TCount& bp_sum, BpLevelType<BpLevelCount>)
 {  
-  if (rec->core.pos >= posEnd) return;
   int32_t bpPos = rec->core.pos;
   uint32_t* cigar = bam_get_cigar(rec);
-  for (unsigned int i = 0; i < rec->core.n_cigar; ++i) {
-    int op = bam_cigar_op(cigar[i]);
-    int ol = bam_cigar_oplen(cigar[i]);
-    if (op == BAM_CMATCH) 
-      for(int k = 0; k<ol; ++k, ++bpPos) {
+  for (uint32_t i = 0; ((i < rec->core.n_cigar) && (bpPos < posEnd)); ++i) {
+    if (bam_cigar_op(cigar[i]) == BAM_CMATCH) {
+      for(uint32_t k = 0; k < bam_cigar_oplen(cigar[i]); ++k, ++bpPos) {
 	if ((bpPos>=posBeg) && (bpPos<posEnd)) ++bp_sum;
       }
-    else if ((op == BAM_CREF_SKIP) || (op == BAM_CDEL)) bpPos += ol;
+    } else if (bam_cigar_op(cigar[i]) == BAM_CDEL) {
+      bpPos += bam_cigar_oplen(cigar[i]);
+    } else if (bam_cigar_op(cigar[i]) == BAM_CREF_SKIP) {
+      bpPos += bam_cigar_oplen(cigar[i]);
+    }
   }
 }
 

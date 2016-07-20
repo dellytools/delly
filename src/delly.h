@@ -610,6 +610,8 @@ _annotateCoverage(TConfig const& c, bam_hdr_t* hdr, TSVs& svs, TCountMap& countM
   typedef std::vector<CovRecord> TCovRecord;
   TCovRecord svc;
   uint32_t lastId = svs.size();
+  typedef std::vector<uint32_t> TSVSize;
+  TSVSize svSize(lastId);
   for (typename TSVs::const_iterator itSV = svs.begin(); itSV != svs.end(); ++itSV) {
     int halfSize = (itSV->svEnd - itSV->svStart)/2;
 
@@ -636,6 +638,7 @@ _annotateCoverage(TConfig const& c, bam_hdr_t* hdr, TSVs& svs, TCountMap& countM
     sMiddle.svEnd = itSV->svEnd;
     sMiddle.peSupport = itSV->peSupport;
     svc.push_back(sMiddle);
+    svSize[itSV->id] = (itSV->svEnd - itSV->svStart);
 
     // Right control region
     CovRecord sRight;
@@ -657,15 +660,22 @@ _annotateCoverage(TConfig const& c, bam_hdr_t* hdr, TSVs& svs, TCountMap& countM
   typedef std::pair<int, int> TBpRead;
   typedef std::vector<TBpRead> TSVReadCount;
   typedef std::vector<TSVReadCount> TSampleSVReadCount;
-  TSampleSVReadCount readCountMap;  
-  annotateCoverage(c.files, c.minGenoQual, svc, readCountMap, BpLevelType<NoBpLevelCount>());
+  TSampleSVReadCount readCountMap;
+  if (c.indels) annotateCoverage(c.files, c.minGenoQual, svc, readCountMap, BpLevelType<BpLevelCount>());
+  else annotateCoverage(c.files, c.minGenoQual, svc, readCountMap, BpLevelType<NoBpLevelCount>());
   countMap.resize(c.files.size());
   for(uint32_t file_c = 0; file_c < c.files.size(); ++file_c) {
     countMap[file_c].resize(svs.size());
     for (uint32_t id = 0; id < svs.size(); ++id) {
-      countMap[file_c][id].rc = readCountMap[file_c][id].second;
-      countMap[file_c][id].leftRC = readCountMap[file_c][id + lastId].second;
-      countMap[file_c][id].rightRC = readCountMap[file_c][id + 2*lastId].second;
+      if ((c.indels) && (svSize[id] <= c.indelsize)) {
+	countMap[file_c][id].rc = readCountMap[file_c][id].first;
+	countMap[file_c][id].leftRC = readCountMap[file_c][id + lastId].first;
+	countMap[file_c][id].rightRC = readCountMap[file_c][id + 2*lastId].first;
+      } else {
+	countMap[file_c][id].rc = readCountMap[file_c][id].second;
+	countMap[file_c][id].leftRC = readCountMap[file_c][id + lastId].second;
+	countMap[file_c][id].rightRC = readCountMap[file_c][id + 2*lastId].second;
+      }
     }
   }
 }
