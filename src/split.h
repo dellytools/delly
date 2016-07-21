@@ -493,12 +493,13 @@ namespace torali
       }
     }
     if (ad.rEnd <= ad.rStart) return false;
-    
+
     // Is this a valid split-read alignment?
     if (!_validSRAlignment(ad.cStart, ad.cEnd, ad.rStart, ad.rEnd, svt)) return false;
 
     // Check percent identity
     _percentIdentity(align, gS, gE, ad.percId);
+
     if (ad.percId < c.flankQuality) return false;
 
     // Find homology
@@ -548,18 +549,19 @@ namespace torali
     TAlign align;
     if (!_consRefAlignment(sv.consensus, svRefStr, align, svType)) return false;
 
-    // Check breakpoint
-    AlignDescriptor ad;
-    if (!_findSplit(c, sv.consensus, svRefStr, align, ad, svType)) return false;
-
     // Debug consensus to reference alignment
-    //for(TAIndex i = 0; i<align.shape()[0]; ++i) {
-    //for(TAIndex j = 0; j<align.shape()[1]; ++j) {
+    //typedef typename TAlign::index TAIndex;
+    //for(TAIndex i = 0; i < (TAIndex) align.shape()[0]; ++i) {
+    //for(TAIndex j = 0; j< (TAIndex) align.shape()[1]; ++j) {
     //std::cerr << align[i][j];
     //}
     //std::cerr << std::endl;
     //}
     //std::cerr << std::endl;
+    
+    // Check breakpoint
+    AlignDescriptor ad;
+    if (!_findSplit(c, sv.consensus, svRefStr, align, ad, svType)) return false;
 
     // Get the start and end of the structural variant
     unsigned int finalGapStart = 0;

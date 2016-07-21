@@ -334,8 +334,8 @@ inline int dellyRun(Config const& c, TSVType svType) {
 
   // SV Discovery
   if (!c.hasVcfFile) {
-    if (c.technology == 0)
-      shortPE(c, validRegions, svs, sampleLib, svType);
+    if (c.technology == 0) shortPE(c, validRegions, svs, sampleLib, svType);
+    else if (c.technology == 1) longPacBio(c, validRegions, svs, sampleLib, svType);
   } else {
     // Read SV records from input file
     if (c.format == "json.gz") jsonParse(c, hdr, getMaxBoundarySize(c, sampleLib), svs, svType);
@@ -360,7 +360,12 @@ inline int dellyRun(Config const& c, TSVType svType) {
   typedef std::vector<TReadQual> TSVSpanningMap;
   typedef std::vector<TSVSpanningMap> TSampleSVSpanningMap;
   TSampleSVSpanningMap spanCountMap;
-  annotateSpanningCoverage(c, sampleLib, svs, spanCountMap, svType);
+  if (c.technology == 0) annotateSpanningCoverage(c, sampleLib, svs, spanCountMap, svType);
+  else {
+    spanCountMap.resize(c.files.size());
+    uint32_t lastId = svs.size();
+    for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) spanCountMap[file_c].resize(2 * lastId, TReadQual());
+  }
 
   // Annotate coverage
   typedef std::vector<ReadCount> TSVReadCount;
@@ -407,22 +412,17 @@ int delly(int argc, char **argv) {
   generic.add_options()
     ("help,?", "show help message")
     ("type,t", boost::program_options::value<std::string>(&c.svType)->default_value("DEL"), "SV type (DEL, DUP, INV, TRA, INS)")
-    ("outfile,o", boost::program_options::value<boost::filesystem::path>(&c.outfile)->default_value("sv.bcf"), "SV BCF output file")
+    ("genome,g", boost::program_options::value<boost::filesystem::path>(&c.genome), "genome fasta file")
     ("exclude,x", boost::program_options::value<boost::filesystem::path>(&c.exclude), "file with regions to exclude")
+    ("outfile,o", boost::program_options::value<boost::filesystem::path>(&c.outfile)->default_value("sv.bcf"), "SV BCF output file")
     ("technology,e", boost::program_options::value<unsigned short>(&c.technology)->default_value(0), "technology (0=illumina, 1=pacbio)")
     ;
 
-  boost::program_options::options_description pem("PE options");
-  pem.add_options()
+  boost::program_options::options_description disc("Discovery options");
+  disc.add_options()
     ("map-qual,q", boost::program_options::value<unsigned short>(&c.minMapQual)->default_value(1), "min. paired-end mapping quality")
     ("mad-cutoff,s", boost::program_options::value<unsigned short>(&c.madCutoff)->default_value(9), "insert size cutoff, median+s*MAD (deletions only)")
-    ;
-
-  boost::program_options::options_description breaks("SR options");
-  breaks.add_options()
-    ("genome,g", boost::program_options::value<boost::filesystem::path>(&c.genome), "genome fasta file")
     ("noindels,n", "no small InDel calling")
-    ("indelsize,i", boost::program_options::value<uint32_t>(&c.indelsize)->default_value(500), "max. small InDel size")
     ;
 
   boost::program_options::options_description geno("Genotyping options");
@@ -444,9 +444,9 @@ int delly(int argc, char **argv) {
 
   // Set the visibility
   boost::program_options::options_description cmdline_options;
-  cmdline_options.add(generic).add(pem).add(breaks).add(geno).add(hidden);
+  cmdline_options.add(generic).add(disc).add(geno).add(hidden);
   boost::program_options::options_description visible_options;
-  visible_options.add(generic).add(pem).add(breaks).add(geno);
+  visible_options.add(generic).add(disc).add(geno);
   boost::program_options::variables_map vm;
   boost::program_options::store(boost::program_options::command_line_parser(argc, argv).options(cmdline_options).positional(pos_args).run(), vm);
   boost::program_options::notify(vm);
@@ -569,11 +569,13 @@ int delly(int argc, char **argv) {
     c.aliscore = DnaScore<int>(5, -4, -10, -1);
     c.flankQuality = 0.95;
     c.minimumFlankSize = 13;
+    c.indelsize = 500;
   } else if (c.technology == 1) {
     //c.aliscore = DnaScore<int>(2, -5, -2, -1);
     c.aliscore = DnaScore<int>(5, -4, -2, -1);
     c.flankQuality = 0.8;
     c.minimumFlankSize = 13;
+    c.indelsize = 1000;
     if (c.svType != "DEL") {
       std::cerr << "PacBio SV analysis not yet supported." << std::endl;
       return 1;
