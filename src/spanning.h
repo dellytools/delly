@@ -54,9 +54,9 @@ namespace torali {
     }
   }   
 
-  template<typename TFiles, typename TSampleLibrary, typename TSVs, typename TCountMap, typename TSVType>
+  template<typename TConfig, typename TSampleLibrary, typename TSVs, typename TCountMap, typename TSVType>
   inline void
-  annotateSpanningCoverage(TFiles const& files, uint8_t const minMapQual, TSampleLibrary& sampleLib, TSVs& svs, TCountMap& spanCountMap, TSVType svType)
+  annotateSpanningCoverage(TConfig const& c, TSampleLibrary& sampleLib, TSVs& svs, TCountMap& spanCountMap, TSVType svType)
   {
     typedef typename TCountMap::value_type::value_type TCountPair;
     typedef typename TSampleLibrary::value_type TLibraryMap;
@@ -64,26 +64,23 @@ namespace torali {
     // Open file handles
     typedef std::vector<samFile*> TSamFile;
     typedef std::vector<hts_idx_t*> TIndex;
-    TSamFile samfile(files.size());
-    TIndex idx(files.size());
-    for(unsigned int file_c = 0; file_c < files.size(); ++file_c) {
-      samfile[file_c] = sam_open(files[file_c].string().c_str(), "r");
-      idx[file_c] = sam_index_load(samfile[file_c], files[file_c].string().c_str());
+    TSamFile samfile(c.files.size());
+    TIndex idx(c.files.size());
+    for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
+      samfile[file_c] = sam_open(c.files[file_c].string().c_str(), "r");
+      idx[file_c] = sam_index_load(samfile[file_c], c.files[file_c].string().c_str());
     }
 
     // Get maximum insert size
-    int maxInsertSize = 0;
-    for(unsigned int file_c = 0; file_c < files.size(); ++file_c)
-      for(typename TLibraryMap::iterator libIt = sampleLib[file_c].begin(); libIt != sampleLib[file_c].end(); ++libIt)
-	if (libIt->second.median > maxInsertSize) maxInsertSize=libIt->second.median;
+    int maxInsertSize = getMaxBoundarySize(c, sampleLib);
     
     // Sort Structural Variants
     std::sort(svs.begin(), svs.end(), SortSVs<StructuralVariantRecord>());
 
     // Initialize count map
-    spanCountMap.resize(files.size());
+    spanCountMap.resize(c.files.size());
     uint32_t lastId = svs.size();
-    for(unsigned int file_c = 0; file_c < files.size(); ++file_c) spanCountMap[file_c].resize(2 * lastId, TCountPair());
+    for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) spanCountMap[file_c].resize(2 * lastId, TCountPair());
 
 
     // Iterate all samples
@@ -91,14 +88,12 @@ namespace torali {
     std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Breakpoint spanning coverage annotation" << std::endl;
     boost::progress_display show_progress( (svs.end() - svs.begin()) );
 #pragma omp parallel for default(shared)
-    for(unsigned int file_c = 0; file_c < files.size(); ++file_c) {
+    for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
       // Read alignments
-      typename TSVs::const_iterator itSV = svs.begin();
-      typename TSVs::const_iterator itSVEnd = svs.end();
-      for(;itSV!=itSVEnd;++itSV) {
-	if (file_c==(files.size()-1)) ++show_progress;
+      for(typename TSVs::const_iterator itSV = svs.begin(); itSV!=svs.end(); ++itSV) {
+	if (file_c == (c.files.size()-1)) ++show_progress;
 	if (itSV->peSupport == 0) continue;
-
+	
 	// Qualities
 	typedef boost::unordered_map<std::size_t, uint8_t> TQualities;
 	TQualities qualities;
@@ -135,7 +130,7 @@ namespace torali {
 	  bam1_t* rec = bam_init1();
 	  while (sam_itr_next(samfile[file_c], iter, rec) >= 0) {
 	    if (rec->core.flag & (BAM_FSECONDARY | BAM_FQCFAIL | BAM_FDUP | BAM_FSUPPLEMENTARY | BAM_FUNMAP | BAM_FMUNMAP)) continue;
-	    if (!(rec->core.flag & BAM_FPAIRED) || (rec->core.qual < minMapQual)) continue;
+	    if (!(rec->core.flag & BAM_FPAIRED) || (rec->core.qual < c.minGenoQual)) continue;
 
 	    // Mapping positions valid?
 	    if (_mappingPosGeno(rec->core.tid, rec->core.mtid, rec->core.pos, rec->core.mpos, svType)) continue;
@@ -190,7 +185,7 @@ namespace torali {
 	      uint8_t pairQuality = std::min(qualities[hash_pair_mate(rec)], r2Qual);
 
 	      // Pair quality
-	      if (pairQuality < minMapQual) continue;
+	      if (pairQuality < c.minGenoQual) continue;
 	      
 	      // Insert the interval
 	      if ((getStrandIndependentOrientation(rec->core) == libIt->second.defaultOrient) && (outerISize >= libIt->second.minNormalISize) && (outerISize <= libIt->second.maxNormalISize) && (rec->core.tid==rec->core.mtid)) {
@@ -243,7 +238,7 @@ namespace torali {
       }
     }
     // Clean-up
-    for(unsigned int file_c = 0; file_c < files.size(); ++file_c) {
+    for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
       hts_idx_destroy(idx[file_c]);
       sam_close(samfile[file_c]);
     }

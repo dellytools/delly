@@ -564,9 +564,9 @@ namespace torali
     // Get the start and end of the structural variant
     unsigned int finalGapStart = 0;
     unsigned int finalGapEnd = 0;
-    if (c.technology == "illumina") {
+    if (c.technology == 0) {
       if (!_coordTransform(c, svRefStr, sv, ad, finalGapStart, finalGapEnd, svType)) return false;
-    } else if (c.technology == "pacbio") {
+    } else if (c.technology == 1) {
       int32_t rs = std::max(0, sv.svStart - (int32_t) (sv.consensus.size()));
       finalGapStart = rs + ad.rStart - 1;
       finalGapEnd = rs + ad.rEnd - 1;

@@ -151,15 +151,22 @@ namespace torali {
     faidx_t* fai = fai_load(c.genome.string().c_str());
     for(int32_t refIndex=0; refIndex < (int32_t) hdr->n_targets; ++refIndex) {
       ++show_progress;
-      std::string tname(hdr->target_name[refIndex]);
-      int32_t seqlen = -1;
-      char* seq = faidx_fetch_seq(fai, tname.c_str(), 0, hdr->target_len[refIndex], &seqlen);
+      char* seq = NULL;
+
       // Iterate all structural variants
       for(typename TSVs::iterator itSV = svs.begin(); itSV != svs.end(); ++itSV) {
 	if (!itSV->precise) continue;
-	int consLen = itSV->consensus.size();
+	if ((itSV->chr != refIndex) && (itSV->chr2 != refIndex)) continue;
+
+	// Lazy loading of reference sequence
+	if (seq == NULL) {
+	  int32_t seqlen = -1;
+	  std::string tname(hdr->target_name[refIndex]);
+	  seq = faidx_fetch_seq(fai, tname.c_str(), 0, hdr->target_len[refIndex], &seqlen);
+	}
 
 	// Create a pseudo structural variant record
+	int32_t consLen = itSV->consensus.size();
 	StructuralVariantRecord svRec;
 	svRec.chr = itSV->chr;
 	svRec.chr2 = itSV->chr2;
@@ -314,7 +321,7 @@ namespace torali {
 	  }
 	}
       }
-      if (seqlen) free(seq);
+      if (seq != NULL) free(seq);
     }
 
     // Clean-up

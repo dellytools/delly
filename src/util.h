@@ -40,36 +40,54 @@ namespace torali
 {
 
   struct LibraryInfo {
-    int median;
-    int mad;
-    int percentileCutoff;
-    int minNormalISize;
-    int minISizeCutoff;
-    int maxNormalISize;
-    int maxISizeCutoff;
+    int32_t rs;
+    int32_t median;
+    int32_t mad;
+    int32_t minNormalISize;
+    int32_t minISizeCutoff;
+    int32_t maxNormalISize;
+    int32_t maxISizeCutoff;
     uint8_t defaultOrient;
-    unsigned int abnormal_pairs;
+    uint32_t abnormal_pairs;
+    float mappedAsPair;
+
+    LibraryInfo() : rs(0), median(0), mad(0), minNormalISize(0), minISizeCutoff(0), maxNormalISize(0), maxISizeCutoff(0), defaultOrient(0), abnormal_pairs(0), mappedAsPair(0) {}
   };
 
 
-  struct _LibraryParams {
-    unsigned int processedNumPairs;
-    unsigned int orient[4];
+  struct LibraryParams {
+    typedef int32_t TValue;
+    typedef std::vector<TValue> TSizeVector;
+    
+    uint32_t processedNumPairs;
+    uint32_t processedNumReads;
+    uint32_t orient[4];
     uint8_t defaultOrient;
-    double median;
-    double mad;
-    double percentileCutoff;
-    std::vector<uint16_t> vecISize;
+    int32_t median;
+    int32_t mad;
+    int32_t rs;
+    TSizeVector vecISize;
+    TSizeVector readSize;
+
+    LibraryParams() : processedNumPairs(0), processedNumReads(0), defaultOrient(0), median(0), mad(0), rs(0) {
+      for(uint32_t i=0;i<4;++i) orient[i]=0;
+    }
+    LibraryParams(int32_t maxPSize, int32_t maxRSize) : processedNumPairs(0), processedNumReads(0), defaultOrient(0), median(0), mad(0), rs(0) {
+      for(uint32_t i=0;i<4;++i) orient[i]=0;
+      vecISize.resize(maxPSize, 0);
+      readSize.resize(maxRSize, 0);
+    }
+    
   };
 
   // Read count struct
   struct ReadCount {
-    int leftRC;
-    int rc;
-    int rightRC;
+    int32_t leftRC;
+    int32_t rc;
+    int32_t rightRC;
 
     ReadCount() {}
-    ReadCount(int l, int m, int r) : leftRC(l), rc(m), rightRC(r) {}
+    ReadCount(int32_t l, int32_t m, int32_t r) : leftRC(l), rc(m), rightRC(r) {}
   };
 
 
@@ -276,98 +294,94 @@ namespace torali
 
 
   template<typename TIterator, typename TValue>
-  inline
-    void getMedian(TIterator begin, TIterator end, TValue& median) 
-    {
-      std::nth_element(begin, begin + (end - begin) / 2, end);
-      median = *(begin + (end - begin) / 2);
-    }
-
+  inline void
+  getMedian(TIterator begin, TIterator end, TValue& median) 
+  {
+    std::nth_element(begin, begin + (end - begin) / 2, end);
+    median = *(begin + (end - begin) / 2);
+  }
+  
   template<typename TVector, typename TPercentile, typename TValue>
-  inline
-    void getPercentile(TVector& vec, TPercentile p, TValue& percentile) 
-    {
-      std::nth_element(vec.begin(), vec.begin() + int((vec.size() * p)), vec.end());
-      percentile = *(vec.begin() + int(vec.size() * p));
-    }
+  inline void
+  getPercentile(TVector& vec, TPercentile p, TValue& percentile) 
+  {
+    std::nth_element(vec.begin(), vec.begin() + int((vec.size() * p)), vec.end());
+    percentile = *(vec.begin() + int(vec.size() * p));
+  }
 
-  template<typename TIterator, typename TPercent, typename TValue>
-  inline
-    void getPercentileCutoff(TIterator begin, TIterator end, TPercent percentile, TValue& cutoff) 
-    {
-      if (percentile < 1) {
-	std::nth_element(begin, begin + (int) ((end - begin) * percentile), end);
-	cutoff = *(begin + (int) ((end - begin) * percentile));
-      } else {
-	cutoff = *(std::max_element(begin, end));
+  template<typename TConfig, typename TSampleLib>
+  inline int32_t
+  getMaxBoundarySize(TConfig const& c, TSampleLib const& sampleLib)
+  {
+    int32_t overallMaxISize = 0;
+    typedef typename TSampleLib::value_type TLibraryMap;
+    for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
+      for(typename TLibraryMap::const_iterator libIt=sampleLib[file_c].begin();libIt!=sampleLib[file_c].end();++libIt) {
+	if (libIt->second.maxNormalISize > overallMaxISize) overallMaxISize = libIt->second.maxNormalISize;
+	if (libIt->second.rs > overallMaxISize) overallMaxISize = libIt->second.rs;
       }
     }
+    return overallMaxISize;
+  }
+  
+  
+  template<typename TIterator, typename TValue>
+  inline void
+  getMAD(TIterator begin, TIterator end, TValue median, TValue& mad) 
+  {
+    std::vector<TValue> absDev;
+    for(;begin<end;++begin) 
+      absDev.push_back(std::abs((TValue)*begin - median));
+    getMedian(absDev.begin(), absDev.end(), mad);
+  }
 
   template<typename TIterator, typename TValue>
-  inline
-    void getMAD(TIterator begin, TIterator end, TValue median, TValue& mad) 
-    {
-      std::vector<TValue> absDev;
-      for(;begin<end;++begin) 
-	absDev.push_back(std::abs((TValue)*begin - median));
-      getMedian(absDev.begin(), absDev.end(), mad);
-    }
+  inline void
+  getMean(TIterator begin, TIterator end, TValue& mean) 
+  {
+    mean = 0;
+    unsigned int count = 0;
+    for(; begin<end; ++begin,++count) mean += *begin;
+    mean /= count;
+  }
 
   template<typename TIterator, typename TValue>
-  inline
-    void getMean(TIterator begin, TIterator end, TValue& mean) 
-    {
-      mean = 0;
-      unsigned int count = 0;
-      for(; begin<end; ++begin,++count) mean += *begin;
-      mean /= count;
-    }
+  inline void
+  getStdDev(TIterator begin, TIterator end, TValue mean, TValue& stdDev) 
+  {
+    stdDev = 0;
+    unsigned int count = 0;
+    for(;begin<end;++begin,++count) stdDev += ((TValue)*begin - mean) * ((TValue)*begin - mean);
+    stdDev = sqrt(stdDev / (TValue) count);
+  }
 
-  template<typename TIterator, typename TValue>
-  inline
-    void getStdDev(TIterator begin, TIterator end, TValue mean, TValue& stdDev) 
-    {
-      stdDev = 0;
-      unsigned int count = 0;
-      for(;begin<end;++begin,++count) stdDev += ((TValue)*begin - mean) * ((TValue)*begin - mean);
-      stdDev = sqrt(stdDev / (TValue) count);
-    }
-
-  template<typename TIterator, typename TPercentile, typename TValue1, typename TValue2, typename TValue3>
-  inline
-    void getLibraryStats(TIterator begin, TIterator end, TPercentile percentile, TValue1& median, TValue2& mad, TValue3& percentileCutoff) 
-    {
-      getMedian(begin,end,median);
-      getMAD(begin,end,median,mad);
-      getPercentileCutoff(begin, end, 1.0 - percentile, percentileCutoff);
-    }
-
-
-  template<typename TFiles, typename TSampleLibrary>
-    inline void getLibraryParams(TFiles const& files, TSampleLibrary& sampleLib, double const percentile, unsigned short const madCutoff) {
+  template<typename TConfig, typename TValidRegion, typename TSampleLibrary>
+    inline void getLibraryParams(TConfig const& c, TValidRegion const& validRegions, TSampleLibrary& sampleLib) {
+    typedef typename TValidRegion::value_type TChrIntervals;
     typedef typename TSampleLibrary::value_type TLibraryMap;
 
     // Open file handles
     typedef std::vector<samFile*> TSamFile;
+    typedef std::vector<hts_idx_t*> TIndex;
     typedef std::vector<bam_hdr_t*> TSamHeader;
-    TSamFile samfile;
-    TSamHeader hdr;
-    samfile.resize(files.size());
-    hdr.resize(files.size());
-    for(unsigned int file_c = 0; file_c < files.size(); ++file_c) {
-      samfile[file_c] = sam_open(files[file_c].string().c_str(), "r");
+    TSamFile samfile(c.files.size());
+    TIndex idx(c.files.size());
+    TSamHeader hdr(c.files.size());
+    for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
+      samfile[file_c] = sam_open(c.files[file_c].string().c_str(), "r");
+      idx[file_c] = sam_index_load(samfile[file_c], c.files[file_c].string().c_str());
       hdr[file_c] = sam_hdr_read(samfile[file_c]);
       sampleLib[file_c] = TLibraryMap();
     }
 
 #pragma omp parallel for default(shared)
-    for(unsigned int file_c = 0; file_c < files.size(); ++file_c) {
+    for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
       // Minimum and maximum number of pairs used to estimate library parameters for each RG library
-      unsigned int maxNumPairs=1000000;
-      unsigned int minNumPairs=10000;
+      unsigned int maxNumAlignments=1000000;
+      unsigned int minNumAlignments=10000;
 
-      // Store the counts in an object for each RG librar
-      typedef boost::unordered_map<std::string, _LibraryParams> TParams;
+      // Store the counts in an object for each RG library
+      typedef boost::unordered_map<std::string, LibraryParams> TParams;
       TParams params;
 
       // Get read groups
@@ -393,48 +407,54 @@ namespace torali
 	      if (field == "ID") {
 		rgPresent = true;
 		std::string rgID = itKV->substr(sp+1);
-		params.insert(std::make_pair(rgID, _LibraryParams()));
+		params.insert(std::make_pair(rgID, LibraryParams(maxNumAlignments, minNumAlignments)));
 	      }
 	    }
 	  }
 	}
       }
-      if (!rgPresent) params.insert(std::make_pair("DefaultLib", _LibraryParams()));
+      if (!rgPresent) params.insert(std::make_pair("DefaultLib", LibraryParams(maxNumAlignments, minNumAlignments)));
 
-      // Initialize arrays
-      for(TParams::iterator paramIt = params.begin(); paramIt!=params.end(); ++paramIt) {
-	paramIt->second.vecISize.resize(maxNumPairs);
-	paramIt->second.processedNumPairs=0;
-	for(unsigned int i=0;i<4;++i) paramIt->second.orient[i]=0;
-      }
-      
       // Collect insert sizes
       uint32_t libCount = 0;
-      bam1_t* rec = bam_init1();
-      while ((sam_read1(samfile[file_c], hdr[file_c], rec) >=0) && (libCount < params.size())) {
-	if ((rec->core.flag & BAM_FPAIRED) && !(rec->core.flag & BAM_FUNMAP) && !(rec->core.flag & BAM_FMUNMAP) && (rec->core.flag & BAM_FREAD1) && (rec->core.tid==rec->core.mtid) && !(rec->core.flag & BAM_FSECONDARY) && !(rec->core.flag & BAM_FQCFAIL)  && !(rec->core.flag & BAM_FDUP) && !(rec->core.flag & BAM_FSUPPLEMENTARY)) {
-	  std::string rG = "DefaultLib";
-	  uint8_t *rgptr = bam_aux_get(rec, "RG");
-	  if (rgptr) {
-	    char* rg = (char*) (rgptr + 1);
-	    rG = std::string(rg);
+      uint32_t allLibs = params.size();
+      for(int32_t refIndex=0; ((refIndex < (int32_t) hdr[0]->n_targets) && (libCount < allLibs)); ++refIndex) {
+	if (validRegions[refIndex].empty()) continue;
+	for(typename TChrIntervals::const_iterator vRIt = validRegions[refIndex].begin(); ((vRIt != validRegions[refIndex].end()) && (libCount < allLibs)); ++vRIt) {
+	  hts_itr_t* iter = sam_itr_queryi(idx[file_c], refIndex, vRIt->lower(), vRIt->upper());
+	  bam1_t* rec = bam_init1();
+	  while ((sam_itr_next(samfile[file_c], iter, rec) >= 0) && (libCount < allLibs)) {
+	    if (!(rec->core.flag & BAM_FREAD2) && (rec->core.l_qseq < 65000)) {
+	      if (rec->core.flag & (BAM_FSECONDARY | BAM_FQCFAIL | BAM_FDUP | BAM_FSUPPLEMENTARY | BAM_FUNMAP)) continue;
+	      std::string rG = "DefaultLib";
+	      uint8_t *rgptr = bam_aux_get(rec, "RG");
+	      if (rgptr) {
+		char* rg = (char*) (rgptr + 1);
+		rG = std::string(rg);
+	      }
+	      TParams::iterator paramIt = params.find(rG);
+	      paramIt->second.readSize[paramIt->second.processedNumReads % minNumAlignments] = rec->core.l_qseq;
+	      ++paramIt->second.processedNumReads;
+	      if ((paramIt->second.processedNumReads >= minNumAlignments) && (paramIt->second.processedNumPairs == 0)) {
+		// Single-end library
+		if (paramIt->second.processedNumReads == minNumAlignments) ++libCount;
+		continue;
+	      }
+	      if ((rec->core.flag & BAM_FPAIRED) && !(rec->core.flag & BAM_FMUNMAP) && (rec->core.tid==rec->core.mtid)) {
+		paramIt->second.vecISize[paramIt->second.processedNumPairs % maxNumAlignments] = abs(rec->core.isize);
+		++paramIt->second.orient[getStrandIndependentOrientation(rec->core)];
+		++paramIt->second.processedNumPairs;
+		if (paramIt->second.processedNumPairs == maxNumAlignments) ++libCount;
+	      }
+	    }
 	  }
-	  TParams::iterator paramIt = params.find(rG);
-	  if ((paramIt->second.processedNumPairs < maxNumPairs) && (abs(rec->core.isize) < 65000)) {
-	    paramIt->second.vecISize[paramIt->second.processedNumPairs] = abs(rec->core.isize);
-	    ++paramIt->second.orient[getStrandIndependentOrientation(rec->core)];
-	    ++paramIt->second.processedNumPairs;
-	    if (paramIt->second.processedNumPairs == maxNumPairs) ++libCount;
-	  }
+	  bam_destroy1(rec);
+	  hts_itr_destroy(iter);
 	}
       }
-      // Clean-up
-      bam_destroy1(rec);
 
+      // Get library parameters
       for(TParams::iterator paramIt=params.begin(); paramIt != params.end(); ++paramIt) {
-	// Trim to actual size
-	paramIt->second.vecISize.resize(paramIt->second.processedNumPairs);
-
 	// Get default library orientation
 	paramIt->second.defaultOrient=0;
 	unsigned int maxOrient=paramIt->second.orient[0];
@@ -444,26 +464,29 @@ namespace torali
 	    paramIt->second.defaultOrient=(uint8_t) i;
 	  }
 	}
-	
-	// Mate-pair library (If yes, trim off the chimera peak < 1000bp)
-	if (paramIt->second.defaultOrient==3) {
-	  double libmed = 0;
-	  getMedian(paramIt->second.vecISize.begin(), paramIt->second.vecISize.end(), libmed);
-	  if (libmed >= 1000) {
-	    typedef std::vector<uint16_t> TVecISize;
+
+	// Check that this is a proper paired-end library
+	if (paramIt->second.vecISize.size()>=minNumAlignments) {
+	  if (paramIt->second.processedNumReads < minNumAlignments) paramIt->second.readSize.resize(paramIt->second.processedNumReads);
+	  if (paramIt->second.processedNumPairs < maxNumAlignments) paramIt->second.vecISize.resize(paramIt->second.processedNumPairs);
+	  
+	  typedef typename LibraryParams::TSizeVector TVecISize;
+	  std::sort(paramIt->second.vecISize.begin(), paramIt->second.vecISize.end());
+
+	  // Mate-pair library (If yes, trim off the chimera peak < 1000bp)
+	  if ((paramIt->second.defaultOrient==3) && (paramIt->second.vecISize[paramIt->second.vecISize.size() / 2] >= 1000)) {
 	    TVecISize vecISizeTmp;
-	    typename TVecISize::const_iterator iSizeBeg = paramIt->second.vecISize.begin();
-	    typename TVecISize::const_iterator iSizeEnd = paramIt->second.vecISize.end();
-	    for(;iSizeBeg<iSizeEnd;++iSizeBeg)
+	    for(typename TVecISize::const_iterator iSizeBeg = paramIt->second.vecISize.begin(); iSizeBeg<paramIt->second.vecISize.end();++iSizeBeg)
 	      if (*iSizeBeg >= 1000) vecISizeTmp.push_back(*iSizeBeg);
 	    paramIt->second.vecISize = vecISizeTmp;
 	  }
-	}
-	
-	// Check that this is a proper paired-end library
-	if (paramIt->second.vecISize.size()>=minNumPairs) {
-	  // Get library stats
-	  getLibraryStats(paramIt->second.vecISize.begin(), paramIt->second.vecISize.end(), percentile, paramIt->second.median, paramIt->second.mad, paramIt->second.percentileCutoff);
+	  paramIt->second.median = paramIt->second.vecISize[paramIt->second.vecISize.size() / 2];
+	  std::vector<double> absDev;
+	  for(typename TVecISize::const_iterator iSizeBeg = paramIt->second.vecISize.begin(); iSizeBeg != paramIt->second.vecISize.end(); ++iSizeBeg) absDev.push_back(std::abs(*iSizeBeg - paramIt->second.median));
+	  std::sort(absDev.begin(), absDev.end());
+	  paramIt->second.mad = absDev[absDev.size() / 2];
+	  std::sort(paramIt->second.readSize.begin(), paramIt->second.readSize.end());
+	  paramIt->second.rs = paramIt->second.readSize[paramIt->second.readSize.size() / 2];
 	}
       }
 
@@ -471,17 +494,17 @@ namespace torali
       {
 	for(TParams::iterator paramIt=params.begin(); paramIt != params.end(); ++paramIt) {
 	  typename TLibraryMap::iterator libInfoIt = sampleLib[file_c].insert(std::make_pair(paramIt->first, LibraryInfo())).first;
+	  libInfoIt->second.rs = paramIt->second.rs;
+	  libInfoIt->second.mappedAsPair = (float) paramIt->second.processedNumPairs / (float) paramIt->second.processedNumReads;
 	  if ((paramIt->second.median >= 50) && (paramIt->second.median<=100000)) {
 	    libInfoIt->second.defaultOrient = paramIt->second.defaultOrient;
-	    libInfoIt->second.median = (int) paramIt->second.median;
-	    libInfoIt->second.mad = (int) paramIt->second.mad;
-	    libInfoIt->second.percentileCutoff = (int) paramIt->second.percentileCutoff;
+	    libInfoIt->second.median = paramIt->second.median;
+	    libInfoIt->second.mad = paramIt->second.mad;
 	    libInfoIt->second.maxNormalISize = libInfoIt->second.median + (5 * libInfoIt->second.mad);
 	    libInfoIt->second.minNormalISize = libInfoIt->second.median - (5 * libInfoIt->second.mad);
 	    if (libInfoIt->second.minNormalISize < 0) libInfoIt->second.minNormalISize=0;
-	    if (percentile!=0) libInfoIt->second.maxISizeCutoff = libInfoIt->second.percentileCutoff;
-	    else libInfoIt->second.maxISizeCutoff = libInfoIt->second.median + (madCutoff * libInfoIt->second.mad);
-	    libInfoIt->second.minISizeCutoff = libInfoIt->second.median - (madCutoff * libInfoIt->second.mad);
+	    libInfoIt->second.maxISizeCutoff = libInfoIt->second.median + (c.madCutoff * libInfoIt->second.mad);
+	    libInfoIt->second.minISizeCutoff = libInfoIt->second.median - (c.madCutoff * libInfoIt->second.mad);
 	    if (libInfoIt->second.minISizeCutoff < 0) libInfoIt->second.minISizeCutoff=0;
 	  }
 	}
@@ -489,8 +512,9 @@ namespace torali
     }
 
     // Clean-up
-    for(unsigned int file_c = 0; file_c < files.size(); ++file_c) {
+    for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
       bam_hdr_destroy(hdr[file_c]);
+      hts_idx_destroy(idx[file_c]);
       sam_close(samfile[file_c]);
     }
   }
