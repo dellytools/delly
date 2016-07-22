@@ -309,19 +309,31 @@ namespace torali
     percentile = *(vec.begin() + int(vec.size() * p));
   }
 
-  template<typename TConfig, typename TSampleLib>
+  template<typename TConfig, typename TLibraryMap>
   inline int32_t
-  getMaxBoundarySize(TConfig const& c, TSampleLib const& sampleLib)
+  getVariability(TConfig const& c, std::vector<TLibraryMap> const& sampleLib)
   {
-    int32_t overallMaxISize = 0;
-    typedef typename TSampleLib::value_type TLibraryMap;
+    int32_t overallVariability = 0;
     for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
       for(typename TLibraryMap::const_iterator libIt=sampleLib[file_c].begin();libIt!=sampleLib[file_c].end();++libIt) {
-	if (libIt->second.maxNormalISize > overallMaxISize) overallMaxISize = libIt->second.maxNormalISize;
-	if (libIt->second.rs > overallMaxISize) overallMaxISize = libIt->second.rs;
+	if (libIt->second.maxNormalISize > overallVariability) overallVariability = libIt->second.maxNormalISize;
+	if (libIt->second.rs > overallVariability) overallVariability = libIt->second.rs;
       }
     }
-    return overallMaxISize;
+    return overallVariability;
+  }
+
+  template<typename TConfig>
+  inline int32_t
+  getVariability(TConfig const&, boost::unordered_map<std::string, LibraryInfo> const& sampleLib)
+  {
+    typedef boost::unordered_map<std::string, LibraryInfo> TLibraryMap;
+    int32_t overallVariability = 0;
+    for(typename TLibraryMap::const_iterator libIt=sampleLib.begin();libIt!=sampleLib.end();++libIt) {
+      if (libIt->second.maxNormalISize > overallVariability) overallVariability = libIt->second.maxNormalISize;
+      if (libIt->second.rs > overallVariability) overallVariability = libIt->second.rs;
+    }
+    return overallVariability;
   }
   
   

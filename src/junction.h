@@ -144,8 +144,8 @@ namespace torali {
     boost::progress_display show_progress( hdr->n_targets );
     
     // Get reference probes
-    typedef boost::unordered_map<unsigned int, std::string> TProbes;
-    TProbes refProbes;
+    typedef std::vector<std::string> TProbes;
+    TProbes refProbes(svs.size());
 
     // Parse genome
     faidx_t* fai = fai_load(c.genome.string().c_str());
@@ -165,25 +165,17 @@ namespace torali {
 	  seq = faidx_fetch_seq(fai, tname.c_str(), 0, hdr->target_len[refIndex], &seqlen);
 	}
 
-	// Create a pseudo structural variant record
-	int32_t consLen = itSV->consensus.size();
-	StructuralVariantRecord svRec;
-	svRec.chr = itSV->chr;
-	svRec.chr2 = itSV->chr2;
-	svRec.svStartBeg = std::max(itSV->svStart - consLen, 0);
-	svRec.svStart = itSV->svStart;
-	svRec.svStartEnd = std::min((uint32_t) itSV->svStart + consLen, hdr->target_len[itSV->chr]);
-	svRec.svEndBeg = std::max(itSV->svEnd - consLen, 0);
-	svRec.svEnd = itSV->svEnd;
-	svRec.svEndEnd = std::min((uint32_t) itSV->svEnd + consLen, hdr->target_len[itSV->chr2]);
-	svRec.ct = itSV->ct;
+	// Get the reference sequence
 	if ((itSV->chr != itSV->chr2) && (itSV->chr2 == refIndex)) {
-	  refProbes[itSV->id] = _getSVRef(c, seq, svRec, refIndex, svType);
+	  Breakpoint bp(*itSV);
+	  _initBreakpoint(hdr, bp, (int32_t) itSV->consensus.size(), svType);
+	  refProbes[itSV->id] = _getSVRef(c, seq, bp, refIndex, svType);
 	}
 	if (itSV->chr == refIndex) {
-	  // Get the reference string
-	  if (itSV->chr != itSV->chr2) svRec.consensus=refProbes[itSV->id];
-	  std::string svRefStr = _getSVRef(c, seq, svRec, refIndex, svType);
+	  Breakpoint bp(*itSV);
+	  bp.part1 = refProbes[itSV->id];
+	  _initBreakpoint(hdr, bp, (int32_t) itSV->consensus.size(), svType);
+	  std::string svRefStr = _getSVRef(c, seq, bp, refIndex, svType);
 	  
 	  // Find breakpoint to reference
 	  typedef boost::multi_array<char, 2> TAlign;

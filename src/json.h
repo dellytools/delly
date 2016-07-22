@@ -52,9 +52,9 @@ namespace torali
       
 
   // Parse json file
-  template<typename TConfig, typename TSize, typename TStructuralVariantRecord, typename TTag>
+  template<typename TConfig, typename TStructuralVariantRecord, typename TTag>
   inline void
-  jsonParse(TConfig const& c, bam_hdr_t* hd, TSize const overallMaxISize, std::vector<TStructuralVariantRecord>& svs, SVType<TTag> svType) {
+  jsonParse(TConfig const& c, bam_hdr_t* hd, std::vector<TStructuralVariantRecord>& svs, SVType<TTag> svType) {
     std::ifstream file(c.vcffile.string().c_str(), std::ios_base::in | std::ios_base::binary);
     boost::iostreams::filtering_streambuf<boost::iostreams::input> dataIn;
     dataIn.push(boost::iostreams::gzip_decompressor());
@@ -89,17 +89,6 @@ namespace torali
       svRec.ct = _decodeOrientation(pt.get<std::string>("info.ct", "NtoN"));
       std::string chr2Name(pt.get<std::string>("info.chr2", "None"));
       svRec.chr2 = bam_name2id(hd, chr2Name.c_str());
-
-      // Assign remaining fields
-      svRec.svStartBeg = std::max(svRec.svStart - 1 - overallMaxISize, 0);
-      svRec.svStartEnd = std::min((uint32_t) svRec.svStart - 1 + overallMaxISize, hd->target_len[svRec.chr]);
-      svRec.svEndBeg = std::max(svRec.svEnd - 1 - overallMaxISize, 0);
-      svRec.svEndEnd = std::min((uint32_t) svRec.svEnd - 1 + overallMaxISize, hd->target_len[svRec.chr2]);
-      if ((svRec.chr==svRec.chr2) && (svRec.svStartEnd > svRec.svEndBeg)) {
-	unsigned int midPointDel = ((svRec.svEnd - svRec.svStart) / 2) + svRec.svStart;
-	svRec.svStartEnd = midPointDel -1;
-	svRec.svEndBeg = midPointDel;
-      }
       svs.push_back(svRec);
     }
 

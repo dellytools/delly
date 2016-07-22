@@ -134,6 +134,18 @@ namespace torali {
   }
   
 
+  template<typename TTag>
+  inline bool
+  _translocationMode(SVType<TTag>) {
+    return false;
+  }
+
+  inline bool
+  _translocationMode(SVType<TranslocationTag>) {
+    return true;
+  }
+
+  
   // Deletions
   template<typename TBamRecord>
     inline uint8_t
@@ -252,10 +264,6 @@ namespace torali {
 
   // Structural variant record
   struct StructuralVariantRecord {
-    int32_t svStartBeg;
-    int32_t svStartEnd;
-    int32_t svEndBeg;
-    int32_t svEndEnd;
     int32_t svStart;
     int32_t svEnd;
     int32_t peSupport;
@@ -273,8 +281,8 @@ namespace torali {
     std::string alleles;
     std::string consensus;
 
-  StructuralVariantRecord() : svStartBeg(0), svStartEnd(0), svEndBeg(0), svEndEnd(0), svStart(0), svEnd(0), peSupport(0), srSupport(0), wiggle(0), insLen(0), homLen(0), id(0), srAlignQuality(0), precise(false), ct(0), peMapQuality(0), chr(0), chr2(0) {}
-  StructuralVariantRecord(int32_t const c, int const s, int const e) : svStartBeg(0), svStartEnd(0), svEndBeg(0), svEndEnd(0), svStart(s), svEnd(e), peSupport(0), srSupport(0), wiggle(0), insLen(0), homLen(0), id(0), srAlignQuality(0), precise(false), ct(0), peMapQuality(0), chr(c), chr2(c) {}
+  StructuralVariantRecord() : svStart(0), svEnd(0), peSupport(0), srSupport(0), wiggle(0), insLen(0), homLen(0), id(0), srAlignQuality(0), precise(false), ct(0), peMapQuality(0), chr(0), chr2(0) {}
+  StructuralVariantRecord(int32_t const c, int const s, int const e) : svStart(s), svEnd(e), peSupport(0), srSupport(0), wiggle(0), insLen(0), homLen(0), id(0), srAlignQuality(0), precise(false), ct(0), peMapQuality(0), chr(c), chr2(c) {}
   };
 
   template<typename TSV>
@@ -286,6 +294,55 @@ namespace torali {
   };
 
 
+  struct Breakpoint {
+    int32_t svStartBeg;
+    int32_t svStartEnd;
+    int32_t svEndBeg;
+    int32_t svEndEnd;
+    int32_t svStart;
+    int32_t svEnd;
+    uint8_t ct;
+    int32_t chr;
+    int32_t chr2;
+    std::string part1;
+
+    Breakpoint() : svStartBeg(0), svStartEnd(0), svEndBeg(0), svEndEnd(0), svStart(0), svEnd(0), ct(0), chr(0), chr2(0) {}
+    Breakpoint(StructuralVariantRecord const& sv) : svStartBeg(sv.svStart), svStartEnd(sv.svStart), svEndBeg(sv.svEnd), svEndEnd(sv.svEnd), svStart(sv.svStart), svEnd(sv.svEnd), ct(sv.ct), chr(sv.chr), chr2(sv.chr2) {}
+    
+  };
+
+  // Initialize breakpoint
+
+  // Deletions, insertions, duplications and inversions
+  template<typename TBreakpoint, typename TTag>
+  inline void
+  _initBreakpoint(bam_hdr_t* hdr, TBreakpoint& bp, int32_t const boundary, SVType<TTag>) {
+    bp.svStartBeg = std::max(0, bp.svStart - boundary);
+    bp.svStartEnd = std::min(bp.svStart + boundary, (bp.svStart + bp.svEnd)/2);
+    bp.svEndBeg = std::max((bp.svStart + bp.svEnd)/2 + 1, bp.svEnd - boundary);
+    bp.svEndEnd = std::min((int32_t) (hdr->target_len[bp.chr2]), bp.svEnd + boundary);
+  }
+
+  template<typename TBreakpoint>
+  inline void
+  _initBreakpoint(bam_hdr_t* hdr, TBreakpoint& bp, int32_t const boundary, SVType<TranslocationTag>) {
+    bp.svStartBeg = std::max(0, bp.svStart - boundary);
+    bp.svStartEnd = std::min((int32_t) (hdr->target_len[bp.chr]), bp.svStart + boundary);
+    bp.svEndBeg = std::max(0, bp.svEnd - boundary);
+    bp.svEndEnd = std::min((int32_t) (hdr->target_len[bp.chr2]), bp.svEnd + boundary);
+  }
+
+  template<typename TBreakpoint>
+  inline void
+  _initBreakpoint(bam_hdr_t* hdr, TBreakpoint& bp, int32_t const boundary, SVType<InsertionTag>) {
+    bp.svStartBeg = std::max(0, bp.svStart - boundary);
+    bp.svStartEnd = std::min((int32_t) (hdr->target_len[bp.chr]), bp.svStart + boundary);
+    bp.svEndBeg = std::max(0, bp.svEnd - boundary);
+    bp.svEndEnd = std::min((int32_t) (hdr->target_len[bp.chr2]), bp.svEnd + boundary);
+  }
+
+  
+  
   // SV Paired-end checks
 
   // Deletions, insertions, duplications and inversions

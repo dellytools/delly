@@ -70,10 +70,8 @@ namespace torali {
       samfile[file_c] = sam_open(c.files[file_c].string().c_str(), "r");
       idx[file_c] = sam_index_load(samfile[file_c], c.files[file_c].string().c_str());
     }
+    bam_hdr_t* hdr = sam_hdr_read(samfile[0]);
 
-    // Get maximum insert size
-    int maxInsertSize = getMaxBoundarySize(c, sampleLib);
-    
     // Sort Structural Variants
     std::sort(svs.begin(), svs.end(), SortSVs<StructuralVariantRecord>());
 
@@ -89,6 +87,9 @@ namespace torali {
     boost::progress_display show_progress( (svs.end() - svs.begin()) );
 #pragma omp parallel for default(shared)
     for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
+      // Get maximum insert size
+      int32_t variability = getVariability(c, sampleLib[file_c]);
+
       // Read alignments
       for(typename TSVs::const_iterator itSV = svs.begin(); itSV!=svs.end(); ++itSV) {
 	if (file_c == (c.files.size()-1)) ++show_progress;
@@ -98,33 +99,24 @@ namespace torali {
 	typedef boost::unordered_map<std::size_t, uint8_t> TQualities;
 	TQualities qualities;
 
-	// Pre-compute regions
-	unsigned int maxBp = 2;
-	int32_t regionChr1 = itSV->chr;
-	int regionStart1 = std::max(0, (int) itSV->svStart - (int) maxInsertSize);
-	int regionEnd1 = itSV->svStart + maxInsertSize;
-	int32_t regionChr2 = itSV->chr2;
-	int regionStart2 = std::max(0, (int) itSV->svEnd - (int) maxInsertSize);
-	int regionEnd2 = itSV->svEnd + maxInsertSize;
-	if ((regionChr1 == regionChr2) && (regionEnd1 + maxInsertSize >= regionStart2)) {
-	  // Small SV, scan area only once
-	  maxBp = 1;
-	  regionEnd1 = regionEnd2;
-	}
-
 	// Scan left and right breakpoint
+	Breakpoint bp(*itSV);
+	_initBreakpoint(hdr, bp, variability, svType);
+	unsigned int maxBp = 2;
+	if ((bp.chr == bp.chr2) && (bp.svStart + 3 * variability >= bp.svEnd)) maxBp = 1;
 	for (unsigned int bpPoint = 0; bpPoint < maxBp; ++bpPoint) {
-	  int32_t regionChr;
-	  int regionStart;
-	  int regionEnd;
-	  if (bpPoint==(unsigned int)(itSV->chr==itSV->chr2)) {
-	    regionChr = regionChr2;
-	    regionStart = regionStart2;
-	    regionEnd = regionEnd2;
+	  int32_t regionChr = 0;
+	  int32_t regionStart = 0;
+	  int32_t regionEnd = 0;
+	  if (bpPoint == (unsigned int)(bp.chr == bp.chr2)) {
+	    regionChr = bp.chr2;
+	    regionStart = bp.svEndBeg;
+	    regionEnd = bp.svEndEnd;
 	  } else {
-	    regionChr = regionChr1;
-	    regionStart = regionStart1;
-	    regionEnd = regionEnd1;
+	    regionChr = bp.chr;
+	    regionStart = bp.svStartBeg;
+	    if (maxBp == 2) regionEnd = bp.svStartEnd;
+	    else regionEnd = bp.svEndEnd;
 	  }
 	  hts_itr_t* iter = sam_itr_queryi(idx[file_c], regionChr, regionStart, regionEnd);
 	  bam1_t* rec = bam_init1();
@@ -238,6 +230,7 @@ namespace torali {
       }
     }
     // Clean-up
+    bam_hdr_destroy(hdr);
     for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
       hts_idx_destroy(idx[file_c]);
       sam_close(samfile[file_c]);

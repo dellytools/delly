@@ -131,9 +131,9 @@ struct cstyle_str {
 
 
 // Parse Delly vcf file
-template<typename TConfig, typename TSize, typename TStructuralVariantRecord, typename TTag>
+template<typename TConfig, typename TStructuralVariantRecord, typename TTag>
 inline void
-vcfParse(TConfig const& c, bam_hdr_t* hd, TSize const overallMaxISize, std::vector<TStructuralVariantRecord>& svs, SVType<TTag> svType)
+vcfParse(TConfig const& c, bam_hdr_t* hd, std::vector<TStructuralVariantRecord>& svs, SVType<TTag> svType)
 {
   // Load bcf file
   htsFile* ifile = bcf_open(c.vcffile.string().c_str(), "r");
@@ -209,17 +209,6 @@ vcfParse(TConfig const& c, bam_hdr_t* hd, TSize const overallMaxISize, std::vect
       std::string chr2Name = std::string(chr2);
       svRec.chr2 = bam_name2id(hd, chr2Name.c_str());
     } else svRec.chr2 = tid;
-
-    // Assign remaining fields
-    svRec.svStartBeg = std::max(svRec.svStart - 1 - overallMaxISize, 0);
-    svRec.svStartEnd = std::min((uint32_t) svRec.svStart - 1 + overallMaxISize, hd->target_len[svRec.chr]);
-    svRec.svEndBeg = std::max(svRec.svEnd - 1 - overallMaxISize, 0);
-    svRec.svEndEnd = std::min((uint32_t) svRec.svEnd - 1 + overallMaxISize, hd->target_len[svRec.chr2]);
-    if ((svRec.chr==svRec.chr2) && (svRec.svStartEnd > svRec.svEndBeg)) {
-      unsigned int midPointDel = ((svRec.svEnd - svRec.svStart) / 2) + svRec.svStart;
-      svRec.svStartEnd = midPointDel -1;
-      svRec.svEndBeg = midPointDel;
-    }
     svs.push_back(svRec);
   }
   // Clean-up

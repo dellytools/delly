@@ -180,7 +180,7 @@ namespace torali
   template<typename TConfig, typename TSeq, typename TSVRecord, typename TRef>
   inline std::string
   _getSVRef(TConfig const& c, TSeq const* const ref, TSVRecord const& svRec, TRef const, SVType<DeletionTag>) {
-    if ((c.indels) && ((svRec.svEnd - svRec.svStart) <= (int32_t) c.indelsize)) {
+    if ((c.indels) && ((svRec.svEnd - svRec.svStart) <= c.indelsize)) {
       return boost::to_upper_copy(std::string(ref + svRec.svStartBeg, ref + svRec.svEndEnd));
     } else {
       return boost::to_upper_copy(std::string(ref + svRec.svStartBeg, ref + svRec.svStartEnd)) + boost::to_upper_copy(std::string(ref + svRec.svEndBeg, ref + svRec.svEndEnd));
@@ -245,7 +245,7 @@ namespace torali
   inline std::string
   _getSVRef(TConfig const&, TSeq const* const ref, TSVRecord const& svRec, TRef const refIndex, SVType<TranslocationTag>) {
     if (svRec.chr==refIndex) {
-      if ((svRec.ct==0) || (svRec.ct == 2)) return boost::to_upper_copy(std::string(ref + svRec.svStartBeg, ref + svRec.svStartEnd)) + svRec.consensus;
+      if ((svRec.ct==0) || (svRec.ct == 2)) return boost::to_upper_copy(std::string(ref + svRec.svStartBeg, ref + svRec.svStartEnd)) + svRec.part1;
       else if (svRec.ct == 1) {
 	std::string strEnd=boost::to_upper_copy(std::string(ref + svRec.svStartBeg, ref + svRec.svStartEnd));
 	std::string refPart=strEnd;
@@ -261,8 +261,8 @@ namespace torali
 	  default: break;
 	  }
 	}
-	return refPart + svRec.consensus;
-      } else return svRec.consensus + boost::to_upper_copy(std::string(ref + svRec.svStartBeg, ref + svRec.svStartEnd));
+	return refPart + svRec.part1;
+      } else return svRec.part1 + boost::to_upper_copy(std::string(ref + svRec.svStartBeg, ref + svRec.svStartEnd));
     } else {
       // chr2
       if (svRec.ct==0) {
@@ -290,7 +290,7 @@ namespace torali
   template<typename TConfig, typename TString, typename TSvRecord, typename TAlignDescriptor, typename TPosition>
   inline bool
   _coordTransform(TConfig const& c, TString const&, TSvRecord const& sv, TAlignDescriptor const& ad, TPosition& finalGapStart, TPosition& finalGapEnd, SVType<DeletionTag>) {
-    if ((c.indels) && ((sv.svEnd - sv.svStart) <= (int32_t) c.indelsize)) {
+    if ((c.indels) && ((sv.svEnd - sv.svStart) <= c.indelsize)) {
       finalGapStart = sv.svStartBeg + ad.rStart;
       finalGapEnd = sv.svStartBeg + ad.rEnd;
     } else {
@@ -539,10 +539,16 @@ namespace torali
     return reNeedle;
   }
 
-  template<typename TConfig, typename TStructuralVariantRecord, typename TTag>
+  template<typename TConfig, typename TTag>
   inline bool
-  alignConsensus(TConfig const& c, TStructuralVariantRecord& sv, std::string const& svRefStr, SVType<TTag> svType) {
+  alignConsensus(TConfig const& c, bam_hdr_t* hdr, char const* seq, char const* sndSeq, StructuralVariantRecord& sv, SVType<TTag> svType) {
     if ( (int32_t) sv.consensus.size() < (2 * c.minimumFlankSize)) return false;
+    
+    // Get reference slice
+    Breakpoint bp(sv);
+    _initBreakpoint(hdr, bp, sv.consensus.size(), svType);
+    if (bp.chr != bp.chr2) bp.part1 = _getSVRef(c, sndSeq, bp, bp.chr2, svType);
+    std::string svRefStr = _getSVRef(c, seq, bp, bp.chr, svType);
 
     // Consensus to reference alignment
     typedef boost::multi_array<char, 2> TAlign;
@@ -558,7 +564,7 @@ namespace torali
     //std::cerr << std::endl;
     //}
     //std::cerr << std::endl;
-    
+
     // Check breakpoint
     AlignDescriptor ad;
     if (!_findSplit(c, sv.consensus, svRefStr, align, ad, svType)) return false;
@@ -567,21 +573,21 @@ namespace torali
     unsigned int finalGapStart = 0;
     unsigned int finalGapEnd = 0;
     if (c.technology == 0) {
-      if (!_coordTransform(c, svRefStr, sv, ad, finalGapStart, finalGapEnd, svType)) return false;
+      if (!_coordTransform(c, svRefStr, bp, ad, finalGapStart, finalGapEnd, svType)) return false;
     } else if (c.technology == 1) {
-      int32_t rs = std::max(0, sv.svStart - (int32_t) (sv.consensus.size()));
-      finalGapStart = rs + ad.rStart - 1;
-      finalGapEnd = rs + ad.rEnd - 1;
+      finalGapStart = bp.svStartBeg + ad.rStart - 1;
+      finalGapEnd = bp.svStartBeg + ad.rEnd - 1;
     }
-
+	
     sv.precise=true;
     sv.svStart=finalGapStart;
     sv.svEnd=finalGapEnd;
     sv.srAlignQuality = ad.percId;
     sv.insLen=ad.cEnd - ad.cStart - 1;
     sv.homLen=std::max(0, ad.homLeft + ad.homRight - 2);
+    sv.wiggle=std::max(ad.homLeft, ad.homRight);
     // Set breakpoint, quality and REF & ALT alleles
-    if ((c.indels) && ((sv.svEnd - sv.svStart) <= (int32_t) c.indelsize)) {
+    if ((c.indels) && ((sv.svEnd - sv.svStart) <= c.indelsize)) {
       std::string precChar = svRefStr.substr(ad.rStart - 1, 1);
       std::string refPart = precChar;
       if (ad.rEnd > ad.rStart + 1) refPart += svRefStr.substr(ad.rStart, (ad.rEnd - ad.rStart) - 1);
@@ -589,7 +595,7 @@ namespace torali
       if (ad.cEnd > ad.cStart + 1) altPart += sv.consensus.substr(ad.cStart, (ad.cEnd - ad.cStart) - 1);
       sv.alleles = refPart + "," + altPart;
     }
-
+    
     return true;
   }
 

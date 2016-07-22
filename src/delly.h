@@ -79,8 +79,8 @@ struct Config {
   unsigned short minGenoQual;
   unsigned short madCutoff;
   int32_t minimumFlankSize;
+  int32_t indelsize;
   uint32_t graphPruning;
-  uint32_t indelsize;
   float flankQuality;
   bool indels;
   bool hasExcludeFile;
@@ -175,7 +175,7 @@ _annotateCoverage(TConfig const& c, bam_hdr_t* hdr, TSVs& svs, TCountMap& countM
   typedef std::vector<CovRecord> TCovRecord;
   TCovRecord svc;
   uint32_t lastId = svs.size();
-  typedef std::vector<uint32_t> TSVSize;
+  typedef std::vector<int32_t> TSVSize;
   TSVSize svSize(lastId);
   for (typename TSVs::const_iterator itSV = svs.begin(); itSV != svs.end(); ++itSV) {
     int halfSize = (itSV->svEnd - itSV->svStart)/2;
@@ -338,8 +338,8 @@ inline int dellyRun(Config const& c, TSVType svType) {
     else if (c.technology == 1) longPacBio(c, validRegions, svs, sampleLib, svType);
   } else {
     // Read SV records from input file
-    if (c.format == "json.gz") jsonParse(c, hdr, getMaxBoundarySize(c, sampleLib), svs, svType);
-    else vcfParse(c, hdr, getMaxBoundarySize(c, sampleLib), svs, svType);
+    if (c.format == "json.gz") jsonParse(c, hdr, svs, svType);
+    else vcfParse(c, hdr, svs, svType);
   }
 
   // SV Genotyping

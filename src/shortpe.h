@@ -169,7 +169,6 @@ namespace torali
     else lowerBound = 0;
   }
 
-
   template<typename TConfig, typename TValidRegion, typename TStructuralVariantRecord, typename TTag>
   inline bool
   findPutativeSplitReads(TConfig const& c, TValidRegion const& validRegions, std::vector<TStructuralVariantRecord>& svs,  SVType<TTag> svType) 
@@ -187,7 +186,6 @@ namespace torali
     }
     bam_hdr_t* hdr = sam_hdr_read(samfile[0]);
     
-
     // Parse genome, no single-anchored reads anymore only soft-clipped reads
     unsigned int totalSplitReadsAligned = 0;
     boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
@@ -196,29 +194,34 @@ namespace torali
 
     faidx_t* fai = fai_load(c.genome.string().c_str());
     // Find reference index
-    for(int32_t refIndex=0; refIndex < hdr->n_targets; ++refIndex) {
+    for(int32_t refIndex2 = 0; refIndex2 < hdr->n_targets; ++refIndex2) {
       ++show_progress;
-      if (validRegions[refIndex].empty()) continue;
-      char* seq = NULL;
-      
-      for(typename TSVs::iterator svIt = svs.begin();svIt!=svs.end(); ++svIt) {
-	if ((svIt->chr != refIndex) && (svIt->chr2 != refIndex)) continue;
+      if (validRegions[refIndex2].empty()) continue;
+      char* sndSeq = NULL;
+      int32_t sndRefMin = (_translocationMode(svType)) ? (refIndex2 + 1) : refIndex2;
+      int32_t sndRefMax = (_translocationMode(svType)) ? hdr->n_targets : (refIndex2 + 1);
+      for(int32_t refIndex = sndRefMin; refIndex < sndRefMax; ++refIndex) {
+	if (validRegions[refIndex].empty()) continue;
+	char* seq = NULL;
 
-	// Lazy loading of reference sequence
-	if (seq == NULL) {
-	  int32_t seqlen = -1;
-	  std::string tname(hdr->target_name[refIndex]);
-	  seq = faidx_fetch_seq(fai, tname.c_str(), 0, hdr->target_len[refIndex], &seqlen);
-	}
-	
-	// For translocations temporarily store the first reference part in the consensus string
-	if ((svIt->chr != svIt->chr2) && (svIt->chr2 == refIndex)) svIt->consensus = _getSVRef(c, seq, *svIt, refIndex, svType);
 
-	// Find split reads
-	if (svIt->chr == refIndex) {
-	  std::string svRefStr = _getSVRef(c, seq, *svIt, refIndex, svType);
-	  svIt->consensus = "";
+	for(typename TSVs::iterator svIt = svs.begin();svIt!=svs.end(); ++svIt) {
+	  if ((svIt->chr != refIndex) || (svIt->chr2 != refIndex2)) continue;
+	  // Lazy loading of reference sequence
+	  if (seq == NULL) {
+	    int32_t seqlen = -1;
+	    std::string tname(hdr->target_name[refIndex]);
+	    seq = faidx_fetch_seq(fai, tname.c_str(), 0, hdr->target_len[refIndex], &seqlen);
+	  }
+	  if ((sndSeq == NULL) && (refIndex != refIndex2)) {
+	    int32_t seqlen = -1;
+	    std::string tname(hdr->target_name[refIndex2]);
+	    sndSeq = faidx_fetch_seq(fai, tname.c_str(), 0, hdr->target_len[refIndex2], &seqlen);
+	  }
+
+	  // Set tag alleles
 	  svIt->alleles = boost::to_upper_copy(std::string(seq + svIt->svStart - 1, seq + svIt->svStart)) + ",<" + _addID(svType) + ">";
+	  
 	  typedef std::vector<std::pair<int, std::string> > TOffsetSplit;
 	  typedef std::vector<int> TSplitPoints;
 	  TOffsetSplit osp0;
@@ -227,16 +230,21 @@ namespace torali
 	  TSplitPoints spp1;
 	  
 	  // Find putative split reads in all samples
+	  Breakpoint bp(*svIt);
+	  _initBreakpoint(hdr, bp, svIt->wiggle, svType);
 	  for (unsigned int bpPoint = 0; bpPoint<2; ++bpPoint) {
-	    int32_t regionChr = svIt->chr;
-	    int regionStart = svIt->svStartBeg;
-	    int regionEnd = (svIt->svStart + svIt->svStartEnd)/2;
+	    int32_t regionChr = 0;
+	    int32_t regionStart = 0;
+	    int32_t regionEnd = 0;
 	    if (bpPoint) {
-	      regionChr = svIt->chr2;
-	      regionStart = (svIt->svEndBeg + svIt->svEnd)/2;
-	      regionEnd = svIt->svEndEnd;
+	      regionChr = bp.chr2;
+	      regionStart = bp.svEndBeg;
+	      regionEnd = bp.svEndEnd;
 	      spp1.resize(regionEnd-regionStart, 0);
 	    } else {
+	      regionChr = bp.chr;
+	      regionStart = bp.svStartBeg;
+	      regionEnd = bp.svStartEnd;
 	      spp0.resize(regionEnd-regionStart, 0);
 	    }
 #pragma omp parallel for default(shared)
@@ -245,7 +253,6 @@ namespace torali
 	      bam1_t* rec = bam_init1();
 	      while (sam_itr_next(samfile[file_c], iter, rec) >= 0) {
 		if (rec->core.flag & (BAM_FSECONDARY | BAM_FQCFAIL | BAM_FDUP | BAM_FSUPPLEMENTARY | BAM_FUNMAP)) continue;
-		if (rec->core.pos < regionStart) continue;
 		
 		// Valid soft clip?
 		int clipSize = 0;
@@ -283,7 +290,7 @@ namespace torali
 		}
 	      }
 	      bam_destroy1(rec);
-	      hts_itr_destroy(iter);		
+	      hts_itr_destroy(iter);
 	    }
 	  }
 	  // Collect candidate split reads
@@ -304,13 +311,18 @@ namespace torali
 	  totalSplitReadsAligned += splitReadSet.size();
 	  
 	  // MSA
-	  if (splitReadSet.size() > 1) svIt->srSupport = msa(c, splitReadSet, svIt->consensus);
-	  
-	  // Search true split in candidates
-	  if (!alignConsensus(c, *svIt, svRefStr, svType)) { svIt->consensus = ""; svIt->srSupport = 0; }
+	  if (splitReadSet.size() > 1) {
+	    svIt->srSupport = msa(c, splitReadSet, svIt->consensus);
+
+	    if (!alignConsensus(c, hdr, seq, sndSeq, *svIt, svType)) {
+	      svIt->consensus = "";
+	      svIt->srSupport = 0;
+	    }
+	  }
 	}
+	if (seq != NULL) free(seq);
       }
-      if (seq != NULL) free(seq);
+      if (sndSeq != NULL) free(sndSeq);
     }
     // Clean-up
     fai_destroy(fai);
@@ -524,7 +536,7 @@ namespace torali
 
   template<typename TCompEdgeList, typename TBamRecord, typename TSVs, typename TSVType>
   inline void
-  _searchCliques(bam_hdr_t* hdr, TCompEdgeList& compEdge, TBamRecord const& bamRecord, TSVs& svs, int const overallMaxISize, TSVType svType) {
+  _searchCliques(bam_hdr_t* hdr, TCompEdgeList& compEdge, TBamRecord const& bamRecord, TSVs& svs, TSVType svType) {
     typedef typename TCompEdgeList::mapped_type TEdgeList;
     typedef typename TEdgeList::value_type TEdgeRecord;
     
@@ -569,23 +581,14 @@ namespace torali
 	StructuralVariantRecord svRec;
 	svRec.chr = clusterRefID;
 	svRec.chr2 = clusterMateRefID;
-	svRec.svStartBeg = std::max((int) svStart - overallMaxISize, 0);
 	svRec.svStart = std::min((uint32_t) svStart + 1, hdr->target_len[clusterRefID]);
-	svRec.svStartEnd = std::min((uint32_t) svStart + overallMaxISize, hdr->target_len[clusterRefID]);
-	svRec.svEndBeg = std::max((int) svEnd - overallMaxISize, 0);
 	svRec.svEnd = std::min((uint32_t) svEnd+1, hdr->target_len[clusterMateRefID]);
-	svRec.svEndEnd = std::min((uint32_t) svEnd + overallMaxISize, hdr->target_len[clusterMateRefID]);
 	svRec.peSupport = clique.size();
-	svRec.wiggle = abs(wiggle);
+	svRec.wiggle = std::max(abs(wiggle), 50);
 	std::vector<uint8_t> mapQV;
 	for(typename TCliqueMembers::const_iterator itC = clique.begin(); itC!=clique.end(); ++itC) mapQV.push_back(bamRecord[*itC].MapQuality);
 	std::sort(mapQV.begin(), mapQV.end());
 	svRec.peMapQuality = mapQV[mapQV.size()/2];
-	if ((clusterRefID==clusterMateRefID) && (svRec.svStartEnd > svRec.svEndBeg)) {
-	  unsigned int midPointDel = ((svRec.svEnd - svRec.svStart) / 2) + svRec.svStart;
-	  svRec.svStartEnd = midPointDel -1;
-	  svRec.svEndBeg = midPointDel;
-	}
 	svRec.srSupport=0;
 	svRec.srAlignQuality=0;
 	svRec.precise=false;
@@ -600,7 +603,7 @@ namespace torali
   
   template<typename TIterator, typename TSVs, typename TSVType>
   inline void
-  _processSRCluster(bam_hdr_t* hdr, TIterator itInit, TIterator itEnd, int32_t refIndex, int32_t bpWindowLen, TSVs& svs, TSVType svType) 
+  _processSRCluster(TIterator itInit, TIterator itEnd, int32_t refIndex, int32_t bpWindowLen, TSVs& svs, TSVType svType) 
   {
     typedef typename TSVs::value_type TStructuralVariant;
     
@@ -620,16 +623,10 @@ namespace torali
     if (bestDistance < bpWindowLen) {
       int32_t svStart = bestSplit->splitbeg;
       int32_t svEnd = bestSplit->splitend;
-      int32_t svStartBeg = bestSplit->alignbeg;
-      int32_t svEndEnd = bestSplit->alignend;
       std::vector<uint8_t> mapQV;
-      for (TIterator itBeg = itInit; itBeg != itEnd; ++itBeg) {
-	if ( (std::abs(itBeg->splitbeg - svStart) + std::abs(itBeg->splitend - svEnd)) < bpWindowLen ) {
+      for (TIterator itBeg = itInit; itBeg != itEnd; ++itBeg)
+	if ( (std::abs(itBeg->splitbeg - svStart) + std::abs(itBeg->splitend - svEnd)) < bpWindowLen )
 	  mapQV.push_back(itBeg->MapQuality);
-	  if (itBeg->alignbeg < svStartBeg) svStartBeg = itBeg->alignbeg;
-	  if (itBeg->alignend > svEndEnd) svEndEnd = itBeg->alignend;
-	}
-      }
       
       // Augment existing SV call or create a new record
       int32_t searchWindow = 50;
@@ -639,17 +636,8 @@ namespace torali
 	if ((!itSV->precise) && ((std::abs(itSV->svStart - svStart) + std::abs(itSV->svEnd - svEnd)) < searchWindow) && (itSV->chr == refIndex) && (itSV->chr2 == refIndex)) {
 	  if ((itSV->svEnd < svStart) || (svEnd < itSV->svStart)) continue;
 	  // Augment existing SV call
-	  itSV->svStartBeg = std::max(svStartBeg, 0);
 	  itSV->svStart = svStart;
-	  itSV->svStartEnd = std::min((uint32_t) svStart + bpWindowLen, hdr->target_len[itSV->chr]);
-	  itSV->svEndBeg = std::max((int32_t) svEnd - bpWindowLen, 0);
 	  itSV->svEnd = svEnd;
-	  itSV->svEndEnd = std::min((uint32_t) svEndEnd, hdr->target_len[itSV->chr2]);
-	  if ((itSV->chr == itSV->chr2) && (itSV->svStartEnd > itSV->svEndBeg)) {
-	    unsigned int midPointDel = ((itSV->svEnd - itSV->svStart) / 2) + itSV->svStart;
-	    itSV->svStartEnd = midPointDel -1;
-	    itSV->svEndBeg = midPointDel;
-	  }
 	  
 	  // Found match
 	  svExists = true;
@@ -661,12 +649,8 @@ namespace torali
 	StructuralVariantRecord svRec;
 	svRec.chr = refIndex;
 	svRec.chr2 = refIndex;
-	svRec.svStartBeg = std::max(svStartBeg, 0);
 	svRec.svStart = svStart;
-	svRec.svStartEnd = std::min((uint32_t) svStart + bpWindowLen, hdr->target_len[svRec.chr]);
-	svRec.svEndBeg = std::max((int32_t) svEnd - bpWindowLen, 0);
 	svRec.svEnd = svEnd;
-	svRec.svEndEnd = std::min((uint32_t) svEndEnd, hdr->target_len[svRec.chr2]);
 	svRec.peSupport = 0;
 	svRec.wiggle = bpWindowLen;
 	std::sort(mapQV.begin(), mapQV.end());
@@ -678,7 +662,7 @@ namespace torali
 	svRec.insLen = 0;
 	svRec.homLen = 0;
 	svRec.id = svs.size();
-	if ((svRec.svStartBeg < svRec.svStart) && (svRec.svEnd < svRec.svEndEnd)) svs.push_back(svRec);
+	if (svRec.svStart < svRec.svEnd) svs.push_back(svRec);
       }
     }
   }
@@ -715,7 +699,7 @@ namespace torali
     alen.resize(c.files.size());
 
     // Maximum insert size
-    int overallMaxISize = getMaxBoundarySize(c, sampleLib);
+    int overallMaxISize = getVariability(c, sampleLib);
     
     // Parse genome, process chromosome by chromosome
     boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
@@ -797,12 +781,12 @@ namespace torali
 			int32_t seqLeftOver = 0;
 			if (bpPoint) {
 			  seqLeftOver = sequence.size() - clipSize;
-			  localrefStart = std::max(0, (int) rec->core.pos - (int) (c.indelsize + clipSize));
-			  localrefEnd = std::min(rec->core.pos + seqLeftOver + 25, (int) hdr->target_len[refIndex]);
+			  localrefStart = std::max(0, rec->core.pos - (c.indelsize + clipSize));
+			  localrefEnd = std::min(rec->core.pos + seqLeftOver + 25, (int32_t) hdr->target_len[refIndex]);
 			} else {
 			  seqLeftOver = sequence.size() - (splitPoint - rec->core.pos);
 			  localrefStart = rec->core.pos;
-			  localrefEnd = std::min(splitPoint + c.indelsize + seqLeftOver, hdr->target_len[refIndex]);
+			  localrefEnd = std::min(splitPoint + c.indelsize + seqLeftOver, (int32_t) hdr->target_len[refIndex]);
 			}
 			std::string localref = boost::to_upper_copy(std::string(seq + localrefStart, seq + localrefEnd));
 			typedef boost::multi_array<char, 2> TAlign;
@@ -924,7 +908,7 @@ namespace torali
 	if (bamItIndex > lastConnectedNode) {
 	  // Clean edge lists
 	  if (!compEdge.empty()) {
-	    _searchCliques(hdr, compEdge, bamRecord, svs, overallMaxISize, svType);
+	    _searchCliques(hdr, compEdge, bamRecord, svs, svType);
 	    lastConnectedNodeStart = lastConnectedNode;
 	    compEdge.clear();
 	  }
@@ -995,7 +979,7 @@ namespace torali
 	}
       }
       if (!compEdge.empty()) {
-	_searchCliques(hdr, compEdge, bamRecord, svs, overallMaxISize, svType);
+	_searchCliques(hdr, compEdge, bamRecord, svs, svType);
 	compEdge.clear();
       }
       
@@ -1011,7 +995,7 @@ namespace torali
 	for(TSplitRecord::const_iterator splitIt = splitRecord.begin(); splitIt!=splitRecord.end(); ++splitIt) {
 	  if ((maxLookAhead) && (splitIt->splitbeg > maxLookAhead)) {
 	    // Process split read cluster
-	    _processSRCluster(hdr, splitClusterIt, splitIt, refIndex, bpWindowLen, svs, svType);
+	    _processSRCluster(splitClusterIt, splitIt, refIndex, bpWindowLen, svs, svType);
 	    maxLookAhead = 0;
 	    splitClusterIt = splitRecord.end();
 	  }
@@ -1021,7 +1005,7 @@ namespace torali
 	  }
 	}
 	TSplitRecord::const_iterator splitIt = splitRecord.end();
-	_processSRCluster(hdr, splitClusterIt, splitIt, refIndex, bpWindowLen, svs, svType);
+	_processSRCluster(splitClusterIt, splitIt, refIndex, bpWindowLen, svs, svType);
       }
       if (seq != NULL) free(seq);
     }

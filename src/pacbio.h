@@ -79,31 +79,44 @@ lastAlignedPosition(bam1_t const* rec) {
 
    faidx_t* fai = fai_load(c.genome.string().c_str());
    // Find reference index
-   for(int32_t refIndex=0; refIndex < hdr->n_targets; ++refIndex) {
+   for(int32_t refIndex2 = 0; refIndex2 < hdr->n_targets; ++refIndex2) {
      ++show_progress;
-     if (validRegions[refIndex].empty()) continue;
-     char* seq = NULL;
+     if (validRegions[refIndex2].empty()) continue;
+     char* sndSeq = NULL;
+     int32_t sndRefMin = (_translocationMode(svType)) ? (refIndex2 + 1) : refIndex2;
+     int32_t sndRefMax = (_translocationMode(svType)) ? hdr->n_targets : (refIndex2 + 1);
+     for(int32_t refIndex = sndRefMin; refIndex < sndRefMax; ++refIndex) {
+       if (validRegions[refIndex].empty()) continue;
+       char* seq = NULL;
 	
-     // Iterate all structural variants on this chromosome
-     for(typename TSVs::iterator svIt = svs.begin(); svIt!=svs.end(); ++svIt) {
-       if ((svIt->chr != refIndex) && (svIt->chr2 != refIndex)) continue;
+       // Iterate all structural variants on this chromosome
+       for(typename TSVs::iterator svIt = svs.begin(); svIt!=svs.end(); ++svIt) {
+	 if ((svIt->chr != refIndex) || (svIt->chr2 != refIndex2)) continue;
        
-       // Lazy loading of reference sequence
-       if (seq == NULL) {
-	 int32_t seqlen = -1;
-	 std::string tname(hdr->target_name[refIndex]);
-	 seq = faidx_fetch_seq(fai, tname.c_str(), 0, hdr->target_len[refIndex], &seqlen);
-       }
+	 // Lazy loading of reference sequence
+	 if (seq == NULL) {
+	   int32_t seqlen = -1;
+	   std::string tname(hdr->target_name[refIndex]);
+	   seq = faidx_fetch_seq(fai, tname.c_str(), 0, hdr->target_len[refIndex], &seqlen);
+	 }
+	 if ((sndSeq == NULL) && (refIndex != refIndex2)) {
+	   int32_t seqlen = -1;
+	   std::string tname(hdr->target_name[refIndex2]);
+	   sndSeq = faidx_fetch_seq(fai, tname.c_str(), 0, hdr->target_len[refIndex2], &seqlen);
+	 }
 
-       // Find gapped reads
-       if (svIt->chr == refIndex) {
+	 // Set tag alleles
+	 svIt->alleles = boost::to_upper_copy(std::string(seq + svIt->svStart - 1, seq + svIt->svStart)) + ",<" + _addID(svType) + ">";
+	 
 	 typedef std::set<std::string> TSplitReadSet;
 	 TSplitReadSet splitReadSet;
 	 std::vector<uint8_t> mapQV;
 
 #pragma omp parallel for default(shared)
 	 for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
-	   hts_itr_t* iter = sam_itr_queryi(idx[file_c], svIt->chr, svIt->svStartBeg, svIt->svEndEnd);
+	   Breakpoint bp(*svIt);
+	   _initBreakpoint(hdr, bp, 250, svType);
+	   hts_itr_t* iter = sam_itr_queryi(idx[file_c], bp.chr, bp.svStartBeg, bp.svEndEnd);
 	   bam1_t* rec = bam_init1();
 	   while (sam_itr_next(samfile[file_c], iter, rec) >= 0) {
 	     if (rec->core.flag & (BAM_FSECONDARY | BAM_FQCFAIL | BAM_FDUP | BAM_FSUPPLEMENTARY | BAM_FUNMAP)) continue;
@@ -233,22 +246,16 @@ lastAlignedPosition(bam1_t const* rec) {
 	  
 	   // Calculate MSA
 	   svIt->srSupport = msa(c, splitReadSet, svIt->consensus);
-	  
-	   //std::cerr << hdr->target_name[svIt->chr] << ',' << svIt->svStart << ',' << svIt->svEnd << ',' << (svIt->svEnd - svIt->svStart) << ',' << svIt->srSupport << std::endl;
-	  
-	   // Get the SV reference
-	   svIt->svStartBeg = std::max(0, svIt->svStart - (int32_t) (svIt->consensus.size()));
-	   svIt->svEndEnd = std::min((int32_t) (hdr->target_len[svIt->chr]), (int32_t) (svIt->svEnd + svIt->consensus.size()));
-	   std::string svRefStr = _getSVRef(c, seq, *svIt, refIndex, svType);
 
-	   // Align consensus to reference
-	   if (!alignConsensus(c, *svIt, svRefStr, svType)) { svIt->consensus = ""; svIt->srSupport = 0; }
-
-	   //std::cerr << hdr->target_name[svIt->chr] << ',' << svIt->svStart << ',' << svIt->svEnd << ',' << (svIt->svEnd - svIt->svStart) << ',' << svIt->srSupport << std::endl;
+	   if (!alignConsensus(c, hdr, seq, sndSeq, *svIt, svType)) {
+	     svIt->consensus = "";
+	     svIt->srSupport = 0;
+	   }
 	 }
        }
+       if (seq != NULL) free(seq);
      }
-     if (seq != NULL) free(seq);
+     if (sndSeq != NULL) free(sndSeq);
    }
    // Clean-up
    fai_destroy(fai);
@@ -483,17 +490,13 @@ lastAlignedPosition(bam1_t const* rec) {
 	   }
 	 } else {
 	   if (svStart != -1) {
-	     if ((svEnd - svStart) <= (int32_t) c.indelsize) {
+	     if ((svEnd - svStart) <= c.indelsize) {
 	       // Output deletion
 	       StructuralVariantRecord svRec;
 	       svRec.chr = refIndex;
 	       svRec.chr2 = refIndex;
-	       svRec.svStartBeg = std::max(svStart - 500, 0);
 	       svRec.svStart = svStart;
-	       svRec.svStartEnd = std::min((uint32_t) svStart + 500, hdr->target_len[refIndex]);
-	       svRec.svEndBeg = std::max((int32_t) svEnd - 500, 0);
 	       svRec.svEnd = svEnd;
-	       svRec.svEndEnd = std::min((uint32_t) svEnd + 500, hdr->target_len[refIndex]);
 	       svRec.peSupport = 0;
 	       svRec.wiggle = 2*probe_size;
 	       svRec.peMapQuality = 0;
