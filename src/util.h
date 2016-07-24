@@ -467,18 +467,18 @@ namespace torali
 
       // Get library parameters
       for(TParams::iterator paramIt=params.begin(); paramIt != params.end(); ++paramIt) {
-	// Get default library orientation
-	paramIt->second.defaultOrient=0;
-	unsigned int maxOrient=paramIt->second.orient[0];
-	for(unsigned int i=1;i<4;++i) {
-	  if (paramIt->second.orient[i]>maxOrient) {
-	    maxOrient=paramIt->second.orient[i];
-	    paramIt->second.defaultOrient=(uint8_t) i;
-	  }
-	}
-
 	// Check that this is a proper paired-end library
-	if (paramIt->second.vecISize.size()>=minNumAlignments) {
+	if (paramIt->second.processedNumPairs>=minNumAlignments) {
+	  // Get default library orientation
+	  paramIt->second.defaultOrient=0;
+	  unsigned int maxOrient=paramIt->second.orient[0];
+	  for(unsigned int i=1;i<4;++i) {
+	    if (paramIt->second.orient[i]>maxOrient) {
+	      maxOrient=paramIt->second.orient[i];
+	      paramIt->second.defaultOrient=(uint8_t) i;
+	    }
+	  }
+
 	  if (paramIt->second.processedNumReads < minNumAlignments) paramIt->second.readSize.resize(paramIt->second.processedNumReads);
 	  if (paramIt->second.processedNumPairs < maxNumAlignments) paramIt->second.vecISize.resize(paramIt->second.processedNumPairs);
 	  
