@@ -712,6 +712,12 @@ namespace torali
       if (validRegions[refIndex].empty()) continue;
       bool nodata = true;
       for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
+	std::string suffix("cram");
+	std::string str(c.files[file_c].string());
+	if ((str.size() >= suffix.size()) && (str.compare(str.size() - suffix.size(), suffix.size(), suffix) == 0)) {
+	  nodata = false;
+	  break;
+	}
 	uint64_t mapped = 0;
 	uint64_t unmapped = 0;
 	hts_idx_get_stat(idx[file_c], refIndex, &mapped, &unmapped);
