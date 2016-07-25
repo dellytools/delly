@@ -325,6 +325,13 @@ inline int dellyRun(Config const& c, TSVType svType) {
     if (istart + 1 < hdr->target_len[i]) validRegions[i].insert(TIVal::right_open(istart, hdr->target_len[i]));
   }
   exclg.clear();
+
+  // Debug code
+  //for(int32_t refIndex = 0; refIndex < hdr->n_targets; ++refIndex) {
+  //for(typename TChrIntervals::const_iterator vRIt = validRegions[refIndex].begin(); vRIt != validRegions[refIndex].end(); ++vRIt) {
+  //std::cerr << std::string(hdr->target_name[refIndex]) << "\t" << vRIt->lower() << "\t" << vRIt->upper() << std::endl;
+  //}
+  //}
   
   // Create library objects
   typedef boost::unordered_map<std::string, LibraryInfo> TLibraryMap;
