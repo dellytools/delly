@@ -761,63 +761,65 @@ namespace torali
 	      int splitPoint = 0;
 	      bool leadingSoftClip = false;
 	      if (_validSoftClip(rec, clipSize, splitPoint, leadingSoftClip, c.minMapQual)) {
-		// Iterate both possible breakpoints
-		for (int bpPoint = 0; bpPoint < 2; ++bpPoint) {
-		  // Leading or trailing softclip?
-		  if (_validSCOrientation(bpPoint, leadingSoftClip, _getCT(svType), svType)) {
-		    // Get the sequence
-		    std::string sequence;
-		    sequence.resize(rec->core.l_qseq);
-		    uint8_t* seqptr = bam_get_seq(rec);
-		    for (int i = 0; i < rec->core.l_qseq; ++i) sequence[i] = "=ACMGRSVTWYHKDBN"[bam_seqi(seqptr, i)];
-		    
-		    // Check sequence
-		    size_t nCount = std::count(sequence.begin(), sequence.end(), 'N');
-		    if ((nCount * 100) / sequence.size() == 0) {
-		      std::string cstr = compressStr(sequence);
-		      double seqComplexity = (double) cstr.size() / (double) sequence.size();
-		      if (seqComplexity >= 0.45) {
-			
-			// Adjust orientation if necessary
-			_adjustOrientation(sequence, bpPoint, _getCT(svType), svType);
-			
-			// Align to local reference
-			int32_t localrefStart = 0;
-			int32_t localrefEnd = 0;
-			int32_t seqLeftOver = 0;
-			if (bpPoint) {
-			  seqLeftOver = sequence.size() - clipSize;
-			  localrefStart = std::max(0, rec->core.pos - (c.indelsize + clipSize));
-			  localrefEnd = std::min(rec->core.pos + seqLeftOver + 25, (int32_t) hdr->target_len[refIndex]);
-			} else {
-			  seqLeftOver = sequence.size() - (splitPoint - rec->core.pos);
-			  localrefStart = rec->core.pos;
-			  localrefEnd = std::min(splitPoint + c.indelsize + seqLeftOver, (int32_t) hdr->target_len[refIndex]);
-			}
-			std::string localref = boost::to_upper_copy(std::string(seq + localrefStart, seq + localrefEnd));
-			typedef boost::multi_array<char, 2> TAlign;
-			TAlign align;
-			AlignConfig<true, false> semiglobal;
-			DnaScore<int> sc(5, -4, -1 * c.aliscore.match * 15, 0);
-			int altScore = gotoh(sequence, localref, align, semiglobal, sc);
-			altScore += c.aliscore.match * 15;
-			
-			// Candidate small indel?
-			AlignDescriptor ad;
-			if (_findSplit(c, sequence, localref, align, ad, svType)) {
-			  int scoreThresholdAlt = (int) (c.flankQuality * (sequence.size() - (ad.cEnd - ad.cStart - 1)) * sc.match + (1.0 - c.flankQuality) * (sequence.size() - (ad.cEnd - ad.cStart - 1)) * sc.mismatch);
-			  if (altScore > scoreThresholdAlt) {
+		if (clipSize > (int32_t) (log10(rec->core.l_qseq) * 10)) {
+		  // Iterate both possible breakpoints
+		  for (int bpPoint = 0; bpPoint < 2; ++bpPoint) {
+		    // Leading or trailing softclip?
+		    if (_validSCOrientation(bpPoint, leadingSoftClip, _getCT(svType), svType)) {
+		      // Get the sequence
+		      std::string sequence;
+		      sequence.resize(rec->core.l_qseq);
+		      uint8_t* seqptr = bam_get_seq(rec);
+		      for (int i = 0; i < rec->core.l_qseq; ++i) sequence[i] = "=ACMGRSVTWYHKDBN"[bam_seqi(seqptr, i)];
+		      
+		      // Check sequence
+		      size_t nCount = std::count(sequence.begin(), sequence.end(), 'N');
+		      if ((nCount * 100) / sequence.size() == 0) {
+			std::string cstr = compressStr(sequence);
+			double seqComplexity = (double) cstr.size() / (double) sequence.size();
+			if (seqComplexity >= 0.45) {
+			  
+			  // Adjust orientation if necessary
+			  _adjustOrientation(sequence, bpPoint, _getCT(svType), svType);
+			  
+			  // Align to local reference
+			  int32_t localrefStart = 0;
+			  int32_t localrefEnd = 0;
+			  int32_t seqLeftOver = 0;
+			  if (bpPoint) {
+			    seqLeftOver = sequence.size() - clipSize;
+			    localrefStart = std::max(0, rec->core.pos - (c.indelsize + clipSize));
+			    localrefEnd = std::min(rec->core.pos + seqLeftOver + 25, (int32_t) hdr->target_len[refIndex]);
+			  } else {
+			    seqLeftOver = sequence.size() - (splitPoint - rec->core.pos);
+			    localrefStart = rec->core.pos;
+			    localrefEnd = std::min(splitPoint + c.indelsize + seqLeftOver, (int32_t) hdr->target_len[refIndex]);
+			  }
+			  std::string localref = boost::to_upper_copy(std::string(seq + localrefStart, seq + localrefEnd));
+			  typedef boost::multi_array<char, 2> TAlign;
+			  TAlign align;
+			  AlignConfig<true, false> semiglobal;
+			  DnaScore<int> sc(5, -4, -1 * c.aliscore.match * 15, 0);
+			  int altScore = gotoh(sequence, localref, align, semiglobal, sc);
+			  altScore += c.aliscore.match * 15;
+			  
+			  // Candidate small indel?
+			  AlignDescriptor ad;
+			  if (_findSplit(c, sequence, localref, align, ad, svType)) {
+			    int scoreThresholdAlt = (int) (c.flankQuality * (sequence.size() - (ad.cEnd - ad.cStart - 1)) * sc.match + (1.0 - c.flankQuality) * (sequence.size() - (ad.cEnd - ad.cStart - 1)) * sc.mismatch);
+			    if (altScore > scoreThresholdAlt) {
 			    
-			    // Debug consensus to reference alignment
-			    //for(TAIndex i = 0; i<align.shape()[0]; ++i) {
-			    //for(TAIndex j = 0; j<align.shape()[1]; ++j) std::cerr << align[i][j];
-			    //std::cerr << std::endl;
-			    //}
-			    //std::cerr << bpPoint << ',' << cStart << ',' << cEnd << ',' << rStart << ',' << rEnd << std::endl;
-			    
+			      // Debug consensus to reference alignment
+			      //for(TAIndex i = 0; i<align.shape()[0]; ++i) {
+			      //for(TAIndex j = 0; j<align.shape()[1]; ++j) std::cerr << align[i][j];
+			      //std::cerr << std::endl;
+			      //}
+			      //std::cerr << bpPoint << ',' << cStart << ',' << cEnd << ',' << rStart << ',' << rEnd << std::endl;
+			      
 #pragma omp critical
-			    {
-			      splitRecord.push_back(SplitAlignRecord(localrefStart + ad.rStart - ad.cStart, localrefStart + ad.rStart, localrefStart + ad.rEnd, localrefStart + ad.rEnd + seqLeftOver + 25, rec->core.qual));
+			      {
+				splitRecord.push_back(SplitAlignRecord(localrefStart + ad.rStart - ad.cStart, localrefStart + ad.rStart, localrefStart + ad.rEnd, localrefStart + ad.rEnd + seqLeftOver + 25, rec->core.qual));
+			      }
 			    }
 			  }
 			}

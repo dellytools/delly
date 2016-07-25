@@ -95,9 +95,6 @@ namespace torali
     }
     if (numSoftClip != 1) return false;
 
-    // Check clip size
-    if (clipSize <= (int32_t) (log10(rec->core.l_qseq) * 10)) return false;
-    
     // Get quality vector
     typedef std::vector<uint8_t> TQuality;
     TQuality quality;
