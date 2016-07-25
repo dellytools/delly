@@ -80,7 +80,7 @@ namespace torali
 
 
   inline bool 
-  _validSoftClip(bam1_t* rec, int& clipSize, int& splitPoint, bool& leadingSC, unsigned short qualCut) {
+  _validSoftClip(bam1_t* rec, int32_t& clipSize, int32_t& splitPoint, bool& leadingSC, unsigned short qualCut) {
     // Check read-length
     if (rec->core.l_qseq < 35) return false;
 
@@ -95,6 +95,10 @@ namespace torali
     }
     if (numSoftClip != 1) return false;
 
+    // Check clip fraction
+    double clipfraction = (double) clipSize / (double) rec->core.l_qseq;
+    if (clipfraction > 0.5) return false;
+    
     // Get quality vector
     typedef std::vector<uint8_t> TQuality;
     TQuality quality;

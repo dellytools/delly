@@ -222,8 +222,9 @@ namespace torali
 	  // Set tag alleles
 	  svIt->alleles = boost::to_upper_copy(std::string(seq + svIt->svStart - 1, seq + svIt->svStart)) + ",<" + _addID(svType) + ">";
 	  
-	  typedef std::vector<std::pair<int, std::string> > TOffsetSplit;
-	  typedef std::vector<int> TSplitPoints;
+	  typedef std::vector<std::pair<int32_t, std::string> > TClipsizeSplit;
+	  typedef std::vector<TClipsizeSplit> TOffsetSplit;
+	  typedef std::vector<int32_t> TSplitPoints;
 	  TOffsetSplit osp0;
 	  TSplitPoints spp0;
 	  TOffsetSplit osp1;
@@ -241,11 +242,13 @@ namespace torali
 	      regionStart = bp.svEndBeg;
 	      regionEnd = bp.svEndEnd;
 	      spp1.resize(regionEnd-regionStart, 0);
+	      osp1.resize(regionEnd-regionStart, TClipsizeSplit());
 	    } else {
 	      regionChr = bp.chr;
 	      regionStart = bp.svStartBeg;
 	      regionEnd = bp.svStartEnd;
 	      spp0.resize(regionEnd-regionStart, 0);
+	      osp0.resize(regionEnd-regionStart, TClipsizeSplit());
 	    }
 #pragma omp parallel for default(shared)
 	    for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
@@ -255,8 +258,8 @@ namespace torali
 		if (rec->core.flag & (BAM_FSECONDARY | BAM_FQCFAIL | BAM_FDUP | BAM_FSUPPLEMENTARY | BAM_FUNMAP)) continue;
 		
 		// Valid soft clip?
-		int clipSize = 0;
-		int splitPoint = 0;
+		int32_t clipSize = 0;
+		int32_t splitPoint = 0;
 		bool leadingSoftClip = false;
 		if (_validSoftClip(rec, clipSize, splitPoint, leadingSoftClip, c.minMapQual)) {
 		  if ((splitPoint >= regionStart) && (splitPoint < regionEnd)) {
@@ -276,13 +279,13 @@ namespace torali
 #pragma omp critical
 			{
 			  ++spp1[splitPoint];
-			  osp1.push_back(std::make_pair(splitPoint, sequence));
+			  osp1[splitPoint].push_back(std::make_pair(clipSize, sequence));
 			} 
 		      } else {
 #pragma omp critical
 			{
 			  ++spp0[splitPoint];
-			  osp0.push_back(std::make_pair(splitPoint, sequence));
+			  osp0[splitPoint].push_back(std::make_pair(clipSize, sequence));
 			} 
 		      }
 		    }
@@ -293,21 +296,22 @@ namespace torali
 	      hts_itr_destroy(iter);
 	    }
 	  }
-	  // Collect candidate split reads
-	  typedef std::set<std::string> TSplitReadSet;
-	  TSplitReadSet splitReadSet;
+	  // Sort candidate split reads
+	  TClipsizeSplit csSplit;
 	  int mvAvg, lBound, uBound;
 	  _movingAverage(spp0, 5, mvAvg, lBound, uBound);
-	  if (mvAvg > 0) 
-	    for(typename TOffsetSplit::const_iterator itOS = osp0.begin(); itOS != osp0.end(); ++itOS) 
-	      if ((itOS->first >= lBound) && (itOS->first < uBound)) 
-		if (splitReadSet.size() < 100) splitReadSet.insert(itOS->second); // Limit to at most 100 split reads
+	  if (mvAvg > 0)
+	    for(int32_t k = lBound; k < uBound; ++k) csSplit.insert(csSplit.end(), osp0[k].begin(), osp0[k].end());
 	  _movingAverage(spp1, 5, mvAvg, lBound, uBound);
-	  if (mvAvg > 0) {
-	    for(typename TOffsetSplit::const_iterator itOS = osp1.begin(); itOS != osp1.end(); ++itOS) 
-	      if ((itOS->first >= lBound) && (itOS->first < uBound)) 
-		if (splitReadSet.size() < 100) splitReadSet.insert(itOS->second); // Limit to at most 100 split reads
-	  }
+	  if (mvAvg > 0)
+	    for(int32_t k = lBound; k < uBound; ++k) csSplit.insert(csSplit.end(), osp1[k].begin(), osp1[k].end());
+	  std::sort(csSplit.begin(), csSplit.end());
+	    
+	  typedef std::set<std::string> TSplitReadSet;
+	  TSplitReadSet splitReadSet;
+	  for(typename TClipsizeSplit::reverse_iterator rit = csSplit.rbegin(); rit != csSplit.rend(); ++rit)
+	    if (splitReadSet.size() < 10) splitReadSet.insert(rit->second);
+	    else break;
 	  totalSplitReadsAligned += splitReadSet.size();
 	  
 	  // MSA
@@ -761,7 +765,7 @@ namespace torali
 	      int splitPoint = 0;
 	      bool leadingSoftClip = false;
 	      if (_validSoftClip(rec, clipSize, splitPoint, leadingSoftClip, c.minMapQual)) {
-		if (clipSize > (int32_t) (log10(rec->core.l_qseq) * 10)) {
+		if (clipSize > (int32_t) (log10(rec->core.l_qseq) * 5)) {
 		  // Iterate both possible breakpoints
 		  for (int bpPoint = 0; bpPoint < 2; ++bpPoint) {
 		    // Leading or trailing softclip?
