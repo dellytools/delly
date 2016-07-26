@@ -261,7 +261,7 @@ namespace torali
 		int32_t clipSize = 0;
 		int32_t splitPoint = 0;
 		bool leadingSoftClip = false;
-		if (_validSoftClip(rec, clipSize, splitPoint, leadingSoftClip, c.minMapQual)) {
+		if (_validSoftClip(rec, clipSize, splitPoint, leadingSoftClip, c.minMapQual, svType)) {
 		  if ((splitPoint >= regionStart) && (splitPoint < regionEnd)) {
 		    splitPoint -= regionStart;
 		    // Leading or trailing softclip?
@@ -764,7 +764,7 @@ namespace torali
 	      int clipSize = 0;
 	      int splitPoint = 0;
 	      bool leadingSoftClip = false;
-	      if (_validSoftClip(rec, clipSize, splitPoint, leadingSoftClip, c.minMapQual)) {
+	      if (_validSoftClip(rec, clipSize, splitPoint, leadingSoftClip, c.minMapQual, svType)) {
 		if (clipSize > (int32_t) (log10(rec->core.l_qseq) * 5)) {
 		  // Iterate both possible breakpoints
 		  for (int bpPoint = 0; bpPoint < 2; ++bpPoint) {

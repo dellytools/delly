@@ -42,6 +42,7 @@ Contact: Tobias Rausch (rausch@embl.de)
 #include <boost/tokenizer.hpp>
 #include <boost/progress.hpp>
 
+#include <htslib/faidx.h>
 #include <htslib/vcf.h>
 #include <htslib/sam.h>
 
@@ -64,40 +65,28 @@ struct Config {
   bool bp_flag;
   bool avg_flag;
   bool inclCigar;
+  bool hasIntervalFile;
   boost::filesystem::path outfile;
   boost::filesystem::path int_file;
+  boost::filesystem::path genome;
   std::vector<boost::filesystem::path> files;
+  std::vector<std::string> sampleName;
 };
 
 
 inline int
-run(Config const& c)
+coverageRun(Config const& c)
 {
   // Get references
-  typedef std::vector<std::string> TRefNames;
-  typedef std::vector<uint32_t> TRefLength;
-  TRefNames refnames;
-  TRefLength reflen;
-  if (refnames.empty()) {
-    samFile* samfile = sam_open(c.files[0].string().c_str(), "r");
-    bam_hdr_t* hdr = sam_hdr_read(samfile);
-    for (int i = 0; i<hdr->n_targets; ++i) {
-      refnames.push_back(hdr->target_name[i]);
-      reflen.push_back(hdr->target_len[i]);
-    }
-    bam_hdr_destroy(hdr);
-    sam_close(samfile);
-  }
+  samFile* samfile = sam_open(c.files[0].string().c_str(), "r");
+  bam_hdr_t* hdr = sam_hdr_read(samfile);
 
   // Read all SV intervals
   typedef std::vector<CovRecord> TSVs;
   TSVs svs;
-  std::map<unsigned int, std::string> idToName;
-  unsigned int intervalCount=0;
-  if (boost::filesystem::exists(c.int_file) && boost::filesystem::is_regular_file(c.int_file) && boost::filesystem::file_size(c.int_file)) {
-    typedef boost::unordered_map<std::string, unsigned int> TMapChr;
-    TMapChr mapChr;
-    for(unsigned int i = 0; i<refnames.size(); ++i) mapChr[ refnames[i] ] = i;
+  std::vector<std::string> idToName;
+  unsigned int intervalCount = 0;
+  if (c.hasIntervalFile) {
     std::ifstream interval_file(c.int_file.string().c_str(), std::ifstream::in);
     if (interval_file.is_open()) {
       while (interval_file.good()) {
@@ -109,15 +98,15 @@ run(Config const& c)
 	Tokenizer::iterator tokIter = tokens.begin();
 	if (tokIter!=tokens.end()) {
 	  std::string chrName=*tokIter++;
-	  TMapChr::const_iterator mapChrIt = mapChr.find(chrName);
-	  if (mapChrIt != mapChr.end()) {
+	  int32_t tid = bam_name2id(hdr, chrName.c_str());
+	  if (tid >= 0) {
 	    if (tokIter!=tokens.end()) {
 	      CovRecord sv;	  
-	      sv.chr = mapChrIt->second;
+	      sv.chr = tid;
 	      sv.svStart = boost::lexical_cast<int32_t>(*tokIter++);
-	      sv.svEnd = boost::lexical_cast<int32_t>(*tokIter++) + 1;
+	      sv.svEnd = boost::lexical_cast<int32_t>(*tokIter++);
 	      std::string svName = *tokIter;
-	      idToName.insert(std::make_pair(intervalCount, svName));
+	      idToName.push_back(svName);
 	      sv.id = intervalCount++;
 	      svs.push_back(sv);
 	    }
@@ -128,24 +117,24 @@ run(Config const& c)
     }
   } else {
     // Create artificial intervals
-    for(int refIndex=0; refIndex < (int) refnames.size(); ++refIndex) {
+    for(int32_t refIndex=0; refIndex < (int32_t) hdr->n_targets; ++refIndex) {
       uint32_t pos = 0;
       unsigned int wSize = c.window_size;
       unsigned int wOffset = c.window_offset;
       if (c.window_num>0) {
-	wSize=(reflen[refIndex] / c.window_num) + 1;
+	wSize=(hdr->target_len[refIndex] / c.window_num) + 1;
 	wOffset=wSize;
       }
-      while (pos < reflen[refIndex]) {
+      while (pos < hdr->target_len[refIndex]) {
 	uint32_t window_len = pos+wSize;
-	if (window_len > reflen[refIndex]) window_len = reflen[refIndex];
+	if (window_len > hdr->target_len[refIndex]) window_len = hdr->target_len[refIndex];
 	CovRecord sv;
 	sv.chr = refIndex;
 	sv.svStart = pos;
 	sv.svEnd = window_len;
-	std::stringstream s; 
-	s << refnames[sv.chr] << ":" << sv.svStart << "-" << sv.svEnd;
-	idToName.insert(std::make_pair(intervalCount, s.str()));
+	std::string refname(hdr->target_name[refIndex]);
+	refname += ":" + boost::lexical_cast<std::string>(sv.svStart) + "-" + boost::lexical_cast<std::string>(sv.svEnd);
+	idToName.push_back(refname);
 	sv.id = intervalCount++;
 	svs.push_back(sv);
 	pos += wOffset;
@@ -184,7 +173,7 @@ run(Config const& c)
   TSVs::const_iterator itSV = svs.begin();
   TSVs::const_iterator itSVEnd = svs.end();
   for(;itSV!=itSVEnd;++itSV) {
-    dataOut << refnames[itSV->chr] << "\t" << itSV->svStart << "\t" << itSV->svEnd << "\t" << idToName.find(itSV->id)->second;
+    dataOut << hdr->target_name[itSV->chr] << "\t" << itSV->svStart << "\t" << itSV->svEnd << "\t" << idToName[itSV->id];
     // Iterate all samples
     for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
       dataOut << "\t";
@@ -195,6 +184,10 @@ run(Config const& c)
     dataOut << std::endl;
   }
 
+  // Clean-up
+  bam_hdr_destroy(hdr);
+  sam_close(samfile);
+    
   // End
   boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
   std::cout << '[' << boost::posix_time::to_simple_string(now) << "] Done." << std::endl;;
@@ -211,7 +204,8 @@ int main(int argc, char **argv) {
     ("help,?", "show help message")
     ("avg-cov,a", "show average coverage")
     ("bp-count,b", "show base pair count")
-    ("quality-cut,q", boost::program_options::value<uint16_t>(&c.minGenoQual)->default_value(0), "exclude all alignments with quality < q")
+    ("genome,g", boost::program_options::value<boost::filesystem::path>(&c.genome), "genome fasta file")
+    ("quality-cut,q", boost::program_options::value<uint16_t>(&c.minGenoQual)->default_value(1), "exclude all alignments with quality < q")
     ("outfile,f", boost::program_options::value<boost::filesystem::path>(&c.outfile)->default_value("cov.gz"), "coverage output file")
     ;
 
@@ -219,7 +213,7 @@ int main(int argc, char **argv) {
   boost::program_options::options_description window("Window options");
   window.add_options()
     ("window-size,s", boost::program_options::value<unsigned int>(&c.window_size)->default_value(10000), "window size")
-    ("window-offset,o", boost::program_options::value<unsigned int>(&c.window_offset)->default_value(10000), "window offset")
+    ("window-offset,o", boost::program_options::value<unsigned int>(&c.window_offset)->default_value(5000), "window offset")
     ("window-num,n", boost::program_options::value<unsigned int>(&c.window_num)->default_value(0), "#windows per chr, used if #n>0")
     ;
 
@@ -257,7 +251,7 @@ int main(int argc, char **argv) {
     } else if (vm.count("license")) {
       gplV3();
     } else {
-      std::cout << "Usage: " << argv[0] << " [OPTIONS] <sample1.bam> <sample2.bam> ..." << std::endl;
+      std::cout << "Usage: " << argv[0] << " [OPTIONS] -g <ref.fa> <sample1.bam> <sample2.bam> ..." << std::endl;
       std::cout << visible_options << "\n"; 
     }
     return 1; 
@@ -269,6 +263,95 @@ int main(int argc, char **argv) {
   if ((c.bp_flag) || (c.avg_flag)) c.inclCigar = true;
   else c.inclCigar = false;
 
+  // Check reference
+  if (!(boost::filesystem::exists(c.genome) && boost::filesystem::is_regular_file(c.genome) && boost::filesystem::file_size(c.genome))) {
+    std::cerr << "Reference file is missing! " << c.genome.string() << std::endl;
+    return 1;
+  } else {
+    faidx_t* fai = fai_load(c.genome.string().c_str());
+    if (fai == NULL) {
+      if (fai_build(c.genome.string().c_str()) == -1) {
+	std::cerr << "Fail to open genome fai index for " << c.genome.string() << std::endl;
+	return 1;
+      } else fai = fai_load(c.genome.string().c_str());
+    }
+    fai_destroy(fai);
+  }
+
+  // Check input files
+  c.sampleName.resize(c.files.size());
+  for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
+    if (!(boost::filesystem::exists(c.files[file_c]) && boost::filesystem::is_regular_file(c.files[file_c]) && boost::filesystem::file_size(c.files[file_c]))) {
+      std::cerr << "Alignment file is missing: " << c.files[file_c].string() << std::endl;
+      return 1;
+    }
+    samFile* samfile = sam_open(c.files[file_c].string().c_str(), "r");
+    if (samfile == NULL) {
+      std::cerr << "Fail to open file " << c.files[file_c].string() << std::endl;
+      return 1;
+    }
+    hts_idx_t* idx = sam_index_load(samfile, c.files[file_c].string().c_str());
+    if (idx == NULL) {
+      std::cerr << "Fail to open index for " << c.files[file_c].string() << std::endl;
+      return 1;
+    }
+    bam_hdr_t* hdr = sam_hdr_read(samfile);
+    if (hdr == NULL) {
+      std::cerr << "Fail to open header for " << c.files[file_c].string() << std::endl;
+      return 1;
+    }
+    faidx_t* fai = fai_load(c.genome.string().c_str());
+    for(int32_t refIndex=0; refIndex < hdr->n_targets; ++refIndex) {
+      std::string tname(hdr->target_name[refIndex]);
+      if (!faidx_has_seq(fai, tname.c_str())) {
+	std::cerr << "BAM file chromosome " << hdr->target_name[refIndex] << " is NOT present in your reference file " << c.genome.string() << std::endl;
+	return 1;
+      }
+    }
+    fai_destroy(fai);
+    std::string sampleName;
+    if (!getSMTag(std::string(hdr->text), c.files[file_c].stem().string(), sampleName)) {
+      std::cerr << "Only one sample (@RG:SM) is allowed per input BAM file " << c.files[file_c].string() << std::endl;
+      return 1;
+    } else c.sampleName[file_c] = sampleName;
+    bam_hdr_destroy(hdr);
+    hts_idx_destroy(idx);
+    sam_close(samfile);
+  }
+
+  if (vm.count("interval-file")) {
+    if (!(boost::filesystem::exists(c.int_file) && boost::filesystem::is_regular_file(c.int_file) && boost::filesystem::file_size(c.int_file))) {
+      std::cerr << "Interval file is missing: " << c.int_file.string() << std::endl;
+      return 1;
+    }
+    std::string oldChr;
+    faidx_t* fai = fai_load(c.genome.string().c_str());
+    std::ifstream interval_file(c.int_file.string().c_str(), std::ifstream::in);
+    if (interval_file.is_open()) {
+      while (interval_file.good()) {
+	std::string intervalLine;
+	getline(interval_file, intervalLine);
+	typedef boost::tokenizer< boost::char_separator<char> > Tokenizer;
+	boost::char_separator<char> sep(" \t,;");
+	Tokenizer tokens(intervalLine, sep);
+	Tokenizer::iterator tokIter = tokens.begin();
+	if (tokIter!=tokens.end()) {
+	  std::string chrName=*tokIter++;
+	  if (chrName.compare(oldChr) != 0) {
+	    oldChr = chrName;
+	    if (!faidx_has_seq(fai, chrName.c_str())) {
+	      std::cerr << "Interval file chromosome " << chrName << " is NOT present in your reference file " << c.genome.string() << std::endl;
+	      return 1;
+	    }
+	  }
+	}
+      }
+      interval_file.close();
+    }
+    fai_destroy(fai);
+    c.hasIntervalFile= true;
+  } else c.hasIntervalFile = false;
+  
   // Show cmd
   boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
   std::cout << '[' << boost::posix_time::to_simple_string(now) << "] ";
@@ -276,5 +359,5 @@ int main(int argc, char **argv) {
   std::cout << std::endl;
  
   // Run coverage annotation
-  return run(c);
+  return coverageRun(c);
 }

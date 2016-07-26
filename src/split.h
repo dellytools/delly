@@ -78,9 +78,20 @@ namespace torali
     if (((ct==0) && (bpPoint)) || ((ct==1) && (!bpPoint))) reverseComplement(sequence);
   }
 
+  inline bool
+  _largeClipFraction(int32_t const clipSize, int32_t const qlen, SVType<DeletionTag>) {
+    return (((double) clipSize / (double) qlen) > 0.5);
+  }
 
+  template<typename TTag>
+  inline bool
+  _largeClipFraction(int32_t const, int32_t const, SVType<TTag>) {
+    return false;
+  }
+  
+  template<typename TTag>
   inline bool 
-  _validSoftClip(bam1_t* rec, int32_t& clipSize, int32_t& splitPoint, bool& leadingSC, unsigned short qualCut) {
+  _validSoftClip(bam1_t* rec, int32_t& clipSize, int32_t& splitPoint, bool& leadingSC, unsigned short qualCut, SVType<TTag> svType) {
     // Check read-length
     if (rec->core.l_qseq < 35) return false;
 
@@ -96,8 +107,7 @@ namespace torali
     if (numSoftClip != 1) return false;
 
     // Check clip fraction
-    double clipfraction = (double) clipSize / (double) rec->core.l_qseq;
-    if (clipfraction > 0.5) return false;
+    if (_largeClipFraction(clipSize, rec->core.l_qseq, svType)) return false;
     
     // Get quality vector
     typedef std::vector<uint8_t> TQuality;
