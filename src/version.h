@@ -27,6 +27,7 @@ Contact: Tobias Rausch (rausch@embl.de)
 namespace torali
 {
 
+
   std::string dellyVersionNumber = "0.7.5";
 
   inline 

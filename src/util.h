@@ -467,8 +467,16 @@ namespace torali
 
       // Get library parameters
       for(TParams::iterator paramIt=params.begin(); paramIt != params.end(); ++paramIt) {
+	// Check single-end library parameters
+	if (paramIt->second.processedNumReads > 0) {
+	  if (paramIt->second.processedNumReads < minNumAlignments) paramIt->second.readSize.resize(paramIt->second.processedNumReads);
+	  paramIt->second.rs = paramIt->second.readSize[paramIt->second.readSize.size() / 2];
+	}
+	
 	// Check that this is a proper paired-end library
 	if (paramIt->second.processedNumPairs>=minNumAlignments) {
+	  if (paramIt->second.processedNumPairs < maxNumAlignments) paramIt->second.vecISize.resize(paramIt->second.processedNumPairs);
+
 	  // Get default library orientation
 	  paramIt->second.defaultOrient=0;
 	  unsigned int maxOrient=paramIt->second.orient[0];
@@ -478,9 +486,6 @@ namespace torali
 	      paramIt->second.defaultOrient=(uint8_t) i;
 	    }
 	  }
-
-	  if (paramIt->second.processedNumReads < minNumAlignments) paramIt->second.readSize.resize(paramIt->second.processedNumReads);
-	  if (paramIt->second.processedNumPairs < maxNumAlignments) paramIt->second.vecISize.resize(paramIt->second.processedNumPairs);
 	  
 	  typedef typename LibraryParams::TSizeVector TVecISize;
 	  std::sort(paramIt->second.vecISize.begin(), paramIt->second.vecISize.end());
@@ -493,12 +498,11 @@ namespace torali
 	    paramIt->second.vecISize = vecISizeTmp;
 	  }
 	  paramIt->second.median = paramIt->second.vecISize[paramIt->second.vecISize.size() / 2];
-	  std::vector<double> absDev;
+	  std::vector<int32_t> absDev;
 	  for(typename TVecISize::const_iterator iSizeBeg = paramIt->second.vecISize.begin(); iSizeBeg != paramIt->second.vecISize.end(); ++iSizeBeg) absDev.push_back(std::abs(*iSizeBeg - paramIt->second.median));
 	  std::sort(absDev.begin(), absDev.end());
 	  paramIt->second.mad = absDev[absDev.size() / 2];
 	  std::sort(paramIt->second.readSize.begin(), paramIt->second.readSize.end());
-	  paramIt->second.rs = paramIt->second.readSize[paramIt->second.readSize.size() / 2];
 	}
       }
 
