@@ -396,7 +396,7 @@ inline int dellyRun(Config const& c, TSVType svType) {
   for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
     std::cout << "Sample: " << c.sampleName[file_c] << std::endl;
     for(TLibraryMap::const_iterator libIt = sampleLib[file_c].begin(); libIt != sampleLib[file_c].end(); ++libIt) {
-      std::cout << "RG: ID=" << libIt->first << ",ReadSize=" << libIt->second.rs << ",MappedAsPair=" << libIt->second.mappedAsPair << ",Median=" << libIt->second.median << ",MAD=" << libIt->second.mad << ",Layout=" << (int) libIt->second.defaultOrient << ",MaxSize=" << libIt->second.maxISizeCutoff << ",MinSize=" << libIt->second.minISizeCutoff << ",UniqueDiscordantPairs=" << libIt->second.abnormal_pairs << std::endl;
+      std::cout << "RG: ID=" << libIt->first << ",ReadSize=" << libIt->second.rs << ",AvgDist=" << libIt->second.avgdist << ",EstCov=" << (double) libIt->second.rs / (double) libIt->second.avgdist << ",MappedAsPair=" << libIt->second.mappedAsPair << ",Median=" << libIt->second.median << ",MAD=" << libIt->second.mad << ",Layout=" << (int) libIt->second.defaultOrient << ",MaxSize=" << libIt->second.maxISizeCutoff << ",MinSize=" << libIt->second.minISizeCutoff << ",UniqueDiscordantPairs=" << libIt->second.abnormal_pairs << std::endl;
     }
   }
   
