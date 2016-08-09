@@ -95,7 +95,7 @@ coverageRun(Config const& c)
   TSampleGC gcBias(c.files.size());
   if (c.hasInvariantRegions) {
     typedef boost::icl::interval_set<uint32_t> TChrIntervals;
-    typedef typename TChrIntervals::interval_type TIVal;
+    typedef TChrIntervals::interval_type TIVal;
     typedef std::vector<TChrIntervals> TRegionsGenome;
     TRegionsGenome invariantRegions;
     invariantRegions.resize(hdr->n_targets);
