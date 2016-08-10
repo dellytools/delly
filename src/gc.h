@@ -32,16 +32,16 @@ Contact: Tobias Rausch (rausch@embl.de)
 namespace torali
 {
 
+
   struct GCBias {
     int32_t median;
     int32_t minNormalISize;
     int32_t maxNormalISize;
     uint8_t defaultOrient;
-    double gc[101];
+    int32_t hbin;
+    std::vector<double> gc;
 
-    GCBias() {
-      for(uint32_t i = 0; i<101; ++i) gc[i] = 1.0;
-    }
+    GCBias(uint32_t maxw) {  gc.resize(maxw, 0.0); }
   };
 
 
@@ -52,11 +52,6 @@ namespace torali
     typedef typename TInvariantRegion::value_type TChrIntervals;
     typedef typename TGCBias::value_type TGCMap;
 
-    // Defaults
-    uint32_t minFCObservations = 100;
-    uint32_t maxFCObservations = 100000;
-    uint32_t fragPerBin = 500;
-    
     // Open file handles
     typedef std::vector<samFile*> TSamFile;
     typedef std::vector<hts_idx_t*> TIndex;
@@ -68,18 +63,33 @@ namespace torali
     }
     bam_hdr_t* hdr = sam_hdr_read(samfile[0]);
 
+    // Initialize reference maps
+    typedef std::vector<uint32_t> TRefWC;
+    typedef boost::unordered_map<std::string, TRefWC> TRefGCMap;
+    typedef std::vector<TRefGCMap> TSampleRefGC;
+    TSampleRefGC refGC(c.files.size(), TRefGCMap());
+      
     // Initialize GC maps
     gcBias.resize(c.files.size(), TGCMap());
     for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
       for(typename TLibraryMap::const_iterator libIt = sampleLib[file_c].begin(); libIt != sampleLib[file_c].end(); ++libIt) {
-	typename TGCMap::iterator itGC = gcBias[file_c].insert(std::make_pair(libIt->first, GCBias())).first;
+	int32_t hbin = libIt->second.rs / 2; // Single-end library
+	if (libIt->second.median != 0) { // Paired-end library
+	  if ((libIt->second.median > hbin) && (libIt->second.median < 1000)) hbin = libIt->second.median / 2;
+	  else hbin = 150;
+	}
+	// Create reference GC counter
+	refGC[file_c].insert(std::make_pair(libIt->first, TRefWC(2 * hbin + 1)));
+	// Create bam counters
+	typename TGCMap::iterator itGC = gcBias[file_c].insert(std::make_pair(libIt->first, GCBias(2 * hbin + 1))).first;
 	itGC->second.median = libIt->second.median;
 	itGC->second.minNormalISize = libIt->second.minNormalISize;
 	itGC->second.maxNormalISize = libIt->second.maxNormalISize;
 	itGC->second.defaultOrient = libIt->second.defaultOrient;
+	itGC->second.hbin = hbin;
       }
     }
-    
+
     // Process chromosome by chromosome
     boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
     std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "GC bias calculation" << std::endl;
@@ -122,29 +132,30 @@ namespace torali
 	if ((seq[i] == 'c') || (seq[i] == 'C') || (seq[i] == 'g') || (seq[i] == 'G')) gc[i] = 1;
 	else if ((seq[i] == 'n') || (seq[i] == 'N')) nrun[i] = 1;
       }
-
       // Debug: Chromosome GC content
-      //std::cerr << refIndex << ',' << hdr->target_len[refIndex] << ',' << nrun.count() << ',' << gc.count() << ',' << (double) gc.count() / (double) (hdr->target_len[refIndex] - nrun.count()) << std::endl;
-
-
+      //std::cerr << refIndex << ',' << 0 << ',' << hdr->target_len[refIndex] << ',' << nrun.count() << ',' << gc.count() << ',' << (double) gc.count() / (double) (hdr->target_len[refIndex] - nrun.count()) << std::endl;
       
       for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
-	typedef std::vector<int32_t> TBinFragmentCount;
-	typedef std::vector<TBinFragmentCount> TGCFragmentCountVector;
-	typedef boost::unordered_map<std::string, TGCFragmentCountVector> TRgBinFragmentCount;
-	TRgBinFragmentCount rgGCP;
-	for(typename TLibraryMap::const_iterator libIt = sampleLib[file_c].begin(); libIt != sampleLib[file_c].end(); ++libIt) {
-	  TRgBinFragmentCount::iterator it = rgGCP.insert(std::make_pair(libIt->first, TGCFragmentCountVector())).first;
-	  it->second.resize(101, TBinFragmentCount());
-	}
 	for(typename TChrIntervals::const_iterator vRIt = invariantRegions[refIndex].begin(); vRIt != invariantRegions[refIndex].end(); ++vRIt) {
-	  uint32_t rsize = vRIt->upper() - vRIt->lower();
-	  typedef std::vector<uint8_t> TFragmentCount;
-	  typedef boost::unordered_map<std::string, TFragmentCount> TRgFragmentCount;
-	  TRgFragmentCount rcounts;
-	  for(typename TLibraryMap::const_iterator libIt = sampleLib[file_c].begin(); libIt != sampleLib[file_c].end(); ++libIt) {
-	    TRgFragmentCount::iterator it = rcounts.insert(std::make_pair(libIt->first, TFragmentCount())).first;
-	    it->second.resize(rsize, 0);
+	  // Fill reference GC counters
+	  for(typename TRefGCMap::iterator refItGC = refGC[file_c].begin(); refItGC != refGC[file_c].end(); ++refItGC) {
+	    uint32_t wsize = refItGC->second.size();
+	    if (wsize + vRIt->lower() > vRIt->upper()) continue;
+	    int32_t nsum = 0;
+	    int32_t gcsum = 0;
+	    uint32_t i = vRIt->lower();
+	    for(; i < vRIt->lower() + wsize; ++i) {
+	      nsum += nrun[i];
+	      gcsum += gc[i];
+	    }
+	    for(; i < vRIt->upper(); ++i) {
+	      if (!nsum) ++refItGC->second[gcsum];
+	      nsum -= nrun[i-wsize];
+	      gcsum -= gc[i-wsize];
+	      nsum += nrun[i];
+	      gcsum += gc[i];
+	    }
+	    if (!nsum) ++refItGC->second[gcsum];
 	  }
 	  hts_itr_t* iter = sam_itr_queryi(idx[file_c], refIndex, vRIt->lower(), vRIt->upper());
 	  bam1_t* rec = bam_init1();
@@ -152,84 +163,62 @@ namespace torali
 	    if (rec->core.flag & (BAM_FSECONDARY | BAM_FQCFAIL | BAM_FDUP | BAM_FSUPPLEMENTARY | BAM_FUNMAP)) continue;
 	    if (rec->core.qual < c.minGenoQual) continue;
 
-	    uint32_t midPoint = rec->core.pos + halfAlignmentLength(rec);
-	    if ((midPoint >= vRIt->lower()) && (midPoint < vRIt->upper())) {
-	      // Get the library information
-	      std::string rG = "DefaultLib";
-	      uint8_t *rgptr = bam_aux_get(rec, "RG");
-	      if (rgptr) {
-		char* rg = (char*) (rgptr + 1);
-		rG = std::string(rg);
+	    // Get the library information
+	    std::string rG = "DefaultLib";
+	    uint8_t *rgptr = bam_aux_get(rec, "RG");
+	    if (rgptr) {
+	      char* rg = (char*) (rgptr + 1);
+	      rG = std::string(rg);
+	    }
+	    typename TGCMap::iterator gcIt = gcBias[file_c].find(rG);
+	    int32_t midPoint = rec->core.pos;
+	    if (gcIt->second.median == 0) midPoint = rec->core.pos + halfAlignmentLength(rec); // Single-end library
+	    else {
+	      // Paired-end library
+	      if (!(rec->core.flag & BAM_FPAIRED)) continue;
+	      if (rec->core.flag & BAM_FMUNMAP) continue;
+	      if (rec->core.pos < rec->core.mpos) continue;
+	      int32_t outerISize = rec->core.pos - rec->core.mpos + rec->core.l_qseq;
+	      if ((rec->core.tid!=rec->core.mtid) || (getStrandIndependentOrientation(rec->core) != gcIt->second.defaultOrient) || (outerISize < gcIt->second.minNormalISize) || (outerISize > gcIt->second.maxNormalISize)) continue;
+	      midPoint = rec->core.pos + outerISize / 2;
+	    }
+	    if ((midPoint >= (int32_t) vRIt->lower() + gcIt->second.hbin) && (midPoint + gcIt->second.hbin < (int32_t) vRIt->upper())) {
+	      int32_t nsum = 0;
+	      int32_t gcsum = 0;
+	      for(int32_t i = midPoint - gcIt->second.hbin; i < midPoint + gcIt->second.hbin; ++i) {
+		nsum += nrun[i];
+		gcsum += gc[i];
 	      }
-	      TRgFragmentCount::iterator it = rcounts.find(rG);
-	      ++it->second[midPoint - vRIt->lower()];
+	      if (!nsum) ++gcIt->second.gc[gcsum];
 	    }
 	  }
-	  
 	  bam_destroy1(rec);
 	  hts_itr_destroy(iter);
-
-	  // Process counts of this region
-	  for(typename TRgFragmentCount::const_iterator itRg = rcounts.begin(); itRg != rcounts.end(); ++itRg) {
-	    int32_t totalcount = 0;
-	    for(TFragmentCount::const_iterator itFC = itRg->second.begin(); itFC != itRg->second.end(); ++itFC) totalcount += *itFC;
-	    if (totalcount) {
-	      typename TRgBinFragmentCount::iterator itBinGCP = rgGCP.find(itRg->first);
-	      typename TLibraryMap::const_iterator libIt = sampleLib[file_c].find(itRg->first);
-	      uint32_t binsize = libIt->second.avgdist * fragPerBin;
-	      if (rsize < binsize) continue;
-	      int32_t rsum = 0;
-	      int32_t gcsum = 0;
-	      int32_t nsum = 0;
-	      for(uint32_t i = 0; i<binsize; ++i) {
-		rsum += itRg->second[i];
-		gcsum += gc[vRIt->lower() + i];
-		nsum += nrun[vRIt->lower() + i];
-	      }
-	      for(uint32_t i = binsize; i<rsize; ++i) {
-		if (!nsum) {
-		  int32_t bin = (gcsum * 100) / binsize;
-		  if (itBinGCP->second[bin].size() < maxFCObservations) itBinGCP->second[bin].push_back(rsum);
-		}
-		rsum -= itRg->second[i - binsize];
-		gcsum -= gc[vRIt->lower() + i - binsize];
-		nsum -= nrun[vRIt->lower() + i - binsize];
-		rsum += itRg->second[i];
-		gcsum += gc[vRIt->lower() + i];
-		nsum += nrun[vRIt->lower() + i];
-	      }
-	      if (!nsum) {
-		int32_t bin = (gcsum * 100) / binsize;
-		if (itBinGCP->second[bin].size() < maxFCObservations) itBinGCP->second[bin].push_back(rsum);
-	      }
-	    }
-	  }
-	}
-
-	// Calculate GC bias
-	for(TRgBinFragmentCount::iterator itBinGCP = rgGCP.begin(); itBinGCP != rgGCP.end(); ++itBinGCP) {
-	  typename TGCMap::iterator itGCMap = gcBias[file_c].find(itBinGCP->first);
-	  std::vector<int32_t> meds(101, -1);
-	  std::vector<int32_t> validMedCollection;
-	  for(int32_t gci = 0; gci < 101; ++gci) {
-	    if (itBinGCP->second[gci].size() > minFCObservations) {
-	      int32_t med = 0;
-	      getMedian(itBinGCP->second[gci].begin(), itBinGCP->second[gci].end(), med);
-	      validMedCollection.push_back(med);
-	      meds[gci] = med;
-	    }
-	  }
-	  int32_t globalMed = 0;
-	  getMedian(validMedCollection.begin(), validMedCollection.end(), globalMed);
-	  for(int32_t gci = 0; gci < 101; ++gci) {
-	    if (meds[gci] != -1) itGCMap->second.gc[gci] = (double) globalMed / (double) meds[gci];
-	  }
 	}
       }
       if (seq != NULL) free(seq);
     }
     fai_destroy(fai);
-      
+
+    // Calculate GC-Bias
+    for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
+      for(typename TGCMap::iterator itGC = gcBias[file_c].begin(); itGC != gcBias[file_c].end(); ++itGC) {
+	typename TRefGCMap::const_iterator refItGC = refGC[file_c].find(itGC->first);
+	uint32_t totalWindows = 0;
+	uint32_t totalFragments = 0;
+	for(uint32_t i = 0; i < itGC->second.gc.size(); ++i) {
+	  totalWindows += refItGC->second[i];
+	  totalFragments += (uint32_t) itGC->second.gc[i];
+	}
+	for(uint32_t i = 0; i < itGC->second.gc.size(); ++i) {
+	  double winFrac = (double) refItGC->second[i] / (double) totalWindows;
+	  double fragFrac = (double) itGC->second.gc[i] / (double) totalFragments;
+	  if ((winFrac > 0.001) && (fragFrac > 0.001)) itGC->second.gc[i] = winFrac / fragFrac;
+	  else itGC->second.gc[i] = 1.0;
+	}
+      }
+    }
+    
     // Clean-up
     bam_hdr_destroy(hdr);
     for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
@@ -350,36 +339,27 @@ namespace torali
 	      }
 	      typename TGCMap::const_iterator gcIt = gcBias[file_c].find(rG);
 	      int32_t midPoint = rec->core.pos;
-	      int32_t regStart = 0;
-	      int32_t regEnd = 0;
-	      if (gcIt->second.median == 0) {
-		// Single-end library
-		midPoint = rec->core.pos + halfAlignmentLength(rec);
-		regStart = std::max(0, midPoint - 200);
-		regEnd = std::min(midPoint + 200, (int32_t) hdr->target_len[refIndex]);
-	      } else {
+	      if (gcIt->second.median == 0) midPoint = rec->core.pos + halfAlignmentLength(rec);
+	      else {
 		// Paired-end library
 		if (!(rec->core.flag & BAM_FPAIRED)) continue;
 		if (rec->core.flag & BAM_FMUNMAP) continue;
 		if (rec->core.pos < rec->core.mpos) continue;
-
 		int32_t outerISize = rec->core.pos - rec->core.mpos + rec->core.l_qseq;
 		if ((rec->core.tid!=rec->core.mtid) || (getStrandIndependentOrientation(rec->core) != gcIt->second.defaultOrient) || (outerISize < gcIt->second.minNormalISize) || (outerISize > gcIt->second.maxNormalISize)) continue;
 		midPoint = rec->core.pos + outerISize / 2;
-		regStart = rec->core.pos;
-		regEnd = std::min(rec->core.mpos + rec->core.l_qseq, (int32_t) hdr->target_len[refIndex]);
 	      }
-	      int32_t nsum = 0;
-	      int32_t gcsum = 0;
-	      for(int32_t i = regStart; i<regEnd; ++i) {
-		nsum += nrun[i];
-		gcsum += gc[i];
+	      double correctionFactor = 1.0;
+	      if ((midPoint >= gcIt->second.hbin) && (midPoint + gcIt->second.hbin < (int32_t) hdr->target_len[refIndex])) {
+		int32_t nsum = 0;
+		int32_t gcsum = 0;
+		for(int32_t i = midPoint - gcIt->second.hbin; i < midPoint + gcIt->second.hbin; ++i) {
+		  nsum += nrun[i];
+		  gcsum += gc[i];
+		}
+		if (!nsum) correctionFactor = gcIt->second.gc[gcsum];
 	      }
-	      int32_t size = (regEnd - regStart) - nsum;
-	      int32_t gcbin = 50;
-	      if (size > 0) gcbin = (gcsum * 100) / size;
-	      //std::cerr << itInt->first << '-' << itInt->second << ':' << rec->core.pos << ',' << midPoint << ',' << regStart << ',' << regEnd << ',' << gcbin << std::endl;
-	      if ((midPoint >= itInt->first) && (midPoint < itInt->second)) read_sum += gcIt->second.gc[gcbin];
+	      if ((midPoint >= itInt->first) && (midPoint < itInt->second)) read_sum += correctionFactor;
 	      _addBpCounts(rec, itInt->first, itInt->second, bp_sum, bpLevel);
 	    }
 	    bam_destroy1(rec);

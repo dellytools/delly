@@ -261,8 +261,8 @@ coverageRun(Config const& c)
       for(TLibraryMap::const_iterator libIt = sampleLib[file_c].begin(); libIt != sampleLib[file_c].end(); ++libIt) {
 	TGCMap::const_iterator gcIt = gcBias[file_c].find(libIt->first);
 	std::cout << "RG: ID=" << libIt->first << ",ReadSize=" << libIt->second.rs << ",AvgDist=" << libIt->second.avgdist << ",EstCov=" << (double) libIt->second.rs / (double) libIt->second.avgdist << ",MappedAsPair=" << libIt->second.mappedAsPair << ",Median=" << libIt->second.median << ",MAD=" << libIt->second.mad << ",Layout=" << (int) libIt->second.defaultOrient << ",GC-Correction=[";
-	for(int32_t gcbin = 0; gcbin < 100; ++gcbin) std::cout << gcIt->second.gc[gcbin] << ',';
-	std::cout << gcIt->second.gc[100] << "]" << std::endl;
+	for(uint32_t gcbin = 0; gcbin < gcIt->second.gc.size() - 1; ++gcbin) std::cout << gcIt->second.gc[gcbin] << ',';
+	std::cout << gcIt->second.gc[gcIt->second.gc.size() - 1] << "]" << std::endl;
       }
     }
   }
