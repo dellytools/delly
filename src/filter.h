@@ -254,10 +254,6 @@ filterRun(TFilterConfig const& c, TSVType svType) {
 	      }
 	    }
 	  }
-	  std::string alleles;
-	  std::string refAllele = boost::to_upper_copy(std::string(seq + rec->pos, seq + rec->pos + 1));
-	  alleles += refAllele + ",<" + _addID(svType) + ">";
-	  bcf_update_alleles_str(hdr_out, rec, alleles.c_str());
 	  if (c.filter == "somatic") {
 	    float genotypeRatio = (float) (nCount + tCount) / (float) (c.controlSet.size() + c.tumorSet.size());
 	    if ((controlpass) && (tumorpass) && (controlpass == nCount) && (genotypeRatio >= c.ratiogeno)) {
