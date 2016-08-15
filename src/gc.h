@@ -210,11 +210,27 @@ namespace torali
 	  totalWindows += refItGC->second[i];
 	  totalFragments += (uint32_t) itGC->second.gc[i];
 	}
+	uint32_t maxIIdx = 0;
+	double maxFrag = 0;
 	for(uint32_t i = 0; i < itGC->second.gc.size(); ++i) {
+	  if (itGC->second.gc[i] > maxFrag) {
+	    maxIIdx = i;
+	    maxFrag = itGC->second.gc[i];
+	  }
 	  double winFrac = (double) refItGC->second[i] / (double) totalWindows;
 	  double fragFrac = (double) itGC->second.gc[i] / (double) totalFragments;
-	  if ((winFrac > 0.001) && (fragFrac > 0.001)) itGC->second.gc[i] = winFrac / fragFrac;
-	  else itGC->second.gc[i] = 1.0;
+	  if ((winFrac > 0.00001) && (fragFrac > 0.00001)) itGC->second.gc[i] = winFrac / fragFrac;
+	  else itGC->second.gc[i] = -1.0;
+	}
+	double runningVal = 1.0;
+	for(int32_t i = maxIIdx; i >= 0; --i) {
+	  if (itGC->second.gc[i] == -1.0) itGC->second.gc[i] = runningVal;
+	  else runningVal = itGC->second.gc[i];
+	}
+	runningVal = 1.0;
+	for(int32_t i = maxIIdx; i < (int32_t) itGC->second.gc.size(); ++i) {
+	  if (itGC->second.gc[i] == -1.0) itGC->second.gc[i] = runningVal;
+	  else runningVal = itGC->second.gc[i];
 	}
       }
     }
