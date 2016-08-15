@@ -474,8 +474,9 @@ void _outputSelectedIntervals(MergeConfig& c, TGenomeIntervals const& iSelected,
 	      id += padNumber;
 	    }
 	    bcf_update_id(hdr_out, rout, id.c_str());
-	    std::string alleles;
-	    alleles += "N,<" + _addID(svType) + ">";
+	    std::string refAllele = rec[idx]->d.allele[0];
+	    std::string altAllele = rec[idx]->d.allele[1];
+	    std::string alleles = refAllele + "," + altAllele;
 	    bcf_update_alleles_str(hdr_out, rout, alleles.c_str());
 	    int32_t tmppass = bcf_hdr_id2int(hdr_out, BCF_DT_ID, "PASS");
 	    bcf_update_filter(hdr_out, rout, &tmppass, 1);
