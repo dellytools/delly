@@ -354,10 +354,6 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
     bcf_update_info_string(hdr,rec, "CHR2", bamhd->target_name[svIter->chr2]);
     tmpi = svIter->svEnd;
     bcf_update_info_int32(hdr, rec, "END", &tmpi, 1);
-    tmpi = svIter->insLen;
-    bcf_update_info_int32(hdr, rec, "INSLEN", &tmpi, 1);
-    tmpi = svIter->homLen;
-    bcf_update_info_int32(hdr, rec, "HOMLEN", &tmpi, 1);
     tmpi = svIter->peSupport;
     bcf_update_info_int32(hdr, rec, "PE", &tmpi, 1);
     tmpi = svIter->peMapQuality;
@@ -373,6 +369,10 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
     bcf_update_info_int32(hdr, rec, "CIEND", ciend, 2);
     
     if (svIter->precise)  {
+      tmpi = svIter->insLen;
+      bcf_update_info_int32(hdr, rec, "INSLEN", &tmpi, 1);
+      tmpi = svIter->homLen;
+      bcf_update_info_int32(hdr, rec, "HOMLEN", &tmpi, 1);
       tmpi = svIter->srSupport;
       bcf_update_info_int32(hdr, rec, "SR", &tmpi, 1);
       float tmpf = svIter->srAlignQuality;

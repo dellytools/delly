@@ -298,6 +298,8 @@ void _outputSelectedIntervals(MergeConfig& c, TGenomeIntervals const& iSelected,
   bcf_hdr_append(hdr_out, "##INFO=<ID=PRECISE,Number=0,Type=Flag,Description=\"Precise structural variation\">");
   bcf_hdr_append(hdr_out, "##INFO=<ID=SVTYPE,Number=1,Type=String,Description=\"Type of structural variant\">");
   bcf_hdr_append(hdr_out, "##INFO=<ID=SVMETHOD,Number=1,Type=String,Description=\"Type of approach used to detect SV\">");
+  bcf_hdr_append(hdr_out, "##INFO=<ID=INSLEN,Number=1,Type=Integer,Description=\"Predicted length of the insertion\">");
+  bcf_hdr_append(hdr_out, "##INFO=<ID=HOMLEN,Number=1,Type=Integer,Description=\"Predicted microhomology length using a max. edit distance of 2\">");
   // Add reference contigs
   uint32_t numseq = 0;
   typedef std::map<uint32_t, std::string> TReverseMap;
@@ -348,6 +350,10 @@ void _outputSelectedIntervals(MergeConfig& c, TGenomeIntervals const& iSelected,
   int32_t* pe = NULL;
   int32_t nsr = 0;
   int32_t* sr = NULL;
+  int32_t ninslen = 0;
+  int32_t* inslen = NULL;
+  int32_t nhomlen = 0;
+  int32_t* homlen = NULL;
   int32_t nmapq = 0;
   int32_t* mapq = NULL;
   int32_t nct = 0;
@@ -453,6 +459,10 @@ void _outputSelectedIntervals(MergeConfig& c, TGenomeIntervals const& iSelected,
 	    ++show_progress;
 	    
 	    // Fetch missing INFO fields
+	    unsigned int inslenVal = 0;
+	    if (bcf_get_info_int32(hdr[idx], rec[idx], "INSLEN", &inslen, &ninslen) > 0) inslenVal = *inslen;
+	    unsigned int homlenVal = 0;
+	    if (bcf_get_info_int32(hdr[idx], rec[idx], "HOMLEN", &homlen, &nhomlen) > 0) homlenVal = *homlen;
 	    bcf_get_info_int32(hdr[idx], rec[idx], "CIPOS", &cipos, &ncipos);
 	    bcf_get_info_int32(hdr[idx], rec[idx], "CIEND", &ciend, &nciend);
 	    std::string consensus;
@@ -497,6 +507,8 @@ void _outputSelectedIntervals(MergeConfig& c, TGenomeIntervals const& iSelected,
 	    bcf_update_info_int32(hdr_out, rout, "CIPOS", cipos, 2);
 	    bcf_update_info_int32(hdr_out, rout, "CIEND", ciend, 2);
 	    if (precise) {
+	      bcf_update_info_int32(hdr_out, rout, "INSLEN", &inslenVal, 1);
+	      bcf_update_info_int32(hdr_out, rout, "HOMLEN", &homlenVal, 1);
 	      bcf_update_info_int32(hdr_out, rout, "SR", &srSupport, 1);
 	      bcf_update_info_float(hdr_out, rout, "SRQ", &srAlignQuality, 1);	
 	      bcf_update_info_string(hdr_out, rout, "CONSENSUS", consensus.c_str());
@@ -521,6 +533,8 @@ void _outputSelectedIntervals(MergeConfig& c, TGenomeIntervals const& iSelected,
   if (svend != NULL) free(svend);
   if (pe != NULL) free(pe);
   if (sr != NULL) free(sr);
+  if (homlen != NULL) free(homlen);
+  if (inslen != NULL) free(inslen);
   if (mapq != NULL) free(mapq);
   if (ct != NULL) free(ct);
   if (srq != NULL) free(srq);
