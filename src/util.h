@@ -158,6 +158,31 @@ namespace torali
   inline unsigned int halfAlignmentLength(bam1_t* rec) {
     return (alignmentLength(rec) / 2);
   }
+
+  template<typename TLibraryInfo>
+  inline int32_t
+  getHalfFragmentLength(TLibraryInfo const& libInfo) {
+    if (libInfo.median == 0) return libInfo.rs / 2; // Single-end library
+    if ((libInfo.median > (libInfo.rs / 2)) && (libInfo.median < 1000)) return libInfo.median / 2;  // Paired-end library
+    return 150;
+  }
+  
+  template<typename TLibraryInfo>
+  inline bool
+  fragmentMidPoint(bam1_t* rec, TLibraryInfo const& libInfo, int32_t& midPoint) {
+    if (libInfo.hbin != (libInfo.median / 2)) midPoint = rec->core.pos + halfAlignmentLength(rec); // Single-end library or mate-pairs
+    else {
+      // Paired-end library
+      if (!(rec->core.flag & BAM_FPAIRED)) return false;
+      if (rec->core.flag & BAM_FMUNMAP) return false;
+      if (rec->core.pos < rec->core.mpos) return false;
+      int32_t outerISize = rec->core.pos - rec->core.mpos + rec->core.l_qseq;
+      if ((rec->core.tid!=rec->core.mtid) || (getStrandIndependentOrientation(rec->core) != libInfo.defaultOrient) || (outerISize < libInfo.minNormalISize) || (outerISize > libInfo.maxNormalISize)) return false;
+      midPoint = rec->core.pos + outerISize / 2;
+    }
+    return true;
+  }
+    
   
   inline std::size_t hash_pair(bam1_t* rec) {
     std::size_t seed = 0;

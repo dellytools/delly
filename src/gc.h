@@ -73,11 +73,7 @@ namespace torali
     gcBias.resize(c.files.size(), TGCMap());
     for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
       for(typename TLibraryMap::const_iterator libIt = sampleLib[file_c].begin(); libIt != sampleLib[file_c].end(); ++libIt) {
-	int32_t hbin = libIt->second.rs / 2; // Single-end library
-	if (libIt->second.median != 0) { // Paired-end library
-	  if ((libIt->second.median > hbin) && (libIt->second.median < 1000)) hbin = libIt->second.median / 2;
-	  else hbin = 150;
-	}
+	int32_t hbin = getHalfFragmentLength(libIt->second);
 	// Create reference GC counter
 	refGC[file_c].insert(std::make_pair(libIt->first, TRefWC(2 * hbin + 1)));
 	// Create bam counters
@@ -157,7 +153,12 @@ namespace torali
 	    }
 	    if (!nsum) ++refItGC->second[gcsum];
 	  }
-	  hts_itr_t* iter = sam_itr_queryi(idx[file_c], refIndex, vRIt->lower(), vRIt->upper());
+
+	  int32_t movOutside = 0;
+	  for(typename TGCMap::const_iterator itGC = gcBias[file_c].begin(); itGC != gcBias[file_c].end(); ++itGC) {
+	    if (itGC->second.hbin > movOutside) movOutside = itGC->second.hbin;
+	  }
+	  hts_itr_t* iter = sam_itr_queryi(idx[file_c], refIndex, vRIt->lower(), std::min((int32_t) hdr->target_len[refIndex], (int32_t) vRIt->upper() + movOutside));
 	  bam1_t* rec = bam_init1();
 	  while (sam_itr_next(samfile[file_c], iter, rec) >= 0) {
 	    if (rec->core.flag & (BAM_FSECONDARY | BAM_FQCFAIL | BAM_FDUP | BAM_FSUPPLEMENTARY | BAM_FUNMAP)) continue;
@@ -171,25 +172,18 @@ namespace torali
 	      rG = std::string(rg);
 	    }
 	    typename TGCMap::iterator gcIt = gcBias[file_c].find(rG);
-	    int32_t midPoint = rec->core.pos;
-	    if (gcIt->second.median == 0) midPoint = rec->core.pos + halfAlignmentLength(rec); // Single-end library
-	    else {
-	      // Paired-end library
-	      if (!(rec->core.flag & BAM_FPAIRED)) continue;
-	      if (rec->core.flag & BAM_FMUNMAP) continue;
-	      if (rec->core.pos < rec->core.mpos) continue;
-	      int32_t outerISize = rec->core.pos - rec->core.mpos + rec->core.l_qseq;
-	      if ((rec->core.tid!=rec->core.mtid) || (getStrandIndependentOrientation(rec->core) != gcIt->second.defaultOrient) || (outerISize < gcIt->second.minNormalISize) || (outerISize > gcIt->second.maxNormalISize)) continue;
-	      midPoint = rec->core.pos + outerISize / 2;
-	    }
-	    if ((midPoint >= (int32_t) vRIt->lower() + gcIt->second.hbin) && (midPoint + gcIt->second.hbin < (int32_t) vRIt->upper())) {
-	      int32_t nsum = 0;
-	      int32_t gcsum = 0;
-	      for(int32_t i = midPoint - gcIt->second.hbin; i < midPoint + gcIt->second.hbin; ++i) {
-		nsum += nrun[i];
-		gcsum += gc[i];
+	    int32_t midPoint = 0;
+	    if (!fragmentMidPoint(rec, gcIt->second, midPoint)) continue;
+	    if ((midPoint >= (int32_t) vRIt->lower()) && (midPoint < (int32_t) vRIt->upper())) {
+	      if ((midPoint >= gcIt->second.hbin) && (midPoint + gcIt->second.hbin < (int32_t) hdr->target_len[refIndex])) {
+		int32_t nsum = 0;
+		int32_t gcsum = 0;
+		for(int32_t i = midPoint - gcIt->second.hbin; i < midPoint + gcIt->second.hbin; ++i) {
+		  nsum += nrun[i];
+		  gcsum += gc[i];
+		}
+		if (!nsum) ++gcIt->second.gc[gcsum];
 	      }
-	      if (!nsum) ++gcIt->second.gc[gcsum];
 	    }
 	  }
 	  bam_destroy1(rec);
@@ -339,8 +333,12 @@ namespace torali
 	    // Count reads / aligned base-pairs
 	    double bp_sum = 0;
 	    double read_sum = 0;
-	    
-	    hts_itr_t* iter = sam_itr_queryi(idx[file_c], refIndex, itInt->first, itInt->second);
+
+	    int32_t movOutside = 0;
+	    for(typename TGCMap::const_iterator itGC = gcBias[file_c].begin(); itGC != gcBias[file_c].end(); ++itGC) {
+	      if (itGC->second.hbin > movOutside) movOutside = itGC->second.hbin;
+	    }	    
+	    hts_itr_t* iter = sam_itr_queryi(idx[file_c], refIndex, itInt->first, std::min((int32_t) hdr->target_len[refIndex], itInt->second + movOutside));
 	    bam1_t* rec = bam_init1();
 	    while (sam_itr_next(samfile[file_c], iter, rec) >= 0) {
 	      if (rec->core.flag & (BAM_FSECONDARY | BAM_FQCFAIL | BAM_FDUP | BAM_FSUPPLEMENTARY | BAM_FUNMAP)) continue;
@@ -354,17 +352,8 @@ namespace torali
 		rG = std::string(rg);
 	      }
 	      typename TGCMap::const_iterator gcIt = gcBias[file_c].find(rG);
-	      int32_t midPoint = rec->core.pos;
-	      if (gcIt->second.median == 0) midPoint = rec->core.pos + halfAlignmentLength(rec);
-	      else {
-		// Paired-end library
-		if (!(rec->core.flag & BAM_FPAIRED)) continue;
-		if (rec->core.flag & BAM_FMUNMAP) continue;
-		if (rec->core.pos < rec->core.mpos) continue;
-		int32_t outerISize = rec->core.pos - rec->core.mpos + rec->core.l_qseq;
-		if ((rec->core.tid!=rec->core.mtid) || (getStrandIndependentOrientation(rec->core) != gcIt->second.defaultOrient) || (outerISize < gcIt->second.minNormalISize) || (outerISize > gcIt->second.maxNormalISize)) continue;
-		midPoint = rec->core.pos + outerISize / 2;
-	      }
+	      int32_t midPoint = 0;
+	      if (!fragmentMidPoint(rec, gcIt->second, midPoint)) continue;
 	      double correctionFactor = 1.0;
 	      if ((midPoint >= gcIt->second.hbin) && (midPoint + gcIt->second.hbin < (int32_t) hdr->target_len[refIndex])) {
 		int32_t nsum = 0;
