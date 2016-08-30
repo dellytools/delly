@@ -18,7 +18,9 @@ Alternatively, you can build Delly2 from source. Delly2 dependencies are include
 
 `make all`
 
-There is a Delly discussion group [delly-users](http://groups.google.com/d/forum/delly-users) for usage and installation questions and a dockerized [delly](https://registry.hub.docker.com/u/trausch/delly/). Some additional Delly2 tools are briefly described in the [wiki](https://github.com/tobiasrausch/delly/wiki). 
+There is a Delly discussion group [delly-users](http://groups.google.com/d/forum/delly-users) for usage and installation questions and a dockerized [delly](https://registry.hub.docker.com/u/trausch/delly/).
+
+[![install with bioconda](https://img.shields.io/badge/install%20with-bioconda-brightgreen.svg?style=flat-square)](http://bioconda.github.io/recipes/delly/README.html)
 
 
 Delly2 multi-threading mode
