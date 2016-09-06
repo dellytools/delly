@@ -1,14 +1,4 @@
-library(ggplot2)
-library(reshape2)
-library(scales)
 library(optparse)
-library(VariantAnnotation)
-
-gg_color_hue = function(n) {
-  hues=seq(15,375,length=n+1)
-  hcl(h=hues, l=65, c=100)[1:n]
-}
-
 
 optl = list(
      	    make_option(c("-f", "--file"), type="character", default=NULL, help="input coverage file"),
@@ -25,7 +15,16 @@ if (is.null(opt$file)) {
    stop("Input coverage file is missing!", call.=FALSE)
 }
 
-  
+
+library(ggplot2)
+library(reshape2)
+library(scales)
+library(VariantAnnotation)
+
+gg_color_hue = function(n) {
+  hues=seq(15,375,length=n+1)
+  hcl(h=hues, l=65, c=100)[1:n]
+}
 
 cov = read.table(opt$file, header=T)
 col = 5
