@@ -46,7 +46,6 @@ Contact: Tobias Rausch (rausch@embl.de)
 #include <boost/tokenizer.hpp>
 #include <boost/progress.hpp>
 
-#include <htslib/faidx.h>
 #include <htslib/sam.h>
 #include <htslib/vcf.h>
 #include <htslib/tbx.h>
@@ -84,7 +83,6 @@ struct FilterConfig {
   std::set<std::string> tumorSet;
   std::set<std::string> controlSet;
   boost::filesystem::path outfile;
-  boost::filesystem::path genome;
   boost::filesystem::path samplefile;
   boost::filesystem::path vcffile;
 };
@@ -96,10 +94,6 @@ filterRun(TFilterConfig const& c, TSVType svType) {
 
   // Load bcf file
   htsFile* ifile = hts_open(c.vcffile.string().c_str(), "r");
-  hts_idx_t* bcfidx = NULL;
-  tbx_t* tbx = NULL;
-  if (hts_get_format(ifile)->format==vcf) tbx = tbx_index_load(c.vcffile.string().c_str());
-  else bcfidx = bcf_index_load(c.vcffile.string().c_str());
   bcf_hdr_t* hdr = bcf_hdr_read(ifile);
 
   // Open output VCF file
@@ -143,175 +137,146 @@ filterRun(TFilterConfig const& c, TSVType svType) {
   bool germline = false;
   if (c.filter == "germline") germline = true;
 
-  // Parse genome
-  faidx_t* fai = fai_load(c.genome.string().c_str());
+  // Parse BCF
   boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
   std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Filtering VCF/BCF file" << std::endl;
-  boost::progress_display show_progress( faidx_nseq(fai) );
+  bcf1_t* rec = bcf_init1();
+  while (bcf_read(ifile, hdr, rec) == 0) {
+    bcf_unpack(rec, BCF_UN_INFO);
 
-  for(int32_t refIndex=0; refIndex < faidx_nseq(fai); ++refIndex) {
-    ++show_progress;
-    std::string seqname(faidx_iseq(fai, refIndex));
-    int32_t chrid = bcf_hdr_name2id(hdr, seqname.c_str());
-    if (chrid < 0) continue;
-    int32_t seqlen = -1;
-    char* seq = faidx_fetch_seq(fai, seqname.c_str(), 0, faidx_seq_len(fai, seqname.c_str()), &seqlen);
-    hts_itr_t* itervcf = NULL;
-    if (tbx) itervcf = tbx_itr_queryi(tbx, chrid, 0, seqlen);
-    else itervcf = bcf_itr_queryi(bcfidx, chrid, 0, seqlen);
-    if (itervcf != NULL) {
-      bcf1_t* rec = bcf_init1();
-      while (true) {
-	int32_t ret = 0;
-	if (tbx) {
-	  kstring_t str = {0, 0, NULL};
-	  ret = tbx_itr_next(ifile, tbx, itervcf, &str);
-	  if (ret >= 0) vcf_parse1(&str, hdr, rec);
-	  if (str.s != NULL) free(str.s);
-	} else ret = bcf_itr_next(ifile, itervcf, rec);
-	if (ret < 0) break;
-	bcf_unpack(rec, BCF_UN_INFO);
+    // Check SV type
+    bcf_get_info_string(hdr, rec, "SVTYPE", &svt, &nsvt);
+    if ((svt != NULL) && (std::string(svt) != _addID(svType))) continue;
 
-	// Check SV type
-	bcf_get_info_string(hdr, rec, "SVTYPE", &svt, &nsvt);
-	if ((svt != NULL) && (std::string(svt) != _addID(svType))) continue;
-
-	// Check size and PASS
-	bcf_get_info_int32(hdr, rec, "END", &svend, &nsvend);
-	bool pass = true;
-	if (c.filterForPass) pass = (bcf_has_filter(hdr, rec, const_cast<char*>("PASS"))==1);
-	int32_t svlen = 1;
-	if (svend != NULL) svlen = *svend - rec->pos;
-	if ((pass) && (((std::string(svt) == "TRA") || ((svlen >= c.minsize) && (svlen <= c.maxsize))))) {
-	  // Check genotypes
-	  bcf_unpack(rec, BCF_UN_ALL);
-	  bool precise = false;
-	  if (bcf_get_info_flag(hdr, rec, "PRECISE", 0, 0) > 0) precise = true;
-	  bcf_get_format_int32(hdr, rec, "GT", &gt, &ngt);
-	  if (_getFormatType(hdr, "GQ") == BCF_HT_INT) bcf_get_format_int32(hdr, rec, "GQ", &gq, &ngq);
-	  else if (_getFormatType(hdr, "GQ") == BCF_HT_REAL) bcf_get_format_float(hdr, rec, "GQ", &gqf, &ngq);
-	  bcf_get_format_int32(hdr, rec, "RC", &rc, &nrc);
-	  if (_isKeyPresent(hdr, "RCL")) bcf_get_format_int32(hdr, rec, "RCL", &rcl, &nrcl);
-	  if (_isKeyPresent(hdr, "RCR")) bcf_get_format_int32(hdr, rec, "RCR", &rcr, &nrcr);
-	  bcf_get_format_int32(hdr, rec, "DV", &dv, &ndv);
-	  bcf_get_format_int32(hdr, rec, "DR", &dr, &ndr);
-	  bcf_get_format_int32(hdr, rec, "RV", &rv, &nrv);
-	  bcf_get_format_int32(hdr, rec, "RR", &rr, &nrr);
-	  std::vector<float> rcraw;
-	  std::vector<float> rcControl;
-	  std::vector<float> rcTumor;
-	  std::vector<float> rcHet;
-	  std::vector<float> rRefVar;
-	  std::vector<float> rAltVar;
-	  std::vector<float> gqRef;
-	  std::vector<float> gqAlt;
-	  uint32_t nCount = 0;
-	  uint32_t tCount = 0;
-	  uint32_t controlpass = 0;
-	  uint32_t tumorpass = 0;
-	  int32_t ac[2];
-	  ac[0] = 0;
-	  ac[1] = 0;
-	  for (int i = 0; i < bcf_hdr_nsamples(hdr); ++i) {
-	    if ((bcf_gt_allele(gt[i*2]) != -1) && (bcf_gt_allele(gt[i*2 + 1]) != -1)) {
-	      int gt_type = bcf_gt_allele(gt[i*2]) + bcf_gt_allele(gt[i*2 + 1]);
-	      ++ac[bcf_gt_allele(gt[i*2])];
-	      ++ac[bcf_gt_allele(gt[i*2 + 1])];
-	      if ((germline) || (c.controlSet.find(hdr->samples[i]) != c.controlSet.end())) {
-		// Control or population genomics
-		++nCount;
-		if (gt_type == 0) {
-		  rcraw.push_back(rc[i]);
-		  if (_getFormatType(hdr, "GQ") == BCF_HT_INT) gqRef.push_back(gq[i]);
-		  else if (_getFormatType(hdr, "GQ") == BCF_HT_REAL) gqRef.push_back(gqf[i]);
-		  if ((rcl != NULL) && (rcr != NULL) && (rcl[i] + rcr[i] != 0)) rcControl.push_back((float) rc[i] / ((float) (rcl[i] + rcr[i])));
-		  else rcControl.push_back(rc[i]);
-		  float rVar = 0;
-		  if (!precise) rVar = (float) dv[i] / (float) (dr[i] + dv[i]);
-		  else rVar = (float) rv[i] / (float) (rr[i] + rv[i]);
-		  rRefVar.push_back(rVar);
-		  if (rVar <= c.controlcont) ++controlpass;
-		} else if ((germline) && (gt_type == 1)) {
-		  if (_getFormatType(hdr, "GQ") == BCF_HT_INT) gqAlt.push_back(gq[i]);
-		  else if (_getFormatType(hdr, "GQ") == BCF_HT_REAL) gqAlt.push_back(gqf[i]);
-		  if ((rcl != NULL) && (rcr != NULL) && (rcl[i] + rcr[i] != 0)) rcHet.push_back((float) rc[i] / ((float) (rcl[i] + rcr[i])));
-		  else rcHet.push_back(rc[i]);
-		  float rVar = 0;
-		  if (!precise) rVar = (float) dv[i] / (float) (dr[i] + dv[i]);
-		  else rVar = (float) rv[i] / (float) (rr[i] + rv[i]);
-		  rAltVar.push_back(rVar);
-		}
-	      } else if ((!germline) && (c.tumorSet.find(hdr->samples[i]) != c.tumorSet.end())) {
-		// Tumor
-		++tCount;
-		if ((rcl != NULL) && (rcr != NULL) && (rcl[i] + rcr[i] != 0)) rcTumor.push_back((float) rc[i] / ((float) (rcl[i] + rcr[i])));
-		else rcTumor.push_back(rc[i]);
-		if (!precise) {
-		  if ((((float) dv[i] / (float) (dr[i] + dv[i])) >= c.altaf) && (dr[i] + dv[i] >= c.coverage)) ++tumorpass;
-		} else {
-		  if ((((float) rv[i] / (float) (rr[i] + rv[i])) >= c.altaf) && (rr[i] + rv[i] >= c.coverage)) ++tumorpass;
-		}
-	      }
+    // Check size and PASS
+    bcf_get_info_int32(hdr, rec, "END", &svend, &nsvend);
+    bool pass = true;
+    if (c.filterForPass) pass = (bcf_has_filter(hdr, rec, const_cast<char*>("PASS"))==1);
+    int32_t svlen = 1;
+    if (svend != NULL) svlen = *svend - rec->pos;
+    if ((pass) && (((std::string(svt) == "TRA") || ((svlen >= c.minsize) && (svlen <= c.maxsize))))) {
+      // Check genotypes
+      bcf_unpack(rec, BCF_UN_ALL);
+      bool precise = false;
+      if (bcf_get_info_flag(hdr, rec, "PRECISE", 0, 0) > 0) precise = true;
+      bcf_get_format_int32(hdr, rec, "GT", &gt, &ngt);
+      if (_getFormatType(hdr, "GQ") == BCF_HT_INT) bcf_get_format_int32(hdr, rec, "GQ", &gq, &ngq);
+      else if (_getFormatType(hdr, "GQ") == BCF_HT_REAL) bcf_get_format_float(hdr, rec, "GQ", &gqf, &ngq);
+      bcf_get_format_int32(hdr, rec, "RC", &rc, &nrc);
+      if (_isKeyPresent(hdr, "RCL")) bcf_get_format_int32(hdr, rec, "RCL", &rcl, &nrcl);
+      if (_isKeyPresent(hdr, "RCR")) bcf_get_format_int32(hdr, rec, "RCR", &rcr, &nrcr);
+      bcf_get_format_int32(hdr, rec, "DV", &dv, &ndv);
+      bcf_get_format_int32(hdr, rec, "DR", &dr, &ndr);
+      bcf_get_format_int32(hdr, rec, "RV", &rv, &nrv);
+      bcf_get_format_int32(hdr, rec, "RR", &rr, &nrr);
+      std::vector<float> rcraw;
+      std::vector<float> rcControl;
+      std::vector<float> rcTumor;
+      std::vector<float> rcHet;
+      std::vector<float> rRefVar;
+      std::vector<float> rAltVar;
+      std::vector<float> gqRef;
+      std::vector<float> gqAlt;
+      uint32_t nCount = 0;
+      uint32_t tCount = 0;
+      uint32_t controlpass = 0;
+      uint32_t tumorpass = 0;
+      int32_t ac[2];
+      ac[0] = 0;
+      ac[1] = 0;
+      for (int i = 0; i < bcf_hdr_nsamples(hdr); ++i) {
+	if ((bcf_gt_allele(gt[i*2]) != -1) && (bcf_gt_allele(gt[i*2 + 1]) != -1)) {
+	  int gt_type = bcf_gt_allele(gt[i*2]) + bcf_gt_allele(gt[i*2 + 1]);
+	  ++ac[bcf_gt_allele(gt[i*2])];
+	  ++ac[bcf_gt_allele(gt[i*2 + 1])];
+	  if ((germline) || (c.controlSet.find(hdr->samples[i]) != c.controlSet.end())) {
+	    // Control or population genomics
+	    ++nCount;
+	    if (gt_type == 0) {
+	      rcraw.push_back(rc[i]);
+	      if (_getFormatType(hdr, "GQ") == BCF_HT_INT) gqRef.push_back(gq[i]);
+	      else if (_getFormatType(hdr, "GQ") == BCF_HT_REAL) gqRef.push_back(gqf[i]);
+	      if ((rcl != NULL) && (rcr != NULL) && (rcl[i] + rcr[i] != 0)) rcControl.push_back((float) rc[i] / ((float) (rcl[i] + rcr[i])));
+	      else rcControl.push_back(rc[i]);
+	      float rVar = 0;
+	      if (!precise) rVar = (float) dv[i] / (float) (dr[i] + dv[i]);
+	      else rVar = (float) rv[i] / (float) (rr[i] + rv[i]);
+	      rRefVar.push_back(rVar);
+	      if (rVar <= c.controlcont) ++controlpass;
+	    } else if ((germline) && (gt_type == 1)) {
+	      if (_getFormatType(hdr, "GQ") == BCF_HT_INT) gqAlt.push_back(gq[i]);
+	      else if (_getFormatType(hdr, "GQ") == BCF_HT_REAL) gqAlt.push_back(gqf[i]);
+	      if ((rcl != NULL) && (rcr != NULL) && (rcl[i] + rcr[i] != 0)) rcHet.push_back((float) rc[i] / ((float) (rcl[i] + rcr[i])));
+	      else rcHet.push_back(rc[i]);
+	      float rVar = 0;
+	      if (!precise) rVar = (float) dv[i] / (float) (dr[i] + dv[i]);
+	      else rVar = (float) rv[i] / (float) (rr[i] + rv[i]);
+	      rAltVar.push_back(rVar);
 	    }
-	  }
-	  if (c.filter == "somatic") {
-	    float genotypeRatio = (float) (nCount + tCount) / (float) (c.controlSet.size() + c.tumorSet.size());
-	    if ((controlpass) && (tumorpass) && (controlpass == nCount) && (genotypeRatio >= c.ratiogeno)) {
-	      float rccontrolmed = 0;
-	      getMedian(rcControl.begin(), rcControl.end(), rccontrolmed);
-	      float rctumormed = 0;
-	      getMedian(rcTumor.begin(), rcTumor.end(), rctumormed);
-	      float rdRatio = 1;
-	      if (rccontrolmed != 0) rdRatio = rctumormed/rccontrolmed;
-	      _remove_info_tag(hdr_out, rec, "RDRATIO");
-	      bcf_update_info_float(hdr_out, rec, "RDRATIO", &rdRatio, 1);
-	      _remove_info_tag(hdr_out, rec, "SOMATIC");
-	      bcf_update_info_flag(hdr_out, rec, "SOMATIC", NULL, 1);
-	      bcf_write1(ofile, hdr_out, rec);
-	    }
-	  } else if (c.filter == "germline") {
-	    float genotypeRatio = (float) (nCount + tCount) / (float) (bcf_hdr_nsamples(hdr));
-	    float rrefvarpercentile = 0;
-	    if (!rRefVar.empty()) getPercentile(rRefVar, 0.9, rrefvarpercentile);
-	    float raltvarmed = 0;
-	    if (!rAltVar.empty()) getMedian(rAltVar.begin(), rAltVar.end(), raltvarmed);
-	    float rccontrolmed = 0;
-	    if (!rcControl.empty()) getMedian(rcControl.begin(), rcControl.end(), rccontrolmed);
-	    float rchetmed = 0;
-	    if (!rcHet.empty()) getMedian(rcHet.begin(), rcHet.end(), rchetmed);
-	    float rdRatio = 1;
-	    if (rccontrolmed != 0) rdRatio = rchetmed/rccontrolmed;
-	    float gqaltmed = 0;
-	    if (!gqAlt.empty()) getMedian(gqAlt.begin(), gqAlt.end(), gqaltmed);
-	    float gqrefmed = 0;
-	    if (!gqRef.empty()) getMedian(gqRef.begin(), gqRef.end(), gqrefmed);
-	    float rcrawmed = 0;
-	    if (!rcraw.empty()) getMedian(rcraw.begin(), rcraw.end(), rcrawmed);
-	    float af = (float) ac[1] / (float) (ac[0] + ac[1]);
-
-	    //std::cerr << bcf_hdr_id2name(hdr, rec->rid) << '\t' << (rec->pos + 1) << '\t' << *svend << '\t' << rec->d.id << '\t' << svlen << '\t' << ac[1] << '\t' << af << '\t' << genotypeRatio << '\t' << std::string(svt) << '\t' << precise << '\t' << rrefvarpercentile << '\t' << raltvarmed << '\t' << gqrefmed << '\t' << gqaltmed << '\t' << rdRatio << '\t' << rcrawmed << std::endl;
-
-	    if ((af>0) && (gqaltmed >= c.gq) && (gqrefmed >= c.gq) && (raltvarmed >= c.altaf) && (genotypeRatio >= c.ratiogeno)) {
-	      if ((std::string(svt)=="DEL") && (rdRatio > c.rddel)) continue;
-	      if ((std::string(svt)=="DUP") && (rdRatio < c.rddup)) continue;
-	      if ((std::string(svt)!="DEL") && (std::string(svt)!="DUP") && (rrefvarpercentile > 0)) continue;
-	      _remove_info_tag(hdr_out, rec, "RDRATIO");
-	      bcf_update_info_float(hdr_out, rec, "RDRATIO", &rdRatio, 1);
-	      bcf_write1(ofile, hdr_out, rec);
-
-
+	  } else if ((!germline) && (c.tumorSet.find(hdr->samples[i]) != c.tumorSet.end())) {
+	    // Tumor
+	    ++tCount;
+	    if ((rcl != NULL) && (rcr != NULL) && (rcl[i] + rcr[i] != 0)) rcTumor.push_back((float) rc[i] / ((float) (rcl[i] + rcr[i])));
+	    else rcTumor.push_back(rc[i]);
+	    if (!precise) {
+	      if ((((float) dv[i] / (float) (dr[i] + dv[i])) >= c.altaf) && (dr[i] + dv[i] >= c.coverage)) ++tumorpass;
+	    } else {
+	      if ((((float) rv[i] / (float) (rr[i] + rv[i])) >= c.altaf) && (rr[i] + rv[i] >= c.coverage)) ++tumorpass;
 	    }
 	  }
 	}
       }
-      bcf_destroy(rec);
-    }
-    if (tbx) tbx_itr_destroy(itervcf);
-    else hts_itr_destroy(itervcf);
+      if (c.filter == "somatic") {
+	float genotypeRatio = (float) (nCount + tCount) / (float) (c.controlSet.size() + c.tumorSet.size());
+	if ((controlpass) && (tumorpass) && (controlpass == nCount) && (genotypeRatio >= c.ratiogeno)) {
+	  float rccontrolmed = 0;
+	  getMedian(rcControl.begin(), rcControl.end(), rccontrolmed);
+	  float rctumormed = 0;
+	  getMedian(rcTumor.begin(), rcTumor.end(), rctumormed);
+	  float rdRatio = 1;
+	  if (rccontrolmed != 0) rdRatio = rctumormed/rccontrolmed;
+	  _remove_info_tag(hdr_out, rec, "RDRATIO");
+	  bcf_update_info_float(hdr_out, rec, "RDRATIO", &rdRatio, 1);
+	  _remove_info_tag(hdr_out, rec, "SOMATIC");
+	  bcf_update_info_flag(hdr_out, rec, "SOMATIC", NULL, 1);
+	  bcf_write1(ofile, hdr_out, rec);
+	}
+      } else if (c.filter == "germline") {
+	float genotypeRatio = (float) (nCount + tCount) / (float) (bcf_hdr_nsamples(hdr));
+	float rrefvarpercentile = 0;
+	if (!rRefVar.empty()) getPercentile(rRefVar, 0.9, rrefvarpercentile);
+	float raltvarmed = 0;
+	if (!rAltVar.empty()) getMedian(rAltVar.begin(), rAltVar.end(), raltvarmed);
+	float rccontrolmed = 0;
+	if (!rcControl.empty()) getMedian(rcControl.begin(), rcControl.end(), rccontrolmed);
+	float rchetmed = 0;
+	if (!rcHet.empty()) getMedian(rcHet.begin(), rcHet.end(), rchetmed);
+	float rdRatio = 1;
+	if (rccontrolmed != 0) rdRatio = rchetmed/rccontrolmed;
+	float gqaltmed = 0;
+	if (!gqAlt.empty()) getMedian(gqAlt.begin(), gqAlt.end(), gqaltmed);
+	float gqrefmed = 0;
+	if (!gqRef.empty()) getMedian(gqRef.begin(), gqRef.end(), gqrefmed);
+	float rcrawmed = 0;
+	if (!rcraw.empty()) getMedian(rcraw.begin(), rcraw.end(), rcrawmed);
+	float af = (float) ac[1] / (float) (ac[0] + ac[1]);
+	
+	//std::cerr << bcf_hdr_id2name(hdr, rec->rid) << '\t' << (rec->pos + 1) << '\t' << *svend << '\t' << rec->d.id << '\t' << svlen << '\t' << ac[1] << '\t' << af << '\t' << genotypeRatio << '\t' << std::string(svt) << '\t' << precise << '\t' << rrefvarpercentile << '\t' << raltvarmed << '\t' << gqrefmed << '\t' << gqaltmed << '\t' << rdRatio << '\t' << rcrawmed << std::endl;
 
-    if (seqlen) free(seq);
+	if ((af>0) && (gqaltmed >= c.gq) && (gqrefmed >= c.gq) && (raltvarmed >= c.altaf) && (genotypeRatio >= c.ratiogeno)) {
+	  if ((std::string(svt)=="DEL") && (rdRatio > c.rddel)) continue;
+	  if ((std::string(svt)=="DUP") && (rdRatio < c.rddup)) continue;
+	  if ((std::string(svt)!="DEL") && (std::string(svt)!="DUP") && (rrefvarpercentile > 0)) continue;
+	  _remove_info_tag(hdr_out, rec, "RDRATIO");
+	  bcf_update_info_float(hdr_out, rec, "RDRATIO", &rdRatio, 1);
+	  bcf_write1(ofile, hdr_out, rec);
+	  
+	  
+	}
+      }
+    }
   }
-  fai_destroy(fai);
+  bcf_destroy(rec);
 
   // Clean-up
   if (svend != NULL) free(svend);
@@ -336,8 +301,6 @@ filterRun(TFilterConfig const& c, TSVType svType) {
 
   // Close VCF
   bcf_hdr_destroy(hdr);
-  if (bcfidx) hts_idx_destroy(bcfidx);
-  if (tbx) tbx_destroy(tbx);
   bcf_close(ifile);
 
   // End
@@ -358,7 +321,6 @@ int filter(int argc, char **argv) {
     ("type,t", boost::program_options::value<std::string>(&c.svType)->default_value("DEL"), "SV type (DEL, DUP, INV, TRA, INS)")
     ("filter,f", boost::program_options::value<std::string>(&c.filter)->default_value("somatic"), "Filter mode (somatic, germline)")
     ("outfile,o", boost::program_options::value<boost::filesystem::path>(&c.outfile)->default_value("sv.bcf"), "Filtered SV BCF output file")
-    ("genome,g", boost::program_options::value<boost::filesystem::path>(&c.genome), "Genomic reference file")
     ("altaf,a", boost::program_options::value<float>(&c.altaf)->default_value(0.2), "min. fractional ALT support")
     ("minsize,m", boost::program_options::value<int32_t>(&c.minsize)->default_value(500), "min. SV size")
     ("maxsize,n", boost::program_options::value<int32_t>(&c.maxsize)->default_value(500000000), "max. SV size")
@@ -403,7 +365,7 @@ int filter(int argc, char **argv) {
   // Check command line arguments
   if ((vm.count("help")) || (!vm.count("input-file"))) {
     std::cout << std::endl;
-    std::cout << "Usage: delly " << argv[0] << " [OPTIONS] -g <genome.fa> <input.bcf>" << std::endl;
+    std::cout << "Usage: delly " << argv[0] << " [OPTIONS] <input.bcf>" << std::endl;
     std::cout << visible_options << "\n";
     return 0;
   }
@@ -411,12 +373,6 @@ int filter(int argc, char **argv) {
   // Filter for PASS
   if (vm.count("pass")) c.filterForPass = true;
   else c.filterForPass = false;
-
-  // Check reference
-  if (!(boost::filesystem::exists(c.genome) && boost::filesystem::is_regular_file(c.genome) && boost::filesystem::file_size(c.genome))) {
-    std::cerr << "Reference file is missing: " << c.genome.string() << std::endl;
-    return 1;
-  }
 
   // Population Genomics
   if (c.filter == "germline") c.controlcont = 1.0;
