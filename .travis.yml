@@ -1,5 +1,37 @@
+# Delly build script
+
 language: cpp
-script: make all
-compiler:
-  - gcc
-  - clang
+
+sudo: false
+
+matrix:
+  include:
+    - env: MYCC="gcc-4.9" MYCXX="g++-4.9"
+      os: linux
+      addons: &gcc49
+        apt:
+          sources:
+            - ubuntu-toolchain-r-test
+          packages:
+            - g++-4.9
+
+    - env: MYCC="gcc-5" MYCXX="g++-5"
+      os: linux
+      addons: &gcc5
+        apt:
+          sources:
+            - ubuntu-toolchain-r-test
+          packages:
+            - g++-5
+
+    - env: MYCC="clang" MYCXX="clang++"
+      os: osx
+
+before_script:
+  - export CXX=$MYCXX
+  - export CC=$MYCC
+  - $CXX --version
+  - cmake --version
+
+script:
+  - make all
