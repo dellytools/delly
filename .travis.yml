@@ -6,14 +6,14 @@ sudo: false
 
 matrix:
   include:
-    - env: MYCC="gcc-4.9" MYCXX="g++-4.9"
+    - env: MYCC="gcc-4.8" MYCXX="g++-4.8"
       os: linux
-      addons: &gcc49
+      addons: &gcc48
         apt:
           sources:
             - ubuntu-toolchain-r-test
           packages:
-            - g++-4.9
+            - g++-4.8
 
     - env: MYCC="gcc-5" MYCXX="g++-5"
       os: linux
@@ -24,6 +24,15 @@ matrix:
           packages:
             - g++-5
 
+    - env: MYCC="gcc-6" MYCXX="g++-6"
+      os: linux
+      addons: &gcc6
+        apt:
+          sources:
+            - ubuntu-toolchain-r-test
+          packages:
+            - g++-6
+
     - env: MYCC="clang" MYCXX="clang++"
       os: osx
 
@@ -31,7 +40,6 @@ before_script:
   - export CXX=$MYCXX
   - export CC=$MYCC
   - $CXX --version
-  - cmake --version
 
 script:
   - make all
