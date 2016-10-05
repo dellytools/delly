@@ -55,7 +55,6 @@ RUN cd /opt \
     && touch .bcftools .htslib .boost \
     && make all \
     && install -p /opt/delly/src/delly /usr/local/bin/ \
-    && install -p /opt/delly/src/stats /usr/local/bin/ \
     && install -p /opt/delly/src/cov /usr/local/bin/
 
 # install python variant filtering dependencies
