@@ -49,7 +49,7 @@ all:   	$(TARGETS)
 	cd src/htslib && make && make lib-static && cd ../../ && touch .htslib
 
 .bcftools: $(HTSLIBSOURCES)
-	cd src/bcftools && make all && cd ../../ && touch .bcftools
+	cd src/bcftools && make && cd ../../ && touch .bcftools
 
 .boost: $(BOOSTSOURCES)
 	cd src/modular-boost && ./bootstrap.sh --prefix=${PWD}/src/modular-boost --without-icu --with-libraries=iostreams,filesystem,system,program_options,date_time && ./b2 && ./b2 headers && cd ../../ && touch .boost

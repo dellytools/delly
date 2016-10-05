@@ -40,12 +40,12 @@ RUN cd /opt \
 RUN cd /opt \
     && git clone https://github.com/samtools/bcftools.git \
     && cd /opt/bcftools \
-    && make all \
+    && make \
     && make install
 RUN cd /opt \
     && git clone https://github.com/samtools/samtools.git \
     && cd /opt/samtools \
-    && make all \
+    && make \
     && make install
 RUN cd /opt \
     && git clone https://github.com/tobiasrausch/delly.git \
