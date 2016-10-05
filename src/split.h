@@ -605,6 +605,10 @@ namespace torali
       std::string altPart = precChar;
       if (ad.cEnd > ad.cStart + 1) altPart += sv.consensus.substr(ad.cStart, (ad.cEnd - ad.cStart) - 1);
       sv.alleles = refPart + "," + altPart;
+    } else {
+      std::string precChar = svRefStr.substr(ad.rStart - 1, 1);
+      std::string refPart = precChar;
+      sv.alleles = refPart + ",<" + _addID(svType) + ">";
     }
     
     return true;
