@@ -6,10 +6,6 @@
 # Binaries
 src/delly
 src/cov
-src/extract
-src/iover
-src/stats
-src/annotate
 
 # Compiled Object files
 *.slo

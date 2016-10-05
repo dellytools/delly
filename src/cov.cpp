@@ -51,7 +51,6 @@ Contact: Tobias Rausch (rausch@embl.de)
 #include <omp.h>
 #endif
 
-#include "gc.h"
 #include "tags.h"
 #include "coverage.h"
 #include "version.h"
@@ -69,9 +68,7 @@ struct Config {
   bool avg_flag;
   bool inclCigar;
   bool hasIntervalFile;
-  bool hasInvariantRegions;
   boost::filesystem::path outfile;
-  boost::filesystem::path invariant;
   boost::filesystem::path int_file;
   boost::filesystem::path genome;
   std::vector<boost::filesystem::path> files;
@@ -86,58 +83,6 @@ coverageRun(Config const& c)
   samFile* samfile = sam_open(c.files[0].string().c_str(), "r");
   bam_hdr_t* hdr = sam_hdr_read(samfile);
 
-  // GC Correction
-  typedef boost::unordered_map<std::string, LibraryInfo> TLibraryMap;
-  typedef std::vector<TLibraryMap> TSampleLibrary;
-  TSampleLibrary sampleLib(c.files.size());
-  typedef boost::unordered_map<std::string, GCBias> TGCMap;
-  typedef std::vector<TGCMap> TSampleGC;
-  TSampleGC gcBias(c.files.size());
-  if (c.hasInvariantRegions) {
-    typedef boost::icl::interval_set<uint32_t> TChrIntervals;
-    typedef TChrIntervals::interval_type TIVal;
-    typedef std::vector<TChrIntervals> TRegionsGenome;
-    TRegionsGenome invariantRegions;
-    invariantRegions.resize(hdr->n_targets);
-    std::ifstream file(c.invariant.string().c_str(), std::ios_base::in | std::ios_base::binary);
-    boost::iostreams::filtering_streambuf<boost::iostreams::input> dataIn;
-    dataIn.push(boost::iostreams::gzip_decompressor());
-    dataIn.push(file);
-    std::istream instream(&dataIn);
-    std::string chrFromFile;
-    while(std::getline(instream, chrFromFile)) {
-      typedef boost::tokenizer< boost::char_separator<char> > Tokenizer;
-      boost::char_separator<char> sep(" \t,;");
-      Tokenizer tokens(chrFromFile, sep);
-      Tokenizer::iterator tokIter = tokens.begin();
-      if (tokIter!=tokens.end()) {
-	std::string chrName = *tokIter++;
-	int32_t tid = bam_name2id(hdr, chrName.c_str());
-	if (tid >= 0) {
-	  if (tokIter!=tokens.end()) {
-	    int32_t start = boost::lexical_cast<int32_t>(*tokIter++);
-	    int32_t end = boost::lexical_cast<int32_t>(*tokIter++);
-	    invariantRegions[tid].insert(TIVal::right_open(start, end));
-	  }
-	}
-      }
-    }
-    file.close();
-
-    // Debug code
-    //for(int32_t refIndex = 0; refIndex < hdr->n_targets; ++refIndex) {
-    //for(typename TChrIntervals::const_iterator vRIt = invariantRegions[refIndex].begin(); vRIt != invariantRegions[refIndex].end(); ++vRIt) {
-    //std::cerr << std::string(hdr->target_name[refIndex]) << "\t" << vRIt->lower() << "\t" << vRIt->upper() << std::endl;
-    //}
-    //}
-
-    // Create library objects
-    getLibraryParams(c, invariantRegions, sampleLib);
-
-    // Estimate GC bias
-    gcBiasPerRG(c, invariantRegions, sampleLib, gcBias);
-  }
-  
   // Read all SV intervals
   typedef std::vector<CovRecord> TSVs;
   TSVs svs;
@@ -206,17 +151,8 @@ coverageRun(Config const& c)
   TSampleSVReadCount countMap;
 
   // Annotate coverage
-  if (c.hasInvariantRegions) {
-    if (c.inclCigar) annotateCoverageGCAware(c, gcBias, svs, countMap, BpLevelType<BpLevelCount>());
-    else annotateCoverageGCAware(c, gcBias, svs, countMap, BpLevelType<NoBpLevelCount>());
-  } else {
-    if (c.inclCigar) annotateCoverage(c.files, c.minGenoQual, svs, countMap, BpLevelType<BpLevelCount>());
-    else annotateCoverage(c.files, c.minGenoQual, svs, countMap, BpLevelType<NoBpLevelCount>());
-  }
-
-
-
-
+  if (c.inclCigar) annotateCoverage(c.files, c.minGenoQual, svs, countMap, BpLevelType<BpLevelCount>());
+  else annotateCoverage(c.files, c.minGenoQual, svs, countMap, BpLevelType<NoBpLevelCount>());
   
   // Output file
   boost::iostreams::filtering_ostream dataOut;
@@ -254,19 +190,6 @@ coverageRun(Config const& c)
   bam_hdr_destroy(hdr);
   sam_close(samfile);
 
-  // Output Statistics
-  if (c.hasInvariantRegions) {
-    for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
-      std::cout << "Sample: " << c.sampleName[file_c] << std::endl;
-      for(TLibraryMap::const_iterator libIt = sampleLib[file_c].begin(); libIt != sampleLib[file_c].end(); ++libIt) {
-	TGCMap::const_iterator gcIt = gcBias[file_c].find(libIt->first);
-	std::cout << "RG: ID=" << libIt->first << ",ReadSize=" << libIt->second.rs << ",AvgDist=" << libIt->second.avgdist << ",EstCov=" << (double) libIt->second.rs / (double) libIt->second.avgdist << ",MappedAsPair=" << libIt->second.mappedAsPair << ",Median=" << libIt->second.median << ",MAD=" << libIt->second.mad << ",Layout=" << (int) libIt->second.defaultOrient << ",GC-Correction=[";
-	for(uint32_t gcbin = 0; gcbin < gcIt->second.gc.size() - 1; ++gcbin) std::cout << gcIt->second.gc[gcbin] << ',';
-	std::cout << gcIt->second.gc[gcIt->second.gc.size() - 1] << "]" << std::endl;
-      }
-    }
-  }
-  
   // End
   boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
   std::cout << '[' << boost::posix_time::to_simple_string(now) << "] Done." << std::endl;;
@@ -298,13 +221,6 @@ int main(int argc, char **argv) {
     ("interval-file,i", boost::program_options::value<boost::filesystem::path>(&c.int_file), "interval file, used if present")
     ;
 
-  // Define interval options
-  boost::program_options::options_description gc("GC content correction (slow)");
-  gc.add_options()
-    ("invariant,r", boost::program_options::value<boost::filesystem::path>(&c.invariant), "invariant regions")
-    ;
-
-
   // Define hidden options
   boost::program_options::options_description hidden("Hidden options");
   hidden.add_options()
@@ -317,9 +233,9 @@ int main(int argc, char **argv) {
 
   // Set the visibility
   boost::program_options::options_description cmdline_options;
-  cmdline_options.add(generic).add(window).add(gc).add(hidden);
+  cmdline_options.add(generic).add(window).add(hidden);
   boost::program_options::options_description visible_options;
-  visible_options.add(generic).add(window).add(gc);
+  visible_options.add(generic).add(window);
   boost::program_options::variables_map vm;
   boost::program_options::store(boost::program_options::command_line_parser(argc, argv).options(cmdline_options).positional(pos_args).run(), vm);
   boost::program_options::notify(vm);
@@ -436,15 +352,6 @@ int main(int argc, char **argv) {
   } else c.hasIntervalFile = false;
 
 
-  // Check invariant regions
-  if (vm.count("invariant")) {
-    if (!(boost::filesystem::exists(c.invariant) && boost::filesystem::is_regular_file(c.invariant) && boost::filesystem::file_size(c.invariant))) {
-      std::cerr << "Invariant regions file is missing: " << c.invariant.string() << std::endl;
-      return 1;
-    }
-    c.hasInvariantRegions = true;
-  } else c.hasInvariantRegions = false;
-  
   // Show cmd
   boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
   std::cout << '[' << boost::posix_time::to_simple_string(now) << "] ";
