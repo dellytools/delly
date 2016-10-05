@@ -6,6 +6,7 @@ MAINTAINER Tobias Rausch rausch@embl.de
 # install required packages
 RUN apt-get update && apt-get install -y \
     ant \
+    asciidoc \
     build-essential \
     cmake \
     g++ \
@@ -41,6 +42,7 @@ RUN cd /opt \
     && git clone https://github.com/samtools/bcftools.git \
     && cd /opt/bcftools \
     && make \
+    && make docs \
     && make install
 RUN cd /opt \
     && git clone https://github.com/samtools/samtools.git \
