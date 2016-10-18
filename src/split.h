@@ -191,7 +191,7 @@ namespace torali
   template<typename TConfig, typename TSeq, typename TSVRecord, typename TRef>
   inline std::string
   _getSVRef(TConfig const& c, TSeq const* const ref, TSVRecord const& svRec, TRef const, SVType<DeletionTag>) {
-    if ((c.indels) && ((svRec.svEnd - svRec.svStart) <= c.indelsize)) {
+    if ((c.indels) && (svRec.peSupport == 0)) {
       return boost::to_upper_copy(std::string(ref + svRec.svStartBeg, ref + svRec.svEndEnd));
     } else {
       return boost::to_upper_copy(std::string(ref + svRec.svStartBeg, ref + svRec.svStartEnd)) + boost::to_upper_copy(std::string(ref + svRec.svEndBeg, ref + svRec.svEndEnd));
@@ -301,7 +301,7 @@ namespace torali
   template<typename TConfig, typename TString, typename TSvRecord, typename TAlignDescriptor, typename TPosition>
   inline bool
   _coordTransform(TConfig const& c, TString const&, TSvRecord const& sv, TAlignDescriptor const& ad, TPosition& finalGapStart, TPosition& finalGapEnd, SVType<DeletionTag>) {
-    if ((c.indels) && ((sv.svEnd - sv.svStart) <= c.indelsize)) {
+    if ((c.indels) && (sv.peSupport == 0)) {
       finalGapStart = sv.svStartBeg + ad.rStart;
       finalGapEnd = sv.svStartBeg + ad.rEnd;
     } else {
@@ -598,7 +598,7 @@ namespace torali
     sv.homLen=std::max(0, ad.homLeft + ad.homRight - 2);
     sv.wiggle=std::max(ad.homLeft, ad.homRight);
     // Set breakpoint, quality and REF & ALT alleles
-    if ((c.indels) && ((sv.svEnd - sv.svStart) <= c.indelsize)) {
+    if ((c.indels) && (sv.peSupport == 0)) {
       std::string precChar = svRefStr.substr(ad.rStart - 1, 1);
       std::string refPart = precChar;
       if (ad.rEnd > ad.rStart + 1) refPart += svRefStr.substr(ad.rStart, (ad.rEnd - ad.rStart) - 1);

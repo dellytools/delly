@@ -301,13 +301,14 @@ namespace torali {
     int32_t svEndEnd;
     int32_t svStart;
     int32_t svEnd;
+    int32_t peSupport;
     uint8_t ct;
     int32_t chr;
     int32_t chr2;
     std::string part1;
 
-    Breakpoint() : svStartBeg(0), svStartEnd(0), svEndBeg(0), svEndEnd(0), svStart(0), svEnd(0), ct(0), chr(0), chr2(0) {}
-    Breakpoint(StructuralVariantRecord const& sv) : svStartBeg(sv.svStart), svStartEnd(sv.svStart), svEndBeg(sv.svEnd), svEndEnd(sv.svEnd), svStart(sv.svStart), svEnd(sv.svEnd), ct(sv.ct), chr(sv.chr), chr2(sv.chr2) {}
+    Breakpoint() : svStartBeg(0), svStartEnd(0), svEndBeg(0), svEndEnd(0), svStart(0), svEnd(0), peSupport(0), ct(0), chr(0), chr2(0) {}
+    Breakpoint(StructuralVariantRecord const& sv) : svStartBeg(sv.svStart), svStartEnd(sv.svStart), svEndBeg(sv.svEnd), svEndEnd(sv.svEnd), svStart(sv.svStart), svEnd(sv.svEnd), peSupport(sv.peSupport), ct(sv.ct), chr(sv.chr), chr2(sv.chr2) {}
     
   };
 
