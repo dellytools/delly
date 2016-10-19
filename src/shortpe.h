@@ -321,6 +321,9 @@ namespace torali
 	    if (!alignConsensus(c, hdr, seq, sndSeq, *svIt, svType)) {
 	      svIt->consensus = "";
 	      svIt->srSupport = 0;
+	    } else {
+	      // Update REF & ALT alleles because of split-read refinement (except for the small InDels)
+	      if ((svIt->peSupport != 0) || (!c.indels)) svIt->alleles = boost::to_upper_copy(std::string(seq + svIt->svStart - 1, seq + svIt->svStart)) + ",<" + _addID(svType) + ">";
 	    }
 	  }
 	}
