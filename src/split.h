@@ -583,12 +583,7 @@ namespace torali
     // Get the start and end of the structural variant
     unsigned int finalGapStart = 0;
     unsigned int finalGapEnd = 0;
-    if (c.technology == 0) {
-      if (!_coordTransform(c, svRefStr, bp, ad, finalGapStart, finalGapEnd, svType)) return false;
-    } else if (c.technology == 1) {
-      finalGapStart = bp.svStartBeg + ad.rStart - 1;
-      finalGapEnd = bp.svStartBeg + ad.rEnd - 1;
-    }
+    if (!_coordTransform(c, svRefStr, bp, ad, finalGapStart, finalGapEnd, svType)) return false;
 	
     sv.precise=true;
     sv.svStart=finalGapStart;

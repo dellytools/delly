@@ -59,7 +59,6 @@ Contact: Tobias Rausch (rausch@embl.de)
 #include "junction.h"
 #include "msa.h"
 #include "split.h"
-#include "pacbio.h"
 #include "json.h"
 
 #include <sys/types.h>

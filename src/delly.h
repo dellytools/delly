@@ -59,7 +59,6 @@ Contact: Tobias Rausch (rausch@embl.de)
 #include "junction.h"
 #include "msa.h"
 #include "split.h"
-#include "pacbio.h"
 #include "json.h"
 #include "shortpe.h"
 
@@ -74,7 +73,6 @@ namespace torali
 
 // Config arguments
 struct Config {
-  unsigned short technology;  // 0 = illumina, 1=pacbio
   unsigned short minMapQual;
   unsigned short minGenoQual;
   unsigned short madCutoff;
@@ -340,10 +338,8 @@ inline int dellyRun(Config const& c, TSVType svType) {
   getLibraryParams(c, validRegions, sampleLib);
 
   // SV Discovery
-  if (!c.hasVcfFile) {
-    if (c.technology == 0) shortPE(c, validRegions, svs, sampleLib, svType);
-    else if (c.technology == 1) longPacBio(c, validRegions, svs, sampleLib, svType);
-  } else {
+  if (!c.hasVcfFile) shortPE(c, validRegions, svs, sampleLib, svType);
+  else {
     // Read SV records from input file
     if (c.format == "json.gz") jsonParse(c, hdr, svs, svType);
     else vcfParse(c, hdr, svs, svType);
@@ -367,12 +363,7 @@ inline int dellyRun(Config const& c, TSVType svType) {
   typedef std::vector<TReadQual> TSVSpanningMap;
   typedef std::vector<TSVSpanningMap> TSampleSVSpanningMap;
   TSampleSVSpanningMap spanCountMap;
-  if (c.technology == 0) annotateSpanningCoverage(c, sampleLib, svs, spanCountMap, svType);
-  else {
-    spanCountMap.resize(c.files.size());
-    uint32_t lastId = svs.size();
-    for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) spanCountMap[file_c].resize(2 * lastId, TReadQual());
-  }
+  annotateSpanningCoverage(c, sampleLib, svs, spanCountMap, svType);
 
   // Annotate coverage
   typedef std::vector<ReadCount> TSVReadCount;
@@ -422,7 +413,6 @@ int delly(int argc, char **argv) {
     ("genome,g", boost::program_options::value<boost::filesystem::path>(&c.genome), "genome fasta file")
     ("exclude,x", boost::program_options::value<boost::filesystem::path>(&c.exclude), "file with regions to exclude")
     ("outfile,o", boost::program_options::value<boost::filesystem::path>(&c.outfile)->default_value("sv.bcf"), "SV BCF output file")
-    ("technology,e", boost::program_options::value<unsigned short>(&c.technology)->default_value(0), "technology (0=illumina, 1=pacbio)")
     ;
 
   boost::program_options::options_description disc("Discovery options");
@@ -572,25 +562,10 @@ int delly(int argc, char **argv) {
   }
 
   // Run main program
-  if (c.technology == 0) {
-    c.aliscore = DnaScore<int>(5, -4, -10, -1);
-    c.flankQuality = 0.95;
-    c.minimumFlankSize = 13;
-    c.indelsize = 500;
-  } else if (c.technology == 1) {
-    //c.aliscore = DnaScore<int>(2, -5, -2, -1);
-    c.aliscore = DnaScore<int>(5, -4, -2, -1);
-    c.flankQuality = 0.8;
-    c.minimumFlankSize = 13;
-    c.indelsize = 1000;
-    if (c.svType != "DEL") {
-      std::cerr << "PacBio SV analysis not yet supported." << std::endl;
-      return 1;
-    }
-  } else {
-    std::cerr << "Technology " << c.technology << " is not supported by Delly." << std::endl;
-    return 1;
-  }
+  c.aliscore = DnaScore<int>(5, -4, -10, -1);
+  c.flankQuality = 0.95;
+  c.minimumFlankSize = 13;
+  c.indelsize = 500;
   if (c.svType == "DEL") return dellyRun(c, SVType<DeletionTag>());
   else if (c.svType == "DUP") return dellyRun(c, SVType<DuplicationTag>());
   else if (c.svType == "INV") return dellyRun(c, SVType<InversionTag>());
