@@ -162,7 +162,7 @@ dpeRun(DoublePEConfig const& c)
 
       // Fetch carriers
       if ((*svend - rec->pos) < c.svsize) {
-	typename SVCarrier::TBitSet car(bcf_hdr_nsamples(hdr));
+	SVCarrier::TBitSet car(bcf_hdr_nsamples(hdr));
 	for (int i = 0; i < bcf_hdr_nsamples(hdr); ++i) {
 	  if ((bcf_gt_allele(gt[i*2]) != -1) && (bcf_gt_allele(gt[i*2 + 1]) != -1)) {
 	    int gt_type = bcf_gt_allele(gt[i*2]) + bcf_gt_allele(gt[i*2 + 1]);
@@ -210,13 +210,13 @@ dpeRun(DoublePEConfig const& c)
 		++jpc[bestJP];
 	      }
 	    }
-	    for(typename TScoreMap::iterator scmIt = scm.begin(); scmIt != scm.end(); ++scmIt) {
+	    for(TScoreMap::iterator scmIt = scm.begin(); scmIt != scm.end(); ++scmIt) {
 	      int32_t ip = scmIt->first.first;
 	      int32_t jp = scmIt->first.second;
 	      float cc = scmIt->second;
 	      bool savePair = true;
 	      if (jpc[jp] > 1) {
-		for(typename TScoreMap::iterator scmSec = scm.begin(); scmSec != scm.end(); ++scmSec) {
+		for(TScoreMap::iterator scmSec = scm.begin(); scmSec != scm.end(); ++scmSec) {
 		  if ((ip != scmSec->first.first) && (jp == scmSec->first.second)) {
 		    if ((cc < scmSec->second) || ((cc == scmSec->second) && (ip > scmSec->first.first))) {
 		      savePair = false;
