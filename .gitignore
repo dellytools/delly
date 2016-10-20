@@ -6,6 +6,7 @@
 # Binaries
 src/delly
 src/cov
+src/dpe
 
 # Compiled Object files
 *.slo

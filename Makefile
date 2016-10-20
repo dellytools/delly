@@ -41,7 +41,7 @@ BOOSTSOURCES = $(wildcard src/modular-boost/libs/iostreams/include/boost/iostrea
 DELLYSOURCES = $(wildcard src/*.h) $(wildcard src/*.cpp)
 
 # Targets
-TARGETS = .htslib .bcftools .boost src/delly src/cov
+TARGETS = .htslib .bcftools .boost src/delly src/cov src/dpe
 
 all:   	$(TARGETS)
 
@@ -58,6 +58,9 @@ src/delly: .htslib .bcftools .boost $(DELLYSOURCES)
 	$(CXX) $(CXXFLAGS) $@.cpp -o $@ $(LDFLAGS)
 
 src/cov: .htslib .bcftools .boost $(DELLYSOURCES)
+	$(CXX) $(CXXFLAGS) $@.cpp -o $@ $(LDFLAGS)
+
+src/dpe: .htslib .bcftools .boost $(DELLYSOURCES)
 	$(CXX) $(CXXFLAGS) $@.cpp -o $@ $(LDFLAGS)
 
 clean:
