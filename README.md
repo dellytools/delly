@@ -5,9 +5,7 @@ Delly2
 [![Build Status](https://travis-ci.org/tobiasrausch/delly.svg?branch=master)](https://travis-ci.org/tobiasrausch/delly)
 
 
-Delly2 is an integrated structural variant prediction method that can discover, genotype and visualize deletions, tandem duplications, inversions and translocations
-at single-nucleotide resolution in short-read massively parallel sequencing data. It uses paired-ends and split-reads to sensitively and accurately
-delineate genomic rearrangements throughout the genome. Structural variants can be visualized using [Delly-maze](https://github.com/tobiasrausch/delly/tree/master/vis/maze/) and [Delly-suave](https://github.com/tobiasrausch/delly/tree/master/vis/suave/).
+Delly2 is an integrated structural variant prediction method that can discover, genotype and visualize deletions, tandem duplications, inversions and translocations at single-nucleotide resolution in short-read massively parallel sequencing data. It uses paired-ends and split-reads to sensitively and accurately delineate genomic rearrangements throughout the genome. Structural variants can be visualized using [Delly-maze](https://github.com/tobiasrausch/delly/tree/master/vis/maze/) and [Delly-suave](https://github.com/tobiasrausch/delly/tree/master/vis/suave/).
 
 
 Installing Delly2
