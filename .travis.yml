@@ -33,9 +33,6 @@ matrix:
           packages:
             - g++-6
 
-    - env: MYCC="clang" MYCXX="clang++"
-      os: osx
-
 before_script:
   - export CXX=$MYCXX
   - export CC=$MYCC
