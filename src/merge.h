@@ -121,6 +121,8 @@ void _fillIntervalMap(MergeConfig const& c, TGenomeIntervals& iScore, TContigMap
 
     int32_t nsvend = 0;
     int32_t* svend = NULL;
+    int32_t ninslen = 0;
+    int32_t* inslen = NULL;
     int32_t npe = 0;
     int32_t* pe = NULL;
     int32_t nsr = 0;
@@ -158,8 +160,16 @@ void _fillIntervalMap(MergeConfig const& c, TGenomeIntervals& iScore, TContigMap
       uint32_t svEnd = svStart + 1;
       if (bcf_get_info_int32(hdr, rec, "END", &svend, &nsvend) > 0) svEnd = *svend;
 
-      // Parse INFO fields
-      if ((std::string(svt) != "TRA") && ((svEnd - svStart < c.minsize) || (svEnd - svStart > c.maxsize))) continue;
+      // SV size check 
+      if (std::string(svt) != "TRA") {
+	if (std::string(svt) == "INS") {
+	  unsigned int inslenVal = 0;
+	  if (bcf_get_info_int32(hdr, rec, "INSLEN", &inslen, &ninslen) > 0) inslenVal = *inslen;
+	  if ((inslenVal < c.minsize) || (inslenVal > c.maxsize)) continue;
+	} else {
+	  if ((svEnd - svStart < c.minsize) || (svEnd - svStart > c.maxsize)) continue;
+	}
+      }
       bool precise = false;
       if (bcf_get_info_flag(hdr, rec, "PRECISE", 0, 0) > 0) precise=true;
       if ((c.filterForPrecise) && (!precise)) continue;
@@ -203,14 +213,15 @@ void _fillIntervalMap(MergeConfig const& c, TGenomeIntervals& iScore, TContigMap
       // Store the interval
       iScore[tid].push_back(IntervalScore(svStart, svEnd, score));
     }
-    free(svend);
-    free(pe);
-    free(sr);
-    free(mapq);
-    free(ct);
-    free(srq);
-    free(svt);
-    free(chr2);
+    if (svend != NULL) free(svend);
+    if (inslen != NULL) free(inslen);
+    if (pe != NULL) free(pe);
+    if (sr != NULL) free(sr);
+    if (mapq != NULL) free(mapq);
+    if (ct != NULL) free(ct);
+    if (srq != NULL) free(srq);
+    if (svt != NULL) free(svt);
+    if (chr2 != NULL) free(chr2);
     bcf_hdr_destroy(hdr);
     bcf_close(ifile);
     bcf_destroy(rec);
@@ -405,9 +416,11 @@ void _outputSelectedIntervals(MergeConfig& c, TGenomeIntervals const& iSelected,
 	uint32_t svStart = rec[idx]->pos;
 	uint32_t svEnd = svStart + 1;
 	if (bcf_get_info_int32(hdr[idx], rec[idx], "END", &svend, &nsvend) > 0) svEnd = *svend;
+	unsigned int inslenVal = 0;
+	if (bcf_get_info_int32(hdr[idx], rec[idx], "INSLEN", &inslen, &ninslen) > 0) inslenVal = *inslen;
 
 	// Parse INFO fields
-	if ((std::string(svt) == "TRA") || ((std::string(svt) != "TRA") && (svEnd - svStart >= c.minsize) && (svEnd - svStart <= c.maxsize))) {
+	if ((std::string(svt) == "TRA") || ((std::string(svt) == "INS") && (inslenVal >= c.minsize) && (inslenVal <= c.maxsize)) || ((std::string(svt) != "TRA") && (std::string(svt) != "INS") && (svEnd - svStart >= c.minsize) && (svEnd - svStart <= c.maxsize))) {
 	  unsigned int peSupport = 0;
 	  if (bcf_get_info_int32(hdr[idx], rec[idx], "PE", &pe, &npe) > 0) peSupport = *pe;
 	  unsigned int srSupport = 0;
@@ -462,8 +475,6 @@ void _outputSelectedIntervals(MergeConfig& c, TGenomeIntervals const& iSelected,
 	    ++show_progress;
 	    
 	    // Fetch missing INFO fields
-	    unsigned int inslenVal = 0;
-	    if (bcf_get_info_int32(hdr[idx], rec[idx], "INSLEN", &inslen, &ninslen) > 0) inslenVal = *inslen;
 	    unsigned int homlenVal = 0;
 	    if (bcf_get_info_int32(hdr[idx], rec[idx], "HOMLEN", &homlen, &nhomlen) > 0) homlenVal = *homlen;
 	    bcf_get_info_int32(hdr[idx], rec[idx], "CIPOS", &cipos, &ncipos);
