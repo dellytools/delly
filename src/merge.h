@@ -293,6 +293,7 @@ void _outputSelectedIntervals(MergeConfig& c, TGenomeIntervals const& iSelected,
   bcf_hdr_append(hdr_out, "##INFO=<ID=SR,Number=1,Type=Integer,Description=\"Split-read support\">");
   bcf_hdr_append(hdr_out, "##INFO=<ID=SRQ,Number=1,Type=Float,Description=\"Split-read consensus alignment quality\">");
   bcf_hdr_append(hdr_out, "##INFO=<ID=CONSENSUS,Number=1,Type=String,Description=\"Split-read consensus sequence\">");
+  bcf_hdr_append(hdr_out, "##INFO=<ID=CE,Number=1,Type=Float,Description=\"Consensus sequence entropy\">");
   bcf_hdr_append(hdr_out, "##INFO=<ID=CT,Number=1,Type=String,Description=\"Paired-end signature induced connection type\">");
   bcf_hdr_append(hdr_out, "##INFO=<ID=IMPRECISE,Number=0,Type=Flag,Description=\"Imprecise structural variation\">");
   bcf_hdr_append(hdr_out, "##INFO=<ID=PRECISE,Number=0,Type=Flag,Description=\"Precise structural variation\">");
@@ -368,6 +369,8 @@ void _outputSelectedIntervals(MergeConfig& c, TGenomeIntervals const& iSelected,
   int32_t* cipos = NULL;
   int32_t nciend = 0;
   int32_t* ciend = NULL;
+  int32_t nce = 0;
+  float* ce = NULL;
   int32_t ncons = 0;
   char* cons = NULL;
   while (allEOF < c.files.size()) {
@@ -466,7 +469,9 @@ void _outputSelectedIntervals(MergeConfig& c, TGenomeIntervals const& iSelected,
 	    bcf_get_info_int32(hdr[idx], rec[idx], "CIPOS", &cipos, &ncipos);
 	    bcf_get_info_int32(hdr[idx], rec[idx], "CIEND", &ciend, &nciend);
 	    std::string consensus;
+	    float ceVal = 0;
 	    if (precise) {
+	      if (bcf_get_info_float(hdr[idx], rec[idx], "CE", &ce, &nce) > 0) ceVal = *ce;
 	      bcf_get_info_string(hdr[idx], rec[idx], "CONSENSUS", &cons, &ncons);
 	      consensus = boost::to_upper_copy(std::string(cons));
 	    }
@@ -512,6 +517,7 @@ void _outputSelectedIntervals(MergeConfig& c, TGenomeIntervals const& iSelected,
 	      bcf_update_info_int32(hdr_out, rout, "SR", &srSupport, 1);
 	      bcf_update_info_float(hdr_out, rout, "SRQ", &srAlignQuality, 1);	
 	      bcf_update_info_string(hdr_out, rout, "CONSENSUS", consensus.c_str());
+	      bcf_update_info_float(hdr_out, rout, "CE", &ceVal, 1);
 	    }
 	
 	    // Write record
@@ -542,6 +548,7 @@ void _outputSelectedIntervals(MergeConfig& c, TGenomeIntervals const& iSelected,
   if (chr2 != NULL) free(chr2);
   if (cipos != NULL) free(cipos);
   if (ciend != NULL) free(ciend);
+  if (ce != NULL) free(ce);
   if (cons != NULL) free(cons);
 
   // Clean-up
