@@ -115,6 +115,8 @@ filterRun(TFilterConfig const& c, TSVType svType) {
   int32_t* svend = NULL;
   int32_t nsvt = 0;
   char* svt = NULL;
+  int32_t ninslen = 0;
+  int32_t* inslen = NULL;
   int ngt = 0;
   int32_t* gt = NULL;
   int ngq = 0;
@@ -154,7 +156,9 @@ filterRun(TFilterConfig const& c, TSVType svType) {
     if (c.filterForPass) pass = (bcf_has_filter(hdr, rec, const_cast<char*>("PASS"))==1);
     int32_t svlen = 1;
     if (svend != NULL) svlen = *svend - rec->pos;
-    if ((pass) && (((std::string(svt) == "TRA") || ((svlen >= c.minsize) && (svlen <= c.maxsize))))) {
+    int32_t inslenVal = 0;
+    if (bcf_get_info_int32(hdr, rec, "INSLEN", &inslen, &ninslen) > 0) inslenVal = *inslen;
+    if ((pass) && ((std::string(svt) == "TRA") || ((std::string(svt) == "INS") && (inslenVal >= c.minsize) && (inslenVal <= c.maxsize)) || ((std::string(svt) != "TRA") && (std::string(svt) != "INS") && (svlen >= c.minsize) && (svlen <= c.maxsize)))) {
       // Check genotypes
       bcf_unpack(rec, BCF_UN_ALL);
       bool precise = false;
@@ -281,6 +285,7 @@ filterRun(TFilterConfig const& c, TSVType svType) {
   // Clean-up
   if (svend != NULL) free(svend);
   if (svt != NULL) free(svt);
+  if (inslen != NULL) free(inslen);
   if (gt != NULL) free(gt);
   if (gq != NULL) free(gq);
   if (gqf != NULL) free(gqf);
