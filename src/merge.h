@@ -276,9 +276,6 @@ void _outputSelectedIntervals(MergeConfig& c, TGenomeIntervals const& iSelected,
 
   boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
   std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Filtering SVs" << std::endl;
-  int32_t totalSelectedSVs = 0;
-  for(uint32_t i = 0; i<iSelected.size(); ++i) totalSelectedSVs += iSelected[i].size();
-  boost::progress_display show_progress( totalSelectedSVs );
 
   // Open output VCF file
   htsFile *fp = hts_open(c.outfile.string().c_str(), "wb");
@@ -467,13 +464,11 @@ void _outputSelectedIntervals(MergeConfig& c, TGenomeIntervals const& iSelected,
 	      if (gis[tid].find(std::make_pair(svStart, svEnd)) == gis[tid].end()) {
 		foundInterval = true;
 		gis[tid].insert(std::make_pair(svStart, svEnd));
-	      } else ++show_progress;
+	      }
 	      break;
 	    }
 	  }
 	  if (foundInterval) {
-	    ++show_progress;
-	    
 	    // Fetch missing INFO fields
 	    unsigned int homlenVal = 0;
 	    if (bcf_get_info_int32(hdr[idx], rec[idx], "HOMLEN", &homlen, &nhomlen) > 0) homlenVal = *homlen;
