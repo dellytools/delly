@@ -169,8 +169,9 @@ vcfParse(TConfig const& c, bam_hdr_t* hd, std::vector<TStructuralVariantRecord>&
     bcf_unpack(rec, BCF_UN_INFO);
 
     // Correct SV type
-    bcf_get_info_string(hdr, rec, "SVTYPE", &svt, &nsvt);
-    if (std::string(svt) != _addID(svType)) continue;
+    if (bcf_get_info_string(hdr, rec, "SVTYPE", &svt, &nsvt) > 0) {
+      if (std::string(svt) != _addID(svType)) continue;
+    } else continue;
 
     // Fill SV record
     StructuralVariantRecord svRec;
@@ -187,7 +188,10 @@ vcfParse(TConfig const& c, bam_hdr_t* hd, std::vector<TStructuralVariantRecord>&
     if (bcf_get_info_flag(hdr, rec, "PRECISE", 0, 0) > 0) svRec.precise=true;
     else svRec.precise = false;
     if (bcf_get_info_int32(hdr, rec, "PE", &pe, &npe) > 0) svRec.peSupport = *pe;
-    else svRec.peSupport = 0;
+    else {
+      if (svRec.precise) svRec.peSupport = 0;
+      else svRec.peSupport = 2;
+    }
     if (bcf_get_info_int32(hdr, rec, "INSLEN", &inslen, &ninslen) > 0) svRec.insLen = *inslen;
     else svRec.insLen = 0;
     if (bcf_get_info_int32(hdr, rec, "HOMLEN", &homlen, &nhomlen) > 0) svRec.homLen = *homlen;
@@ -205,6 +209,13 @@ vcfParse(TConfig const& c, bam_hdr_t* hd, std::vector<TStructuralVariantRecord>&
     if (bcf_get_info_float(hdr, rec, "SRQ", &srq, &nsrq) > 0) svRec.srAlignQuality = (double) *srq;
     else svRec.srAlignQuality = 0;
     if (bcf_get_info_string(hdr, rec, "CT", &ct, &nct) > 0) svRec.ct = _decodeOrientation(std::string(ct));
+    else {
+      if (_addID(svType) == "DEL") svRec.ct = _decodeOrientation("3to5");
+      else if (_addID(svType) == "DUP") svRec.ct = _decodeOrientation("5to3");
+      else if (_addID(svType) == "INS") svRec.ct = _decodeOrientation("NtoN");
+      else if (_addID(svType) == "INV") svRec.ct = _decodeOrientation("3to3"); // Insufficient
+      else if (_addID(svType) == "TRA") svRec.ct = _decodeOrientation("3to5"); // Insufficient
+    }
     if (bcf_get_info_string(hdr, rec, "CHR2", &chr2, &nchr2) > 0) {
       std::string chr2Name = std::string(chr2);
       svRec.chr2 = bam_name2id(hd, chr2Name.c_str());
