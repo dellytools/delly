@@ -20,7 +20,7 @@ Alternatively, you can build Delly2 from source. Delly2 dependencies are include
 
 `make all`
 
-There is a Delly discussion group [delly-users](http://groups.google.com/d/forum/delly-users) for usage and installation questions and a dockerized [delly](https://registry.hub.docker.com/u/trausch/delly/).
+There is a Delly discussion group [delly-users](http://groups.google.com/d/forum/delly-users) for usage and installation questions and a dockerized [delly](https://registry.hub.docker.com/u/dellytools/delly/).
 
 
 
@@ -117,7 +117,7 @@ Bam files need to be sorted and index. If multiple libraries are present for a s
 There is a delly discussion group [delly-users](http://groups.google.com/d/forum/delly-users).
 
 * Docker support?            
-There is a dockerized delly available [here](https://registry.hub.docker.com/u/trausch/delly/).
+There is a dockerized delly available [here](https://registry.hub.docker.com/u/dellytools/delly/).
 
 
 Citation
