@@ -5,16 +5,16 @@ Delly2
 [![Build Status](https://travis-ci.org/tobiasrausch/delly.svg?branch=master)](https://travis-ci.org/tobiasrausch/delly)
 
 
-Delly2 is an integrated structural variant prediction method that can discover, genotype and visualize deletions, tandem duplications, inversions and translocations at single-nucleotide resolution in short-read massively parallel sequencing data. It uses paired-ends and split-reads to sensitively and accurately delineate genomic rearrangements throughout the genome. Structural variants can be visualized using [Delly-maze](https://github.com/tobiasrausch/delly/tree/master/vis/maze/) and [Delly-suave](https://github.com/tobiasrausch/delly/tree/master/vis/suave/).
+Delly2 is an integrated structural variant prediction method that can discover, genotype and visualize deletions, tandem duplications, inversions and translocations at single-nucleotide resolution in short-read massively parallel sequencing data. It uses paired-ends and split-reads to sensitively and accurately delineate genomic rearrangements throughout the genome. Structural variants can be visualized using [Delly-maze](https://github.com/dellytools/delly/tree/master/vis/maze/) and [Delly-suave](https://github.com/dellytools/delly/tree/master/vis/suave/).
 
 
 Installing Delly2
 -----------------
 
-The easiest way to get Delly2 is to download a statically linked binary from the [Delly github release page](https://github.com/tobiasrausch/delly/releases/).
+The easiest way to get Delly2 is to download a statically linked binary from the [Delly github release page](https://github.com/dellytools/delly/releases/).
 Alternatively, you can build Delly2 from source. Delly2 dependencies are included as submodules so you need to do a recursive clone. 
 
-`git clone --recursive https://github.com/tobiasrausch/delly.git`
+`git clone --recursive https://github.com/dellytools/delly.git`
 
 `cd delly/`
 
@@ -30,7 +30,7 @@ Delly2 supports parallel computing using the OpenMP API (www.openmp.org).
 
 `make PARALLEL=1 -B src/delly`
 
-There is also a statically linked, multi-threaded binary for Linux 64-bit available under [releases](https://github.com/tobiasrausch/delly/releases/).
+There is also a statically linked, multi-threaded binary for Linux 64-bit available under [releases](https://github.com/dellytools/delly/releases/).
 
 
 You can set the number of threads using the environment variable OMP_NUM_THREADS.
@@ -130,4 +130,4 @@ Bioinformatics 2012 28: i333-i339.
 
 License
 -------
-Delly is distributed under the GPLv3. Consult the accompanying [LICENSE](https://github.com/tobiasrausch/delly/blob/master/LICENSE) file for more details.
+Delly is distributed under the GPLv3. Consult the accompanying [LICENSE](https://github.com/dellytools/delly/blob/master/LICENSE) file for more details.
