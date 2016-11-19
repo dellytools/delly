@@ -1,8 +1,8 @@
 <p align="center">
   <a href="https://academic.oup.com/bioinformatics/article/28/18/i333/245403/DELLY-structural-variant-discovery-by-integrated">
-    <img height="200" src="https://raw.githubusercontent.com/dellytools/assets/master/delly-logo/delly-logo-539x600.png">
+    <img height="150" src="https://raw.githubusercontent.com/dellytools/assets/master/delly-logo/delly-logo-539x600.png">
   </a>
-  <p align="center" style="font-size: 2em;">Delly2</p>
+  <h1 align="center">Delly2</h1>
   <p align="center">Structural Variant Discovery</p>
 </p>
 
