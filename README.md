@@ -1,5 +1,10 @@
-Delly2
-======
+<p align="center">
+  <a href="https://academic.oup.com/bioinformatics/article/28/18/i333/245403/DELLY-structural-variant-discovery-by-integrated">
+    <img height="200" src="https://raw.githubusercontent.com/dellytools/assets/master/delly-logo/delly-logo-539x600.png">
+  </a>
+  <p align="center" style="font-size: 2em;">Delly2</p>
+  <p align="center">Structural Variant Discovery</p>
+</p>
 
 [![install with bioconda](https://img.shields.io/badge/install%20with-bioconda-brightgreen.svg?style=flat-square)](http://bioconda.github.io/recipes/delly/README.html)
 [![Build Status](https://travis-ci.org/dellytools/delly.svg?branch=master)](https://travis-ci.org/dellytools/delly)
