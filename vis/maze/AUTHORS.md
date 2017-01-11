@@ -1,4 +1,0 @@
-- Markus Hsi-Yang Fritz
-    - main author
-- Sascha Meiers
-    - breakpoint analysis
