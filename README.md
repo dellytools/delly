@@ -59,7 +59,7 @@ Somatic SV calling
 
 * Somatic pre-filtering of every tumor/control pair using a tab-delimited sample description file where the first column is the sample id (as in the VCF/BCF file) and the second column is either tumor or control.
 
-`delly filter -t DEL -f somatic -o t1.pre.bcf -s samples.tsv -g hg19.fa t1.bcf`
+`delly filter -t DEL -f somatic -o t1.pre.bcf -s samples.tsv t1.bcf`
 
 * Re-genotype somatic sites across a larger panel of control samples to efficiently filter false postives and germline SVs. For performance reasons, this can be run in parallel for each sample (see germline SV calling) and/or directly on a combined pre-filtered somatic site list from multiple tumor/control pairs.
 
@@ -67,7 +67,7 @@ Somatic SV calling
 
 * Post-filter for somatic SVs using all control samples.
 
-`delly filter -t DEL -f somatic -o t1.somatic.bcf -s samples.tsv -g hg19.fa geno.bcf`
+`delly filter -t DEL -f somatic -o t1.somatic.bcf -s samples.tsv geno.bcf`
 
 
 
@@ -94,7 +94,7 @@ Germline SV calling
 
 * Apply the germline SV filter
 
-`delly filter -t DEL -f germline -o germline.bcf -g hg19.fa merged.bcf`
+`delly filter -t DEL -f germline -o germline.bcf merged.bcf`
 
 FAQ
 ---
