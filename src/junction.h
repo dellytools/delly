@@ -41,6 +41,16 @@ Contact: Tobias Rausch (rausch@embl.de)
 
 namespace torali {
 
+  struct JunctionCount {
+    int32_t refh1;
+    int32_t refh2;
+    int32_t alth1;
+    int32_t alth2;
+    std::vector<uint8_t> ref;
+    std::vector<uint8_t> alt;
+
+    JunctionCount() : refh1(0), refh2(0), alth1(0), alth2(0) {}
+  };
 
   template<typename TAlign, typename TQualities>
   inline uint32_t
@@ -115,7 +125,7 @@ namespace torali {
 
   template<typename TConfig, typename TSVs, typename TCountMap, typename TTag>
   inline void
-  annotateJunctionReads(TConfig const& c, TSVs& svs, TCountMap& countMap, SVType<TTag> svType)
+  annotateJunctionReads(TConfig& c, TSVs& svs, TCountMap& countMap, SVType<TTag> svType)
   {
     typedef typename TCountMap::value_type::value_type TCountPair;
     typedef std::vector<uint8_t> TQuality;
@@ -286,9 +296,16 @@ namespace torali {
 		      for (int i = 0; i < rec->core.l_qseq; ++i) quality[i] = qualptr[i];
 		      uint32_t rq = _getAlignmentQual(alignRef, quality);
 		      if (rq >= c.minGenoQual) {
+			uint8_t* hpptr = bam_aux_get(rec, "HP");
 #pragma omp critical
 			{
-			  countMap[file_c][itSV->id].first.push_back((uint8_t) std::min(rq, (uint32_t) rec->core.qual));
+			  countMap[file_c][itSV->id].ref.push_back((uint8_t) std::min(rq, (uint32_t) rec->core.qual));
+			  if (hpptr) {
+			    c.isHaplotagged = true;
+			    int hap = bam_aux2i(hpptr);
+			    if (hap == 1) ++countMap[file_c][itSV->id].refh1;
+			    else ++countMap[file_c][itSV->id].refh2;
+			  }
 			}
 		      }
 		    }
@@ -299,9 +316,16 @@ namespace torali {
 		    for (int i = 0; i < rec->core.l_qseq; ++i) quality[i] = qualptr[i];
 		    uint32_t aq = _getAlignmentQual(alignAlt, quality);
 		    if (aq >= c.minGenoQual) {
+		      uint8_t* hpptr = bam_aux_get(rec, "HP");
 #pragma omp critical
 		      {
-			countMap[file_c][itSV->id].second.push_back((uint8_t) std::min(aq, (uint32_t) rec->core.qual));
+			countMap[file_c][itSV->id].alt.push_back((uint8_t) std::min(aq, (uint32_t) rec->core.qual));
+			if (hpptr) {
+			  c.isHaplotagged = true;
+			  int hap = bam_aux2i(hpptr);
+			  if (hap == 1) ++countMap[file_c][itSV->id].alth1;
+			  else ++countMap[file_c][itSV->id].alth2;
+			}
 		      }
 		    }
 		  }

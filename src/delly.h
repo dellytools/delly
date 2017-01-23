@@ -83,6 +83,7 @@ struct Config {
   bool indels;
   bool hasExcludeFile;
   bool hasVcfFile;
+  bool isHaplotagged;
   DnaScore<int> aliscore;
   std::string svType;
   std::string format;
@@ -264,7 +265,7 @@ _annotateCoverage(TConfig const& c, bam_hdr_t*, TSVs& svs, TCountMap& countMap, 
 
 
 template<typename TSVType>
-inline int dellyRun(Config const& c, TSVType svType) {
+inline int dellyRun(Config& c, TSVType svType) {
 #ifdef PROFILE
   ProfilerStart("delly.prof");
 #endif
@@ -353,14 +354,13 @@ inline int dellyRun(Config const& c, TSVType svType) {
   }
 
   // Annotate junction reads
-  typedef std::pair<std::vector<uint8_t>, std::vector<uint8_t> > TReadQual;
-  typedef std::vector<TReadQual> TSVJunctionMap;
+  typedef std::vector<JunctionCount> TSVJunctionMap;
   typedef std::vector<TSVJunctionMap> TSampleSVJunctionMap;
   TSampleSVJunctionMap junctionCountMap;
   annotateJunctionReads(c, svs, junctionCountMap, svType);
 
   // Annotate spanning coverage
-  typedef std::vector<TReadQual> TSVSpanningMap;
+  typedef std::vector<SpanningCount> TSVSpanningMap;
   typedef std::vector<TSVSpanningMap> TSampleSVSpanningMap;
   TSampleSVSpanningMap spanCountMap;
   annotateSpanningCoverage(c, sampleLib, svs, spanCountMap, svType);
@@ -404,6 +404,7 @@ inline int dellyRun(Config const& c, TSVType svType) {
 
 int delly(int argc, char **argv) {
   Config c;
+  c.isHaplotagged = false;
 
   // Define generic options
   boost::program_options::options_description generic("Generic options");

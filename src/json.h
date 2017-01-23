@@ -202,23 +202,23 @@ namespace torali
 	rrcount[file_c] = 0;
 	rvcount[file_c] = 0;
 
-	if (spanCountMap[file_c][svIter->id].first.size() < spanCountMap[file_c][lastId + svIter->id].first.size()) {
-	  drcount[file_c] = spanCountMap[file_c][svIter->id].first.size();
-	  dvcount[file_c] = spanCountMap[file_c][svIter->id].second.size();
+	if (spanCountMap[file_c][svIter->id].ref.size() < spanCountMap[file_c][lastId + svIter->id].ref.size()) {
+	  drcount[file_c] = spanCountMap[file_c][svIter->id].ref.size();
+	  dvcount[file_c] = spanCountMap[file_c][svIter->id].alt.size();
 	} else {
-	  drcount[file_c] = spanCountMap[file_c][lastId + svIter->id].first.size();
-	  dvcount[file_c] = spanCountMap[file_c][lastId + svIter->id].second.size();
+	  drcount[file_c] = spanCountMap[file_c][lastId + svIter->id].ref.size();
+	  dvcount[file_c] = spanCountMap[file_c][lastId + svIter->id].alt.size();
 	}
-	rrcount[file_c] = jctCountMap[file_c][svIter->id].first.size();
-	rvcount[file_c] = jctCountMap[file_c][svIter->id].second.size();
+	rrcount[file_c] = jctCountMap[file_c][svIter->id].ref.size();
+	rvcount[file_c] = jctCountMap[file_c][svIter->id].alt.size();
 	
 	// Compute GLs
-	if (svIter->precise) _computeGLs(bl, jctCountMap[file_c][svIter->id].first, jctCountMap[file_c][svIter->id].second, gls, gqval, gts, file_c);
+	if (svIter->precise) _computeGLs(bl, jctCountMap[file_c][svIter->id].ref, jctCountMap[file_c][svIter->id].alt, gls, gqval, gts, file_c);
 	else {  // Imprecise SVs
-	  if (spanCountMap[file_c][svIter->id].first.size() < spanCountMap[file_c][lastId + svIter->id].first.size())
-	    _computeGLs(bl, spanCountMap[file_c][svIter->id].first, spanCountMap[file_c][svIter->id].second, gls, gqval, gts, file_c);
+	  if (spanCountMap[file_c][svIter->id].ref.size() < spanCountMap[file_c][lastId + svIter->id].ref.size())
+	    _computeGLs(bl, spanCountMap[file_c][svIter->id].ref, spanCountMap[file_c][svIter->id].alt, gls, gqval, gts, file_c);
 	  else
-	    _computeGLs(bl, spanCountMap[file_c][lastId + svIter->id].first, spanCountMap[file_c][lastId + svIter->id].second, gls, gqval, gts, file_c);
+	    _computeGLs(bl, spanCountMap[file_c][lastId + svIter->id].ref, spanCountMap[file_c][lastId + svIter->id].alt, gls, gqval, gts, file_c);
 	}
 	
 	// Compute RCs
