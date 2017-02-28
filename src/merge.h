@@ -657,10 +657,6 @@ inline int mergeRun(MergeConfig& c, TSVType svType) {
   uint32_t numseq = 0;
   for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
     htsFile* ifile = bcf_open(c.files[file_c].string().c_str(), "r");
-    if (!ifile) {
-      std::cerr << "Fail to load " << c.files[file_c].string() << "!" << std::endl;
-      return 1;
-    }
     bcf_hdr_t* hdr = bcf_hdr_read(ifile);
     const char** seqnames = NULL;
     int nseq=0;
@@ -762,7 +758,17 @@ int merge(int argc, char **argv) {
   std::cout << "delly ";
   for(int i=0; i<argc; ++i) { std::cout << argv[i] << ' '; }
   std::cout << std::endl;
- 
+
+  // Check input BCF files
+  for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
+    htsFile* ifile = bcf_open(c.files[file_c].string().c_str(), "r");
+    if (!ifile) {
+      std::cerr << "Fail to load " << c.files[file_c].string() << "!" << std::endl;
+      return 1;
+    }
+    bcf_close(ifile);
+  }
+  
   // Run merging
   if (c.svType == "DEL") {
     c.reqCT = 2;
