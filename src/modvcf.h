@@ -325,226 +325,228 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
   bcf_hdr_add_sample(hdr, NULL);
   bcf_hdr_write(fp, hdr);
 
-  // Genotype arrays
-  int32_t *gts = (int*) malloc(bcf_hdr_nsamples(hdr) * 2 * sizeof(int));
-  float *gls = (float*) malloc(bcf_hdr_nsamples(hdr) * 3 * sizeof(float));
-  int32_t *rcl = (int*) malloc(bcf_hdr_nsamples(hdr) * sizeof(int));
-  int32_t *rc = (int*) malloc(bcf_hdr_nsamples(hdr) * sizeof(int));
-  int32_t *rcr = (int*) malloc(bcf_hdr_nsamples(hdr) * sizeof(int));
-  int32_t *cnest = (int*) malloc(bcf_hdr_nsamples(hdr) * sizeof(int));
-  int32_t *drcount = (int*) malloc(bcf_hdr_nsamples(hdr) * sizeof(int));
-  int32_t *dvcount = (int*) malloc(bcf_hdr_nsamples(hdr) * sizeof(int));
-  int32_t *hp1drcount = (int*) malloc(bcf_hdr_nsamples(hdr) * sizeof(int));
-  int32_t *hp2drcount = (int*) malloc(bcf_hdr_nsamples(hdr) * sizeof(int));
-  int32_t *hp1dvcount = (int*) malloc(bcf_hdr_nsamples(hdr) * sizeof(int));
-  int32_t *hp2dvcount = (int*) malloc(bcf_hdr_nsamples(hdr) * sizeof(int));
-  int32_t *rrcount = (int*) malloc(bcf_hdr_nsamples(hdr) * sizeof(int));
-  int32_t *rvcount = (int*) malloc(bcf_hdr_nsamples(hdr) * sizeof(int));
-  int32_t *hp1rrcount = (int*) malloc(bcf_hdr_nsamples(hdr) * sizeof(int));
-  int32_t *hp2rrcount = (int*) malloc(bcf_hdr_nsamples(hdr) * sizeof(int));
-  int32_t *hp1rvcount = (int*) malloc(bcf_hdr_nsamples(hdr) * sizeof(int));
-  int32_t *hp2rvcount = (int*) malloc(bcf_hdr_nsamples(hdr) * sizeof(int));
-  int32_t *gqval = (int*) malloc(bcf_hdr_nsamples(hdr) * sizeof(int));
-  std::vector<std::string> ftarr;
-  ftarr.resize(bcf_hdr_nsamples(hdr));
-
-  // Iterate all structural variants
-  typedef std::vector<TStructuralVariantRecord> TSVs;
-  uint32_t lastId = svs.size();
-  now = boost::posix_time::second_clock::local_time();
-  std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Genotyping" << std::endl;
-  boost::progress_display show_progress( svs.size() );
-  bcf1_t *rec = bcf_init();
-  for(typename TSVs::const_iterator svIter = svs.begin(); svIter!=svs.end(); ++svIter) {
-    ++show_progress;
-
-    // Output main vcf fields
-    int32_t tmpi = bcf_hdr_id2int(hdr, BCF_DT_ID, "PASS");
-    if ((svIter->precise) && (svIter->chr == svIter->chr2)) {
-      if ((svIter->srSupport < 3) || (svIter->peMapQuality < 20)) tmpi = bcf_hdr_id2int(hdr, BCF_DT_ID, "LowQual");
-    } else {
-      if ((svIter->peSupport < 3) || (svIter->peMapQuality < 20) || ( (svIter->chr != svIter->chr2) && (svIter->peSupport < 5) ) ) tmpi = bcf_hdr_id2int(hdr, BCF_DT_ID, "LowQual");
-    }
-    rec->rid = bcf_hdr_name2id(hdr, bamhd->target_name[svIter->chr]);
-    rec->pos = svIter->svStart - 1;
-    std::string id(_addID(svType));
-    std::string padNumber = boost::lexical_cast<std::string>(svIter->id);
-    padNumber.insert(padNumber.begin(), 8 - padNumber.length(), '0');
-    id += padNumber;
-    bcf_update_id(hdr, rec, id.c_str());
-    bcf_update_alleles_str(hdr, rec, svIter->alleles.c_str());
-    bcf_update_filter(hdr, rec, &tmpi, 1);
-
-    // Add INFO fields
-    if (svIter->precise) bcf_update_info_flag(hdr, rec, "PRECISE", NULL, 1);
-    else bcf_update_info_flag(hdr, rec, "IMPRECISE", NULL, 1);
-    bcf_update_info_string(hdr, rec, "SVTYPE", _addID(svType).c_str());
-    std::string dellyVersion("EMBL.DELLYv");
-    dellyVersion += dellyVersionNumber;
-    bcf_update_info_string(hdr,rec, "SVMETHOD", dellyVersion.c_str());
-    bcf_update_info_string(hdr,rec, "CHR2", bamhd->target_name[svIter->chr2]);
-    tmpi = svIter->svEnd;
-    bcf_update_info_int32(hdr, rec, "END", &tmpi, 1);
-    tmpi = svIter->peSupport;
-    bcf_update_info_int32(hdr, rec, "PE", &tmpi, 1);
-    tmpi = svIter->peMapQuality;
-    bcf_update_info_int32(hdr, rec, "MAPQ", &tmpi, 1);
-    bcf_update_info_string(hdr, rec, "CT", _addOrientation(svIter->ct).c_str());
-    int32_t ciend[2];
-    ciend[0] = -svIter->wiggle;
-    ciend[1] = svIter->wiggle;
-    int32_t cipos[2];
-    cipos[0] = -svIter->wiggle;
-    cipos[1] = svIter->wiggle;
-    bcf_update_info_int32(hdr, rec, "CIPOS", cipos, 2);
-    bcf_update_info_int32(hdr, rec, "CIEND", ciend, 2);
+  if (!svs.empty()) {
+    // Genotype arrays
+    int32_t *gts = (int*) malloc(bcf_hdr_nsamples(hdr) * 2 * sizeof(int));
+    float *gls = (float*) malloc(bcf_hdr_nsamples(hdr) * 3 * sizeof(float));
+    int32_t *rcl = (int*) malloc(bcf_hdr_nsamples(hdr) * sizeof(int));
+    int32_t *rc = (int*) malloc(bcf_hdr_nsamples(hdr) * sizeof(int));
+    int32_t *rcr = (int*) malloc(bcf_hdr_nsamples(hdr) * sizeof(int));
+    int32_t *cnest = (int*) malloc(bcf_hdr_nsamples(hdr) * sizeof(int));
+    int32_t *drcount = (int*) malloc(bcf_hdr_nsamples(hdr) * sizeof(int));
+    int32_t *dvcount = (int*) malloc(bcf_hdr_nsamples(hdr) * sizeof(int));
+    int32_t *hp1drcount = (int*) malloc(bcf_hdr_nsamples(hdr) * sizeof(int));
+    int32_t *hp2drcount = (int*) malloc(bcf_hdr_nsamples(hdr) * sizeof(int));
+    int32_t *hp1dvcount = (int*) malloc(bcf_hdr_nsamples(hdr) * sizeof(int));
+    int32_t *hp2dvcount = (int*) malloc(bcf_hdr_nsamples(hdr) * sizeof(int));
+    int32_t *rrcount = (int*) malloc(bcf_hdr_nsamples(hdr) * sizeof(int));
+    int32_t *rvcount = (int*) malloc(bcf_hdr_nsamples(hdr) * sizeof(int));
+    int32_t *hp1rrcount = (int*) malloc(bcf_hdr_nsamples(hdr) * sizeof(int));
+    int32_t *hp2rrcount = (int*) malloc(bcf_hdr_nsamples(hdr) * sizeof(int));
+    int32_t *hp1rvcount = (int*) malloc(bcf_hdr_nsamples(hdr) * sizeof(int));
+    int32_t *hp2rvcount = (int*) malloc(bcf_hdr_nsamples(hdr) * sizeof(int));
+    int32_t *gqval = (int*) malloc(bcf_hdr_nsamples(hdr) * sizeof(int));
+    std::vector<std::string> ftarr;
+    ftarr.resize(bcf_hdr_nsamples(hdr));
     
-    if (svIter->precise)  {
-      tmpi = svIter->insLen;
-      bcf_update_info_int32(hdr, rec, "INSLEN", &tmpi, 1);
-      tmpi = svIter->homLen;
-      bcf_update_info_int32(hdr, rec, "HOMLEN", &tmpi, 1);
-      tmpi = svIter->srSupport;
-      bcf_update_info_int32(hdr, rec, "SR", &tmpi, 1);
-      float tmpf = svIter->srAlignQuality;
-      bcf_update_info_float(hdr, rec, "SRQ", &tmpf, 1);
-      bcf_update_info_string(hdr, rec, "CONSENSUS", svIter->consensus.c_str());
-      tmpf = entropy(svIter->consensus);
-      bcf_update_info_float(hdr, rec, "CE", &tmpf, 1);
-    }
+    // Iterate all structural variants
+    typedef std::vector<TStructuralVariantRecord> TSVs;
+    uint32_t lastId = svs.size();
+    now = boost::posix_time::second_clock::local_time();
+    std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Genotyping" << std::endl;
+    boost::progress_display show_progress( svs.size() );
+    bcf1_t *rec = bcf_init();
+    for(typename TSVs::const_iterator svIter = svs.begin(); svIter!=svs.end(); ++svIter) {
+      ++show_progress;
 
-    // Add genotype columns
-    for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
-      // Counters
-      rcl[file_c] = 0;
-      rc[file_c] = 0;
-      rcr[file_c] = 0;
-      cnest[file_c] = 0;
-      drcount[file_c] = 0;
-      dvcount[file_c] = 0;
-      if (c.isHaplotagged) {
-	hp1drcount[file_c] = 0;
-	hp2drcount[file_c] = 0;
-	hp1dvcount[file_c] = 0;
-	hp2dvcount[file_c] = 0;
-      }
-      rrcount[file_c] = 0;
-      rvcount[file_c] = 0;
-      if (c.isHaplotagged) {
-	hp1rrcount[file_c] = 0;
-	hp2rrcount[file_c] = 0;
-	hp1rvcount[file_c] = 0;
-	hp2rvcount[file_c] = 0;
-      }
-      if (spanCountMap[file_c][svIter->id].ref.size() < spanCountMap[file_c][lastId + svIter->id].ref.size()) {
-	drcount[file_c] = spanCountMap[file_c][svIter->id].ref.size();
-	dvcount[file_c] = spanCountMap[file_c][svIter->id].alt.size();
-	if (c.isHaplotagged) {
-	  hp1drcount[file_c] = spanCountMap[file_c][svIter->id].refh1;
-	  hp2drcount[file_c] = spanCountMap[file_c][svIter->id].refh2;
-	  hp1dvcount[file_c] = spanCountMap[file_c][svIter->id].alth1;
-	  hp2dvcount[file_c] = spanCountMap[file_c][svIter->id].alth2;
-	}
+      // Output main vcf fields
+      int32_t tmpi = bcf_hdr_id2int(hdr, BCF_DT_ID, "PASS");
+      if ((svIter->precise) && (svIter->chr == svIter->chr2)) {
+	if ((svIter->srSupport < 3) || (svIter->peMapQuality < 20)) tmpi = bcf_hdr_id2int(hdr, BCF_DT_ID, "LowQual");
       } else {
-	drcount[file_c] = spanCountMap[file_c][lastId + svIter->id].ref.size();
-	dvcount[file_c] = spanCountMap[file_c][lastId + svIter->id].alt.size();
-	if (c.isHaplotagged) {
-	  hp1drcount[file_c] = spanCountMap[file_c][lastId + svIter->id].refh1;
-	  hp2drcount[file_c] = spanCountMap[file_c][lastId + svIter->id].refh2;
-	  hp1dvcount[file_c] = spanCountMap[file_c][lastId + svIter->id].alth1;
-	  hp2dvcount[file_c] = spanCountMap[file_c][lastId + svIter->id].alth2;
-	}
+	if ((svIter->peSupport < 3) || (svIter->peMapQuality < 20) || ( (svIter->chr != svIter->chr2) && (svIter->peSupport < 5) ) ) tmpi = bcf_hdr_id2int(hdr, BCF_DT_ID, "LowQual");
       }
-      rrcount[file_c] = jctCountMap[file_c][svIter->id].ref.size();
-      rvcount[file_c] = jctCountMap[file_c][svIter->id].alt.size();
-      if (c.isHaplotagged) {
-	hp1rrcount[file_c] = jctCountMap[file_c][svIter->id].refh1;
-	hp2rrcount[file_c] = jctCountMap[file_c][svIter->id].refh2;
-	hp1rvcount[file_c] = jctCountMap[file_c][svIter->id].alth1;
-	hp2rvcount[file_c] = jctCountMap[file_c][svIter->id].alth2;
-      }
-
-      // Compute GLs
-      if (svIter->precise) _computeGLs(bl, jctCountMap[file_c][svIter->id].ref, jctCountMap[file_c][svIter->id].alt, gls, gqval, gts, file_c);
-      else {  // Imprecise SVs
-	if (spanCountMap[file_c][svIter->id].ref.size() < spanCountMap[file_c][lastId + svIter->id].ref.size()) 
-	  _computeGLs(bl, spanCountMap[file_c][svIter->id].ref, spanCountMap[file_c][svIter->id].alt, gls, gqval, gts, file_c);
-	else
-	  _computeGLs(bl, spanCountMap[file_c][lastId + svIter->id].ref, spanCountMap[file_c][lastId + svIter->id].alt, gls, gqval, gts, file_c);
-      }
-
-      // Compute RCs
-      rcl[file_c] = readCountMap[file_c][svIter->id].leftRC;
-      rc[file_c] = readCountMap[file_c][svIter->id].rc;
-      rcr[file_c] = readCountMap[file_c][svIter->id].rightRC;
-      cnest[file_c] = -1;
-      if ((rcl[file_c] + rcr[file_c]) > 0) cnest[file_c] = boost::math::iround( 2.0 * (double) rc[file_c] / (double) (rcl[file_c] + rcr[file_c]) );
+      rec->rid = bcf_hdr_name2id(hdr, bamhd->target_name[svIter->chr]);
+      rec->pos = svIter->svStart - 1;
+      std::string id(_addID(svType));
+      std::string padNumber = boost::lexical_cast<std::string>(svIter->id);
+      padNumber.insert(padNumber.begin(), 8 - padNumber.length(), '0');
+      id += padNumber;
+      bcf_update_id(hdr, rec, id.c_str());
+      bcf_update_alleles_str(hdr, rec, svIter->alleles.c_str());
+      bcf_update_filter(hdr, rec, &tmpi, 1);
       
-      // Genotype filter
-      if (gqval[file_c] < 15) ftarr[file_c] = "LowQual";
-      else ftarr[file_c] = "PASS";
+      // Add INFO fields
+      if (svIter->precise) bcf_update_info_flag(hdr, rec, "PRECISE", NULL, 1);
+      else bcf_update_info_flag(hdr, rec, "IMPRECISE", NULL, 1);
+      bcf_update_info_string(hdr, rec, "SVTYPE", _addID(svType).c_str());
+      std::string dellyVersion("EMBL.DELLYv");
+      dellyVersion += dellyVersionNumber;
+      bcf_update_info_string(hdr,rec, "SVMETHOD", dellyVersion.c_str());
+      bcf_update_info_string(hdr,rec, "CHR2", bamhd->target_name[svIter->chr2]);
+      tmpi = svIter->svEnd;
+      bcf_update_info_int32(hdr, rec, "END", &tmpi, 1);
+      tmpi = svIter->peSupport;
+      bcf_update_info_int32(hdr, rec, "PE", &tmpi, 1);
+      tmpi = svIter->peMapQuality;
+      bcf_update_info_int32(hdr, rec, "MAPQ", &tmpi, 1);
+      bcf_update_info_string(hdr, rec, "CT", _addOrientation(svIter->ct).c_str());
+      int32_t ciend[2];
+      ciend[0] = -svIter->wiggle;
+      ciend[1] = svIter->wiggle;
+      int32_t cipos[2];
+      cipos[0] = -svIter->wiggle;
+      cipos[1] = svIter->wiggle;
+      bcf_update_info_int32(hdr, rec, "CIPOS", cipos, 2);
+      bcf_update_info_int32(hdr, rec, "CIEND", ciend, 2);
+      
+      if (svIter->precise)  {
+	tmpi = svIter->insLen;
+	bcf_update_info_int32(hdr, rec, "INSLEN", &tmpi, 1);
+	tmpi = svIter->homLen;
+	bcf_update_info_int32(hdr, rec, "HOMLEN", &tmpi, 1);
+	tmpi = svIter->srSupport;
+	bcf_update_info_int32(hdr, rec, "SR", &tmpi, 1);
+	float tmpf = svIter->srAlignQuality;
+	bcf_update_info_float(hdr, rec, "SRQ", &tmpf, 1);
+	bcf_update_info_string(hdr, rec, "CONSENSUS", svIter->consensus.c_str());
+	tmpf = entropy(svIter->consensus);
+	bcf_update_info_float(hdr, rec, "CE", &tmpf, 1);
+      }
+      
+      // Add genotype columns
+      for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
+	// Counters
+	rcl[file_c] = 0;
+	rc[file_c] = 0;
+	rcr[file_c] = 0;
+	cnest[file_c] = 0;
+	drcount[file_c] = 0;
+	dvcount[file_c] = 0;
+	if (c.isHaplotagged) {
+	  hp1drcount[file_c] = 0;
+	  hp2drcount[file_c] = 0;
+	  hp1dvcount[file_c] = 0;
+	  hp2dvcount[file_c] = 0;
+	}
+	rrcount[file_c] = 0;
+	rvcount[file_c] = 0;
+	if (c.isHaplotagged) {
+	  hp1rrcount[file_c] = 0;
+	  hp2rrcount[file_c] = 0;
+	  hp1rvcount[file_c] = 0;
+	  hp2rvcount[file_c] = 0;
+	}
+	if (spanCountMap[file_c][svIter->id].ref.size() < spanCountMap[file_c][lastId + svIter->id].ref.size()) {
+	  drcount[file_c] = spanCountMap[file_c][svIter->id].ref.size();
+	  dvcount[file_c] = spanCountMap[file_c][svIter->id].alt.size();
+	  if (c.isHaplotagged) {
+	    hp1drcount[file_c] = spanCountMap[file_c][svIter->id].refh1;
+	    hp2drcount[file_c] = spanCountMap[file_c][svIter->id].refh2;
+	    hp1dvcount[file_c] = spanCountMap[file_c][svIter->id].alth1;
+	    hp2dvcount[file_c] = spanCountMap[file_c][svIter->id].alth2;
+	  }
+	} else {
+	  drcount[file_c] = spanCountMap[file_c][lastId + svIter->id].ref.size();
+	  dvcount[file_c] = spanCountMap[file_c][lastId + svIter->id].alt.size();
+	  if (c.isHaplotagged) {
+	    hp1drcount[file_c] = spanCountMap[file_c][lastId + svIter->id].refh1;
+	    hp2drcount[file_c] = spanCountMap[file_c][lastId + svIter->id].refh2;
+	    hp1dvcount[file_c] = spanCountMap[file_c][lastId + svIter->id].alth1;
+	    hp2dvcount[file_c] = spanCountMap[file_c][lastId + svIter->id].alth2;
+	  }
+	}
+	rrcount[file_c] = jctCountMap[file_c][svIter->id].ref.size();
+	rvcount[file_c] = jctCountMap[file_c][svIter->id].alt.size();
+	if (c.isHaplotagged) {
+	  hp1rrcount[file_c] = jctCountMap[file_c][svIter->id].refh1;
+	  hp2rrcount[file_c] = jctCountMap[file_c][svIter->id].refh2;
+	  hp1rvcount[file_c] = jctCountMap[file_c][svIter->id].alth1;
+	  hp2rvcount[file_c] = jctCountMap[file_c][svIter->id].alth2;
+	}
+	
+	// Compute GLs
+	if (svIter->precise) _computeGLs(bl, jctCountMap[file_c][svIter->id].ref, jctCountMap[file_c][svIter->id].alt, gls, gqval, gts, file_c);
+	else {  // Imprecise SVs
+	  if (spanCountMap[file_c][svIter->id].ref.size() < spanCountMap[file_c][lastId + svIter->id].ref.size()) 
+	    _computeGLs(bl, spanCountMap[file_c][svIter->id].ref, spanCountMap[file_c][svIter->id].alt, gls, gqval, gts, file_c);
+	  else
+	    _computeGLs(bl, spanCountMap[file_c][lastId + svIter->id].ref, spanCountMap[file_c][lastId + svIter->id].alt, gls, gqval, gts, file_c);
+	}
+	
+	// Compute RCs
+	rcl[file_c] = readCountMap[file_c][svIter->id].leftRC;
+	rc[file_c] = readCountMap[file_c][svIter->id].rc;
+	rcr[file_c] = readCountMap[file_c][svIter->id].rightRC;
+	cnest[file_c] = -1;
+	if ((rcl[file_c] + rcr[file_c]) > 0) cnest[file_c] = boost::math::iround( 2.0 * (double) rc[file_c] / (double) (rcl[file_c] + rcr[file_c]) );
+      
+	// Genotype filter
+	if (gqval[file_c] < 15) ftarr[file_c] = "LowQual";
+	else ftarr[file_c] = "PASS";
+      }
+      // ToDo
+      //rec->qual = 0;
+      
+      
+      bcf_update_genotypes(hdr, rec, gts, bcf_hdr_nsamples(hdr) * 2);
+      bcf_update_format_float(hdr, rec, "GL",  gls, bcf_hdr_nsamples(hdr) * 3);
+      bcf_update_format_int32(hdr, rec, "GQ", gqval, bcf_hdr_nsamples(hdr));
+      std::vector<const char*> strp(bcf_hdr_nsamples(hdr));
+      std::transform(ftarr.begin(), ftarr.end(), strp.begin(), cstyle_str());
+      bcf_update_format_string(hdr, rec, "FT", &strp[0], bcf_hdr_nsamples(hdr));
+      bcf_update_format_int32(hdr, rec, "RCL", rcl, bcf_hdr_nsamples(hdr));
+      bcf_update_format_int32(hdr, rec, "RC", rc, bcf_hdr_nsamples(hdr));
+      bcf_update_format_int32(hdr, rec, "RCR", rcr, bcf_hdr_nsamples(hdr));
+      bcf_update_format_int32(hdr, rec, "CN", cnest, bcf_hdr_nsamples(hdr));
+      bcf_update_format_int32(hdr, rec, "DR", drcount, bcf_hdr_nsamples(hdr));
+      bcf_update_format_int32(hdr, rec, "DV", dvcount, bcf_hdr_nsamples(hdr));
+      if (c.isHaplotagged) {
+	bcf_update_format_int32(hdr, rec, "HP1DR", hp1drcount, bcf_hdr_nsamples(hdr));
+	bcf_update_format_int32(hdr, rec, "HP2DR", hp2drcount, bcf_hdr_nsamples(hdr));
+	bcf_update_format_int32(hdr, rec, "HP1DV", hp1dvcount, bcf_hdr_nsamples(hdr));
+	bcf_update_format_int32(hdr, rec, "HP2DV", hp2dvcount, bcf_hdr_nsamples(hdr));
+      }
+      bcf_update_format_int32(hdr, rec, "RR", rrcount, bcf_hdr_nsamples(hdr));
+      bcf_update_format_int32(hdr, rec, "RV", rvcount, bcf_hdr_nsamples(hdr));
+      if (c.isHaplotagged) {
+	bcf_update_format_int32(hdr, rec, "HP1RR", hp1rrcount, bcf_hdr_nsamples(hdr));
+	bcf_update_format_int32(hdr, rec, "HP2RR", hp2rrcount, bcf_hdr_nsamples(hdr));
+	bcf_update_format_int32(hdr, rec, "HP1RV", hp1rvcount, bcf_hdr_nsamples(hdr));
+	bcf_update_format_int32(hdr, rec, "HP2RV", hp2rvcount, bcf_hdr_nsamples(hdr));
+      }
+      bcf_write1(fp, hdr, rec);
+      bcf_clear1(rec);
     }
-    // ToDo
-    //rec->qual = 0;
-
-
-    bcf_update_genotypes(hdr, rec, gts, bcf_hdr_nsamples(hdr) * 2);
-    bcf_update_format_float(hdr, rec, "GL",  gls, bcf_hdr_nsamples(hdr) * 3);
-    bcf_update_format_int32(hdr, rec, "GQ", gqval, bcf_hdr_nsamples(hdr));
-    std::vector<const char*> strp(bcf_hdr_nsamples(hdr));
-    std::transform(ftarr.begin(), ftarr.end(), strp.begin(), cstyle_str());
-    bcf_update_format_string(hdr, rec, "FT", &strp[0], bcf_hdr_nsamples(hdr));
-    bcf_update_format_int32(hdr, rec, "RCL", rcl, bcf_hdr_nsamples(hdr));
-    bcf_update_format_int32(hdr, rec, "RC", rc, bcf_hdr_nsamples(hdr));
-    bcf_update_format_int32(hdr, rec, "RCR", rcr, bcf_hdr_nsamples(hdr));
-    bcf_update_format_int32(hdr, rec, "CN", cnest, bcf_hdr_nsamples(hdr));
-    bcf_update_format_int32(hdr, rec, "DR", drcount, bcf_hdr_nsamples(hdr));
-    bcf_update_format_int32(hdr, rec, "DV", dvcount, bcf_hdr_nsamples(hdr));
-    if (c.isHaplotagged) {
-      bcf_update_format_int32(hdr, rec, "HP1DR", hp1drcount, bcf_hdr_nsamples(hdr));
-      bcf_update_format_int32(hdr, rec, "HP2DR", hp2drcount, bcf_hdr_nsamples(hdr));
-      bcf_update_format_int32(hdr, rec, "HP1DV", hp1dvcount, bcf_hdr_nsamples(hdr));
-      bcf_update_format_int32(hdr, rec, "HP2DV", hp2dvcount, bcf_hdr_nsamples(hdr));
-    }
-    bcf_update_format_int32(hdr, rec, "RR", rrcount, bcf_hdr_nsamples(hdr));
-    bcf_update_format_int32(hdr, rec, "RV", rvcount, bcf_hdr_nsamples(hdr));
-    if (c.isHaplotagged) {
-      bcf_update_format_int32(hdr, rec, "HP1RR", hp1rrcount, bcf_hdr_nsamples(hdr));
-      bcf_update_format_int32(hdr, rec, "HP2RR", hp2rrcount, bcf_hdr_nsamples(hdr));
-      bcf_update_format_int32(hdr, rec, "HP1RV", hp1rvcount, bcf_hdr_nsamples(hdr));
-      bcf_update_format_int32(hdr, rec, "HP2RV", hp2rvcount, bcf_hdr_nsamples(hdr));
-    }
-    bcf_write1(fp, hdr, rec);
-    bcf_clear1(rec);
-  }
+    bcf_destroy1(rec);
     
-  // Clean-up
-  free(gts);
-  free(gls);
-  free(rcl);
-  free(rc);
-  free(rcr);
-  free(cnest);
-  free(drcount);
-  free(dvcount);
-  free(hp1drcount);
-  free(hp2drcount);
-  free(hp1dvcount);
-  free(hp2dvcount);
-  free(rrcount);
-  free(rvcount);
-  free(hp1rrcount);
-  free(hp2rrcount);
-  free(hp1rvcount);
-  free(hp2rvcount);
-  free(gqval);
+    // Clean-up
+    free(gts);
+    free(gls);
+    free(rcl);
+    free(rc);
+    free(rcr);
+    free(cnest);
+    free(drcount);
+    free(dvcount);
+    free(hp1drcount);
+    free(hp2drcount);
+    free(hp1dvcount);
+    free(hp2dvcount);
+    free(rrcount);
+    free(rvcount);
+    free(hp1rrcount);
+    free(hp2rrcount);
+    free(hp1rvcount);
+    free(hp2rvcount);
+    free(gqval);
+  }
 
   // Close BAM file
   bam_hdr_destroy(bamhd);
   sam_close(samfile);
 
   // Close VCF file
-  bcf_destroy1(rec);
   bcf_hdr_destroy(hdr);
   hts_close(fp);
 

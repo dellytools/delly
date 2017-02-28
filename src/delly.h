@@ -346,36 +346,31 @@ inline int dellyRun(Config& c, TSVType svType) {
     else vcfParse(c, hdr, svs, svType);
   }
 
-  // SV Genotyping
-  if (svs.empty()) {
-    std::cout << "No structural variants found!" << std::endl;
-    std::cout << "Done." << std::endl;
-    return 0;
-  }
-
+  
   // Annotate junction reads
   typedef std::vector<JunctionCount> TSVJunctionMap;
   typedef std::vector<TSVJunctionMap> TSampleSVJunctionMap;
   TSampleSVJunctionMap junctionCountMap;
-  annotateJunctionReads(c, svs, junctionCountMap, svType);
 
   // Annotate spanning coverage
   typedef std::vector<SpanningCount> TSVSpanningMap;
   typedef std::vector<TSVSpanningMap> TSampleSVSpanningMap;
   TSampleSVSpanningMap spanCountMap;
-  annotateSpanningCoverage(c, sampleLib, svs, spanCountMap, svType);
 
   // Annotate coverage
   typedef std::vector<ReadCount> TSVReadCount;
   typedef std::vector<TSVReadCount> TSampleSVReadCount;
   TSampleSVReadCount rcMap;
-  _annotateCoverage(c, hdr, svs, rcMap, svType);
 
-  // VCF output
-  if (svs.size()) {
-    if (c.format == "json.gz") jsonOutput(c, svs, junctionCountMap, rcMap, spanCountMap, svType);
-    else vcfOutput(c, svs, junctionCountMap, rcMap, spanCountMap, svType);
+  // SV Genotyping
+  if (!svs.empty()) {
+    annotateJunctionReads(c, svs, junctionCountMap, svType);
+    annotateSpanningCoverage(c, sampleLib, svs, spanCountMap, svType);
+    _annotateCoverage(c, hdr, svs, rcMap, svType);
   }
+  
+  // VCF output
+  vcfOutput(c, svs, junctionCountMap, rcMap, spanCountMap, svType);
 
   // Clean-up
   bam_hdr_destroy(hdr);
