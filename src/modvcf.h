@@ -122,14 +122,42 @@ _isKeyPresent(bcf_hdr_t const* hdr, std::string const& key) {
 }
 
 
+inline std::string
+_replaceIUPAC(std::string const& alleles) {
+  std::vector<char> out(alleles.size());
+  bool inTag = false;
+  for(uint32_t i = 0; i<alleles.size(); ++i) {
+    if ((inTag) || (alleles[i] == 'A') || (alleles[i] == 'C') || (alleles[i] == 'G') || (alleles[i] == 'T') || (alleles[i] == 'N') || (alleles[i] == 'a') || (alleles[i] == 'c') || (alleles[i] == 'g') || (alleles[i] == 't') || (alleles[i] == 'n') || (alleles[i] == '<') || (alleles[i] == '>') || (alleles[i] == ',')) {
+      out[i] = alleles[i];
+      if (alleles[i] == '<') inTag = true;
+      if (alleles[i] == '>') inTag = false;
+    } else {
+      // Replace IUPAC
+      if ((alleles[i] == 'U') || (alleles[i] == 'u')) out[i] = 'T';
+      else if ((alleles[i] == 'R') || (alleles[i] == 'r')) out[i] = 'A';
+      else if ((alleles[i] == 'Y') || (alleles[i] == 'y')) out[i] = 'C';
+      else if ((alleles[i] == 'S') || (alleles[i] == 's')) out[i] = 'C';
+      else if ((alleles[i] == 'W') || (alleles[i] == 'w')) out[i] = 'A';
+      else if ((alleles[i] == 'K') || (alleles[i] == 'k')) out[i] = 'G';
+      else if ((alleles[i] == 'M') || (alleles[i] == 'm')) out[i] = 'A';
+      else if ((alleles[i] == 'B') || (alleles[i] == 'b')) out[i] = 'C';
+      else if ((alleles[i] == 'D') || (alleles[i] == 'd')) out[i] = 'A';
+      else if ((alleles[i] == 'H') || (alleles[i] == 'h')) out[i] = 'A';
+      else if ((alleles[i] == 'V') || (alleles[i] == 'v')) out[i] = 'A';
+      else out[i] = 'N';
+    }
+  }
+  return std::string(out.begin(), out.end());
+}     
+  
+ 
  // Convert string to char*
 struct cstyle_str {
   const char* operator ()(const std::string& s) {
     return s.c_str();
   }
 };
-
-
+ 
 // Parse Delly vcf file
 template<typename TConfig, typename TStructuralVariantRecord, typename TTag>
 inline void
@@ -373,7 +401,8 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
       padNumber.insert(padNumber.begin(), 8 - padNumber.length(), '0');
       id += padNumber;
       bcf_update_id(hdr, rec, id.c_str());
-      bcf_update_alleles_str(hdr, rec, svIter->alleles.c_str());
+      std::string alleles = _replaceIUPAC(svIter->alleles);
+      bcf_update_alleles_str(hdr, rec, alleles.c_str());
       bcf_update_filter(hdr, rec, &tmpi, 1);
       
       // Add INFO fields
