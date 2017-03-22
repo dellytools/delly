@@ -121,7 +121,14 @@ _isKeyPresent(bcf_hdr_t const* hdr, std::string const& key) {
   return (bcf_hdr_id2int(hdr, BCF_DT_ID, key.c_str())>=0);
 }
 
-
+inline bool
+_isDNA(std::string const& allele) {
+  for(uint32_t i = 0; i<allele.size(); ++i) {
+    if ((allele[i] != 'A') && (allele[i] != 'C') && (allele[i] != 'G') && (allele[i] != 'T') && (allele[i] != 'a') && (allele[i] != 'c') && (allele[i] != 'g') && (allele[i] != 't')) return false;
+  }
+  return true;
+}
+ 
 inline std::string
 _replaceIUPAC(std::string const& alleles) {
   std::vector<char> out(alleles.size());
@@ -168,6 +175,11 @@ vcfParse(TConfig const& c, bam_hdr_t* hd, std::vector<TStructuralVariantRecord>&
   bcf_hdr_t* hdr = bcf_hdr_read(ifile);
   bcf1_t* rec = bcf_init();
 
+  // Parse genome if necessary
+  faidx_t* fai = fai_load(c.genome.string().c_str());
+  char* seq = NULL;
+  int32_t lastRefIndex = -1;
+  
   // Parse bcf
   int32_t nsvend = 0;
   int32_t* svend = NULL;
@@ -189,70 +201,154 @@ vcfParse(TConfig const& c, bam_hdr_t* hd, std::vector<TStructuralVariantRecord>&
   float* srq = NULL;
   int32_t nsvt = 0;
   char* svt = NULL;
+  int32_t nmethod = 0;
+  char* method = NULL;
   int32_t ncons = 0;
   char* cons = NULL;
   int32_t nchr2 = 0;
   char* chr2 = NULL;
+  uint16_t wimethod = 0; 
   while (bcf_read(ifile, hdr, rec) == 0) {
     bcf_unpack(rec, BCF_UN_INFO);
 
-    // Correct SV type
-    if (bcf_get_info_string(hdr, rec, "SVTYPE", &svt, &nsvt) > 0) {
-      if (std::string(svt) != _addID(svType)) continue;
-    } else continue;
-
-    // Fill SV record
-    StructuralVariantRecord svRec;
-    std::string chrName = bcf_hdr_id2name(hdr, rec->rid);
-    int32_t tid = bam_name2id(hd, chrName.c_str());
-    svRec.chr = tid;
-    svRec.svStart = rec->pos + 1;
-    svRec.id = svs.size();
-    std::string refAllele = rec->d.allele[0];
-    std::string altAllele = rec->d.allele[1];
-    svRec.alleles = refAllele + "," + altAllele;
-
-    // Parse INFO
-    if (bcf_get_info_flag(hdr, rec, "PRECISE", 0, 0) > 0) svRec.precise=true;
-    else svRec.precise = false;
-    if (bcf_get_info_int32(hdr, rec, "PE", &pe, &npe) > 0) svRec.peSupport = *pe;
-    else {
-      if (svRec.precise) svRec.peSupport = 0;
-      else svRec.peSupport = 2;
+    // Delly BCF file?
+    if (!wimethod) {
+      wimethod = 2;
+      if (bcf_get_info_string(hdr, rec, "SVMETHOD", &method, &nmethod) > 0) {
+	std::string mstr = std::string(method);
+	if ((mstr.size() >= 10) && (mstr.substr(0, 10)  == "EMBL.DELLY")) wimethod = 1;
+      }
     }
-    if (bcf_get_info_int32(hdr, rec, "INSLEN", &inslen, &ninslen) > 0) svRec.insLen = *inslen;
-    else svRec.insLen = 0;
-    if (bcf_get_info_int32(hdr, rec, "HOMLEN", &homlen, &nhomlen) > 0) svRec.homLen = *homlen;
-    else svRec.homLen = 0;
-    if (bcf_get_info_int32(hdr, rec, "SR", &sr, &nsr) > 0) svRec.srSupport = *sr;
-    else svRec.srSupport = 0;
-    if (bcf_get_info_int32(hdr, rec, "END", &svend, &nsvend) > 0) svRec.svEnd = *svend;
-    else svRec.svEnd = rec->pos + 2;
-    if (bcf_get_info_string(hdr, rec, "CONSENSUS", &cons, &ncons) > 0) svRec.consensus = std::string(cons);
-    else svRec.precise = false;
-    if (bcf_get_info_int32(hdr, rec, "CIPOS", &cipos, &ncipos) > 0) svRec.wiggle = cipos[1];
-    else svRec.wiggle = 0;
-    if (bcf_get_info_int32(hdr, rec, "MAPQ", &mapq, &nmapq) > 0) svRec.peMapQuality = (uint8_t) *mapq;
-    else svRec.peMapQuality = 0;
-    if (bcf_get_info_float(hdr, rec, "SRQ", &srq, &nsrq) > 0) svRec.srAlignQuality = (double) *srq;
-    else svRec.srAlignQuality = 0;
-    if (bcf_get_info_string(hdr, rec, "CT", &ct, &nct) > 0) svRec.ct = _decodeOrientation(std::string(ct));
-    else {
-      if (_addID(svType) == "DEL") svRec.ct = _decodeOrientation("3to5");
-      else if (_addID(svType) == "DUP") svRec.ct = _decodeOrientation("5to3");
-      else if (_addID(svType) == "INS") svRec.ct = _decodeOrientation("NtoN");
-      else if (_addID(svType) == "INV") svRec.ct = _decodeOrientation("3to3"); // Insufficient
-      else if (_addID(svType) == "TRA") svRec.ct = _decodeOrientation("3to5"); // Insufficient
+
+    // Delly
+    if (wimethod == 1) {
+      // Correct SV type
+      if (bcf_get_info_string(hdr, rec, "SVTYPE", &svt, &nsvt) > 0) {
+	if (std::string(svt) != _addID(svType)) continue;
+      } else continue;
+      
+      // Fill SV record
+      StructuralVariantRecord svRec;
+      std::string chrName = bcf_hdr_id2name(hdr, rec->rid);
+      int32_t tid = bam_name2id(hd, chrName.c_str());
+      svRec.chr = tid;
+      svRec.svStart = rec->pos + 1;
+      svRec.id = svs.size();
+      std::string refAllele = rec->d.allele[0];
+      std::string altAllele = rec->d.allele[1];
+      svRec.alleles = refAllele + "," + altAllele;
+
+      // Parse INFO
+      if (bcf_get_info_flag(hdr, rec, "PRECISE", 0, 0) > 0) svRec.precise=true;
+      else svRec.precise = false;
+      if (bcf_get_info_int32(hdr, rec, "PE", &pe, &npe) > 0) svRec.peSupport = *pe;
+      else {
+	if (svRec.precise) svRec.peSupport = 0;
+	else svRec.peSupport = 2;
+      }
+      if (bcf_get_info_int32(hdr, rec, "INSLEN", &inslen, &ninslen) > 0) svRec.insLen = *inslen;
+      else svRec.insLen = 0;
+      if (bcf_get_info_int32(hdr, rec, "HOMLEN", &homlen, &nhomlen) > 0) svRec.homLen = *homlen;
+      else svRec.homLen = 0;
+      if (bcf_get_info_int32(hdr, rec, "SR", &sr, &nsr) > 0) svRec.srSupport = *sr;
+      else svRec.srSupport = 0;
+      if (bcf_get_info_int32(hdr, rec, "END", &svend, &nsvend) > 0) svRec.svEnd = *svend;
+      else svRec.svEnd = rec->pos + 2;
+      if (bcf_get_info_string(hdr, rec, "CONSENSUS", &cons, &ncons) > 0) svRec.consensus = std::string(cons);
+      else svRec.precise = false;
+      if (bcf_get_info_int32(hdr, rec, "CIPOS", &cipos, &ncipos) > 0) svRec.wiggle = cipos[1];
+      else svRec.wiggle = 0;
+      if (bcf_get_info_int32(hdr, rec, "MAPQ", &mapq, &nmapq) > 0) svRec.peMapQuality = (uint8_t) *mapq;
+      else svRec.peMapQuality = 0;
+      if (bcf_get_info_float(hdr, rec, "SRQ", &srq, &nsrq) > 0) svRec.srAlignQuality = (double) *srq;
+      else svRec.srAlignQuality = 0;
+      if (bcf_get_info_string(hdr, rec, "CT", &ct, &nct) > 0) svRec.ct = _decodeOrientation(std::string(ct));
+      else {
+	if (_addID(svType) == "DEL") svRec.ct = _decodeOrientation("3to5");
+	else if (_addID(svType) == "DUP") svRec.ct = _decodeOrientation("5to3");
+	else if (_addID(svType) == "INS") svRec.ct = _decodeOrientation("NtoN");
+	else if (_addID(svType) == "INV") svRec.ct = _decodeOrientation("3to3"); // Insufficient
+	else if (_addID(svType) == "TRA") svRec.ct = _decodeOrientation("3to5"); // Insufficient
+      }
+      if (bcf_get_info_string(hdr, rec, "CHR2", &chr2, &nchr2) > 0) {
+	std::string chr2Name = std::string(chr2);
+	svRec.chr2 = bam_name2id(hd, chr2Name.c_str());
+      } else svRec.chr2 = tid;
+      svs.push_back(svRec);
+    } else if (wimethod == 2) {
+      // Assume precise SV, only deletions supported and INFO:END is required!!!
+      if (rec->n_allele == 2) {
+	std::string refAllele = rec->d.allele[0];
+	std::string altAllele = rec->d.allele[1];
+	StructuralVariantRecord svRec;
+	bool tagUse;
+	if (altAllele == "<DEL>") {
+	  svRec.ct = _decodeOrientation("3to5");
+	  tagUse = true;
+	} else {
+	  if ((refAllele.size() > altAllele.size()) && (_isDNA(refAllele)) && (_isDNA(altAllele))) {
+	    svRec.ct = _decodeOrientation("3to5");
+	    tagUse = false;
+	  } else continue;
+	}
+	if (tagUse) {
+	  if (bcf_get_info_int32(hdr, rec, "END", &svend, &nsvend) > 0) svRec.svEnd = *svend;
+	  else continue;
+	} else {
+	  int32_t diff = refAllele.size() - altAllele.size();
+	  svRec.svEnd = rec->pos + diff + 2;
+	}
+	std::string chrName = bcf_hdr_id2name(hdr, rec->rid);
+	int32_t tid = bam_name2id(hd, chrName.c_str());
+	svRec.chr = tid;
+	svRec.chr2 = tid;
+	svRec.svStart = rec->pos + 1;
+	svRec.id = svs.size();
+	svRec.alleles = refAllele + "," + altAllele;
+	svRec.precise=true;
+	svRec.peSupport = 0;
+	svRec.insLen = 0;
+	svRec.homLen = 0;
+	svRec.srSupport = 5;
+	svRec.peMapQuality = 20;
+	svRec.srAlignQuality = 1;
+	svRec.wiggle = 150;
+
+	// Lazy loading of reference sequence
+	if ((seq == NULL) || (tid != lastRefIndex)) {
+	  if (seq != NULL) free(seq);
+	  int32_t seqlen = -1;
+	  seq = faidx_fetch_seq(fai, chrName.c_str(), 0, faidx_seq_len(fai, chrName.c_str()), &seqlen);
+	  lastRefIndex = tid;
+	}
+
+	// Build consensus sequence
+	if ((seq != NULL) && (svRec.svStart + 15 < svRec.svEnd)) {
+	  int32_t buffer = 75;
+	  if (tagUse) {
+	    int32_t prefix = 0;
+	    if (buffer < rec->pos) prefix = rec->pos - buffer;
+	    std::string pref = boost::to_upper_copy(std::string(seq + prefix, seq + rec->pos + 1));
+	    int32_t suffix = svRec.svEnd + buffer;
+	    std::string suf = boost::to_upper_copy(std::string(seq + svRec.svEnd, seq + suffix));
+	    svRec.consensus = pref + suf;
+	  } else {
+	    int32_t prefix = 0;
+	    if (buffer < rec->pos) prefix = rec->pos - buffer;
+	    std::string pref = boost::to_upper_copy(std::string(seq + prefix, seq + rec->pos));
+	    int32_t suffix = svRec.svEnd + buffer;
+	    std::string suf = boost::to_upper_copy(std::string(seq + svRec.svEnd - 1, seq + suffix));
+	    svRec.consensus = pref + altAllele + suf;
+	  }
+	  svs.push_back(svRec);
+	}
+      }
     }
-    if (bcf_get_info_string(hdr, rec, "CHR2", &chr2, &nchr2) > 0) {
-      std::string chr2Name = std::string(chr2);
-      svRec.chr2 = bam_name2id(hd, chr2Name.c_str());
-    } else svRec.chr2 = tid;
-    svs.push_back(svRec);
   }
   // Clean-up
   free(svend);
   free(svt);
+  free(method);
   free(pe);
   free(inslen);
   free(homlen);
@@ -264,6 +360,10 @@ vcfParse(TConfig const& c, bam_hdr_t* hd, std::vector<TStructuralVariantRecord>&
   free(ct);
   free(chr2);
 
+  // Clean-up index
+  if (seq != NULL) free(seq);
+  fai_destroy(fai);
+  
   // Close VCF
   bcf_hdr_destroy(hdr);
   bcf_close(ifile);
