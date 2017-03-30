@@ -282,12 +282,20 @@ vcfParse(TConfig const& c, bam_hdr_t* hd, std::vector<TStructuralVariantRecord>&
 	std::string altAllele = rec->d.allele[1];
 	StructuralVariantRecord svRec;
 	bool tagUse;
+	bool insertion = false;
 	if (altAllele == "<DEL>") {
 	  svRec.ct = _decodeOrientation("3to5");
 	  tagUse = true;
+	} else if (altAllele == "<INS>") {
+	  // No precise insertion sequence, cannot be genotyped by Delly
+	  continue;
 	} else {
 	  if ((refAllele.size() > altAllele.size()) && (_isDNA(refAllele)) && (_isDNA(altAllele))) {
 	    svRec.ct = _decodeOrientation("3to5");
+	    tagUse = false;
+	  } else if ((altAllele.size() > refAllele.size()) && (_isDNA(refAllele)) && (_isDNA(altAllele))) {
+	    insertion = true;
+	    svRec.ct = _decodeOrientation("NtoN");
 	    tagUse = false;
 	  } else continue;
 	}
@@ -295,8 +303,15 @@ vcfParse(TConfig const& c, bam_hdr_t* hd, std::vector<TStructuralVariantRecord>&
 	  if (bcf_get_info_int32(hdr, rec, "END", &svend, &nsvend) > 0) svRec.svEnd = *svend;
 	  else continue;
 	} else {
-	  int32_t diff = refAllele.size() - altAllele.size();
-	  svRec.svEnd = rec->pos + diff + 2;
+	  if (insertion) {
+	    svRec.svEnd = rec->pos + 2;
+	    int32_t diff =  altAllele.size() - refAllele.size();
+	    svRec.insLen = diff;
+	  } else {
+	    int32_t diff = refAllele.size() - altAllele.size();
+	    svRec.svEnd = rec->pos + diff + 2;
+	    svRec.insLen = 0;
+	  }
 	}
 	std::string chrName = bcf_hdr_id2name(hdr, rec->rid);
 	int32_t tid = bam_name2id(hd, chrName.c_str());
@@ -307,7 +322,6 @@ vcfParse(TConfig const& c, bam_hdr_t* hd, std::vector<TStructuralVariantRecord>&
 	svRec.alleles = refAllele + "," + altAllele;
 	svRec.precise=true;
 	svRec.peSupport = 0;
-	svRec.insLen = 0;
 	svRec.homLen = 0;
 	svRec.srSupport = 5;
 	svRec.peMapQuality = 20;
@@ -323,7 +337,7 @@ vcfParse(TConfig const& c, bam_hdr_t* hd, std::vector<TStructuralVariantRecord>&
 	}
 
 	// Build consensus sequence
-	if ((seq != NULL) && (svRec.svStart + 15 < svRec.svEnd)) {
+	if ((seq != NULL) && ((svRec.svStart + 15 < svRec.svEnd) || (svRec.insLen >= 15))) {
 	  int32_t buffer = 75;
 	  if (tagUse) {
 	    int32_t prefix = 0;
