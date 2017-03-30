@@ -90,7 +90,7 @@ Germline SV calling
 
 * Merge all re-genotyped samples to get a single VCF/BCF using bcftools merge
 
-`bcftools merge -O b -o merged.bcf s1.geno.bcf s2.geno.bcf ... sN.geno.bcf`
+`bcftools merge -m id -O b -o merged.bcf s1.geno.bcf s2.geno.bcf ... sN.geno.bcf`
 
 * Apply the germline SV filter
 
