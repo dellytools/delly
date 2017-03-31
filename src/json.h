@@ -153,10 +153,10 @@ namespace torali
       dataOut << '{';
       dataOut << "\"chrom\": \"" << bamhd->target_name[svIter->chr] << "\", ";
       dataOut << "\"start\": " << svIter->svStart - 1 << ", ";
-      if (_addID(svType) != "TRA") dataOut << "\"end\": " << svIter->svEnd << ", ";
+      if (_addID(svType) != "BND") dataOut << "\"end\": " << svIter->svEnd << ", ";
       else dataOut << "\"end\": " << svIter->svStart << ", ";
       dataOut << "\"id\": " << svIter->id << ", ";
-      if (_addID(svType) == "TRA") {
+      if (_addID(svType) == "BND") {
 	dataOut << "\"$children\": [{";
 	dataOut << "\"chrom\": \"" << bamhd->target_name[svIter->chr2] << "\", ";
 	dataOut << "\"start\": " << svIter->svEnd << ", ";
@@ -255,7 +255,7 @@ namespace torali
       dataOut << '}' << std::endl;
 
       // Add children
-      if (_addID(svType) == "TRA") {
+      if (_addID(svType) == "BND") {
 	dataOut << '{';
 	dataOut << "\"chrom\": \"" << bamhd->target_name[svIter->chr2] << "\", ";
 	dataOut << "\"start\": " << svIter->svEnd << ", ";

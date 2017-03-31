@@ -116,7 +116,7 @@ namespace torali
   // Translocations
   inline std::string
     _addID(SVType<TranslocationTag>) {
-    return "TRA";
+    return "BND";
   }
   
   // Insertion
@@ -126,6 +126,28 @@ namespace torali
   }
 
 
+  template<typename TTag>
+  inline std::string
+  _addAlleles(std::string const& ref, std::string const&, StructuralVariantRecord const&, SVType<TTag> svType) {
+    return ref + ",<" + _addID(svType) + ">";
+  }
+
+  inline std::string
+  _addAlleles(std::string const& ref, std::string const& chr2, StructuralVariantRecord const& sv, SVType<TranslocationTag> svType) {
+    if (sv.ct == 0) {
+      return ref + "," + ref + "]" + chr2 + ":" + boost::lexical_cast<std::string>(sv.svEnd) + "]";
+    } else if (sv.ct == 1) {
+      return ref + "," + "[" + chr2 + ":" + boost::lexical_cast<std::string>(sv.svEnd) + "[" + ref;
+    } else if (sv.ct == 2) {
+      return ref + "," + ref + "[" + chr2 + ":" + boost::lexical_cast<std::string>(sv.svEnd) + "[";
+    } else if (sv.ct == 3) {
+      return ref + "," + "]" + chr2 + ":" + boost::lexical_cast<std::string>(sv.svEnd) + "]" + ref;
+    }
+    return ref + ",<" + _addID(svType) + ">";
+  }
+  
+
+  
   // Decode Orientation
   inline uint8_t
     _decodeOrientation(std::string const& value) {

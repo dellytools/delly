@@ -158,7 +158,7 @@ filterRun(TFilterConfig const& c, TSVType svType) {
     if (svend != NULL) svlen = *svend - rec->pos;
     int32_t inslenVal = 0;
     if (bcf_get_info_int32(hdr, rec, "INSLEN", &inslen, &ninslen) > 0) inslenVal = *inslen;
-    if ((pass) && ((std::string(svt) == "TRA") || ((std::string(svt) == "INS") && (inslenVal >= c.minsize) && (inslenVal <= c.maxsize)) || ((std::string(svt) != "TRA") && (std::string(svt) != "INS") && (svlen >= c.minsize) && (svlen <= c.maxsize)))) {
+    if ((pass) && ((std::string(svt) == "BND") || ((std::string(svt) == "INS") && (inslenVal >= c.minsize) && (inslenVal <= c.maxsize)) || ((std::string(svt) != "BND") && (std::string(svt) != "INS") && (svlen >= c.minsize) && (svlen <= c.maxsize)))) {
       // Check genotypes
       bcf_unpack(rec, BCF_UN_ALL);
       bool precise = false;
@@ -323,7 +323,7 @@ int filter(int argc, char **argv) {
   boost::program_options::options_description generic("Generic options");
   generic.add_options()
     ("help,?", "show help message")
-    ("type,t", boost::program_options::value<std::string>(&c.svType)->default_value("DEL"), "SV type (DEL, DUP, INV, TRA, INS)")
+    ("type,t", boost::program_options::value<std::string>(&c.svType)->default_value("DEL"), "SV type (DEL, DUP, INV, BND, INS)")
     ("filter,f", boost::program_options::value<std::string>(&c.filter)->default_value("somatic"), "Filter mode (somatic, germline)")
     ("outfile,o", boost::program_options::value<boost::filesystem::path>(&c.outfile)->default_value("sv.bcf"), "Filtered SV BCF output file")
     ("altaf,a", boost::program_options::value<float>(&c.altaf)->default_value(0.2), "min. fractional ALT support")
@@ -489,7 +489,7 @@ int filter(int argc, char **argv) {
   if (c.svType == "DEL") return filterRun(c, SVType<DeletionTag>());
   else if (c.svType == "DUP") return filterRun(c, SVType<DuplicationTag>());
   else if (c.svType == "INV") return filterRun(c, SVType<InversionTag>());
-  else if (c.svType == "TRA") return filterRun(c, SVType<TranslocationTag>());
+  else if (c.svType == "BND") return filterRun(c, SVType<TranslocationTag>());
   else if (c.svType == "INS") return filterRun(c, SVType<InsertionTag>());
   else {
     std::cerr << "SV analysis type not supported by Delly: " << c.svType << std::endl;

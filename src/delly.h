@@ -405,7 +405,7 @@ int delly(int argc, char **argv) {
   boost::program_options::options_description generic("Generic options");
   generic.add_options()
     ("help,?", "show help message")
-    ("type,t", boost::program_options::value<std::string>(&c.svType)->default_value("DEL"), "SV type (DEL, DUP, INV, TRA, INS)")
+    ("type,t", boost::program_options::value<std::string>(&c.svType)->default_value("DEL"), "SV type (DEL, DUP, INV, BND, INS)")
     ("genome,g", boost::program_options::value<boost::filesystem::path>(&c.genome), "genome fasta file")
     ("exclude,x", boost::program_options::value<boost::filesystem::path>(&c.exclude), "file with regions to exclude")
     ("outfile,o", boost::program_options::value<boost::filesystem::path>(&c.outfile)->default_value("sv.bcf"), "SV BCF output file")
@@ -565,7 +565,7 @@ int delly(int argc, char **argv) {
   if (c.svType == "DEL") return dellyRun(c, SVType<DeletionTag>());
   else if (c.svType == "DUP") return dellyRun(c, SVType<DuplicationTag>());
   else if (c.svType == "INV") return dellyRun(c, SVType<InversionTag>());
-  else if (c.svType == "TRA") return dellyRun(c, SVType<TranslocationTag>());
+  else if (c.svType == "BND") return dellyRun(c, SVType<TranslocationTag>());
   else if (c.svType == "INS") return dellyRun(c, SVType<InsertionTag>());
   else {
     std::cerr << "SV analysis type not supported by Delly: " << c.svType << std::endl;

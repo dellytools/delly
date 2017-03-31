@@ -161,7 +161,7 @@ void _fillIntervalMap(MergeConfig const& c, TGenomeIntervals& iScore, TContigMap
       if (bcf_get_info_int32(hdr, rec, "END", &svend, &nsvend) > 0) svEnd = *svend;
 
       // SV size check 
-      if (std::string(svt) != "TRA") {
+      if (std::string(svt) != "BND") {
 	if (std::string(svt) == "INS") {
 	  unsigned int inslenVal = 0;
 	  if (bcf_get_info_int32(hdr, rec, "INSLEN", &inslen, &ninslen) > 0) inslenVal = *inslen;
@@ -252,7 +252,7 @@ void _processIntervalMap(MergeConfig const& c, TGenomeIntervals const& iScore, T
 	if (iSNext->start - iS->start > c.bpoffset) break;
 	else {
 	  if (((iSNext->end > iS->end) && (iSNext->end - iS->end < c.bpoffset)) || ((iSNext->end <= iS->end) &&(iS->end - iSNext->end < c.bpoffset))) {
-	    if ((_addID(svType) == "TRA") || (recOverlap(iS->start, iS->end, iSNext->start, iSNext->end) >= c.recoverlap)) {
+	    if ((_addID(svType) == "BND") || (recOverlap(iS->start, iS->end, iSNext->start, iSNext->end) >= c.recoverlap)) {
 	      if (iS->score < iSNext->score) *iK = false;
 	      else if (iSNext ->score < iS->score) *iKNext = false;
 	      else {
@@ -289,7 +289,7 @@ void _outputSelectedIntervals(MergeConfig& c, TGenomeIntervals const& iSelected,
   bcf_hdr_append(hdr_out, "##ALT=<ID=DEL,Description=\"Deletion\">");
   bcf_hdr_append(hdr_out, "##ALT=<ID=DUP,Description=\"Duplication\">");
   bcf_hdr_append(hdr_out, "##ALT=<ID=INV,Description=\"Inversion\">");
-  bcf_hdr_append(hdr_out, "##ALT=<ID=TRA,Description=\"Translocation\">");
+  bcf_hdr_append(hdr_out, "##ALT=<ID=BND,Description=\"Translocation\">");
   bcf_hdr_append(hdr_out, "##ALT=<ID=INS,Description=\"Insertion\">");
   bcf_hdr_append(hdr_out, "##FILTER=<ID=LowQual,Description=\"PE/SR support below 3 or mapping quality below 20.\">");
   bcf_hdr_append(hdr_out, "##INFO=<ID=CIEND,Number=2,Type=Integer,Description=\"PE confidence interval around END\">");
@@ -417,7 +417,7 @@ void _outputSelectedIntervals(MergeConfig& c, TGenomeIntervals const& iSelected,
 	if (bcf_get_info_int32(hdr[idx], rec[idx], "INSLEN", &inslen, &ninslen) > 0) inslenVal = *inslen;
 
 	// Parse INFO fields
-	if ((std::string(svt) == "TRA") || ((std::string(svt) == "INS") && (inslenVal >= c.minsize) && (inslenVal <= c.maxsize)) || ((std::string(svt) != "TRA") && (std::string(svt) != "INS") && (svEnd - svStart >= c.minsize) && (svEnd - svStart <= c.maxsize))) {
+	if ((std::string(svt) == "BND") || ((std::string(svt) == "INS") && (inslenVal >= c.minsize) && (inslenVal <= c.maxsize)) || ((std::string(svt) != "BND") && (std::string(svt) != "INS") && (svEnd - svStart >= c.minsize) && (svEnd - svStart <= c.maxsize))) {
 	  unsigned int peSupport = 0;
 	  if (bcf_get_info_int32(hdr[idx], rec[idx], "PE", &pe, &npe) > 0) peSupport = *pe;
 	  unsigned int srSupport = 0;
@@ -703,7 +703,7 @@ int merge(int argc, char **argv) {
   boost::program_options::options_description generic("Generic options");
   generic.add_options()
     ("help,?", "show help message")
-    ("type,t", boost::program_options::value<std::string>(&c.svType)->default_value("DEL"), "SV type (DEL, DUP, INV, TRA, INS)")
+    ("type,t", boost::program_options::value<std::string>(&c.svType)->default_value("DEL"), "SV type (DEL, DUP, INV, BND, INS)")
     ("outfile,o", boost::program_options::value<boost::filesystem::path>(&c.outfile)->default_value("sv.bcf"), "Merged SV BCF output file")
     ("minsize,m", boost::program_options::value<uint32_t>(&c.minsize)->default_value(0), "min. SV size")
     ("maxsize,n", boost::program_options::value<uint32_t>(&c.maxsize)->default_value(1000000), "max. SV size")
@@ -794,7 +794,7 @@ int merge(int argc, char **argv) {
       boost::filesystem::remove(boost::filesystem::path(invCT[i].string() + ".csi"));
     }
     return rVal;
-  } else if (c.svType == "TRA") {
+  } else if (c.svType == "BND") {
     boost::filesystem::path oldPath = c.outfile;
     int rVal = 0;
     std::vector<boost::filesystem::path> traCT(4);

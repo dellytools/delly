@@ -132,12 +132,16 @@ _isDNA(std::string const& allele) {
 inline std::string
 _replaceIUPAC(std::string const& alleles) {
   std::vector<char> out(alleles.size());
-  bool inTag = false;
+  int32_t inTag = 0;
   for(uint32_t i = 0; i<alleles.size(); ++i) {
-    if ((inTag) || (alleles[i] == 'A') || (alleles[i] == 'C') || (alleles[i] == 'G') || (alleles[i] == 'T') || (alleles[i] == 'N') || (alleles[i] == 'a') || (alleles[i] == 'c') || (alleles[i] == 'g') || (alleles[i] == 't') || (alleles[i] == 'n') || (alleles[i] == '<') || (alleles[i] == '>') || (alleles[i] == ',')) {
+    if ((inTag) || (alleles[i] == 'A') || (alleles[i] == 'C') || (alleles[i] == 'G') || (alleles[i] == 'T') || (alleles[i] == 'N') || (alleles[i] == 'a') || (alleles[i] == 'c') || (alleles[i] == 'g') || (alleles[i] == 't') || (alleles[i] == 'n') || (alleles[i] == '<') || (alleles[i] == '>') || (alleles[i] == ']') || (alleles[i] == '[') || (alleles[i] == ',')) {
       out[i] = alleles[i];
-      if (alleles[i] == '<') inTag = true;
-      if (alleles[i] == '>') inTag = false;
+      if (alleles[i] == '<') inTag = 1;
+      else if (alleles[i] == ']') inTag = 2;
+      else if (alleles[i] == '[') inTag = 3;
+      else if ((alleles[i] == '>') && (inTag == 1)) inTag = 0;
+      else if ((alleles[i] == ']') && (inTag == 2)) inTag = 0;
+      else if ((alleles[i] == '[') && (inTag == 3)) inTag = 0;
     } else {
       // Replace IUPAC
       if ((alleles[i] == 'U') || (alleles[i] == 'u')) out[i] = 'T';
@@ -268,7 +272,16 @@ vcfParse(TConfig const& c, bam_hdr_t* hd, std::vector<TStructuralVariantRecord>&
 	else if (_addID(svType) == "DUP") svRec.ct = _decodeOrientation("5to3");
 	else if (_addID(svType) == "INS") svRec.ct = _decodeOrientation("NtoN");
 	else if (_addID(svType) == "INV") svRec.ct = _decodeOrientation("3to3"); // Insufficient
-	else if (_addID(svType) == "TRA") svRec.ct = _decodeOrientation("3to5"); // Insufficient
+	else if (_addID(svType) == "BND") {
+	  // Try to decode ALT
+	  svRec.ct = _decodeOrientation("3to5");
+	  if (!altAllele.empty()) {
+	    if (altAllele[0] == '[') svRec.ct = _decodeOrientation("5to5");
+	    else if (altAllele[0] == ']') svRec.ct = _decodeOrientation("5to3");
+	    else if (altAllele[altAllele.size() - 1] == ']') svRec.ct = _decodeOrientation("3to3");
+	    else if (altAllele[altAllele.size() - 1] == '[') svRec.ct = _decodeOrientation("3to5");
+	  }
+	}
       }
       if (bcf_get_info_string(hdr, rec, "CHR2", &chr2, &nchr2) > 0) {
 	std::string chr2Name = std::string(chr2);
@@ -409,7 +422,7 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
   bcf_hdr_append(hdr, "##ALT=<ID=DEL,Description=\"Deletion\">");
   bcf_hdr_append(hdr, "##ALT=<ID=DUP,Description=\"Duplication\">");
   bcf_hdr_append(hdr, "##ALT=<ID=INV,Description=\"Inversion\">");
-  bcf_hdr_append(hdr, "##ALT=<ID=TRA,Description=\"Translocation\">");
+  bcf_hdr_append(hdr, "##ALT=<ID=BND,Description=\"Translocation\">");
   bcf_hdr_append(hdr, "##ALT=<ID=INS,Description=\"Insertion\">");
   bcf_hdr_append(hdr, "##FILTER=<ID=LowQual,Description=\"PE/SR support below 3 or mapping quality below 20.\">");
   bcf_hdr_append(hdr, "##INFO=<ID=CIEND,Number=2,Type=Integer,Description=\"PE confidence interval around END\">");

@@ -219,7 +219,7 @@ namespace torali
 	  }
 
 	  // Set tag alleles
-	  svIt->alleles = boost::to_upper_copy(std::string(seq + svIt->svStart - 1, seq + svIt->svStart)) + ",<" + _addID(svType) + ">";
+	  svIt->alleles = _addAlleles(boost::to_upper_copy(std::string(seq + svIt->svStart - 1, seq + svIt->svStart)), std::string(hdr->target_name[svIt->chr2]), *svIt, svType);
 	  
 	  typedef std::vector<std::pair<int32_t, std::string> > TClipsizeSplit;
 	  typedef std::vector<TClipsizeSplit> TOffsetSplit;
@@ -322,7 +322,7 @@ namespace torali
 	      svIt->srSupport = 0;
 	    } else {
 	      // Update REF & ALT alleles because of split-read refinement (except for the small InDels)
-	      if ((svIt->peSupport != 0) || (!c.indels)) svIt->alleles = boost::to_upper_copy(std::string(seq + svIt->svStart - 1, seq + svIt->svStart)) + ",<" + _addID(svType) + ">";
+	      if ((svIt->peSupport != 0) || (!c.indels)) svIt->alleles = _addAlleles(boost::to_upper_copy(std::string(seq + svIt->svStart - 1, seq + svIt->svStart)), std::string(hdr->target_name[svIt->chr2]), *svIt, svType);
 	    }
 	  }
 	}

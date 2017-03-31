@@ -145,7 +145,6 @@ namespace torali {
     return true;
   }
 
-  
   // Deletions
   template<typename TBamRecord>
     inline uint8_t
