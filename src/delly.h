@@ -84,6 +84,8 @@ struct Config {
   bool hasExcludeFile;
   bool hasVcfFile;
   bool isHaplotagged;
+  bool pedumpflag;
+  bool srdumpflag;
   DnaScore<int> aliscore;
   std::string svType;
   std::string format;
@@ -91,6 +93,8 @@ struct Config {
   boost::filesystem::path vcffile;
   boost::filesystem::path genome;
   boost::filesystem::path exclude;
+  boost::filesystem::path srdump;
+  boost::filesystem::path pedump;
   std::vector<boost::filesystem::path> files;
   std::vector<std::string> sampleName;
 };
@@ -429,6 +433,8 @@ int delly(int argc, char **argv) {
   hidden.add_options()
     ("input-file", boost::program_options::value< std::vector<boost::filesystem::path> >(&c.files), "input file")
     ("format,f", boost::program_options::value<std::string>(&c.format)->default_value("bcf"), "output format (bcf, json.gz)")
+    ("pedump,p", boost::program_options::value<boost::filesystem::path>(&c.pedump), "outfile to dump PE info")
+    ("srdump,r", boost::program_options::value<boost::filesystem::path>(&c.srdump), "outfile to dump SR info")
     ("pruning,j", boost::program_options::value<uint32_t>(&c.graphPruning)->default_value(1000), "PE graph pruning cutoff")
     ;
 
@@ -453,6 +459,12 @@ int delly(int argc, char **argv) {
     return 0;
   }
 
+  // Flag dump files
+  if (vm.count("pedump")) c.pedumpflag = true;
+  else c.pedumpflag = false;
+  if (vm.count("srdump")) c.srdumpflag = true;
+  else c.srdumpflag = false;
+  
   // Check reference
   if (!(boost::filesystem::exists(c.genome) && boost::filesystem::is_regular_file(c.genome) && boost::filesystem::file_size(c.genome))) {
     std::cerr << "Reference file is missing: " << c.genome.string() << std::endl;

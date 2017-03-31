@@ -26,6 +26,12 @@ Contact: Tobias Rausch (rausch@embl.de)
 
 
 #include <boost/multiprecision/cpp_int.hpp>
+#include <boost/iostreams/stream.hpp>
+#include <boost/iostreams/stream_buffer.hpp>
+#include <boost/iostreams/device/file.hpp>
+#include <boost/iostreams/filtering_stream.hpp>
+#include <boost/iostreams/filter/zlib.hpp>
+#include <boost/iostreams/filter/gzip.hpp>
 
 #include <htslib/faidx.h>
 
@@ -156,6 +162,14 @@ namespace torali {
     // Get reference probes
     typedef std::vector<std::string> TProbes;
     TProbes refProbes(svs.size());
+
+    // Dump file
+    boost::iostreams::filtering_ostream dumpOut;
+    if (c.srdumpflag) {
+      dumpOut.push(boost::iostreams::gzip_compressor());
+      dumpOut.push(boost::iostreams::file_sink(c.srdump.string().c_str(), std::ios_base::out | std::ios_base::binary));
+      dumpOut << "#svid\tbam\tqname\tchr\tpos\tmatechr\tmatepos\tmapq" << std::endl;
+    }
 
     // Parse genome
     faidx_t* fai = fai_load(c.genome.string().c_str());
@@ -319,6 +333,13 @@ namespace torali {
 		      uint8_t* hpptr = bam_aux_get(rec, "HP");
 #pragma omp critical
 		      {
+			if (c.srdumpflag) {
+			  std::string svid(_addID(svType));
+			  std::string padNumber = boost::lexical_cast<std::string>(itSV->id);
+			  padNumber.insert(padNumber.begin(), 8 - padNumber.length(), '0');
+			  svid += padNumber;
+			  dumpOut << svid << "\t" << c.files[file_c].string() << "\t" << bam_get_qname(rec) << "\t" << hdr->target_name[rec->core.tid] << "\t" << rec->core.pos << "\t" << hdr->target_name[rec->core.mtid] << "\t" << rec->core.mpos << "\t" << rec->core.qual << std::endl;
+			}
 			countMap[file_c][itSV->id].alt.push_back((uint8_t) std::min(aq, (uint32_t) rec->core.qual));
 			if (hpptr) {
 			  c.isHaplotagged = true;

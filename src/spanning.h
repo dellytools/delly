@@ -26,6 +26,12 @@ Contact: Tobias Rausch (rausch@embl.de)
 
 #include <boost/container/flat_set.hpp>
 #include <boost/unordered_map.hpp>
+#include <boost/iostreams/stream.hpp>
+#include <boost/iostreams/stream_buffer.hpp>
+#include <boost/iostreams/device/file.hpp>
+#include <boost/iostreams/filtering_stream.hpp>
+#include <boost/iostreams/filter/zlib.hpp>
+#include <boost/iostreams/filter/gzip.hpp>
 #include <htslib/sam.h>
 #include "tags.h"
 
@@ -90,6 +96,13 @@ namespace torali {
     uint32_t lastId = svs.size();
     for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) spanCountMap[file_c].resize(2 * lastId, TCountPair());
 
+    // Dump file
+    boost::iostreams::filtering_ostream dumpOut;
+    if (c.pedumpflag) {
+      dumpOut.push(boost::iostreams::gzip_compressor());
+      dumpOut.push(boost::iostreams::file_sink(c.pedump.string().c_str(), std::ios_base::out | std::ios_base::binary));
+      dumpOut << "#svid\tbam\tqname\tchr\tpos\tmatechr\tmatepos\tmapq" << std::endl;
+    }
 
     // Iterate all samples
     boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
@@ -241,27 +254,30 @@ namespace torali {
 		  if ((itSV->chr==rec->core.mtid) && (itSV->svStart>=std::max(0, rec->core.mpos + rec->core.l_qseq - libIt->second.maxNormalISize)) && (itSV->svStart<=(rec->core.mpos + rec->core.l_qseq))) svidnumLeft = itSV->id;
 		  if ((itSV->chr2==rec->core.mtid) && (itSV->svEnd>=std::max(0,rec->core.mpos + rec->core.l_qseq - libIt->second.maxNormalISize)) && (itSV->svEnd<=(rec->core.mpos + rec->core.l_qseq))) svidnumRight = itSV->id + lastId;
 		}
-		if ((svidnumLeft >= 0) || (svidnumRight >= 0)) {
+		if ((svidnumLeft >= 0) && (svidnumRight >= 0)) {
 		  uint8_t* hpptr = bam_aux_get(rec, "HP");
 #pragma omp critical
 		  {
-		    if (svidnumLeft >= 0) {
-		      spanCountMap[file_c][svidnumLeft].alt.push_back(pairQuality);
-		      if (hpptr) {
-			c.isHaplotagged = true;
-			int hap = bam_aux2i(hpptr);
-			if (hap == 1) ++spanCountMap[file_c][svidnumLeft].alth1;
-			else ++spanCountMap[file_c][svidnumLeft].alth2;
-		      }
+		    if (c.pedumpflag) {
+		      std::string svid(_addID(svType));
+		      std::string padNumber = boost::lexical_cast<std::string>(itSV->id);
+		      padNumber.insert(padNumber.begin(), 8 - padNumber.length(), '0');
+		      svid += padNumber;
+		      dumpOut << svid << "\t" << c.files[file_c].string() << "\t" << bam_get_qname(rec) << "\t" << hdr->target_name[rec->core.tid] << "\t" << rec->core.pos << "\t" << hdr->target_name[rec->core.mtid] << "\t" << rec->core.mpos << "\t" << rec->core.qual << std::endl;
 		    }
-		    if (svidnumRight >= 0) {
-		      spanCountMap[file_c][svidnumRight].alt.push_back(pairQuality);
-		      if (hpptr) {
-			c.isHaplotagged = true;
-			int hap = bam_aux2i(hpptr);
-			if (hap == 1) ++spanCountMap[file_c][svidnumRight].alth1;
-			else ++spanCountMap[file_c][svidnumRight].alth2;
-		      }
+		    spanCountMap[file_c][svidnumLeft].alt.push_back(pairQuality);
+		    if (hpptr) {
+		      c.isHaplotagged = true;
+		      int hap = bam_aux2i(hpptr);
+		      if (hap == 1) ++spanCountMap[file_c][svidnumLeft].alth1;
+		      else ++spanCountMap[file_c][svidnumLeft].alth2;
+		    }
+		    spanCountMap[file_c][svidnumRight].alt.push_back(pairQuality);
+		    if (hpptr) {
+		      c.isHaplotagged = true;
+		      int hap = bam_aux2i(hpptr);
+		      if (hap == 1) ++spanCountMap[file_c][svidnumRight].alth1;
+		      else ++spanCountMap[file_c][svidnumRight].alth2;
 		    }
 		  }
 		}
