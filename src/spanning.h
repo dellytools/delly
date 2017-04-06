@@ -114,9 +114,13 @@ namespace torali {
       typedef boost::unordered_map<std::size_t, uint8_t> TQualities;
       std::vector<TQualities> qualities;
       qualities.resize(c.files.size());
+      std::vector<TQualities> qualitiestra;
+      qualitiestra.resize(c.files.size());
       typedef boost::unordered_map<std::size_t, int32_t> TAlignmentLength;
       std::vector<TAlignmentLength> alen;
       alen.resize(c.files.size());
+      std::vector<TAlignmentLength> alentra;
+      alentra.resize(c.files.size());
 
       // Get maximum insert size
       int32_t variability = getVariability(c, sampleLib[file_c]);
@@ -173,8 +177,13 @@ namespace torali {
 		r2Qual = std::min(r2Qual, (uint8_t) ( (score<255) ? score : 255 ));
 	      }
 	      std::size_t hv = hash_pair(rec);
-	      qualities[file_c][hv]= r2Qual;
-	      alen[file_c][hv]= alignmentLength(rec);
+	      if (rec->core.tid != rec->core.mtid) {
+		qualitiestra[file_c][hv]= r2Qual;
+		alentra[file_c][hv]= alignmentLength(rec);
+	      } else {
+		qualities[file_c][hv]= r2Qual;
+		alen[file_c][hv]= alignmentLength(rec);
+	      }
 	    } else {
 	      // Get the two mapping qualities
 	      uint8_t r2Qual = rec->core.qual;
@@ -184,15 +193,24 @@ namespace torali {
 		r2Qual = std::min(r2Qual, (uint8_t) ( (score<255) ? score : 255 ));
 	      }
 	      std::size_t hv=hash_pair_mate(rec);
-	      uint8_t pairQuality = std::min(qualities[file_c][hv], r2Qual);
-	      qualities[file_c][hv]= (uint8_t) 0;
+	      uint8_t pairQuality = 0;
+	      int32_t alenmate = 0;
+	      if (rec->core.tid != rec->core.mtid) {
+		pairQuality = std::min(qualitiestra[file_c][hv], r2Qual);
+		qualitiestra[file_c][hv] = (uint8_t) 0;
+		alenmate = alentra[file_c][hv];
+	      } else {
+		pairQuality = std::min(qualities[file_c][hv], r2Qual);
+		qualities[file_c][hv] = (uint8_t) 0;
+		alenmate = alen[file_c][hv];
+	      }
 	      
 	      // Pair quality
 	      if (pairQuality < c.minGenoQual) continue;
 
 	      // Outer insert size
 	      int outerISize = 0;
-	      if (rec->core.pos < rec->core.mpos) outerISize = rec->core.mpos + alen[file_c][hv] - rec->core.pos;
+	      if (rec->core.pos < rec->core.mpos) outerISize = rec->core.mpos + alenmate - rec->core.pos;
 	      else outerISize = rec->core.pos + alignmentLength(rec) - rec->core.mpos;
 	      
 	      // Insert the interval
@@ -202,7 +220,7 @@ namespace torali {
 		int32_t ePos = 0;
 		if (rec->core.pos < rec->core.mpos) {
 		  sPos = rec->core.pos;
-		  ePos = rec->core.mpos + alen[file_c][hv];
+		  ePos = rec->core.mpos + alenmate;
 		} else {
 		  sPos = rec->core.mpos;
 		  ePos = rec->core.pos + alignmentLength(rec);
@@ -258,8 +276,8 @@ namespace torali {
 		  if ((itSV->chr==rec->core.mtid) && (itSV->svStart>=rec->core.mpos) && (itSV->svStart<=(rec->core.mpos + libIt->second.maxNormalISize))) svidnumLeft = itSV->id;
 		  if ((itSV->chr2==rec->core.mtid) && (itSV->svEnd>=rec->core.mpos) && (itSV->svEnd<=(rec->core.mpos + libIt->second.maxNormalISize)))  svidnumRight = itSV->id + lastId;
 		} else {
-		  if ((itSV->chr==rec->core.mtid) && (itSV->svStart>=std::max(0, rec->core.mpos + (int) alen[file_c][hv] - libIt->second.maxNormalISize)) && (itSV->svStart<=(rec->core.mpos + (int) alen[file_c][hv]))) svidnumLeft = itSV->id;
-		  if ((itSV->chr2==rec->core.mtid) && (itSV->svEnd>=std::max(0,rec->core.mpos + (int) alen[file_c][hv] - libIt->second.maxNormalISize)) && (itSV->svEnd<=(rec->core.mpos + (int) alen[file_c][hv]))) svidnumRight = itSV->id + lastId;
+		  if ((itSV->chr==rec->core.mtid) && (itSV->svStart>=std::max(0, rec->core.mpos + (int) alenmate - libIt->second.maxNormalISize)) && (itSV->svStart<=(rec->core.mpos + (int) alenmate))) svidnumLeft = itSV->id;
+		  if ((itSV->chr2==rec->core.mtid) && (itSV->svEnd>=std::max(0,rec->core.mpos + (int) alenmate - libIt->second.maxNormalISize)) && (itSV->svEnd<=(rec->core.mpos + (int) alenmate))) svidnumRight = itSV->id + lastId;
 		}
 		if ((svidnumLeft >= 0) && (svidnumRight >= 0)) {
 		  uint8_t* hpptr = bam_aux_get(rec, "HP");
@@ -296,7 +314,9 @@ namespace torali {
 	}
       }
       // Clean-up qualities
-      _resetQualities(qualities[file_c], alen[file_c], svType);
+      qualities.clear();
+      alen.clear();
+      _resetQualities(qualitiestra[file_c], alentra[file_c], svType);
     }
     // Clean-up
     bam_hdr_destroy(hdr);
