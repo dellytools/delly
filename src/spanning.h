@@ -107,216 +107,222 @@ namespace torali {
     // Iterate all samples
     boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
     std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Breakpoint spanning coverage annotation" << std::endl;
-    boost::progress_display show_progress( (svs.end() - svs.begin()) );
+    boost::progress_display show_progress( hdr->n_targets );
+
+    // Qualities
+    typedef boost::unordered_map<std::size_t, uint8_t> TQualities;
+    std::vector<TQualities> qualities;
+    qualities.resize(c.files.size());
+    std::vector<TQualities> qualitiestra;
+    qualitiestra.resize(c.files.size());
+    typedef boost::unordered_map<std::size_t, int32_t> TAlignmentLength;
+    std::vector<TAlignmentLength> alen;
+    alen.resize(c.files.size());
+    std::vector<TAlignmentLength> alentra;
+    alentra.resize(c.files.size());
+
+    // Iterate chromosomes
+    for(int32_t refIndex=0; refIndex < (int32_t) hdr->n_targets; ++refIndex) {
+      ++show_progress;
+      
 #pragma omp parallel for default(shared)
-    for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
-      // Qualities
-      typedef boost::unordered_map<std::size_t, uint8_t> TQualities;
-      std::vector<TQualities> qualities;
-      qualities.resize(c.files.size());
-      std::vector<TQualities> qualitiestra;
-      qualitiestra.resize(c.files.size());
-      typedef boost::unordered_map<std::size_t, int32_t> TAlignmentLength;
-      std::vector<TAlignmentLength> alen;
-      alen.resize(c.files.size());
-      std::vector<TAlignmentLength> alentra;
-      alentra.resize(c.files.size());
+      for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
+	// Get maximum insert size
+	int32_t variability = getVariability(c, sampleLib[file_c]);
 
-      // Get maximum insert size
-      int32_t variability = getVariability(c, sampleLib[file_c]);
-
-      // Read alignments
-      for(typename TSVs::const_iterator itSV = svs.begin(); itSV!=svs.end(); ++itSV) {
-	if (file_c == (c.files.size()-1)) ++show_progress;
-	if (itSV->peSupport == 0) continue;
+	// Read alignments
+	for(typename TSVs::const_iterator itSV = svs.begin(); itSV!=svs.end(); ++itSV) {
+	  if (itSV->peSupport == 0) continue;
+	  if ((itSV->chr != refIndex) && (itSV->chr2 != refIndex)) continue;
 	
-	// Scan left and right breakpoint
-	Breakpoint bp(*itSV);
-	_initBreakpoint(hdr, bp, variability, svType);
-	unsigned int maxBp = 2;
-	if ((bp.chr == bp.chr2) && (bp.svStart + 3 * variability >= bp.svEnd)) maxBp = 1;
-	for (unsigned int bpPoint = 0; bpPoint < maxBp; ++bpPoint) {
-	  int32_t regionChr = 0;
-	  int32_t regionStart = 0;
-	  int32_t regionEnd = 0;
-	  if (bpPoint == (unsigned int)(bp.chr == bp.chr2)) {
-	    regionChr = bp.chr2;
-	    regionStart = bp.svEndBeg;
-	    regionEnd = bp.svEndEnd;
-	  } else {
-	    regionChr = bp.chr;
-	    regionStart = bp.svStartBeg;
-	    if (maxBp == 2) regionEnd = bp.svStartEnd;
-	    else regionEnd = bp.svEndEnd;
-	  }
-	  hts_itr_t* iter = sam_itr_queryi(idx[file_c], regionChr, regionStart, regionEnd);
-	  bam1_t* rec = bam_init1();
-	  while (sam_itr_next(samfile[file_c], iter, rec) >= 0) {
-	    if (rec->core.flag & (BAM_FSECONDARY | BAM_FQCFAIL | BAM_FDUP | BAM_FSUPPLEMENTARY | BAM_FUNMAP | BAM_FMUNMAP)) continue;
-	    if (!(rec->core.flag & BAM_FPAIRED) || (rec->core.qual < c.minGenoQual)) continue;
-
-	    // Mapping positions valid?
-	    if (_mappingPosGeno(rec->core.tid, rec->core.mtid, rec->core.pos, rec->core.mpos, svType)) continue;
-
-	    // Get the library information
-	    std::string rG = "DefaultLib";
-	    uint8_t *rgptr = bam_aux_get(rec, "RG");
-	    if (rgptr) {
-	      char* rg = (char*) (rgptr + 1);
-	      rG = std::string(rg);
-	    }
-	    typename TLibraryMap::iterator libIt = sampleLib[file_c].find(rG);
-	    if (libIt->second.median == 0) continue; // Single-end library
-		    
-	    // Get or store the mapping quality for the partner
-	    if (_firstPairObs(rec->core.tid, rec->core.mtid, rec->core.pos, rec->core.mpos, svType)) {
-	      uint8_t r2Qual = rec->core.qual;
-	      uint8_t* ptr = bam_aux_get(rec, "AS");
-	      if (ptr) {
-		int score = std::abs((int) bam_aux2i(ptr));
-		r2Qual = std::min(r2Qual, (uint8_t) ( (score<255) ? score : 255 ));
-	      }
-	      std::size_t hv = hash_pair(rec);
-	      if (rec->core.tid != rec->core.mtid) {
-		qualitiestra[file_c][hv]= r2Qual;
-		alentra[file_c][hv]= alignmentLength(rec);
-	      } else {
-		qualities[file_c][hv]= r2Qual;
-		alen[file_c][hv]= alignmentLength(rec);
-	      }
+	  // Scan left and right breakpoint
+	  Breakpoint bp(*itSV);
+	  _initBreakpoint(hdr, bp, variability, svType);
+	  unsigned int maxBp = 2;
+	  if ((bp.chr == bp.chr2) && (bp.svStart + 3 * variability >= bp.svEnd)) maxBp = 1;
+	  for (unsigned int bpPoint = 0; bpPoint < maxBp; ++bpPoint) {
+	    int32_t regionChr = 0;
+	    int32_t regionStart = 0;
+	    int32_t regionEnd = 0;
+	    if (bpPoint == (unsigned int)(bp.chr == bp.chr2)) {
+	      regionChr = bp.chr2;
+	      regionStart = bp.svEndBeg;
+	      regionEnd = bp.svEndEnd;
 	    } else {
-	      // Get the two mapping qualities
-	      uint8_t r2Qual = rec->core.qual;
-	      uint8_t* ptr = bam_aux_get(rec, "AS");
-	      if (ptr) {
-		int score = std::abs((int) bam_aux2i(ptr));
-		r2Qual = std::min(r2Qual, (uint8_t) ( (score<255) ? score : 255 ));
+	      regionChr = bp.chr;
+	      regionStart = bp.svStartBeg;
+	      if (maxBp == 2) regionEnd = bp.svStartEnd;
+	      else regionEnd = bp.svEndEnd;
+	    }
+	    hts_itr_t* iter = sam_itr_queryi(idx[file_c], regionChr, regionStart, regionEnd);
+	    bam1_t* rec = bam_init1();
+	    while (sam_itr_next(samfile[file_c], iter, rec) >= 0) {
+	      if (rec->core.flag & (BAM_FSECONDARY | BAM_FQCFAIL | BAM_FDUP | BAM_FSUPPLEMENTARY | BAM_FUNMAP | BAM_FMUNMAP)) continue;
+	      if (!(rec->core.flag & BAM_FPAIRED) || (rec->core.qual < c.minGenoQual)) continue;
+
+	      // Mapping positions valid?
+	      if (_mappingPosGeno(rec->core.tid, rec->core.mtid, rec->core.pos, rec->core.mpos, svType)) continue;
+	      
+	      // Get the library information
+	      std::string rG = "DefaultLib";
+	      uint8_t *rgptr = bam_aux_get(rec, "RG");
+	      if (rgptr) {
+		char* rg = (char*) (rgptr + 1);
+		rG = std::string(rg);
 	      }
-	      std::size_t hv=hash_pair_mate(rec);
-	      uint8_t pairQuality = 0;
-	      int32_t alenmate = 0;
-	      if (rec->core.tid != rec->core.mtid) {
-		pairQuality = std::min(qualitiestra[file_c][hv], r2Qual);
-		qualitiestra[file_c][hv] = (uint8_t) 0;
-		alenmate = alentra[file_c][hv];
+	      typename TLibraryMap::iterator libIt = sampleLib[file_c].find(rG);
+	      if (libIt->second.median == 0) continue; // Single-end library
+		    
+	      // Get or store the mapping quality for the partner
+	      if (_firstPairObs(rec->core.tid, rec->core.mtid, rec->core.pos, rec->core.mpos, svType)) {
+		uint8_t r2Qual = rec->core.qual;
+		uint8_t* ptr = bam_aux_get(rec, "AS");
+		if (ptr) {
+		  int score = std::abs((int) bam_aux2i(ptr));
+		  r2Qual = std::min(r2Qual, (uint8_t) ( (score<255) ? score : 255 ));
+		}
+		std::size_t hv = hash_pair(rec);
+		if (rec->core.tid != rec->core.mtid) {
+		  qualitiestra[file_c][hv]= r2Qual;
+		  alentra[file_c][hv]= alignmentLength(rec);
+		} else {
+		  qualities[file_c][hv]= r2Qual;
+		  alen[file_c][hv]= alignmentLength(rec);
+		}
 	      } else {
-		pairQuality = std::min(qualities[file_c][hv], r2Qual);
-		qualities[file_c][hv] = (uint8_t) 0;
-		alenmate = alen[file_c][hv];
-	      }
-	      
-	      // Pair quality
-	      if (pairQuality < c.minGenoQual) continue;
-
-	      // Outer insert size
-	      int outerISize = 0;
-	      if (rec->core.pos < rec->core.mpos) outerISize = rec->core.mpos + alenmate - rec->core.pos;
-	      else outerISize = rec->core.pos + alignmentLength(rec) - rec->core.mpos;
-	      
-	      // Insert the interval
-	      if ((getStrandIndependentOrientation(rec->core) == libIt->second.defaultOrient) && (outerISize >= libIt->second.minNormalISize) && (outerISize <= libIt->second.maxNormalISize) && (rec->core.tid==rec->core.mtid)) {
-		// Normal spanning coverage
-		int32_t sPos = 0;
-		int32_t ePos = 0;
-		if (rec->core.pos < rec->core.mpos) {
-		  sPos = rec->core.pos;
-		  ePos = rec->core.mpos + alenmate;
+		// Get the two mapping qualities
+		uint8_t r2Qual = rec->core.qual;
+		uint8_t* ptr = bam_aux_get(rec, "AS");
+		if (ptr) {
+		  int score = std::abs((int) bam_aux2i(ptr));
+		  r2Qual = std::min(r2Qual, (uint8_t) ( (score<255) ? score : 255 ));
+		}
+		std::size_t hv=hash_pair_mate(rec);
+		uint8_t pairQuality = 0;
+		int32_t alenmate = 0;
+		if (rec->core.tid != rec->core.mtid) {
+		  pairQuality = std::min(qualitiestra[file_c][hv], r2Qual);
+		  qualitiestra[file_c][hv] = (uint8_t) 0;
+		  alenmate = alentra[file_c][hv];
 		} else {
-		  sPos = rec->core.mpos;
-		  ePos = rec->core.pos + alignmentLength(rec);
-		}
-		int32_t midPoint = sPos+(ePos-sPos)/2;
-		int32_t svidnum = -1;
-		if (std::abs(midPoint - itSV->svStart) < std::abs(itSV->svEnd - midPoint)) {
-		  if ((itSV->chr == rec->core.tid) && (itSV->svStart > sPos + c.minimumFlankSize) && (itSV->svStart + c.minimumFlankSize < ePos)) svidnum = itSV->id;
-		} else {
-		  if ((itSV->chr2 == rec->core.tid) && (itSV->svEnd > sPos + c.minimumFlankSize) && (itSV->svEnd + c.minimumFlankSize < ePos)) svidnum = itSV->id + lastId;
-		}
-		if (svidnum >= 0) {
-		  uint8_t* hpptr = bam_aux_get(rec, "HP");
-#pragma omp critical
-		  {
-		    spanCountMap[file_c][svidnum].ref.push_back(pairQuality);
-		    if (hpptr) {
-		      c.isHaplotagged = true;
-		      int hap = bam_aux2i(hpptr);
-		      if (hap == 1) ++spanCountMap[file_c][svidnum].refh1;
-		      else ++spanCountMap[file_c][svidnum].refh2;
-		    }
-		  }
-		}
-	      } else if ((getStrandIndependentOrientation(rec->core) != libIt->second.defaultOrient) || (outerISize < libIt->second.minNormalISize) || (outerISize > libIt->second.maxNormalISize) || (rec->core.tid!=rec->core.mtid)) {
-		if (_acceptedInsertSize(libIt->second, abs(rec->core.isize), svType)) continue;  // Normal paired-end (for deletions, insertions only - this uses minISizeCutoff and maxISizeCutoff)
-		if (_acceptedOrientation(libIt->second.defaultOrient, getStrandIndependentOrientation(rec->core), svType)) continue;  // Orientation disagrees with SV type
-		if (!(((itSV->chr == rec->core.tid) && (itSV->chr2 == rec->core.mtid)) || ((itSV->chr == rec->core.mtid) && (itSV->chr2 == rec->core.tid)))) continue;
-
-		// Does the pair confirm the SV
-		int32_t const minPos = _minCoord(rec->core.pos, rec->core.mpos, svType);
-		int32_t const maxPos = _maxCoord(rec->core.pos, rec->core.mpos, svType);
-
-		if (rec->core.tid==itSV->chr) {
-		  if (minPos < itSV->svStart) {
-		    if (_pairsDisagree(minPos, maxPos, rec->core.l_qseq, libIt->second.maxNormalISize, itSV->svStart, itSV->svEnd, rec->core.l_qseq, libIt->second.maxNormalISize, _getSpanOrientation(rec->core, libIt->second.defaultOrient, svType), itSV->ct, svType)) continue;
-		  } else {
-		    if (_pairsDisagree(itSV->svStart, itSV->svEnd, rec->core.l_qseq, libIt->second.maxNormalISize, minPos, maxPos, rec->core.l_qseq, libIt->second.maxNormalISize, itSV->ct, _getSpanOrientation(rec->core, libIt->second.defaultOrient, svType), svType)) continue;
-		  }
+		  pairQuality = std::min(qualities[file_c][hv], r2Qual);
+		  qualities[file_c][hv] = (uint8_t) 0;
+		  alenmate = alen[file_c][hv];
 		}
 		
-		int32_t svidnumLeft = -1;
-		int32_t svidnumRight = -1;
-		// Missing spanning coverage
-		if (_mateIsUpstream(libIt->second.defaultOrient, (rec->core.flag & BAM_FREAD1), (rec->core.flag & BAM_FREVERSE))) {
-		  if ((itSV->chr==rec->core.tid) && (itSV->svStart>=rec->core.pos) && (itSV->svStart<=(rec->core.pos + libIt->second.maxNormalISize))) svidnumLeft = itSV->id;
-		  if ((itSV->chr2==rec->core.tid) && (itSV->svEnd>=rec->core.pos) && (itSV->svEnd<=(rec->core.pos + libIt->second.maxNormalISize))) svidnumRight = itSV->id + lastId;
-		} else {
-		  if ((itSV->chr==rec->core.tid) && (itSV->svStart>=std::max(0, rec->core.pos + (int) alignmentLength(rec) - libIt->second.maxNormalISize)) && (itSV->svStart<=(rec->core.pos + (int) alignmentLength(rec)))) svidnumLeft = itSV->id;
-		  if ((itSV->chr2==rec->core.tid) && (itSV->svEnd>=std::max(0, rec->core.pos + (int) alignmentLength(rec) - libIt->second.maxNormalISize)) && (itSV->svEnd<=(rec->core.pos + (int) alignmentLength(rec)))) svidnumRight = itSV->id + lastId;
-		}
-		if (_mateIsUpstream(libIt->second.defaultOrient, !(rec->core.flag & BAM_FREAD1), (rec->core.flag & BAM_FMREVERSE))) {
-		  if ((itSV->chr==rec->core.mtid) && (itSV->svStart>=rec->core.mpos) && (itSV->svStart<=(rec->core.mpos + libIt->second.maxNormalISize))) svidnumLeft = itSV->id;
-		  if ((itSV->chr2==rec->core.mtid) && (itSV->svEnd>=rec->core.mpos) && (itSV->svEnd<=(rec->core.mpos + libIt->second.maxNormalISize)))  svidnumRight = itSV->id + lastId;
-		} else {
-		  if ((itSV->chr==rec->core.mtid) && (itSV->svStart>=std::max(0, rec->core.mpos + (int) alenmate - libIt->second.maxNormalISize)) && (itSV->svStart<=(rec->core.mpos + (int) alenmate))) svidnumLeft = itSV->id;
-		  if ((itSV->chr2==rec->core.mtid) && (itSV->svEnd>=std::max(0,rec->core.mpos + (int) alenmate - libIt->second.maxNormalISize)) && (itSV->svEnd<=(rec->core.mpos + (int) alenmate))) svidnumRight = itSV->id + lastId;
-		}
-		if ((svidnumLeft >= 0) && (svidnumRight >= 0)) {
-		  uint8_t* hpptr = bam_aux_get(rec, "HP");
+		// Pair quality
+		if (pairQuality < c.minGenoQual) continue;
+		
+		// Outer insert size
+		int outerISize = 0;
+		if (rec->core.pos < rec->core.mpos) outerISize = rec->core.mpos + alenmate - rec->core.pos;
+		else outerISize = rec->core.pos + alignmentLength(rec) - rec->core.mpos;
+		
+		// Insert the interval
+		if ((getStrandIndependentOrientation(rec->core) == libIt->second.defaultOrient) && (outerISize >= libIt->second.minNormalISize) && (outerISize <= libIt->second.maxNormalISize) && (rec->core.tid==rec->core.mtid)) {
+		  // Normal spanning coverage
+		  int32_t sPos = 0;
+		  int32_t ePos = 0;
+		  if (rec->core.pos < rec->core.mpos) {
+		    sPos = rec->core.pos;
+		    ePos = rec->core.mpos + alenmate;
+		  } else {
+		    sPos = rec->core.mpos;
+		    ePos = rec->core.pos + alignmentLength(rec);
+		  }
+		  int32_t midPoint = sPos+(ePos-sPos)/2;
+		  int32_t svidnum = -1;
+		  if (std::abs(midPoint - itSV->svStart) < std::abs(itSV->svEnd - midPoint)) {
+		    if ((itSV->chr == rec->core.tid) && (itSV->svStart > sPos + c.minimumFlankSize) && (itSV->svStart + c.minimumFlankSize < ePos)) svidnum = itSV->id;
+		  } else {
+		    if ((itSV->chr2 == rec->core.tid) && (itSV->svEnd > sPos + c.minimumFlankSize) && (itSV->svEnd + c.minimumFlankSize < ePos)) svidnum = itSV->id + lastId;
+		  }
+		  if (svidnum >= 0) {
+		    uint8_t* hpptr = bam_aux_get(rec, "HP");
 #pragma omp critical
-		  {
-		    if (c.pedumpflag) {
-		      std::string svid(_addID(svType));
-		      std::string padNumber = boost::lexical_cast<std::string>(itSV->id);
-		      padNumber.insert(padNumber.begin(), 8 - padNumber.length(), '0');
-		      svid += padNumber;
-		      dumpOut << svid << "\t" << c.files[file_c].string() << "\t" << bam_get_qname(rec) << "\t" << hdr->target_name[rec->core.tid] << "\t" << rec->core.pos << "\t" << hdr->target_name[rec->core.mtid] << "\t" << rec->core.mpos << "\t" << rec->core.qual << std::endl;
+		    {
+		      spanCountMap[file_c][svidnum].ref.push_back(pairQuality);
+		      if (hpptr) {
+			c.isHaplotagged = true;
+			int hap = bam_aux2i(hpptr);
+			if (hap == 1) ++spanCountMap[file_c][svidnum].refh1;
+			else ++spanCountMap[file_c][svidnum].refh2;
+		      }
 		    }
-		    spanCountMap[file_c][svidnumLeft].alt.push_back(pairQuality);
-		    if (hpptr) {
-		      c.isHaplotagged = true;
-		      int hap = bam_aux2i(hpptr);
-		      if (hap == 1) ++spanCountMap[file_c][svidnumLeft].alth1;
-		      else ++spanCountMap[file_c][svidnumLeft].alth2;
+		  }
+		} else if ((getStrandIndependentOrientation(rec->core) != libIt->second.defaultOrient) || (outerISize < libIt->second.minNormalISize) || (outerISize > libIt->second.maxNormalISize) || (rec->core.tid!=rec->core.mtid)) {
+		  if (_acceptedInsertSize(libIt->second, abs(rec->core.isize), svType)) continue;  // Normal paired-end (for deletions, insertions only - this uses minISizeCutoff and maxISizeCutoff)
+		  if (_acceptedOrientation(libIt->second.defaultOrient, getStrandIndependentOrientation(rec->core), svType)) continue;  // Orientation disagrees with SV type
+		  if (!(((itSV->chr == rec->core.tid) && (itSV->chr2 == rec->core.mtid)) || ((itSV->chr == rec->core.mtid) && (itSV->chr2 == rec->core.tid)))) continue;
+		  
+		  // Does the pair confirm the SV
+		  int32_t const minPos = _minCoord(rec->core.pos, rec->core.mpos, svType);
+		  int32_t const maxPos = _maxCoord(rec->core.pos, rec->core.mpos, svType);
+		  
+		  if (rec->core.tid==itSV->chr) {
+		    if (minPos < itSV->svStart) {
+		      if (_pairsDisagree(minPos, maxPos, rec->core.l_qseq, libIt->second.maxNormalISize, itSV->svStart, itSV->svEnd, rec->core.l_qseq, libIt->second.maxNormalISize, _getSpanOrientation(rec->core, libIt->second.defaultOrient, svType), itSV->ct, svType)) continue;
+		    } else {
+		      if (_pairsDisagree(itSV->svStart, itSV->svEnd, rec->core.l_qseq, libIt->second.maxNormalISize, minPos, maxPos, rec->core.l_qseq, libIt->second.maxNormalISize, itSV->ct, _getSpanOrientation(rec->core, libIt->second.defaultOrient, svType), svType)) continue;
 		    }
-		    spanCountMap[file_c][svidnumRight].alt.push_back(pairQuality);
-		    if (hpptr) {
-		      c.isHaplotagged = true;
-		      int hap = bam_aux2i(hpptr);
-		      if (hap == 1) ++spanCountMap[file_c][svidnumRight].alth1;
-		      else ++spanCountMap[file_c][svidnumRight].alth2;
+		  }
+		  
+		  int32_t svidnumLeft = -1;
+		  int32_t svidnumRight = -1;
+		  // Missing spanning coverage
+		  if (_mateIsUpstream(libIt->second.defaultOrient, (rec->core.flag & BAM_FREAD1), (rec->core.flag & BAM_FREVERSE))) {
+		    if ((itSV->chr==rec->core.tid) && (itSV->svStart>=rec->core.pos) && (itSV->svStart<=(rec->core.pos + libIt->second.maxNormalISize))) svidnumLeft = itSV->id;
+		    if ((itSV->chr2==rec->core.tid) && (itSV->svEnd>=rec->core.pos) && (itSV->svEnd<=(rec->core.pos + libIt->second.maxNormalISize))) svidnumRight = itSV->id + lastId;
+		  } else {
+		    if ((itSV->chr==rec->core.tid) && (itSV->svStart>=std::max(0, rec->core.pos + (int) alignmentLength(rec) - libIt->second.maxNormalISize)) && (itSV->svStart<=(rec->core.pos + (int) alignmentLength(rec)))) svidnumLeft = itSV->id;
+		    if ((itSV->chr2==rec->core.tid) && (itSV->svEnd>=std::max(0, rec->core.pos + (int) alignmentLength(rec) - libIt->second.maxNormalISize)) && (itSV->svEnd<=(rec->core.pos + (int) alignmentLength(rec)))) svidnumRight = itSV->id + lastId;
+		  }
+		  if (_mateIsUpstream(libIt->second.defaultOrient, !(rec->core.flag & BAM_FREAD1), (rec->core.flag & BAM_FMREVERSE))) {
+		    if ((itSV->chr==rec->core.mtid) && (itSV->svStart>=rec->core.mpos) && (itSV->svStart<=(rec->core.mpos + libIt->second.maxNormalISize))) svidnumLeft = itSV->id;
+		    if ((itSV->chr2==rec->core.mtid) && (itSV->svEnd>=rec->core.mpos) && (itSV->svEnd<=(rec->core.mpos + libIt->second.maxNormalISize)))  svidnumRight = itSV->id + lastId;
+		  } else {
+		    if ((itSV->chr==rec->core.mtid) && (itSV->svStart>=std::max(0, rec->core.mpos + (int) alenmate - libIt->second.maxNormalISize)) && (itSV->svStart<=(rec->core.mpos + (int) alenmate))) svidnumLeft = itSV->id;
+		    if ((itSV->chr2==rec->core.mtid) && (itSV->svEnd>=std::max(0,rec->core.mpos + (int) alenmate - libIt->second.maxNormalISize)) && (itSV->svEnd<=(rec->core.mpos + (int) alenmate))) svidnumRight = itSV->id + lastId;
+		  }
+		  if ((svidnumLeft >= 0) && (svidnumRight >= 0)) {
+		    uint8_t* hpptr = bam_aux_get(rec, "HP");
+#pragma omp critical
+		    {
+		      if (c.pedumpflag) {
+			std::string svid(_addID(svType));
+			std::string padNumber = boost::lexical_cast<std::string>(itSV->id);
+			padNumber.insert(padNumber.begin(), 8 - padNumber.length(), '0');
+			svid += padNumber;
+			dumpOut << svid << "\t" << c.files[file_c].string() << "\t" << bam_get_qname(rec) << "\t" << hdr->target_name[rec->core.tid] << "\t" << rec->core.pos << "\t" << hdr->target_name[rec->core.mtid] << "\t" << rec->core.mpos << "\t" << rec->core.qual << std::endl;
+		      }
+		      spanCountMap[file_c][svidnumLeft].alt.push_back(pairQuality);
+		      if (hpptr) {
+			c.isHaplotagged = true;
+			int hap = bam_aux2i(hpptr);
+			if (hap == 1) ++spanCountMap[file_c][svidnumLeft].alth1;
+			else ++spanCountMap[file_c][svidnumLeft].alth2;
+		      }
+		      spanCountMap[file_c][svidnumRight].alt.push_back(pairQuality);
+		      if (hpptr) {
+			c.isHaplotagged = true;
+			int hap = bam_aux2i(hpptr);
+			if (hap == 1) ++spanCountMap[file_c][svidnumRight].alth1;
+			else ++spanCountMap[file_c][svidnumRight].alth2;
+		      }
 		    }
 		  }
 		}
 	      }
 	    }
+	    bam_destroy1(rec);
+	    hts_itr_destroy(iter);
 	  }
-	  bam_destroy1(rec);
-	  hts_itr_destroy(iter);
 	}
+	// Clean-up qualities
+	qualities[file_c].clear();
+	alen[file_c].clear();
+	_resetQualities(qualitiestra[file_c], alentra[file_c], svType);
       }
-      // Clean-up qualities
-      qualities.clear();
-      alen.clear();
-      _resetQualities(qualitiestra[file_c], alentra[file_c], svType);
     }
     // Clean-up
     bam_hdr_destroy(hdr);
