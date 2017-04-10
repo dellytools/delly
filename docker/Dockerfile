@@ -42,6 +42,7 @@ RUN cd /opt \
 RUN cd /opt \
     && git clone https://github.com/samtools/bcftools.git \
     && cd /opt/bcftools \
+    && git checkout tags/1.4 \
     && make \
     && make docs \
     && make install
