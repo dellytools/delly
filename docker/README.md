@@ -1,7 +1,7 @@
 Dockerized DELLY
 ================
 
-[Delly](https://github.com/dellytools/delly) is available as a [Docker image](https://registry.hub.docker.com/u/dellytools/delly/). You can pull the DELLY image using
+[Delly](https://github.com/dellytools/delly) is available as a [Docker image](https://hub.docker.com/r/dellytools/delly/). You can pull the DELLY image using
 
 `docker pull dellytools/delly`
 

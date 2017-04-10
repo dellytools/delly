@@ -7,7 +7,7 @@
 
 [![install with bioconda](https://img.shields.io/badge/install%20with-bioconda-brightgreen.svg?style=flat-square)](http://bioconda.github.io/recipes/delly/README.html)
 [![Build Status](https://travis-ci.org/dellytools/delly.svg?branch=master)](https://travis-ci.org/dellytools/delly)
-[![Docker Automated buil](https://img.shields.io/docker/automated/jrottenberg/ffmpeg.svg?style=flat-square)](https://registry.hub.docker.com/u/dellytools/delly/)
+[![Docker Automated buil](https://img.shields.io/docker/automated/jrottenberg/ffmpeg.svg?style=flat-square)](https://hub.docker.com/r/dellytools/delly/)
 
 Delly2 is an integrated structural variant prediction method that can discover, genotype and visualize deletions, tandem duplications, inversions and translocations at single-nucleotide resolution in short-read massively parallel sequencing data. It uses paired-ends and split-reads to sensitively and accurately delineate genomic rearrangements throughout the genome. Structural variants can be visualized using [Delly-maze](https://github.com/dellytools/maze) and [Delly-suave](https://github.com/dellytools/suave).
 
@@ -24,7 +24,7 @@ Alternatively, you can build Delly2 from source. Delly2 dependencies are include
 
 `make all`
 
-There is a Delly discussion group [delly-users](http://groups.google.com/d/forum/delly-users) for usage and installation questions and a dockerized [delly](https://registry.hub.docker.com/u/dellytools/delly/).
+There is a Delly discussion group [delly-users](http://groups.google.com/d/forum/delly-users) for usage and installation questions and a dockerized [delly](https://hub.docker.com/r/dellytools/delly/).
 
 
 
@@ -121,7 +121,7 @@ Bam files need to be sorted and index. If multiple libraries are present for a s
 There is a delly discussion group [delly-users](http://groups.google.com/d/forum/delly-users).
 
 * Docker support?            
-There is a dockerized delly available [here](https://registry.hub.docker.com/u/dellytools/delly/).
+There is a dockerized delly available [here](https://hub.docker.com/r/dellytools/delly/).
 
 
 Citation
