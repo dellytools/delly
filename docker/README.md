@@ -7,7 +7,7 @@ Dockerized DELLY
 
 You can then run DELLY from that image. Below we assume your bam files are in /var/data which is mounted as /data in the docker container:
 
-`docker run -it -v /var/data:/data trausch/delly /bin/bash`
+`docker run -it -v /var/data:/data dellytools/delly /bin/bash`
 
 `delly call -t DEL -o /data/del.bcf -g /data/ref.fa /data/s1.bam /data/s2.bam`
 

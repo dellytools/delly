@@ -10,7 +10,7 @@ description: |
   Summary:   Structural variant discovery by integrated paired-end and split-read analysis
 requirements:
   - class: DockerRequirement
-    dockerPull: "trausch/delly"
+    dockerPull: "dellytools/delly"
 inputs:
   - id: "#type"
     type: string
