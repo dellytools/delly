@@ -1,9 +1,9 @@
 Dockerized DELLY
 ================
 
-[Delly](https://github.com/tobiasrausch/delly) is available as a [Docker image](https://hub.docker.com/r/trausch/delly/). You can pull the DELLY image using
+[Delly](https://github.com/dellytools/delly) is available as a [Docker image](https://registry.hub.docker.com/u/dellytools/delly/). You can pull the DELLY image using
 
-`docker pull trausch/delly`
+`docker pull dellytools/delly`
 
 You can then run DELLY from that image. Below we assume your bam files are in /var/data which is mounted as /data in the docker container:
 
