@@ -33,7 +33,8 @@ matrix:
           packages:
             - g++-6
 
-    - os: osx
+    - env: MYCC="gcc" MYCXX="g++"
+      os: osx
       osx_image: xcode8
 
 
