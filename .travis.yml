@@ -14,8 +14,6 @@ matrix:
             - ubuntu-toolchain-r-test
           packages:
             - g++-4.8
-	    - liblzma-dev
-	    - libbz2-dev
 
     - env: MYCC="gcc-5" MYCXX="g++-5"
       os: linux
@@ -25,8 +23,6 @@ matrix:
             - ubuntu-toolchain-r-test
           packages:
             - g++-5
-	    - liblzma-dev
-	    - libbz2-dev
 
     - env: MYCC="gcc-6" MYCXX="g++-6"
       os: linux
@@ -36,10 +32,10 @@ matrix:
             - ubuntu-toolchain-r-test
           packages:
             - g++-6
-	    - liblzma-dev
-	    - libbz2-dev
 
 before_install:
+  - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then sudo apt-get update -qq; fi
+  - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then sudo apt-get install -qq liblzma-dev libbz2-dev; fi
   - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then brew update; fi
   - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then brew install xz; fi
 
