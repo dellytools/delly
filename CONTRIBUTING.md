@@ -17,7 +17,7 @@ Please consider using the Delly discussion group [delly-users](http://groups.goo
 
 New Features
 ------------
-If you want to suggest a new feature please go ahead and open an issue!
+If you want to suggest a new feature please go ahead and open an [issue](https://github.com/dellytools/delly/issues)!
 
 
 Roadmap
