@@ -14,6 +14,8 @@ matrix:
             - ubuntu-toolchain-r-test
           packages:
             - g++-4.8
+	    - liblzma-dev
+	    - libbz2-dev
 
     - env: MYCC="gcc-5" MYCXX="g++-5"
       os: linux
@@ -23,6 +25,8 @@ matrix:
             - ubuntu-toolchain-r-test
           packages:
             - g++-5
+	    - liblzma-dev
+	    - libbz2-dev
 
     - env: MYCC="gcc-6" MYCXX="g++-6"
       os: linux
@@ -32,12 +36,8 @@ matrix:
             - ubuntu-toolchain-r-test
           packages:
             - g++-6
-
-addons:
-  apt:
-    packages:
-    - liblzma-dev
-    - libbz2-dev
+	    - liblzma-dev
+	    - libbz2-dev
 
 before_install:
   - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then brew update; fi
