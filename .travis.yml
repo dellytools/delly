@@ -2,8 +2,6 @@
 
 language: cpp
 
-sudo: false
-
 matrix:
   include:
     - env: MYCC="gcc-4.8" MYCXX="g++-4.8"
