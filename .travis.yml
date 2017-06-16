@@ -2,7 +2,17 @@
 
 language: cpp
 
+os:
+  - linux
+  - osx
+
+compiler:
+  - gcc
+  - clang
+  
 matrix:
+  allowed_failures:
+    - os:osx
   include:
     - env: MYCC="gcc-4.8" MYCXX="g++-4.8"
       os: linux
@@ -30,6 +40,10 @@ matrix:
             - ubuntu-toolchain-r-test
           packages:
             - g++-6
+
+    - os: osx
+      osx_image: xcode8
+
 
 before_install:
   - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then sudo apt-get update -qq; fi
