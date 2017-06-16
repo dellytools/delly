@@ -2,14 +2,6 @@
 
 language: cpp
 
-os:
-  - linux
-  - osx
-
-compiler:
-  - gcc
-  - clang
-  
 matrix:
   allowed_failures:
     - os:osx
