@@ -340,7 +340,10 @@ inline int dellyRun(Config& c, TSVType svType) {
   typedef boost::unordered_map<std::string, LibraryInfo> TLibraryMap;
   typedef std::vector<TLibraryMap> TSampleLibrary;
   TSampleLibrary sampleLib(c.files.size());
-  getLibraryParams(c, validRegions, sampleLib);
+  if (!getLibraryParams(c, validRegions, sampleLib)) {
+    std::cerr << "Library parameters could not be estimated!" << std::endl;
+    return 1;
+  }
 
   // SV Discovery
   if (!c.hasVcfFile) shortPE(c, validRegions, svs, sampleLib, svType);

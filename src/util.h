@@ -59,7 +59,8 @@ namespace torali
   struct LibraryParams {
     typedef int32_t TValue;
     typedef std::vector<TValue> TSizeVector;
-    
+
+    int32_t lastReadPos;
     uint32_t processedNumPairs;
     uint32_t processedNumReads;
     uint32_t orient[4];
@@ -72,10 +73,10 @@ namespace torali
     TSizeVector readSize;
     TSizeVector readDist;
 
-    LibraryParams() : processedNumPairs(0), processedNumReads(0), defaultOrient(0), median(0), mad(0), rs(0), avgdist(0) {
+    LibraryParams() : lastReadPos(0), processedNumPairs(0), processedNumReads(0), defaultOrient(0), median(0), mad(0), rs(0), avgdist(0) {
       for(uint32_t i=0;i<4;++i) orient[i]=0;
     }
-    LibraryParams(int32_t maxPSize, int32_t maxRSize) : processedNumPairs(0), processedNumReads(0), defaultOrient(0), median(0), mad(0), rs(0), avgdist(0) {
+    LibraryParams(int32_t maxPSize, int32_t maxRSize) : lastReadPos(0), processedNumPairs(0), processedNumReads(0), defaultOrient(0), median(0), mad(0), rs(0), avgdist(0) {
       for(uint32_t i=0;i<4;++i) orient[i]=0;
       vecISize.resize(maxPSize, 0);
       readSize.resize(maxRSize, 0);
@@ -419,7 +420,7 @@ namespace torali
   }
 
   template<typename TConfig, typename TValidRegion, typename TSampleLibrary>
-    inline void getLibraryParams(TConfig const& c, TValidRegion const& validRegions, TSampleLibrary& sampleLib) {
+    inline bool getLibraryParams(TConfig const& c, TValidRegion const& validRegions, TSampleLibrary& sampleLib) {
     typedef typename TValidRegion::value_type TChrIntervals;
     typedef typename TSampleLibrary::value_type TLibraryMap;
 
@@ -484,7 +485,6 @@ namespace torali
       for(int32_t refIndex=0; ((refIndex < (int32_t) hdr[0]->n_targets) && (libCount < allLibs)); ++refIndex) {
 	if (validRegions[refIndex].empty()) continue;
 	for(typename TChrIntervals::const_iterator vRIt = validRegions[refIndex].begin(); ((vRIt != validRegions[refIndex].end()) && (libCount < allLibs)); ++vRIt) {
-	  int32_t lastReadPos = vRIt->lower();
 	  hts_itr_t* iter = sam_itr_queryi(idx[file_c], refIndex, vRIt->lower(), vRIt->upper());
 	  bam1_t* rec = bam_init1();
 	  while ((sam_itr_next(samfile[file_c], iter, rec) >= 0) && (libCount < allLibs)) {
@@ -497,9 +497,13 @@ namespace torali
 		rG = std::string(rg);
 	      }
 	      TParams::iterator paramIt = params.find(rG);
+	      if (paramIt == params.end()) {
+		std::cerr << "Error: Unknown read group: " << rG << std::endl;
+		return false;
+	      }
 	      paramIt->second.readSize[paramIt->second.processedNumReads % minNumAlignments] = rec->core.l_qseq;
-	      paramIt->second.readDist[paramIt->second.processedNumReads % minNumAlignments] = rec->core.pos - lastReadPos;
-	      lastReadPos = rec->core.pos;
+	      paramIt->second.readDist[paramIt->second.processedNumReads % minNumAlignments] = rec->core.pos - paramIt->second.lastReadPos;
+	      paramIt->second.lastReadPos = rec->core.pos;
 	      ++paramIt->second.processedNumReads;
 	      if ((paramIt->second.processedNumReads >= minNumAlignments) && (paramIt->second.processedNumPairs == 0)) {
 		// Single-end library
@@ -595,6 +599,7 @@ namespace torali
       hts_idx_destroy(idx[file_c]);
       sam_close(samfile[file_c]);
     }
+    return true;
   }
 
 
