@@ -43,6 +43,8 @@ Contact: Tobias Rausch (rausch@embl.de)
 #include <boost/icl/split_interval_map.hpp>
 #include <boost/tokenizer.hpp>
 #include <boost/functional/hash.hpp>
+#include <boost/filesystem/path.hpp>
+#include <boost/filesystem/fstream.hpp>
 #include <boost/filesystem.hpp>
 #include <boost/progress.hpp>
 
@@ -556,6 +558,31 @@ int delly(int argc, char **argv) {
     c.hasVcfFile = true;
   } else c.hasVcfFile = false;
 
+  // Check output directory
+  try {
+    boost::filesystem::path outdir;
+    if (c.outfile.has_parent_path()) outdir = c.outfile.parent_path();
+    else outdir = boost::filesystem::current_path();
+    if (!boost::filesystem::exists(outdir)) {
+      std::cerr << "Output directory does not exist: " << outdir << std::endl;
+      return 1;
+    } else {
+      boost::filesystem::file_status s = boost::filesystem::status(outdir);
+      boost::filesystem::ofstream file(c.outfile.string());
+      file.close();
+      if (!(boost::filesystem::exists(c.outfile) && boost::filesystem::is_regular_file(c.outfile))) {
+	std::cerr << "Fail to open output file " << c.outfile.string() << std::endl;
+	std::cerr << "Output directory permissions: " << s.permissions() << std::endl;
+	return 1;
+      } else {
+	boost::filesystem::remove(c.outfile.string());
+      }
+    }
+  } catch (boost::filesystem::filesystem_error const& e) {
+    std::cerr << e.what() << std::endl;
+    return 1;
+  }
+  
   // Show cmd
   boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
   std::cout << '[' << boost::posix_time::to_simple_string(now) << "] ";
