@@ -106,7 +106,7 @@ filterRun(TFilterConfig const& c, TSVType svType) {
     bcf_hdr_append(hdr_out, "##INFO=<ID=SOMATIC,Number=0,Type=Flag,Description=\"Somatic structural variant.\">");
   } else if (c.filter == "germline") {
     bcf_hdr_remove(hdr_out, BCF_HL_INFO, "RDRATIO");
-    bcf_hdr_append(hdr_out, "##INFO=<ID=RDRATIO,Number=1,Type=Float,Description=\"Read-depth ratio of het. SV carrier vs. non-carrier.\">");
+    bcf_hdr_append(hdr_out, "##INFO=<ID=RDRATIO,Number=1,Type=Float,Description=\"Read-depth ratio of SV carrier vs. non-carrier.\">");
   }
   bcf_hdr_write(ofile, hdr_out);
 
@@ -176,7 +176,7 @@ filterRun(TFilterConfig const& c, TSVType svType) {
       std::vector<float> rcraw;
       std::vector<float> rcControl;
       std::vector<float> rcTumor;
-      std::vector<float> rcHet;
+      std::vector<float> rcAlt;
       std::vector<float> rRefVar;
       std::vector<float> rAltVar;
       std::vector<float> gqRef;
@@ -207,11 +207,11 @@ filterRun(TFilterConfig const& c, TSVType svType) {
 	      else rVar = (float) rv[i] / (float) (rr[i] + rv[i]);
 	      rRefVar.push_back(rVar);
 	      if (rVar <= c.controlcont) ++controlpass;
-	    } else if ((germline) && (gt_type == 1)) {
+	    } else if ((germline) && (gt_type >= 1)) {
 	      if (_getFormatType(hdr, "GQ") == BCF_HT_INT) gqAlt.push_back(gq[i]);
 	      else if (_getFormatType(hdr, "GQ") == BCF_HT_REAL) gqAlt.push_back(gqf[i]);
-	      if ((rcl != NULL) && (rcr != NULL) && (rcl[i] + rcr[i] != 0)) rcHet.push_back((float) rc[i] / ((float) (rcl[i] + rcr[i])));
-	      else rcHet.push_back(rc[i]);
+	      if ((rcl != NULL) && (rcr != NULL) && (rcl[i] + rcr[i] != 0)) rcAlt.push_back((float) rc[i] / ((float) (rcl[i] + rcr[i])));
+	      else rcAlt.push_back(rc[i]);
 	      float rVar = 0;
 	      if (!precise) rVar = (float) dv[i] / (float) (dr[i] + dv[i]);
 	      else rVar = (float) rv[i] / (float) (rr[i] + rv[i]);
@@ -253,10 +253,10 @@ filterRun(TFilterConfig const& c, TSVType svType) {
 	if (!rAltVar.empty()) getMedian(rAltVar.begin(), rAltVar.end(), raltvarmed);
 	float rccontrolmed = 0;
 	if (!rcControl.empty()) getMedian(rcControl.begin(), rcControl.end(), rccontrolmed);
-	float rchetmed = 0;
-	if (!rcHet.empty()) getMedian(rcHet.begin(), rcHet.end(), rchetmed);
+	float rcaltmed = 0;
+	if (!rcAlt.empty()) getMedian(rcAlt.begin(), rcAlt.end(), rcaltmed);
 	float rdRatio = 1;
-	if (rccontrolmed != 0) rdRatio = rchetmed/rccontrolmed;
+	if (rccontrolmed != 0) rdRatio = rcaltmed/rccontrolmed;
 	float gqaltmed = 0;
 	if (!gqAlt.empty()) getMedian(gqAlt.begin(), gqAlt.end(), gqaltmed);
 	float gqrefmed = 0;
