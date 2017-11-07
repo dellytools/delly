@@ -6,6 +6,7 @@
 </p>
 
 [![install with bioconda](https://img.shields.io/badge/install%20with-bioconda-brightgreen.svg?style=flat-square)](http://bioconda.github.io/recipes/delly/README.html)
+[![Anaconda-Server Badge](https://anaconda.org/bioconda/delly/badges/downloads.svg)](https://anaconda.org/bioconda/delly)
 [![Build Status](https://travis-ci.org/dellytools/delly.svg?branch=master)](https://travis-ci.org/dellytools/delly)
 [![Docker Automated buil](https://img.shields.io/docker/automated/jrottenberg/ffmpeg.svg?style=flat-square)](https://hub.docker.com/r/dellytools/delly/)
 
