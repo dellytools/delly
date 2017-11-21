@@ -496,7 +496,9 @@ namespace torali
       
       TCliqueMembers clique;
       TCliqueMembers incompatible;
-      int svStart, svEnd, wiggle;
+      int32_t svStart = -1;
+      int32_t svEnd = -1;
+      int32_t wiggle = 0;
       int32_t clusterRefID=bamRecord[itWEdge->source].tid;
       int32_t clusterMateRefID=bamRecord[itWEdge->source].mtid;
       _initClique(bamRecord[itWEdge->source], svStart, svEnd, wiggle, svt);
