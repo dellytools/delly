@@ -78,7 +78,6 @@ struct FilterConfig {
   float gq;
   float rddel;
   float rddup;
-  std::string svType;
   std::string filter;
   std::set<std::string> tumorSet;
   std::set<std::string> controlSet;
@@ -88,9 +87,9 @@ struct FilterConfig {
 };
 
 
-template<typename TFilterConfig, typename TSVType>
+template<typename TFilterConfig>
 inline int
-filterRun(TFilterConfig const& c, TSVType svType) {
+filterRun(TFilterConfig const& c) {
 
   // Load bcf file
   htsFile* ifile = hts_open(c.vcffile.string().c_str(), "r");
@@ -148,7 +147,6 @@ filterRun(TFilterConfig const& c, TSVType svType) {
 
     // Check SV type
     bcf_get_info_string(hdr, rec, "SVTYPE", &svt, &nsvt);
-    if ((svt != NULL) && (std::string(svt) != _addID(svType))) continue;
 
     // Check size and PASS
     bcf_get_info_int32(hdr, rec, "END", &svend, &nsvend);
@@ -323,7 +321,6 @@ int filter(int argc, char **argv) {
   boost::program_options::options_description generic("Generic options");
   generic.add_options()
     ("help,?", "show help message")
-    ("type,t", boost::program_options::value<std::string>(&c.svType)->default_value("DEL"), "SV type (DEL, DUP, INV, BND, INS)")
     ("filter,f", boost::program_options::value<std::string>(&c.filter)->default_value("somatic"), "Filter mode (somatic, germline)")
     ("outfile,o", boost::program_options::value<boost::filesystem::path>(&c.outfile)->default_value("sv.bcf"), "Filtered SV BCF output file")
     ("altaf,a", boost::program_options::value<float>(&c.altaf)->default_value(0.2), "min. fractional ALT support")
@@ -486,15 +483,7 @@ int filter(int argc, char **argv) {
   for(int i=0; i<argc; ++i) { std::cout << argv[i] << ' '; }
   std::cout << std::endl;
 
-  if (c.svType == "DEL") return filterRun(c, SVType<DeletionTag>());
-  else if (c.svType == "DUP") return filterRun(c, SVType<DuplicationTag>());
-  else if (c.svType == "INV") return filterRun(c, SVType<InversionTag>());
-  else if (c.svType == "BND") return filterRun(c, SVType<TranslocationTag>());
-  else if (c.svType == "INS") return filterRun(c, SVType<InsertionTag>());
-  else {
-    std::cerr << "SV analysis type not supported by Delly: " << c.svType << std::endl;
-    return 1;
-  }
+  return filterRun(c);
 }
 
 }

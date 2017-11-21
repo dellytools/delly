@@ -170,10 +170,9 @@ struct cstyle_str {
 };
  
 // Parse Delly vcf file
-template<typename TConfig, typename TStructuralVariantRecord, typename TTag>
+template<typename TConfig, typename TStructuralVariantRecord>
 inline void
-vcfParse(TConfig const& c, bam_hdr_t* hd, std::vector<TStructuralVariantRecord>& svs, SVType<TTag> svType)
-{
+vcfParse(TConfig const& c, bam_hdr_t* hd, std::vector<TStructuralVariantRecord>& svs) {
   // Load bcf file
   htsFile* ifile = bcf_open(c.vcffile.string().c_str(), "r");
   bcf_hdr_t* hdr = bcf_hdr_read(ifile);
@@ -226,11 +225,6 @@ vcfParse(TConfig const& c, bam_hdr_t* hd, std::vector<TStructuralVariantRecord>&
 
     // Delly
     if (wimethod == 1) {
-      // Correct SV type
-      if (bcf_get_info_string(hdr, rec, "SVTYPE", &svt, &nsvt) > 0) {
-	if (std::string(svt) != _addID(svType)) continue;
-      } else continue;
-      
       // Fill SV record
       StructuralVariantRecord svRec;
       std::string chrName = bcf_hdr_id2name(hdr, rec->rid);
@@ -266,23 +260,8 @@ vcfParse(TConfig const& c, bam_hdr_t* hd, std::vector<TStructuralVariantRecord>&
       else svRec.peMapQuality = 0;
       if (bcf_get_info_float(hdr, rec, "SRQ", &srq, &nsrq) > 0) svRec.srAlignQuality = (double) *srq;
       else svRec.srAlignQuality = 0;
-      if (bcf_get_info_string(hdr, rec, "CT", &ct, &nct) > 0) svRec.ct = _decodeOrientation(std::string(ct));
-      else {
-	if (_addID(svType) == "DEL") svRec.ct = _decodeOrientation("3to5");
-	else if (_addID(svType) == "DUP") svRec.ct = _decodeOrientation("5to3");
-	else if (_addID(svType) == "INS") svRec.ct = _decodeOrientation("NtoN");
-	else if (_addID(svType) == "INV") svRec.ct = _decodeOrientation("3to3"); // Insufficient
-	else if (_addID(svType) == "BND") {
-	  // Try to decode ALT
-	  svRec.ct = _decodeOrientation("3to5");
-	  if (!altAllele.empty()) {
-	    if (altAllele[0] == '[') svRec.ct = _decodeOrientation("5to5");
-	    else if (altAllele[0] == ']') svRec.ct = _decodeOrientation("5to3");
-	    else if (altAllele[altAllele.size() - 1] == ']') svRec.ct = _decodeOrientation("3to3");
-	    else if (altAllele[altAllele.size() - 1] == '[') svRec.ct = _decodeOrientation("3to5");
-	  }
-	}
-      }
+      if ((bcf_get_info_string(hdr, rec, "SVTYPE", &svt, &nsvt) > 0) && (bcf_get_info_string(hdr, rec, "CT", &ct, &nct) > 0)) svRec.svt = _decodeOrientation(std::string(ct), std::string(svt));
+      else continue;
       if (bcf_get_info_string(hdr, rec, "CHR2", &chr2, &nchr2) > 0) {
 	std::string chr2Name = std::string(chr2);
 	svRec.chr2 = bam_name2id(hd, chr2Name.c_str());
@@ -297,18 +276,18 @@ vcfParse(TConfig const& c, bam_hdr_t* hd, std::vector<TStructuralVariantRecord>&
 	bool tagUse;
 	bool insertion = false;
 	if (altAllele == "<DEL>") {
-	  svRec.ct = _decodeOrientation("3to5");
+	  svRec.svt = 2;
 	  tagUse = true;
 	} else if (altAllele == "<INS>") {
 	  // No precise insertion sequence, cannot be genotyped by Delly
 	  continue;
 	} else {
 	  if ((refAllele.size() > altAllele.size()) && (_isDNA(refAllele)) && (_isDNA(altAllele))) {
-	    svRec.ct = _decodeOrientation("3to5");
+	    svRec.svt = 2;
 	    tagUse = false;
 	  } else if ((altAllele.size() > refAllele.size()) && (_isDNA(refAllele)) && (_isDNA(altAllele))) {
 	    insertion = true;
-	    svRec.ct = _decodeOrientation("NtoN");
+	    svRec.svt = 4;
 	    tagUse = false;
 	  } else continue;
 	}
@@ -398,9 +377,9 @@ vcfParse(TConfig const& c, bam_hdr_t* hd, std::vector<TStructuralVariantRecord>&
 }
 
 
-template<typename TConfig, typename TStructuralVariantRecord, typename TJunctionCountMap, typename TReadCountMap, typename TCountMap, typename TTag>
+template<typename TConfig, typename TStructuralVariantRecord, typename TJunctionCountMap, typename TReadCountMap, typename TCountMap>
 inline void
-vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJunctionCountMap const& jctCountMap, TReadCountMap const& readCountMap, TCountMap const& spanCountMap, SVType<TTag> svType) 
+vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJunctionCountMap const& jctCountMap, TReadCountMap const& readCountMap, TCountMap const& spanCountMap)
 {
   // BoLog class
   BoLog<double> bl;
@@ -513,7 +492,6 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
     bcf1_t *rec = bcf_init();
     for(typename TSVs::const_iterator svIter = svs.begin(); svIter!=svs.end(); ++svIter) {
       ++show_progress;
-
       // Output main vcf fields
       int32_t tmpi = bcf_hdr_id2int(hdr, BCF_DT_ID, "PASS");
       if ((svIter->precise) && (svIter->chr == svIter->chr2)) {
@@ -523,7 +501,7 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
       }
       rec->rid = bcf_hdr_name2id(hdr, bamhd->target_name[svIter->chr]);
       rec->pos = svIter->svStart - 1;
-      std::string id(_addID(svType));
+      std::string id(_addID(svIter->svt));
       std::string padNumber = boost::lexical_cast<std::string>(svIter->id);
       padNumber.insert(padNumber.begin(), 8 - padNumber.length(), '0');
       id += padNumber;
@@ -535,7 +513,7 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
       // Add INFO fields
       if (svIter->precise) bcf_update_info_flag(hdr, rec, "PRECISE", NULL, 1);
       else bcf_update_info_flag(hdr, rec, "IMPRECISE", NULL, 1);
-      bcf_update_info_string(hdr, rec, "SVTYPE", _addID(svType).c_str());
+      bcf_update_info_string(hdr, rec, "SVTYPE", _addID(svIter->svt).c_str());
       std::string dellyVersion("EMBL.DELLYv");
       dellyVersion += dellyVersionNumber;
       bcf_update_info_string(hdr,rec, "SVMETHOD", dellyVersion.c_str());
@@ -546,7 +524,7 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
       bcf_update_info_int32(hdr, rec, "PE", &tmpi, 1);
       tmpi = svIter->peMapQuality;
       bcf_update_info_int32(hdr, rec, "MAPQ", &tmpi, 1);
-      bcf_update_info_string(hdr, rec, "CT", _addOrientation(svIter->ct).c_str());
+      bcf_update_info_string(hdr, rec, "CT", _addOrientation(svIter->svt).c_str());
       int32_t ciend[2];
       ciend[0] = -svIter->wiggle;
       ciend[1] = svIter->wiggle;

@@ -86,7 +86,7 @@ namespace torali
       svRec.wiggle = -1 * it->second.get_value<int32_t>();
       svRec.peMapQuality = pt.get<uint8_t>("info.mapq", 0);
       svRec.srAlignQuality = pt.get<double>("info.srq", 0);
-      svRec.ct = _decodeOrientation(pt.get<std::string>("info.ct", "NtoN"));
+      svRec.svt = -1;
       std::string chr2Name(pt.get<std::string>("info.chr2", "None"));
       svRec.chr2 = bam_name2id(hd, chr2Name.c_str());
       svs.push_back(svRec);

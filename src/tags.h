@@ -26,6 +26,10 @@ Contact: Tobias Rausch (rausch@embl.de)
 
 namespace torali {
 
+  #ifndef DELLY_SVT_TRANS
+  #define DELLY_SVT_TRANS 5
+  #endif
+
   // Tags
   struct DeletionTag;
   struct DuplicationTag;
@@ -49,206 +53,28 @@ namespace torali {
     struct BpLevelType {
     };
 
-  // F+ 0
-  // F- 1
-  // R+ 2
-  // R- 3
-
-  template<typename TBamRecord>
-  inline uint8_t
-    getStrandIndependentOrientation(TBamRecord const& al) {
-    if (al.flag & BAM_FREAD1) {
-      if (!(al.flag & BAM_FREVERSE)) {
-	if (!(al.flag & BAM_FMREVERSE)) return (al.pos < al.mpos) ? 0 : 1;
-	else return (al.pos < al.mpos) ? 2 : 3;
-      } else {
-	if (!(al.flag & BAM_FMREVERSE)) return (al.pos > al.mpos) ? 2 : 3;
-	else return (al.pos > al.mpos) ? 0 : 1;
-      }
-    } else {
-      if (!(al.flag & BAM_FREVERSE)) {
-	if (!(al.flag & BAM_FMREVERSE)) return (al.pos < al.mpos) ? 1 : 0;
-	else return (al.pos < al.mpos) ? 2 : 3;
-      } else {
-	if (!(al.flag & BAM_FMREVERSE)) return (al.pos > al.mpos) ? 2 : 3;
-	else return (al.pos > al.mpos) ? 1 : 0;
-      }
-    }
-  }
-
-  //FF+ 0
-  //FF- 1
-  //FR+ 2
-  //FR- 3
-  //RF+ 4
-  //RF- 5
-  //RR+ 6
-  //RR- 7
-
-  template<typename TBamRecord>
-  inline uint8_t
-    getStrandSpecificOrientation(TBamRecord const& al) {
-    if (!(al.flag  & BAM_FREVERSE)) {
-      if (!(al.flag & BAM_FMREVERSE)) {
-        return (al.pos < al.mpos) ? 0 : 1;
-      } else {
-        return (al.pos < al.mpos) ? 2 : 3;
-      }
-    } else {
-      if (!(al.flag & BAM_FMREVERSE)) {
-        return (al.pos > al.mpos) ? 4 : 5;
-      } else {
-        return (al.pos > al.mpos) ? 6 : 7;
-      }
-    }
-  }
-
-  // Deletions
-  inline uint8_t
-  _getCT(SVType<DeletionTag>) {
-    return 2;
-  }
-
-  // Duplications
-  inline uint8_t
-  _getCT(SVType<DuplicationTag>) {
-    return 3;
-  }
-
-  // Inversions
-  inline uint8_t
-  _getCT(SVType<InversionTag>) {
-    return 0;
-  }
   
-  // Translocations
-  inline uint8_t
-  _getCT(SVType<TranslocationTag>) {
-    return 0;
-  }
-  
-  // Insertion
-  inline uint8_t
-  _getCT(SVType<InsertionTag>) {
-    return 4;
-  }
-  
-
-  template<typename TTag>
   inline bool
-  _translocationMode(SVType<TTag>) {
-    return false;
+  _translocation(int32_t svt) {
+    return (DELLY_SVT_TRANS <= svt);
   }
 
   inline bool
-  _translocationMode(SVType<TranslocationTag>) {
-    return true;
+  _translocation(bam1_t* rec) {
+    return (rec->core.tid != rec->core.mtid);
   }
-
+  
   // Deletions
-  template<typename TBamRecord>
-    inline uint8_t
-    _getSpanOrientation(TBamRecord const&, uint8_t const, SVType<DeletionTag>) {
-    return 2;
-  }
-
-  // Duplications
-  template<typename TBamRecord>
-    inline uint8_t 
-    _getSpanOrientation(TBamRecord const&, uint8_t const, SVType<DuplicationTag>) {
-    return 3;
-  }
-
-  // Left- or right-spanning
-  template<typename TBamRecord>
-    inline uint8_t 
-    _getSpanOrientation(TBamRecord const& al, uint8_t const defaultOrient, SVType<InversionTag>) {
-    uint8_t orient = getStrandIndependentOrientation(al);
-    if (al.flag & BAM_FREAD1) {
-      if (defaultOrient == 0) {
-	if (((orient==2) && (al.pos < al.mpos)) || ((orient == 3) && (al.pos > al.mpos))) return 0;
-      } else if (defaultOrient == 1) {
-	if (((orient==2) && (al.pos > al.mpos)) || ((orient == 3) && (al.pos < al.mpos))) return 0;
-      } else if (defaultOrient == 2) {
-	if (((orient==0) && (al.pos < al.mpos)) || ((orient == 1) && (al.pos > al.mpos))) return 0;
-      } else if (defaultOrient == 3) {
-	if (((orient==0) && (al.pos > al.mpos)) || ((orient == 1) && (al.pos < al.mpos))) return 0;
-      }
-      return 1;
+  inline uint8_t
+  _getSpanOrientation(int32_t const svt) {
+    if (_translocation(svt)) {
+      return svt - DELLY_SVT_TRANS;
     } else {
-      if (defaultOrient == 0) {
-	if (((orient==2) && (al.pos > al.mpos)) || ((orient == 3) && (al.pos < al.mpos))) return 0;
-      } else if (defaultOrient == 1) {
-	if (((orient==2) && (al.pos < al.mpos)) || ((orient == 3) && (al.pos > al.mpos))) return 0;
-      } else if (defaultOrient == 2) {
-	if (((orient==0) && (al.pos > al.mpos)) || ((orient == 1) && (al.pos < al.mpos))) return 0;
-      } else if (defaultOrient == 3) {
-	if (((orient==0) && (al.pos < al.mpos)) || ((orient == 1) && (al.pos > al.mpos))) return 0;
-      }
-      return 1;
+      return svt;
     }
   }
 
-
-
-
-  template<typename TBamRecord>
-    inline uint8_t 
-    _inOrderAssign(TBamRecord const& al, bool flipped) {
-    if (!flipped) {
-      if (!(al.flag & BAM_FREVERSE)) {
-	if (!(al.flag & BAM_FMREVERSE)) {
-	  return (al.flag & BAM_FREAD1) ? 0 : 1;
-	} else {
-	  return 2;
-	}
-      } else {
-	if (!(al.flag & BAM_FMREVERSE)) {
-	  return 3;
-	} else {
-	  return (al.flag & BAM_FREAD1) ? 1 : 0;
-	}
-      }
-    } else {
-      if (!(al.flag & BAM_FREVERSE)) {
-	if (!(al.flag & BAM_FMREVERSE)) {
-	  return 2;
-	} else {
-	  return (al.flag & BAM_FREAD1) ? 0 : 1;
-	}
-      } else {
-	if (!(al.flag & BAM_FMREVERSE)) {
-	  return (al.flag & BAM_FREAD1) ? 1 : 0;
-	} else {
-	  return 3;
-	}
-      }
-    }
-  }
-
-
-  template<typename TBamRecord>
-    inline uint8_t 
-    _getSpanOrientation(TBamRecord const& al, uint8_t const defaultOrient, SVType<TranslocationTag>) {
-    uint8_t orient = getStrandIndependentOrientation(al);
-    bool flipped = ( ((defaultOrient<2) && (orient>=2)) || ((defaultOrient>=2) && (orient<2)) );
-    bool inOrder = (_inOrderAssign(al, flipped) == defaultOrient);
-    if (flipped) {
-      if (inOrder) return 0;
-      else return 1;
-    } else {
-      if (inOrder) return 2;
-      else return 3;
-    }
-  }
-
-  // Insertion
-  template<typename TBamRecord>
-    inline uint8_t 
-    _getSpanOrientation(TBamRecord const&, uint8_t const, SVType<InsertionTag>) {
-    return 4;
-  }
-
+  
   // Reduced structural variant record for cov
   struct CovRecord {
     int32_t chr;
@@ -270,18 +96,18 @@ namespace torali {
     int32_t wiggle;
     int32_t insLen;
     int32_t homLen;
+    int32_t svt;
     uint32_t id;
     float srAlignQuality;
     bool precise;
-    uint8_t ct;
     uint8_t peMapQuality;
     int32_t chr;
     int32_t chr2;
     std::string alleles;
     std::string consensus;
 
-  StructuralVariantRecord() : svStart(0), svEnd(0), peSupport(0), srSupport(0), wiggle(0), insLen(0), homLen(0), id(0), srAlignQuality(0), precise(false), ct(0), peMapQuality(0), chr(0), chr2(0) {}
-  StructuralVariantRecord(int32_t const c, int const s, int const e) : svStart(s), svEnd(e), peSupport(0), srSupport(0), wiggle(0), insLen(0), homLen(0), id(0), srAlignQuality(0), precise(false), ct(0), peMapQuality(0), chr(c), chr2(c) {}
+  StructuralVariantRecord() : svStart(0), svEnd(0), peSupport(0), srSupport(0), wiggle(0), insLen(0), homLen(0), svt(-1), id(0), srAlignQuality(0), precise(false), peMapQuality(0), chr(0), chr2(0) {}
+  StructuralVariantRecord(int32_t const c, int const s, int const e) : svStart(s), svEnd(e), peSupport(0), srSupport(0), wiggle(0), insLen(0), homLen(0), svt(-1), id(0), srAlignQuality(0), precise(false), peMapQuality(0), chr(c), chr2(c) {}
   };
 
   template<typename TSV>
@@ -301,335 +127,241 @@ namespace torali {
     int32_t svStart;
     int32_t svEnd;
     int32_t peSupport;
-    uint8_t ct;
+    int32_t svt;
     int32_t chr;
     int32_t chr2;
     std::string part1;
 
-    Breakpoint() : svStartBeg(0), svStartEnd(0), svEndBeg(0), svEndEnd(0), svStart(0), svEnd(0), peSupport(0), ct(0), chr(0), chr2(0) {}
-    Breakpoint(StructuralVariantRecord const& sv) : svStartBeg(sv.svStart), svStartEnd(sv.svStart), svEndBeg(sv.svEnd), svEndEnd(sv.svEnd), svStart(sv.svStart), svEnd(sv.svEnd), peSupport(sv.peSupport), ct(sv.ct), chr(sv.chr), chr2(sv.chr2) {}
+    Breakpoint() : svStartBeg(0), svStartEnd(0), svEndBeg(0), svEndEnd(0), svStart(0), svEnd(0), peSupport(0), svt(-1), chr(0), chr2(0) {}
+    Breakpoint(StructuralVariantRecord const& sv) : svStartBeg(sv.svStart), svStartEnd(sv.svStart), svEndBeg(sv.svEnd), svEndEnd(sv.svEnd), svStart(sv.svStart), svEnd(sv.svEnd), peSupport(sv.peSupport), svt(sv.svt), chr(sv.chr), chr2(sv.chr2) {}
     
   };
 
   // Initialize breakpoint
-
-  // Deletions, insertions, duplications and inversions
-  template<typename TBreakpoint, typename TTag>
-  inline void
-  _initBreakpoint(bam_hdr_t* hdr, TBreakpoint& bp, int32_t const boundary, SVType<TTag>) {
-    bp.svStartBeg = std::max(0, bp.svStart - boundary);
-    bp.svStartEnd = std::min(bp.svStart + boundary, (bp.svStart + bp.svEnd)/2);
-    bp.svEndBeg = std::max((bp.svStart + bp.svEnd)/2 + 1, bp.svEnd - boundary);
-    bp.svEndEnd = std::min((int32_t) (hdr->target_len[bp.chr2]), bp.svEnd + boundary);
-  }
-
   template<typename TBreakpoint>
   inline void
-  _initBreakpoint(bam_hdr_t* hdr, TBreakpoint& bp, int32_t const boundary, SVType<TranslocationTag>) {
-    bp.svStartBeg = std::max(0, bp.svStart - boundary);
-    bp.svStartEnd = std::min((int32_t) (hdr->target_len[bp.chr]), bp.svStart + boundary);
-    bp.svEndBeg = std::max(0, bp.svEnd - boundary);
-    bp.svEndEnd = std::min((int32_t) (hdr->target_len[bp.chr2]), bp.svEnd + boundary);
+  _initBreakpoint(bam_hdr_t* hdr, TBreakpoint& bp, int32_t const boundary, int32_t const svt) {
+    if (_translocation(svt)) {
+        bp.svStartBeg = std::max(0, bp.svStart - boundary);
+	bp.svStartEnd = std::min((int32_t) (hdr->target_len[bp.chr]), bp.svStart + boundary);
+	bp.svEndBeg = std::max(0, bp.svEnd - boundary);
+	bp.svEndEnd = std::min((int32_t) (hdr->target_len[bp.chr2]), bp.svEnd + boundary);
+    } else {
+      if (svt == 4) {
+	bp.svStartBeg = std::max(0, bp.svStart - boundary);
+	bp.svStartEnd = std::min((int32_t) (hdr->target_len[bp.chr]), bp.svStart + boundary);
+	bp.svEndBeg = std::max(0, bp.svEnd - boundary);
+	bp.svEndEnd = std::min((int32_t) (hdr->target_len[bp.chr2]), bp.svEnd + boundary);
+      } else {
+	bp.svStartBeg = std::max(0, bp.svStart - boundary);
+	bp.svStartEnd = std::min(bp.svStart + boundary, (bp.svStart + bp.svEnd)/2);
+	bp.svEndBeg = std::max((bp.svStart + bp.svEnd)/2 + 1, bp.svEnd - boundary);
+	bp.svEndEnd = std::min((int32_t) (hdr->target_len[bp.chr2]), bp.svEnd + boundary);
+      }
+    }
   }
-
-  template<typename TBreakpoint>
-  inline void
-  _initBreakpoint(bam_hdr_t* hdr, TBreakpoint& bp, int32_t const boundary, SVType<InsertionTag>) {
-    bp.svStartBeg = std::max(0, bp.svStart - boundary);
-    bp.svStartEnd = std::min((int32_t) (hdr->target_len[bp.chr]), bp.svStart + boundary);
-    bp.svEndBeg = std::max(0, bp.svEnd - boundary);
-    bp.svEndEnd = std::min((int32_t) (hdr->target_len[bp.chr2]), bp.svEnd + boundary);
-  }
-
   
+  template<typename TPos>
+  inline TPos
+  _minCoord(TPos const position, TPos const matePosition, int32_t const svt) {
+    if (_translocation(svt)) return position;
+    else return std::min(position, matePosition);
+  }
+
+  template<typename TPos>
+  inline TPos
+  _maxCoord(TPos const position, TPos const matePosition, int32_t const svt) {
+    if (_translocation(svt)) return matePosition;
+    else return std::max(position, matePosition);
+  }
+
+
+  // Deletions, duplications and inversions
+  template<typename TRef, typename TPos>
+  inline bool
+  _mappingPosGeno(TRef const refID, TRef const mateRefID, TPos const position, TPos const matePosition, int32_t const svt) {
+    if (_translocation(svt)) return ((refID==mateRefID) && (position==matePosition));
+    else {
+      if (svt == 3) return ((refID!=mateRefID) || (std::abs(position - matePosition) < 100 ));
+      else return ((refID!=mateRefID) || (position==matePosition));
+    }
+  }
   
-  // SV Paired-end checks
 
-  // Deletions, insertions, duplications and inversions
-  template<typename TPos, typename TTag>
-    inline TPos
-    _minCoord(TPos const position, TPos const matePosition, SVType<TTag>) {
-    return std::min(position, matePosition);
-  }
-
-  // Translocations
-  template<typename TPos>
-    inline TPos
-    _minCoord(TPos const position, TPos const, SVType<TranslocationTag>) {
-    return position;
-  }
-
-  // Deletions, insertions, duplications and inversions
-  template<typename TPos, typename TTag>
-    inline TPos
-    _maxCoord(TPos const position, TPos const matePosition, SVType<TTag>) {
-    return std::max(position, matePosition);
-  }
-
-  // Translocations
-  template<typename TPos>
-    inline TPos
-    _maxCoord(TPos const, TPos const matePosition, SVType<TranslocationTag>) {
-    return matePosition;
-  }
-
-  // Deletions, duplications and inversions
-  template<typename TQualities, typename TAlen, typename TTag>
-    inline void
-    _resetQualities(TQualities& qualities, TAlen& alen, SVType<TTag>) {
-    qualities.clear();
-    alen.clear();
-  }
-
-  // Translocations
-  template<typename TQualities, typename TAlen>
-    inline void
-    _resetQualities(TQualities&, TAlen&, SVType<TranslocationTag>) {
-    // Nop
-  }
-
-  // Deletions
-  template<typename TRef, typename TPos>
-    inline bool
-    _mappingPos(TRef const refID, TRef const mateRefID, TPos const position, TPos const matePosition, SVType<DeletionTag>) {
-    return ((refID!=mateRefID) || (position==matePosition));
-  }
-
-  // Duplications
-  template<typename TRef, typename TPos>
-    inline bool
-    _mappingPos(TRef const refID, TRef const mateRefID, TPos const position, TPos const matePosition, SVType<DuplicationTag>) {
-    return ((refID!=mateRefID) || (std::abs(position - matePosition) < 100 ));
-  }
-
-  // Inversions
-  template<typename TRef, typename TPos>
-    inline bool
-    _mappingPos(TRef const refID, TRef const mateRefID, TPos const position, TPos const matePosition, SVType<InversionTag>) {
-    return ((refID!=mateRefID) || (position==matePosition));
-  }
-
-  // Translocations
-  template<typename TRef, typename TPos>
-    inline bool
-    _mappingPos(TRef const refID, TRef const mateRefID, TPos const, TPos const, SVType<TranslocationTag>) {
-    return (refID==mateRefID);
-  }
-
-  // Insertion
-  template<typename TRef, typename TPos>
-    inline bool
-    _mappingPos(TRef const refID, TRef const mateRefID, TPos const position, TPos const matePosition, SVType<InsertionTag>) {
-    return ((refID!=mateRefID) || (position==matePosition));
-  }
-
-  // Deletions, duplications and inversions
-  template<typename TRef, typename TPos, typename TTag>
-    inline bool
-    _mappingPosGeno(TRef const refID, TRef const mateRefID, TPos const position, TPos const matePosition, SVType<TTag> svType) {
-    return _mappingPos(refID, mateRefID, position, matePosition, svType);
-  }
-
-  // Translocations
-  template<typename TRef, typename TPos>
-    inline bool
-    _mappingPosGeno(TRef const refID, TRef const mateRefID, TPos const position, TPos const matePosition, SVType<TranslocationTag>) {
-    return ((refID==mateRefID) && (position==matePosition));
-  }
-
-  // Deletions, duplications and inversions
-  template<typename TRef, typename TPos, typename TTag>
-    inline bool
-    _firstPairObs(TRef const, TRef const, TPos const position, TPos const matePosition, SVType<TTag>) {
-    return (position<matePosition);
-  }
-
-  // Translocations
-  template<typename TRef, typename TPos>
-    inline bool
-    _firstPairObs(TRef const refID, TRef const mateRefID, TPos const position, TPos const matePosition, SVType<TranslocationTag>) {
-    return ((refID<mateRefID) || ((refID==mateRefID) && (position<matePosition)));
-  }
-
-  // Deletions
-  template<typename TISize, typename TLibInfo>
+  template<typename TSize>
   inline bool
-  _acceptedInsertSize(TLibInfo& libInfo, TISize const iSize, SVType<DeletionTag>) {
-    return ((libInfo.maxISizeCutoff > iSize) || (libInfo.median == 0));
-  }
-
-  // Insertions
-  template<typename TISize, typename TLibInfo>
-  inline bool
-  _acceptedInsertSize(TLibInfo&, TISize const, SVType<InsertionTag>) {
-    return true;
-    //return ((libInfo.minISizeCutoff <= iSize) || (libInfo.median == 0));
-  }
-
-  // Duplications
-  template<typename TISize, typename TLibInfo>
-  inline bool
-  _acceptedInsertSize(TLibInfo& libInfo, TISize const iSize, SVType<DuplicationTag>) {
-    // Exclude the chimeras in mate-pair libraries
-    return !(((libInfo.median>0) && (libInfo.median<1000)) || ((libInfo.median>=1000) && (iSize >=1000)));
-  }
-
-  // Inversions
-  template<typename TISize, typename TLibInfo>
-  inline bool
-  _acceptedInsertSize(TLibInfo& libInfo, TISize const, SVType<InversionTag>) {
-    return (libInfo.median == 0);
-  }
-
-  // Translocations
-  template<typename TISize, typename TLibInfo>
-  inline bool
-  _acceptedInsertSize(TLibInfo& libInfo, TISize const, SVType<TranslocationTag>) {
-    return (libInfo.median == 0);
-  }
-
-  // Deletions
-  template<typename TOrientation>
-  inline bool
-    _acceptedOrientation(TOrientation const def, TOrientation const lib, SVType<DeletionTag>) {
-    return (def != lib);
-  }
-
-  // Insertions
-  template<typename TOrientation>
-  inline bool
-    _acceptedOrientation(TOrientation const def, TOrientation const lib, SVType<InsertionTag>) {
-    return (def != lib);
-  }
-
-  // Duplications
-  template<typename TOrientation>
-    inline bool
-    _acceptedOrientation(TOrientation const def, TOrientation const lib, SVType<DuplicationTag>) {
-    if (def==0) return (lib != 1);
-    else if (def==1) return (lib!=0);
-    else if (def==2) return (lib!=3);
-    else if (def==3) return (lib!=2);
+  _svSizeCheck(TSize const s, TSize const e, int32_t const svt) {
+    if (svt == 0) return (( e - s ) >= 100);
+    else if (svt == 1) return (( e - s ) >= 100);
+    else if (svt == 2) return (( e - s ) >= 300);
+    else if (svt == 3) return (( e - s ) >= 100);
     else return true;
   }
 
-  // Inversion
-  template<typename TOrientation>
-    inline bool
-    _acceptedOrientation(TOrientation const def, TOrientation const lib, SVType<InversionTag>) {
-    return (((def<=1) && (lib!=2) && (lib!=3)) || ((def>=2) && (lib!=0) && (lib!=1)));
+
+  // 0: Left-spanning inversion
+  // 1: Right-spanning inversion
+  // 2: Deletion-type
+  // 3: Duplication-type
+
+  template<typename TBamRecord>
+  inline uint8_t
+  getSVType(TBamRecord const& al) {
+    if (al.flag & BAM_FREAD1) {
+      if (!(al.flag & BAM_FREVERSE)) {
+	if (!(al.flag & BAM_FMREVERSE)) return 0;
+	else return (al.pos < al.mpos) ? 2 : 3;
+      } else {
+	if (!(al.flag & BAM_FMREVERSE)) return (al.pos > al.mpos) ? 2 : 3;
+	else return 1;
+      }
+    } else {
+      if (!(al.flag & BAM_FREVERSE)) {
+	if (!(al.flag & BAM_FMREVERSE)) return 0;
+	else return (al.pos < al.mpos) ? 2 : 3;
+      } else {
+	if (!(al.flag & BAM_FMREVERSE)) return (al.pos > al.mpos) ? 2 : 3;
+	else return 1;
+      }
+    }
   }
 
-  // Translocation
-  template<typename TOrientation>
+  inline int32_t
+  _isizeMappingPos(bam1_t* rec, int32_t isize) {
+    if (_translocation(rec)) return DELLY_SVT_TRANS + getSVType(rec->core);
+    else {
+      if (rec->core.pos == rec->core.mpos) return -1; // No SV
+      uint8_t orient = getSVType(rec->core);
+      if (orient == 0) return 0;
+      else if (orient == 1) return 1;
+      else if (orient == 2) {
+	if (isize > std::abs(rec->core.isize)) return -1;
+	else return 2;
+      } else {
+	if (std::abs(rec->core.pos - rec->core.mpos) < 100) return -1; // Too small
+	return 3;
+      }
+    } 
+  }
+
+  // Decode Orientation
+  inline int32_t
+  _decodeOrientation(std::string const& value, std::string const& svt) {
+    if (svt == "BND") {
+      if (value=="3to3") return DELLY_SVT_TRANS + 0;
+      else if (value=="5to5") return DELLY_SVT_TRANS + 1;
+      else if (value=="3to5") return DELLY_SVT_TRANS + 2;
+      else if (value=="5to3") return DELLY_SVT_TRANS + 3;
+      else return -1;
+    } else {
+      if (value=="3to3") return 0;
+      else if (value=="5to5") return 1;
+      else if (value=="3to5") return 2;
+      else if (value=="5to3") return 3;
+      else return 4;
+    }
+  }
+
+  inline unsigned hash_string(const char *s) {
+    unsigned h = 37;
+    while (*s) {
+      h = (h * 54059) ^ (s[0] * 76963);
+      s++;
+    }
+    return h;
+  }
+  
+  template<typename TAlignedReads>
   inline bool
-  _acceptedOrientation(TOrientation const, TOrientation const, SVType<TranslocationTag>) {
-    return false;
+  _firstPairObs(bam1_t* rec, TAlignedReads const& lastAlignedPosReads) {
+    if (rec->core.tid == rec->core.mtid) return ((rec->core.pos < rec->core.mpos) || ((rec->core.pos == rec->core.mpos) && (lastAlignedPosReads.find(hash_string(bam_get_qname(rec))) == lastAlignedPosReads.end())));
+    else return (rec->core.tid < rec->core.mtid);
   }
 
+  template<typename TLibraryMap>
+  inline typename TLibraryMap::iterator
+  _findLib(bam1_t* rec, TLibraryMap& lib) {
+    std::string rG = "DefaultLib";
+    uint8_t *rgptr = bam_aux_get(rec, "RG");
+    if (rgptr) {
+      char* rg = (char*) (rgptr + 1);
+      rG = std::string(rg);
+    }
+    return lib.find(rG);
+  }
+  
 
   // Deletions
   template<typename TSize, typename TISize>
-    inline bool
-    _pairsDisagree(TSize const pair1Min, TSize const pair1Max, TSize const pair1ReadLength, TISize const pair1maxNormalISize, TSize const pair2Min, TSize const pair2Max, TSize const pair2ReadLength, TISize const pair2maxNormalISize, uint8_t const, uint8_t const, SVType<DeletionTag>) {
-    //std::cout << pair1Min << ',' << pair1Max << ',' << pair1ReadLength << ',' << pair1maxNormalISize << ',' << pair2Min << ',' << pair2Max << ',' << pair2ReadLength << ',' << pair2maxNormalISize << std::endl;
-    if ((pair2Min + pair2ReadLength - pair1Min) > pair1maxNormalISize) return true;
-    if ((pair2Max < pair1Max) && ((pair1Max + pair1ReadLength - pair2Max) > pair1maxNormalISize)) return true;
-    if ((pair2Max >= pair1Max) && ((pair2Max + pair2ReadLength - pair1Max) > pair2maxNormalISize)) return true;
-    if ((pair1Max < pair2Min) || (pair2Max < pair1Min)) return true;
-    return false;
-  }
+  inline bool
+  _pairsDisagree(TSize const pair1Min, TSize const pair1Max, TSize const pair1ReadLength, TISize const pair1maxNormalISize, TSize const pair2Min, TSize const pair2Max, TSize const pair2ReadLength, TISize const pair2maxNormalISize, int32_t const svt) {
+    if (_translocation(svt)) {
+      uint8_t ct = _getSpanOrientation(svt);
 
-  // Insertions
-  template<typename TSize, typename TISize>
-    inline bool
-    _pairsDisagree(TSize const pair1Min, TSize const pair1Max, TSize const pair1ReadLength, TISize const pair1maxNormalISize, TSize const pair2Min, TSize const pair2Max, TSize const pair2ReadLength, TISize const pair2maxNormalISize, uint8_t const, uint8_t const, SVType<InsertionTag>) {
-    //std::cout << pair1Min << ',' << pair1Max << ',' << pair1ReadLength << ',' << pair1maxNormalISize << ',' << pair2Min << ',' << pair2Max << ',' << pair2ReadLength << ',' << pair2maxNormalISize << std::endl;
-    if ((pair2Min + pair2ReadLength - pair1Min) > pair1maxNormalISize) return true;
-    if ((pair2Max < pair1Max) && ((pair1Max + pair1ReadLength - pair2Max) > pair1maxNormalISize)) return true;
-    if ((pair2Max >= pair1Max) && ((pair2Max + pair2ReadLength - pair1Max) > pair2maxNormalISize)) return true;
-    if ((pair1Max < pair2Min) || (pair2Max < pair1Min)) return true;
-    return false;
-  }
-
-
-  // Duplications
-  template<typename TSize, typename TISize>
-    inline bool
-    _pairsDisagree(TSize const pair1Min, TSize const pair1Max, TSize const pair1ReadLength, TISize const pair1maxNormalISize, TSize const pair2Min, TSize const pair2Max, TSize const pair2ReadLength, TISize const pair2maxNormalISize, uint8_t const, uint8_t const, SVType<DuplicationTag>) {
-    if ((pair2Min + pair2ReadLength - pair1Min) > pair2maxNormalISize) return true;
-    if ((pair2Max < pair1Max) && ((pair1Max + pair1ReadLength - pair2Max) > pair2maxNormalISize)) return true;
-    if ((pair2Max >= pair1Max) && ((pair2Max + pair2ReadLength - pair1Max) > pair1maxNormalISize)) return true;
-    return false;
-  }
-
-
-  // Inversions
-  template<typename TSize, typename TISize>
-    inline bool
-    _pairsDisagree(TSize const pair1Min, TSize const pair1Max, TSize const pair1ReadLength, TISize const pair1maxNormalISize, TSize const pair2Min, TSize const pair2Max, TSize const pair2ReadLength, TISize const pair2maxNormalISize, uint8_t const ct1, uint8_t const ct2, SVType<InversionTag>) {
-    // Do both pairs support the same inversion type (left- or right-spanning)
-    if (ct1 != ct2) return true;
-    if (!ct1) {
-      // Left-spanning inversions
-      if ((pair2Min + pair2ReadLength - pair1Min) > pair1maxNormalISize) return true;
-      if ((pair2Max < pair1Max) && ((pair1Max + pair1ReadLength - pair2Max) > pair2maxNormalISize)) return true;
-      if ((pair2Max >= pair1Max) && ((pair2Max + pair2ReadLength - pair1Max) > pair1maxNormalISize)) return true;
-    } else {
-      // Right-spanning inversions
-      if ((pair2Min + pair2ReadLength - pair1Min) > pair2maxNormalISize) return true;
-      if ((pair2Max < pair1Max) && ((pair1Max + pair1ReadLength - pair2Max) > pair1maxNormalISize)) return true;
-      if ((pair2Max >= pair1Max) && ((pair2Max + pair2ReadLength - pair1Max) > pair2maxNormalISize)) return true;
-    }
-    return false;
-  }
-
-
-  // Translocations
-  template<typename TSize, typename TISize>
-    inline bool
-    _pairsDisagree(TSize const pair1Min, TSize const pair1Max, TSize const pair1ReadLength, TISize const pair1maxNormalISize, TSize const pair2Min, TSize const pair2Max, TSize const pair2ReadLength, TISize const pair2maxNormalISize, uint8_t const ct1, uint8_t const ct2, SVType<TranslocationTag>) {
-    // Do both pairs support the same translocation type
-    if (ct1 != ct2) return true;
-
-    // Check read offsets
-    if (ct1%2==0) {
-      if ((pair2Min + pair2ReadLength - pair1Min) > pair1maxNormalISize) return true;
-      if (ct1>=2) {
-	if (pair2Max < pair1Max) {
-	  if ((pair1Max + pair1ReadLength - pair2Max) > pair1maxNormalISize) return true;
+      // Check read offsets
+      if (ct%2==0) {
+	if ((pair2Min + pair2ReadLength - pair1Min) > pair1maxNormalISize) return true;
+	if (ct>=2) {
+	  if (pair2Max < pair1Max) {
+	    if ((pair1Max + pair1ReadLength - pair2Max) > pair1maxNormalISize) return true;
+	  } else {
+	    if ((pair2Max + pair2ReadLength - pair1Max) > pair2maxNormalISize) return true;
+	  }
 	} else {
-	  if ((pair2Max + pair2ReadLength - pair1Max) > pair2maxNormalISize) return true;
+	  if (pair2Max < pair1Max) {
+	    if ((pair1Max + pair1ReadLength - pair2Max) > pair2maxNormalISize) return true;
+	  } else {
+	    if ((pair2Max + pair2ReadLength - pair1Max) > pair1maxNormalISize) return true;
+	  }
 	}
       } else {
-	if (pair2Max < pair1Max) {
-	  if ((pair1Max + pair1ReadLength - pair2Max) > pair2maxNormalISize) return true;
+	if ((pair2Min + pair2ReadLength - pair1Min) > pair2maxNormalISize) return true;
+	if (ct>=2) {
+	  if (pair2Max < pair1Max) {
+	    if ((pair1Max + pair1ReadLength - pair2Max) > pair2maxNormalISize) return true;
+	  } else {
+	    if ((pair2Max + pair2ReadLength - pair1Max) > pair1maxNormalISize) return true;
+	  }
 	} else {
-	  if ((pair2Max + pair2ReadLength - pair1Max) > pair1maxNormalISize) return true;
+	  if (pair2Max < pair1Max) {
+	    if ((pair1Max + pair1ReadLength - pair2Max) > pair1maxNormalISize) return true;
+	  } else {
+	    if ((pair2Max + pair2ReadLength - pair1Max) > pair2maxNormalISize) return true;
+	  }
 	}
       }
+      return false;
     } else {
-      if ((pair2Min + pair2ReadLength - pair1Min) > pair2maxNormalISize) return true;
-      if (ct1>=2) {
-	if (pair2Max < pair1Max) {
-	  if ((pair1Max + pair1ReadLength - pair2Max) > pair2maxNormalISize) return true;
+      if (svt < 2) {
+	// Inversion
+	if (!svt) {
+	  // Left-spanning inversions
+	  if ((pair2Min + pair2ReadLength - pair1Min) > pair1maxNormalISize) return true;
+	  if ((pair2Max < pair1Max) && ((pair1Max + pair1ReadLength - pair2Max) > pair2maxNormalISize)) return true;
+	  if ((pair2Max >= pair1Max) && ((pair2Max + pair2ReadLength - pair1Max) > pair1maxNormalISize)) return true;
 	} else {
-	  if ((pair2Max + pair2ReadLength - pair1Max) > pair1maxNormalISize) return true;
+	  // Right-spanning inversions
+	  if ((pair2Min + pair2ReadLength - pair1Min) > pair2maxNormalISize) return true;
+	  if ((pair2Max < pair1Max) && ((pair1Max + pair1ReadLength - pair2Max) > pair1maxNormalISize)) return true;
+	  if ((pair2Max >= pair1Max) && ((pair2Max + pair2ReadLength - pair1Max) > pair2maxNormalISize)) return true;
 	}
-      } else {
-	if (pair2Max < pair1Max) {
-	  if ((pair1Max + pair1ReadLength - pair2Max) > pair1maxNormalISize) return true;
-	} else {
-	  if ((pair2Max + pair2ReadLength - pair1Max) > pair2maxNormalISize) return true;
-	}
+	return false;
+      } else if (svt == 2) {
+	// Deletion
+	if ((pair2Min + pair2ReadLength - pair1Min) > pair1maxNormalISize) return true;
+	if ((pair2Max < pair1Max) && ((pair1Max + pair1ReadLength - pair2Max) > pair1maxNormalISize)) return true;
+	if ((pair2Max >= pair1Max) && ((pair2Max + pair2ReadLength - pair1Max) > pair2maxNormalISize)) return true;
+	if ((pair1Max < pair2Min) || (pair2Max < pair1Min)) return true;
+	return false;
+      } else if (svt == 3) {
+	if ((pair2Min + pair2ReadLength - pair1Min) > pair2maxNormalISize) return true;
+	if ((pair2Max < pair1Max) && ((pair1Max + pair1ReadLength - pair2Max) > pair2maxNormalISize)) return true;
+	if ((pair2Max >= pair1Max) && ((pair2Max + pair2ReadLength - pair1Max) > pair1maxNormalISize)) return true;
+	return false;
       }
     }
     return false;
   }
-
-
-
-
 
 
 }

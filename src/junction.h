@@ -77,61 +77,55 @@ namespace torali {
     return (baseQualSum / alignedBases);
   }
 
-  template<typename TPos, typename TTag>
-  inline int32_t
-  _cutRefStart(TPos const rStart, TPos const rEnd, TPos const offset, unsigned int bpPoint, uint8_t const, SVType<TTag>) {
-    if (bpPoint) return rEnd - offset;
-    else return rStart - offset;
-  }
-
   template<typename TPos>
   inline int32_t
-  _cutRefStart(TPos const rStart, TPos const rEnd, TPos const offset, unsigned int bpPoint, uint8_t const, SVType<DuplicationTag>) {
-    if (!bpPoint) return rEnd - offset;
-    else return rStart - offset;
-  }
-
-  template<typename TPos>
-  inline int32_t
-  _cutRefStart(TPos const rStart, TPos const rEnd, TPos const offset, unsigned int bpPoint, uint8_t const ct, SVType<TranslocationTag>) {
-    if (ct == 3) {
-      if (!bpPoint) return rEnd - offset;
-      else return rStart - offset;
+  _cutRefStart(TPos const rStart, TPos const rEnd, TPos const offset, unsigned int bpPoint, int32_t const svt) {
+    if (_translocation(svt)) {
+      uint8_t ct = _getSpanOrientation(svt);
+      if (ct == 3) {
+	if (!bpPoint) return rEnd - offset;
+	else return rStart - offset;
+      } else {
+	if (bpPoint) return rEnd - offset;
+	else return rStart - offset;
+      }
     } else {
-      if (bpPoint) return rEnd - offset;
-      else return rStart - offset;
+      if (svt == 3) {
+	if (!bpPoint) return rEnd - offset;
+	else return rStart - offset;
+      } else {
+	if (bpPoint) return rEnd - offset;
+	else return rStart - offset;
+      }
     }
   }
 
-  template<typename TPos, typename TTag>
-  inline int32_t
-  _cutRefEnd(TPos const rStart, TPos const rEnd, TPos const offset, unsigned int bpPoint, uint8_t const, SVType<TTag>) {
-    if (bpPoint) return rEnd + offset;
-    else return rStart + offset;
-  }
-
   template<typename TPos>
   inline int32_t
-  _cutRefEnd(TPos const rStart, TPos const rEnd, TPos const offset, unsigned int bpPoint, uint8_t const, SVType<DuplicationTag>) {
-    if (!bpPoint) return rEnd + offset;
-    else return rStart + offset;
-  }
-
-  template<typename TPos>
-  inline int32_t
-  _cutRefEnd(TPos const rStart, TPos const rEnd, TPos const offset, unsigned int bpPoint, uint8_t const ct, SVType<TranslocationTag>) {
-    if (ct == 3) {
-      if (!bpPoint) return rEnd + offset;
-      else return rStart + offset;
+  _cutRefEnd(TPos const rStart, TPos const rEnd, TPos const offset, unsigned int bpPoint, int32_t const svt) {
+    if (_translocation(svt)) {
+      uint8_t ct = _getSpanOrientation(svt);
+      if (ct == 3) {
+	if (!bpPoint) return rEnd + offset;
+	else return rStart + offset;
+      } else {
+	if (bpPoint) return rEnd + offset;
+	else return rStart + offset;
+      }
     } else {
-      if (bpPoint) return rEnd + offset;
-      else return rStart + offset;
+      if (svt == 3) {
+	if (!bpPoint) return rEnd + offset;
+	else return rStart + offset;
+      } else {
+	if (bpPoint) return rEnd + offset;
+	else return rStart + offset;
+      }
     }
   }
 
-  template<typename TConfig, typename TSVs, typename TCountMap, typename TTag>
+  template<typename TConfig, typename TSVs, typename TCountMap>
   inline void
-  annotateJunctionReads(TConfig& c, TSVs& svs, TCountMap& countMap, SVType<TTag> svType)
+  annotateJunctionReads(TConfig& c, TSVs& svs, TCountMap& countMap)
   {
     typedef typename TCountMap::value_type::value_type TCountPair;
     typedef std::vector<uint8_t> TQuality;
@@ -192,21 +186,21 @@ namespace torali {
 	// Get the reference sequence
 	if ((itSV->chr != itSV->chr2) && (itSV->chr2 == refIndex)) {
 	  Breakpoint bp(*itSV);
-	  _initBreakpoint(hdr, bp, (int32_t) itSV->consensus.size(), svType);
-	  refProbes[itSV->id] = _getSVRef(c, seq, bp, refIndex, svType);
+	  _initBreakpoint(hdr, bp, (int32_t) itSV->consensus.size(), itSV->svt);
+	  refProbes[itSV->id] = _getSVRef(c, seq, bp, refIndex, itSV->svt);
 	}
 	if (itSV->chr == refIndex) {
 	  Breakpoint bp(*itSV);
 	  bp.part1 = refProbes[itSV->id];
-	  _initBreakpoint(hdr, bp, (int32_t) itSV->consensus.size(), svType);
-	  std::string svRefStr = _getSVRef(c, seq, bp, refIndex, svType);
+	  _initBreakpoint(hdr, bp, (int32_t) itSV->consensus.size(), itSV->svt);
+	  std::string svRefStr = _getSVRef(c, seq, bp, refIndex, itSV->svt);
 	  
 	  // Find breakpoint to reference
 	  typedef boost::multi_array<char, 2> TAlign;
 	  TAlign align;
-	  if (!_consRefAlignment(itSV->consensus, svRefStr, align, svType)) continue;
+	  if (!_consRefAlignment(itSV->consensus, svRefStr, align, itSV->svt)) continue;
 	  AlignDescriptor ad;
-	  if (!_findSplit(c, itSV->consensus, svRefStr, align, ad, svType)) continue;
+	  if (!_findSplit(c, itSV->consensus, svRefStr, align, ad, itSV->svt)) continue;
 	  
 	  // Debug consensus to reference alignment
 	  //for(TAIndex i = 0; i<align.shape()[0]; ++i) {
@@ -229,16 +223,16 @@ namespace torali {
 		regionEnd = std::min((uint32_t) (itSV->svEnd + c.minimumFlankSize), hdr->target_len[itSV->chr2]);
 		cutConsStart = ad.cEnd - ad.homLeft - c.minimumFlankSize;
 		cutConsEnd = ad.cEnd + ad.homRight + c.minimumFlankSize;
-		cutRefStart = _cutRefStart(ad.rStart, ad.rEnd, ad.homLeft + c.minimumFlankSize, bpPoint, itSV->ct, svType);
-		cutRefEnd = _cutRefEnd(ad.rStart, ad.rEnd, ad.homRight + c.minimumFlankSize, bpPoint, itSV->ct, svType);
+		cutRefStart = _cutRefStart(ad.rStart, ad.rEnd, ad.homLeft + c.minimumFlankSize, bpPoint, itSV->svt);
+		cutRefEnd = _cutRefEnd(ad.rStart, ad.rEnd, ad.homRight + c.minimumFlankSize, bpPoint, itSV->svt);
 	      } else {
 		regionChr = itSV->chr;
 		regionStart = std::max(0, itSV->svStart - c.minimumFlankSize);
 		regionEnd = std::min((uint32_t) (itSV->svStart + c.minimumFlankSize), hdr->target_len[itSV->chr]);
 		cutConsStart = ad.cStart - ad.homLeft - c.minimumFlankSize;
 		cutConsEnd = ad.cStart + ad.homRight + c.minimumFlankSize;
-		cutRefStart = _cutRefStart(ad.rStart, ad.rEnd, ad.homLeft + c.minimumFlankSize, bpPoint, itSV->ct, svType);
-		cutRefEnd = _cutRefEnd(ad.rStart, ad.rEnd, ad.homRight + c.minimumFlankSize, bpPoint, itSV->ct, svType);
+		cutRefStart = _cutRefStart(ad.rStart, ad.rEnd, ad.homLeft + c.minimumFlankSize, bpPoint, itSV->svt);
+		cutRefEnd = _cutRefEnd(ad.rStart, ad.rEnd, ad.homRight + c.minimumFlankSize, bpPoint, itSV->svt);
 	      }
 	      std::string consProbe = itSV->consensus.substr(cutConsStart, (cutConsEnd - cutConsStart));
 	      std::string refProbe = svRefStr.substr(cutRefStart, (cutRefEnd - cutRefStart));
@@ -272,7 +266,7 @@ namespace torali {
 		sequence.resize(rec->core.l_qseq);
 		uint8_t* seqptr = bam_get_seq(rec);
 		for (int i = 0; i < rec->core.l_qseq; ++i) sequence[i] = "=ACMGRSVTWYHKDBN"[bam_seqi(seqptr, i)];
-		_adjustOrientation(sequence, bpPoint, itSV->ct, svType);
+		_adjustOrientation(sequence, bpPoint, itSV->svt);
 		
 		// Compute alignment to alternative haplotype
 		TAlign alignAlt;
@@ -334,7 +328,7 @@ namespace torali {
 #pragma omp critical
 		      {
 			if (c.srdumpflag) {
-			  std::string svid(_addID(svType));
+			  std::string svid(_addID(itSV->svt));
 			  std::string padNumber = boost::lexical_cast<std::string>(itSV->id);
 			  padNumber.insert(padNumber.begin(), 8 - padNumber.length(), '0');
 			  svid += padNumber;

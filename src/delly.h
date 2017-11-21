@@ -63,6 +63,7 @@ Contact: Tobias Rausch (rausch@embl.de)
 #include "split.h"
 #include "json.h"
 #include "shortpe.h"
+#include "modvcf.h"
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -89,7 +90,6 @@ struct Config {
   bool pedumpflag;
   bool srdumpflag;
   DnaScore<int> aliscore;
-  std::string svType;
   std::string format;
   boost::filesystem::path outfile;
   boost::filesystem::path vcffile;
@@ -103,40 +103,9 @@ struct Config {
 
 
 
-template<typename TSize>
-inline bool
-_svSizeCheck(TSize const s, TSize const e, SVType<DeletionTag>) {
-  return (( e - s ) >= 300);
-}
-
-template<typename TSize>
-inline bool
-_svSizeCheck(TSize const s, TSize const e, SVType<DuplicationTag>) {
-  return (( e - s ) >= 100);
-}
-
-template<typename TSize>
-inline bool
-_svSizeCheck(TSize const s, TSize const e, SVType<InversionTag>) {
-  return (( e - s ) >= 100);
-}
-
-template<typename TSize>
-inline bool
-_svSizeCheck(TSize const s, TSize const e, SVType<InsertionTag>) {
-  return (( e - s ) >= 0);
-}
-
-template<typename TSize>
-inline bool
-_svSizeCheck(TSize const, TSize const, SVType<TranslocationTag>) {
-  return true;
-}
-
- 
-template<typename TConfig, typename TSVs, typename TCountMap, typename TTag>
+template<typename TConfig, typename TSVs, typename TCountMap>
 inline void
-_annotateCoverage(TConfig const& c, bam_hdr_t* hdr, TSVs& svs, TCountMap& countMap, SVType<TTag>) 
+_annotateCoverage(TConfig const& c, bam_hdr_t* hdr, TSVs& svs, TCountMap& countMap) 
 {
   // Find Ns in the reference genome
   typedef boost::icl::interval_set<int> TNIntervals;
@@ -184,6 +153,7 @@ _annotateCoverage(TConfig const& c, bam_hdr_t* hdr, TSVs& svs, TCountMap& countM
   TSVSize svSize(lastId);
   for (typename TSVs::const_iterator itSV = svs.begin(); itSV != svs.end(); ++itSV) {
     int halfSize = (itSV->svEnd - itSV->svStart)/2;
+    if ((_translocation(itSV->svt)) || (itSV->svt == 4)) halfSize = 500;
 
     // Left control region
     CovRecord sLeft;
@@ -206,6 +176,10 @@ _annotateCoverage(TConfig const& c, bam_hdr_t* hdr, TSVs& svs, TCountMap& countM
     sMiddle.id = itSV->id;
     sMiddle.svStart = itSV->svStart;
     sMiddle.svEnd = itSV->svEnd;
+    if ((_translocation(itSV->svt)) || (itSV->svt == 4)) {
+      sMiddle.svStart = std::max(itSV->svStart - halfSize, 0);
+      sMiddle.svEnd = itSV->svEnd + halfSize;
+    }
     sMiddle.peSupport = itSV->peSupport;
     svc.push_back(sMiddle);
     svSize[itSV->id] = (itSV->svEnd - itSV->svStart);
@@ -216,6 +190,10 @@ _annotateCoverage(TConfig const& c, bam_hdr_t* hdr, TSVs& svs, TCountMap& countM
     sRight.id = 2 * lastId + itSV->id;
     sRight.svStart = itSV->svEnd;
     sRight.svEnd = itSV->svEnd + halfSize;
+    if ((_translocation(itSV->svt)) || (itSV->svt == 4)) {
+      sRight.svStart = itSV->svStart;
+      sRight.svEnd = itSV->svStart + halfSize;
+    }
     sRight.peSupport = 0;
     itO = ni[sRight.chr].find(boost::icl::discrete_interval<int>::right_open(sRight.svStart, sRight.svEnd));
     while (itO != ni[sRight.chr].end()) {
@@ -250,28 +228,8 @@ _annotateCoverage(TConfig const& c, bam_hdr_t* hdr, TSVs& svs, TCountMap& countM
   }
 }
 
-template<typename TConfig, typename TSVs, typename TCountMap>
-inline void
-_annotateCoverage(TConfig const& c, bam_hdr_t*, TSVs& svs, TCountMap& countMap, SVType<TranslocationTag>) 
-{
-  countMap.resize(c.files.size());
-  for(uint32_t file_c = 0; file_c < c.files.size(); ++file_c) countMap[file_c].resize(svs.size());
-}
-
-template<typename TConfig, typename TSVs, typename TCountMap>
-inline void
-_annotateCoverage(TConfig const& c, bam_hdr_t*, TSVs& svs, TCountMap& countMap, SVType<InsertionTag>) 
-{
-  countMap.resize(c.files.size());
-  for(uint32_t file_c = 0; file_c < c.files.size(); ++file_c) countMap[file_c].resize(svs.size());
-}
-
-
-
-
-
-template<typename TSVType>
-inline int dellyRun(Config& c, TSVType svType) {
+template<typename TConfigStruct>
+inline int dellyRun(TConfigStruct& c) {
 #ifdef PROFILE
   ProfilerStart("delly.prof");
 #endif
@@ -348,14 +306,9 @@ inline int dellyRun(Config& c, TSVType svType) {
   }
 
   // SV Discovery
-  if (!c.hasVcfFile) shortPE(c, validRegions, svs, sampleLib, svType);
-  else {
-    // Read SV records from input file
-    if (c.format == "json.gz") jsonParse(c, hdr, svs, svType);
-    else vcfParse(c, hdr, svs, svType);
-  }
+  if (!c.hasVcfFile) shortPE(c, validRegions, svs, sampleLib);
+  else vcfParse(c, hdr, svs);
 
-  
   // Annotate junction reads
   typedef std::vector<JunctionCount> TSVJunctionMap;
   typedef std::vector<TSVJunctionMap> TSampleSVJunctionMap;
@@ -373,13 +326,13 @@ inline int dellyRun(Config& c, TSVType svType) {
 
   // SV Genotyping
   if (!svs.empty()) {
-    annotateJunctionReads(c, svs, junctionCountMap, svType);
-    annotateSpanningCoverage(c, sampleLib, svs, spanCountMap, svType);
-    _annotateCoverage(c, hdr, svs, rcMap, svType);
+    annotateJunctionReads(c, svs, junctionCountMap);
+    annotateSpanningCoverage(c, sampleLib, svs, spanCountMap);
+    _annotateCoverage(c, hdr, svs, rcMap);
   }
   
   // VCF output
-  vcfOutput(c, svs, junctionCountMap, rcMap, spanCountMap, svType);
+  vcfOutput(c, svs, junctionCountMap, rcMap, spanCountMap);
 
   // Clean-up
   bam_hdr_destroy(hdr);
@@ -414,7 +367,6 @@ int delly(int argc, char **argv) {
   boost::program_options::options_description generic("Generic options");
   generic.add_options()
     ("help,?", "show help message")
-    ("type,t", boost::program_options::value<std::string>(&c.svType)->default_value("DEL"), "SV type (DEL, DUP, INV, BND, INS)")
     ("genome,g", boost::program_options::value<boost::filesystem::path>(&c.genome), "genome fasta file")
     ("exclude,x", boost::program_options::value<boost::filesystem::path>(&c.exclude), "file with regions to exclude")
     ("outfile,o", boost::program_options::value<boost::filesystem::path>(&c.outfile)->default_value("sv.bcf"), "SV BCF output file")
@@ -594,25 +546,15 @@ int delly(int argc, char **argv) {
   if (c.minGenoQual<5) c.minGenoQual=5;
 
   // Small InDels?
-  c.indels = false;
-  if (!vm.count("noindels")) {
-    if ((c.svType == "DEL") || (c.svType == "INS")) c.indels = true;
-  }
-
+  if (vm.count("noindels")) c.indels = false;
+  else c.indels = true;
+  
   // Run main program
   c.aliscore = DnaScore<int>(5, -4, -10, -1);
   c.flankQuality = 0.95;
   c.minimumFlankSize = 13;
   c.indelsize = 500;
-  if (c.svType == "DEL") return dellyRun(c, SVType<DeletionTag>());
-  else if (c.svType == "DUP") return dellyRun(c, SVType<DuplicationTag>());
-  else if (c.svType == "INV") return dellyRun(c, SVType<InversionTag>());
-  else if (c.svType == "BND") return dellyRun(c, SVType<TranslocationTag>());
-  else if (c.svType == "INS") return dellyRun(c, SVType<InsertionTag>());
-  else {
-    std::cerr << "SV analysis type not supported by Delly: " << c.svType << std::endl;
-    return 1;
-  }
+  return dellyRun(c);
 }
 
 }

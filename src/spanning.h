@@ -70,9 +70,9 @@ namespace torali {
     }
   }   
 
-  template<typename TConfig, typename TSampleLibrary, typename TSVs, typename TCountMap, typename TSVType>
+  template<typename TConfig, typename TSampleLibrary, typename TSVs, typename TCountMap>
   inline void
-  annotateSpanningCoverage(TConfig& c, TSampleLibrary& sampleLib, TSVs& svs, TCountMap& spanCountMap, TSVType svType)
+  annotateSpanningCoverage(TConfig& c, TSampleLibrary& sampleLib, TSVs& svs, TCountMap& spanCountMap)
   {
     typedef typename TCountMap::value_type::value_type TCountPair;
     typedef typename TSampleLibrary::value_type TLibraryMap;
@@ -111,13 +111,9 @@ namespace torali {
 
     // Qualities
     typedef boost::unordered_map<std::size_t, uint8_t> TQualities;
-    std::vector<TQualities> qualities;
-    qualities.resize(c.files.size());
     std::vector<TQualities> qualitiestra;
     qualitiestra.resize(c.files.size());
     typedef boost::unordered_map<std::size_t, int32_t> TAlignmentLength;
-    std::vector<TAlignmentLength> alen;
-    alen.resize(c.files.size());
     std::vector<TAlignmentLength> alentra;
     alentra.resize(c.files.size());
 
@@ -127,19 +123,23 @@ namespace torali {
       
 #pragma omp parallel for default(shared)
       for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
-	// Get maximum insert size
-	int32_t variability = getVariability(c, sampleLib[file_c]);
+	// Get variability
+	int32_t varisize = getVariability(c, sampleLib[file_c]);
+	
+	// Qualities and alignment length
+	TQualities qualities;
+	TAlignmentLength alen;
 
 	// Read alignments
 	for(typename TSVs::const_iterator itSV = svs.begin(); itSV!=svs.end(); ++itSV) {
 	  if (itSV->peSupport == 0) continue;
 	  if ((itSV->chr != refIndex) && (itSV->chr2 != refIndex)) continue;
-	
+	  
 	  // Scan left and right breakpoint
 	  Breakpoint bp(*itSV);
-	  _initBreakpoint(hdr, bp, variability, svType);
+	  _initBreakpoint(hdr, bp, varisize, itSV->svt);
 	  unsigned int maxBp = 2;
-	  if ((bp.chr == bp.chr2) && (bp.svStart + 3 * variability >= bp.svEnd)) maxBp = 1;
+	  if ((bp.chr == bp.chr2) && (bp.svStart + 3 * varisize >= bp.svEnd)) maxBp = 1;
 	  for (unsigned int bpPoint = 0; bpPoint < maxBp; ++bpPoint) {
 	    int32_t regionChr = 0;
 	    int32_t regionStart = 0;
@@ -156,60 +156,54 @@ namespace torali {
 	    }
 	    hts_itr_t* iter = sam_itr_queryi(idx[file_c], regionChr, regionStart, regionEnd);
 	    bam1_t* rec = bam_init1();
+	    int32_t lastAlignedPos = 0;
+	    std::set<std::size_t> lastAlignedPosReads;
 	    while (sam_itr_next(samfile[file_c], iter, rec) >= 0) {
 	      if (rec->core.flag & (BAM_FSECONDARY | BAM_FQCFAIL | BAM_FDUP | BAM_FSUPPLEMENTARY | BAM_FUNMAP | BAM_FMUNMAP)) continue;
 	      if (!(rec->core.flag & BAM_FPAIRED) || (rec->core.qual < c.minGenoQual)) continue;
 
-	      // Mapping positions valid?
-	      if (_mappingPosGeno(rec->core.tid, rec->core.mtid, rec->core.pos, rec->core.mpos, svType)) continue;
-	      
-	      // Get the library information
-	      std::string rG = "DefaultLib";
-	      uint8_t *rgptr = bam_aux_get(rec, "RG");
-	      if (rgptr) {
-		char* rg = (char*) (rgptr + 1);
-		rG = std::string(rg);
+	      // Clean-up the read store for identical alignment positions
+	      if (rec->core.pos > lastAlignedPos) {
+		lastAlignedPosReads.clear();
+		lastAlignedPos = rec->core.pos;
 	      }
-	      typename TLibraryMap::iterator libIt = sampleLib[file_c].find(rG);
+
+	      // Mapping positions valid?
+	      if (_mappingPosGeno(rec->core.tid, rec->core.mtid, rec->core.pos, rec->core.mpos, itSV->svt)) continue;
+
+	      // Get the library information
+	      typename TLibraryMap::iterator libIt = _findLib(rec, sampleLib[file_c]);
 	      if (libIt->second.median == 0) continue; // Single-end library
 		    
 	      // Get or store the mapping quality for the partner
-	      if (_firstPairObs(rec->core.tid, rec->core.mtid, rec->core.pos, rec->core.mpos, svType)) {
-		uint8_t r2Qual = rec->core.qual;
-		uint8_t* ptr = bam_aux_get(rec, "AS");
-		if (ptr) {
-		  int score = std::abs((int) bam_aux2i(ptr));
-		  r2Qual = std::min(r2Qual, (uint8_t) ( (score<255) ? score : 255 ));
-		}
+	      if (_firstPairObs(rec, lastAlignedPosReads)) {
+		// First read
+		lastAlignedPosReads.insert(hash_string(bam_get_qname(rec)));
 		std::size_t hv = hash_pair(rec);
-		if (rec->core.tid != rec->core.mtid) {
-		  qualitiestra[file_c][hv]= r2Qual;
+		if (_translocation(itSV->svt)) {
+		  qualitiestra[file_c][hv]= rec->core.qual;
 		  alentra[file_c][hv]= alignmentLength(rec);
 		} else {
-		  qualities[file_c][hv]= r2Qual;
-		  alen[file_c][hv]= alignmentLength(rec);
+		  qualities[hv]= rec->core.qual;
+		  alen[hv]= alignmentLength(rec);
 		}
 	      } else {
-		// Get the two mapping qualities
-		uint8_t r2Qual = rec->core.qual;
-		uint8_t* ptr = bam_aux_get(rec, "AS");
-		if (ptr) {
-		  int score = std::abs((int) bam_aux2i(ptr));
-		  r2Qual = std::min(r2Qual, (uint8_t) ( (score<255) ? score : 255 ));
-		}
+		// Second read
 		std::size_t hv=hash_pair_mate(rec);
-		uint8_t pairQuality = 0;
 		int32_t alenmate = 0;
-		if (rec->core.tid != rec->core.mtid) {
-		  pairQuality = std::min(qualitiestra[file_c][hv], r2Qual);
-		  qualitiestra[file_c][hv] = (uint8_t) 0;
+		uint8_t pairQuality = 0;
+		if (_translocation(itSV->svt)) {
+		  if (qualitiestra[file_c].find(hv) == qualitiestra[file_c].end()) continue; // Mate discarded
+		  pairQuality = std::min((uint8_t) qualitiestra[file_c][hv], (uint8_t) rec->core.qual);
 		  alenmate = alentra[file_c][hv];
+		  qualitiestra[file_c][hv] = 0;
 		} else {
-		  pairQuality = std::min(qualities[file_c][hv], r2Qual);
-		  qualities[file_c][hv] = (uint8_t) 0;
-		  alenmate = alen[file_c][hv];
+		  if (qualities.find(hv) == qualities.end()) continue; // Mate discarded
+		  pairQuality = std::min((uint8_t) qualities[hv], (uint8_t) rec->core.qual);
+		  alenmate = alen[hv];
+		  qualities[hv] = 0;
 		}
-		
+
 		// Pair quality
 		if (pairQuality < c.minGenoQual) continue;
 		
@@ -219,7 +213,7 @@ namespace torali {
 		else outerISize = rec->core.pos + alignmentLength(rec) - rec->core.mpos;
 		
 		// Insert the interval
-		if ((getStrandIndependentOrientation(rec->core) == libIt->second.defaultOrient) && (outerISize >= libIt->second.minNormalISize) && (outerISize <= libIt->second.maxNormalISize) && (rec->core.tid==rec->core.mtid)) {
+		if ((getSVType(rec->core) == libIt->second.defaultOrient) && (outerISize >= libIt->second.minNormalISize) && (outerISize <= libIt->second.maxNormalISize) && (rec->core.tid==rec->core.mtid)) {
 		  // Normal spanning coverage
 		  int32_t sPos = 0;
 		  int32_t ePos = 0;
@@ -250,20 +244,20 @@ namespace torali {
 		      }
 		    }
 		  }
-		} else if ((getStrandIndependentOrientation(rec->core) != libIt->second.defaultOrient) || (outerISize < libIt->second.minNormalISize) || (outerISize > libIt->second.maxNormalISize) || (rec->core.tid!=rec->core.mtid)) {
-		  if (_acceptedInsertSize(libIt->second, abs(rec->core.isize), svType)) continue;  // Normal paired-end (for deletions, insertions only - this uses minISizeCutoff and maxISizeCutoff)
-		  if (_acceptedOrientation(libIt->second.defaultOrient, getStrandIndependentOrientation(rec->core), svType)) continue;  // Orientation disagrees with SV type
+		} else if ((getSVType(rec->core) != libIt->second.defaultOrient) || (outerISize < libIt->second.minNormalISize) || (outerISize > libIt->second.maxNormalISize) || (rec->core.tid!=rec->core.mtid)) {
+
+		  if (_isizeMappingPos(rec, varisize) != itSV->svt) continue;
 		  if (!(((itSV->chr == rec->core.tid) && (itSV->chr2 == rec->core.mtid)) || ((itSV->chr == rec->core.mtid) && (itSV->chr2 == rec->core.tid)))) continue;
 		  
 		  // Does the pair confirm the SV
-		  int32_t const minPos = _minCoord(rec->core.pos, rec->core.mpos, svType);
-		  int32_t const maxPos = _maxCoord(rec->core.pos, rec->core.mpos, svType);
+		  int32_t const minPos = _minCoord(rec->core.pos, rec->core.mpos, itSV->svt);
+		  int32_t const maxPos = _maxCoord(rec->core.pos, rec->core.mpos, itSV->svt);
 		  
 		  if (rec->core.tid==itSV->chr) {
 		    if (minPos < itSV->svStart) {
-		      if (_pairsDisagree(minPos, maxPos, rec->core.l_qseq, libIt->second.maxNormalISize, itSV->svStart, itSV->svEnd, rec->core.l_qseq, libIt->second.maxNormalISize, _getSpanOrientation(rec->core, libIt->second.defaultOrient, svType), itSV->ct, svType)) continue;
+		      if (_pairsDisagree(minPos, maxPos, rec->core.l_qseq, libIt->second.maxNormalISize, itSV->svStart, itSV->svEnd, rec->core.l_qseq, libIt->second.maxNormalISize, itSV->svt)) continue;
 		    } else {
-		      if (_pairsDisagree(itSV->svStart, itSV->svEnd, rec->core.l_qseq, libIt->second.maxNormalISize, minPos, maxPos, rec->core.l_qseq, libIt->second.maxNormalISize, itSV->ct, _getSpanOrientation(rec->core, libIt->second.defaultOrient, svType), svType)) continue;
+		      if (_pairsDisagree(itSV->svStart, itSV->svEnd, rec->core.l_qseq, libIt->second.maxNormalISize, minPos, maxPos, rec->core.l_qseq, libIt->second.maxNormalISize, itSV->svt)) continue;
 		    }
 		  }
 		  
@@ -289,7 +283,7 @@ namespace torali {
 #pragma omp critical
 		    {
 		      if (c.pedumpflag) {
-			std::string svid(_addID(svType));
+			std::string svid(_addID(itSV->svt));
 			std::string padNumber = boost::lexical_cast<std::string>(itSV->id);
 			padNumber.insert(padNumber.begin(), 8 - padNumber.length(), '0');
 			svid += padNumber;
@@ -318,10 +312,6 @@ namespace torali {
 	    hts_itr_destroy(iter);
 	  }
 	}
-	// Clean-up qualities
-	qualities[file_c].clear();
-	alen[file_c].clear();
-	_resetQualities(qualitiestra[file_c], alentra[file_c], svType);
       }
     }
     // Clean-up

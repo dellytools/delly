@@ -110,7 +110,7 @@ namespace torali
   
   // Inversions
   inline std::string
-    _addID(SVType<InversionTag>) {
+  _addID(SVType<InversionTag>) {
     return "INV";
   }
   
@@ -122,33 +122,10 @@ namespace torali
   
   // Insertion
   inline std::string
-    _addID(SVType<InsertionTag>) {
+  _addID(SVType<InsertionTag>) {
     return "INS";
   }
 
-
-  template<typename TTag>
-  inline std::string
-  _addAlleles(std::string const& ref, std::string const&, StructuralVariantRecord const&, SVType<TTag> svType) {
-    return ref + ",<" + _addID(svType) + ">";
-  }
-
-  inline std::string
-  _addAlleles(std::string const& ref, std::string const& chr2, StructuralVariantRecord const& sv, SVType<TranslocationTag> svType) {
-    if (sv.ct == 0) {
-      return ref + "," + ref + "]" + chr2 + ":" + boost::lexical_cast<std::string>(sv.svEnd) + "]";
-    } else if (sv.ct == 1) {
-      return ref + "," + "[" + chr2 + ":" + boost::lexical_cast<std::string>(sv.svEnd) + "[" + ref;
-    } else if (sv.ct == 2) {
-      return ref + "," + ref + "[" + chr2 + ":" + boost::lexical_cast<std::string>(sv.svEnd) + "[";
-    } else if (sv.ct == 3) {
-      return ref + "," + "]" + chr2 + ":" + boost::lexical_cast<std::string>(sv.svEnd) + "]" + ref;
-    }
-    return ref + ",<" + _addID(svType) + ">";
-  }
-  
-
-  
   // Decode Orientation
   inline uint8_t
     _decodeOrientation(std::string const& value) {
@@ -158,10 +135,42 @@ namespace torali
     else if (value=="5to3") return 3;
     else return 4;
   }
+    
+  
+  // Deletions
+  inline std::string
+  _addID(int32_t const svt) {
+    if (svt == 0) return "INV";
+    else if (svt == 1) return "INV";
+    else if (svt == 2) return "DEL";
+    else if (svt == 3) return "DUP";
+    else if (svt == 4) return "INS";
+    else return "BND";
+  }
+
+  inline std::string
+  _addAlleles(std::string const& ref, std::string const& chr2, StructuralVariantRecord const& sv, int32_t const svt) {
+    if (_translocation(svt)) {
+      uint8_t ct = _getSpanOrientation(svt);
+      if (ct == 0) {
+	return ref + "," + ref + "]" + chr2 + ":" + boost::lexical_cast<std::string>(sv.svEnd) + "]";
+      } else if (ct == 1) {
+	return ref + "," + "[" + chr2 + ":" + boost::lexical_cast<std::string>(sv.svEnd) + "[" + ref;
+      } else if (ct == 2) {
+	return ref + "," + ref + "[" + chr2 + ":" + boost::lexical_cast<std::string>(sv.svEnd) + "[";
+      } else if (ct == 3) {
+	return ref + "," + "]" + chr2 + ":" + boost::lexical_cast<std::string>(sv.svEnd) + "]" + ref;
+      } else {
+	return ref + ",<" + _addID(svt) + ">";
+      }
+    } else return ref + ",<" + _addID(svt) + ">";
+  }
+
   
   // Add Orientation
   inline std::string
-    _addOrientation(uint8_t const ct) {
+  _addOrientation(int32_t const svt) {
+    uint8_t ct = _getSpanOrientation(svt);
     if (ct==0) return "3to3";
     else if (ct==1) return "5to5";
     else if (ct==2) return "3to5";
@@ -200,7 +209,7 @@ namespace torali
       if (rec->core.flag & BAM_FMUNMAP) return false;
       if (rec->core.pos < rec->core.mpos) return false;
       int32_t outerISize = rec->core.pos - rec->core.mpos + rec->core.l_qseq;
-      if ((rec->core.tid!=rec->core.mtid) || (getStrandIndependentOrientation(rec->core) != libInfo.defaultOrient) || (outerISize < libInfo.minNormalISize) || (outerISize > libInfo.maxNormalISize)) return false;
+      if ((rec->core.tid!=rec->core.mtid) || (getSVType(rec->core) != libInfo.defaultOrient) || (outerISize < libInfo.minNormalISize) || (outerISize > libInfo.maxNormalISize)) return false;
       midPoint = rec->core.pos + outerISize / 2;
     }
     return true;
@@ -361,6 +370,17 @@ namespace torali
     percentile = *(vec.begin() + int(vec.size() * p));
   }
 
+  template<typename TLibraryMap>
+  inline int32_t
+  getMaxISizeCutoff(TLibraryMap const& lib) {
+    int32_t overallVariability = 0;
+    for(typename TLibraryMap::const_iterator libIt = lib.begin(); libIt != lib.end(); ++libIt) {
+      if (libIt->second.maxISizeCutoff > overallVariability) overallVariability = libIt->second.maxISizeCutoff;
+      if (libIt->second.rs > overallVariability) overallVariability = libIt->second.rs;
+    }
+    return overallVariability;
+  }
+
   template<typename TConfig, typename TLibraryMap>
   inline int32_t
   getVariability(TConfig const& c, std::vector<TLibraryMap> const& sampleLib)
@@ -377,8 +397,7 @@ namespace torali
 
   template<typename TConfig>
   inline int32_t
-  getVariability(TConfig const&, boost::unordered_map<std::string, LibraryInfo> const& sampleLib)
-  {
+  getVariability(TConfig const&, boost::unordered_map<std::string, LibraryInfo> const& sampleLib) {
     typedef boost::unordered_map<std::string, LibraryInfo> TLibraryMap;
     int32_t overallVariability = 0;
     for(typename TLibraryMap::const_iterator libIt=sampleLib.begin();libIt!=sampleLib.end();++libIt) {
@@ -387,7 +406,7 @@ namespace torali
     }
     return overallVariability;
   }
-  
+
   
   template<typename TIterator, typename TValue>
   inline void
@@ -512,7 +531,7 @@ namespace torali
 	      }
 	      if ((rec->core.flag & BAM_FPAIRED) && !(rec->core.flag & BAM_FMUNMAP) && (rec->core.tid==rec->core.mtid)) {
 		paramIt->second.vecISize[paramIt->second.processedNumPairs % maxNumAlignments] = abs(rec->core.isize);
-		++paramIt->second.orient[getStrandIndependentOrientation(rec->core)];
+		++paramIt->second.orient[getSVType(rec->core)];
 		++paramIt->second.processedNumPairs;
 		if (paramIt->second.processedNumPairs == maxNumAlignments) ++libCount;
 	      }
