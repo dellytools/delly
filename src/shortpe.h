@@ -59,7 +59,6 @@ Contact: Tobias Rausch (rausch@embl.de)
 #include "junction.h"
 #include "msa.h"
 #include "split.h"
-#include "json.h"
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -430,7 +429,6 @@ namespace torali
 	} else {
 	  newSvStart = std::min(svStart, el.mpos);
 	  newSvEnd = std::min(svEnd, el.pos);
-	  newWiggle = el.pos  + el.alen - (el.mpos + el.malen) + el.maxNormalISize - (newSvEnd - newSvStart);
 	  newWiggle = std::min(el.maxNormalISize - (el.mpos + el.malen - newSvStart), el.maxNormalISize - (el.pos + el.alen - newSvEnd));
 	  wiggleChange = wiggle - std::max(svStart - newSvStart, svEnd - newSvEnd);
 	}

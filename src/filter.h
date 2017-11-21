@@ -259,11 +259,9 @@ filterRun(TFilterConfig const& c) {
 	if (!gqAlt.empty()) getMedian(gqAlt.begin(), gqAlt.end(), gqaltmed);
 	float gqrefmed = 0;
 	if (!gqRef.empty()) getMedian(gqRef.begin(), gqRef.end(), gqrefmed);
-	float rcrawmed = 0;
-	if (!rcraw.empty()) getMedian(rcraw.begin(), rcraw.end(), rcrawmed);
 	float af = (float) ac[1] / (float) (ac[0] + ac[1]);
 	
-	//std::cerr << bcf_hdr_id2name(hdr, rec->rid) << '\t' << (rec->pos + 1) << '\t' << *svend << '\t' << rec->d.id << '\t' << svlen << '\t' << ac[1] << '\t' << af << '\t' << genotypeRatio << '\t' << std::string(svt) << '\t' << precise << '\t' << rrefvarpercentile << '\t' << raltvarmed << '\t' << gqrefmed << '\t' << gqaltmed << '\t' << rdRatio << '\t' << rcrawmed << std::endl;
+	//std::cerr << bcf_hdr_id2name(hdr, rec->rid) << '\t' << (rec->pos + 1) << '\t' << *svend << '\t' << rec->d.id << '\t' << svlen << '\t' << ac[1] << '\t' << af << '\t' << genotypeRatio << '\t' << std::string(svt) << '\t' << precise << '\t' << rrefvarpercentile << '\t' << raltvarmed << '\t' << gqrefmed << '\t' << gqaltmed << '\t' << rdRatio << std::endl;
 
 	if ((af>0) && (gqaltmed >= c.gq) && (gqrefmed >= c.gq) && (raltvarmed >= c.altaf) && (genotypeRatio >= c.ratiogeno)) {
 	  if ((std::string(svt)=="DEL") && (rdRatio > c.rddel)) continue;

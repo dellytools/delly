@@ -30,18 +30,6 @@ namespace torali {
   #define DELLY_SVT_TRANS 5
   #endif
 
-  // Tags
-  struct DeletionTag;
-  struct DuplicationTag;
-  struct InversionTag;
-  struct TranslocationTag;
-  struct InsertionTag;
-
-  template<typename SvTag>
-    struct SVType {
-    };
-
-
   template<typename CoverageTag>
     struct CoverageType {
     };

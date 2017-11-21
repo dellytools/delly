@@ -133,8 +133,6 @@ void _fillIntervalMap(MergeConfig const& c, TGenomeIntervals& iScore, TContigMap
     float* srq = NULL;
     int32_t nsvt = 0;
     char* svt = NULL;
-    int32_t nchr2 = 0;
-    char* chr2 = NULL;
     while (bcf_read(ifile, hdr, rec) == 0) {
       bcf_unpack(rec, BCF_UN_INFO);
       // Check PASS
@@ -179,10 +177,6 @@ void _fillIntervalMap(MergeConfig const& c, TGenomeIntervals& iScore, TContigMap
       if (bcf_get_info_int32(hdr, rec, "MAPQ", &mapq, &nmapq) > 0) peMapQuality = (uint8_t) *mapq;
       float srAlignQuality = 0;
       if (bcf_get_info_float(hdr, rec, "SRQ", &srq, &nsrq) > 0) srAlignQuality = *srq;
-      if (bcf_get_info_string(hdr, rec, "CHR2", &chr2, &nchr2) > 0) {
-	std::string chr2Name(chr2);
-	//mtid = cMap[chr2Name];
-      }
 
       // Quality score for the SV
       uint32_t score = 0;
@@ -215,7 +209,6 @@ void _fillIntervalMap(MergeConfig const& c, TGenomeIntervals& iScore, TContigMap
     if (ct != NULL) free(ct);
     if (srq != NULL) free(srq);
     if (svt != NULL) free(svt);
-    if (chr2 != NULL) free(chr2);
     bcf_hdr_destroy(hdr);
     bcf_close(ifile);
     bcf_destroy(rec);

@@ -96,36 +96,6 @@ namespace torali
   };
 
 
-  // Deletions
-  inline std::string
-    _addID(SVType<DeletionTag>) {
-    return "DEL";
-  }
-  
-  // Duplications
-  inline std::string
-    _addID(SVType<DuplicationTag>) {
-    return "DUP";
-  }
-  
-  // Inversions
-  inline std::string
-  _addID(SVType<InversionTag>) {
-    return "INV";
-  }
-  
-  // Translocations
-  inline std::string
-    _addID(SVType<TranslocationTag>) {
-    return "BND";
-  }
-  
-  // Insertion
-  inline std::string
-  _addID(SVType<InsertionTag>) {
-    return "INS";
-  }
-
   // Decode Orientation
   inline uint8_t
     _decodeOrientation(std::string const& value) {
@@ -299,12 +269,11 @@ namespace torali
     std::vector<char> stvec(st.begin(), st.end());
     std::set<char> alphabet(stvec.begin(), stvec.end());
     TPrecision ent = 0;
-    TPrecision freq = 0;
     for(std::set<char>::const_iterator c = alphabet.begin(); c != alphabet.end(); ++c) {
       int ctr = 0;
       for (std::vector<char>::const_iterator s = stvec.begin(); s != stvec.end(); ++s)
 	if (*s == *c) ++ctr;
-      freq = (TPrecision) ctr / (TPrecision) stvec.size();
+      TPrecision freq = (TPrecision) ctr / (TPrecision) stvec.size();
       ent += (freq) * log(freq)/log(2);
     }
     return -ent;

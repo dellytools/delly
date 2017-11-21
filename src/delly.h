@@ -61,7 +61,6 @@ Contact: Tobias Rausch (rausch@embl.de)
 #include "junction.h"
 #include "msa.h"
 #include "split.h"
-#include "json.h"
 #include "shortpe.h"
 #include "modvcf.h"
 
