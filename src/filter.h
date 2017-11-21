@@ -324,7 +324,7 @@ int filter(int argc, char **argv) {
     ("filter,f", boost::program_options::value<std::string>(&c.filter)->default_value("somatic"), "Filter mode (somatic, germline)")
     ("outfile,o", boost::program_options::value<boost::filesystem::path>(&c.outfile)->default_value("sv.bcf"), "Filtered SV BCF output file")
     ("altaf,a", boost::program_options::value<float>(&c.altaf)->default_value(0.2), "min. fractional ALT support")
-    ("minsize,m", boost::program_options::value<int32_t>(&c.minsize)->default_value(500), "min. SV size")
+    ("minsize,m", boost::program_options::value<int32_t>(&c.minsize)->default_value(0), "min. SV size")
     ("maxsize,n", boost::program_options::value<int32_t>(&c.maxsize)->default_value(500000000), "max. SV size")
     ("ratiogeno,r", boost::program_options::value<float>(&c.ratiogeno)->default_value(0.75), "min. fraction of genotyped samples")
     ("pass,p", "Filter sites for PASS")

@@ -61,13 +61,11 @@ namespace torali
 struct MergeConfig {
   bool filterForPass;
   bool filterForPrecise;
-  uint8_t reqCT;
   uint32_t svcounter;
   uint32_t bpoffset;
   uint32_t minsize;
   uint32_t maxsize;
   float recoverlap;
-  std::string svType;
   boost::filesystem::path outfile;
   std::vector<boost::filesystem::path> files;
 };
@@ -102,8 +100,8 @@ double recOverlap(TPos const s1, TPos const e1, TPos const s2, TPos const e2) {
 }
 
 
-template<typename TGenomeIntervals, typename TContigMap, typename TSVType>
-void _fillIntervalMap(MergeConfig const& c, TGenomeIntervals& iScore, TContigMap& cMap, TSVType svType) {
+template<typename TGenomeIntervals, typename TContigMap>
+void _fillIntervalMap(MergeConfig const& c, TGenomeIntervals& iScore, TContigMap& cMap, int32_t const svtin) {
   typedef typename TGenomeIntervals::value_type TIntervalScores;
   typedef typename TIntervalScores::value_type IntervalScore;
 
@@ -145,13 +143,9 @@ void _fillIntervalMap(MergeConfig const& c, TGenomeIntervals& iScore, TContigMap
       if (!pass) continue;
 
       // Correct SV type
-      bcf_get_info_string(hdr, rec, "SVTYPE", &svt, &nsvt);
-      if (std::string(svt) != _addID(svType)) continue;
-
-      // Correct CT
-      uint8_t ict = 0;
-      if (bcf_get_info_string(hdr, rec, "CT", &ct, &nct) > 0) ict = _decodeOrientation(std::string(ct));
-      if (ict != c.reqCT) continue;
+      int32_t recsvt = -1;
+      if ((bcf_get_info_string(hdr, rec, "SVTYPE", &svt, &nsvt) > 0) && (bcf_get_info_string(hdr, rec, "CT", &ct, &nct) > 0)) recsvt = _decodeOrientation(std::string(ct), std::string(svt));
+      if (recsvt != svtin) continue;
 
       // Correct size
       std::string chrName(bcf_hdr_id2name(hdr, rec->rid));
@@ -228,8 +222,8 @@ void _fillIntervalMap(MergeConfig const& c, TGenomeIntervals& iScore, TContigMap
   }
 }
 
-template<typename TGenomeIntervals, typename TSVType>
-void _processIntervalMap(MergeConfig const& c, TGenomeIntervals const& iScore, TGenomeIntervals& iSelected, TSVType svType) {
+template<typename TGenomeIntervals>
+void _processIntervalMap(MergeConfig const& c, TGenomeIntervals const& iScore, TGenomeIntervals& iSelected, int32_t const svtin) {
   typedef typename TGenomeIntervals::value_type TIntervalScores;
   typedef typename TIntervalScores::value_type IntervalScore;
 
@@ -252,7 +246,7 @@ void _processIntervalMap(MergeConfig const& c, TGenomeIntervals const& iScore, T
 	if (iSNext->start - iS->start > c.bpoffset) break;
 	else {
 	  if (((iSNext->end > iS->end) && (iSNext->end - iS->end < c.bpoffset)) || ((iSNext->end <= iS->end) &&(iS->end - iSNext->end < c.bpoffset))) {
-	    if ((_addID(svType) == "BND") || (recOverlap(iS->start, iS->end, iSNext->start, iSNext->end) >= c.recoverlap)) {
+	    if ((_translocation(svtin)) || (recOverlap(iS->start, iS->end, iSNext->start, iSNext->end) >= c.recoverlap)) {
 	      if (iS->score < iSNext->score) *iK = false;
 	      else if (iSNext ->score < iS->score) *iKNext = false;
 	      else {
@@ -269,8 +263,8 @@ void _processIntervalMap(MergeConfig const& c, TGenomeIntervals const& iScore, T
   }
 }
 
-template<typename TGenomeIntervals, typename TContigMap, typename TSVType>
-void _outputSelectedIntervals(MergeConfig& c, TGenomeIntervals const& iSelected, TContigMap& cMap, TSVType svType) {
+template<typename TGenomeIntervals, typename TContigMap>
+void _outputSelectedIntervals(MergeConfig& c, TGenomeIntervals const& iSelected, TContigMap& cMap, int32_t const svtin) {
   typedef typename TGenomeIntervals::value_type TIntervalScores;
   typedef typename TIntervalScores::value_type IntervalScore;
 
@@ -391,8 +385,9 @@ void _outputSelectedIntervals(MergeConfig& c, TGenomeIntervals const& iSelected,
     }
 
     // Correct SV type
-    bcf_get_info_string(hdr[idx], rec[idx], "SVTYPE", &svt, &nsvt);
-    if (std::string(svt) == _addID(svType)) {
+    int32_t recsvt = -1;
+    if ((bcf_get_info_string(hdr[idx], rec[idx], "SVTYPE", &svt, &nsvt) > 0) && (bcf_get_info_string(hdr[idx], rec[idx], "CT", &ct, &nct) > 0)) recsvt = _decodeOrientation(std::string(ct), std::string(svt));
+    if (recsvt == svtin) {
       // Check PASS
       bool pass = true;
       if (c.filterForPass) pass = (bcf_has_filter(hdr[idx], rec[idx], const_cast<char*>("PASS"))==1);
@@ -403,10 +398,8 @@ void _outputSelectedIntervals(MergeConfig& c, TGenomeIntervals const& iSelected,
       if (bcf_get_info_flag(hdr[idx], rec[idx], "PRECISE", 0, 0) > 0) precise=true;
       if ((c.filterForPrecise) && (!precise)) passPrecise = false;
 
-      // Correct CT
-      uint8_t ict = 0;
-      if (bcf_get_info_string(hdr[idx], rec[idx], "CT", &ct, &nct) > 0) ict = _decodeOrientation(std::string(ct));
-      if ((passPrecise) && (pass) && (ict == c.reqCT)) {
+      // Check PASS and precise
+      if ((passPrecise) && (pass)) {
 	// Correct size
 	std::string chrName(bcf_hdr_id2name(hdr[idx], rec[idx]->rid));
 	uint32_t tid = cMap[chrName];
@@ -489,7 +482,7 @@ void _outputSelectedIntervals(MergeConfig& c, TGenomeIntervals const& iSelected,
 	    std::string id;
 	    if (c.files.size() == 1) id = std::string(rec[idx]->d.id); // Within one VCF file IDs are unique
 	    else {
-	      id += _addID(svType);
+	      id += _addID(svtin);
 	      std::string padNumber = boost::lexical_cast<std::string>(c.svcounter++);
 	      padNumber.insert(padNumber.begin(), 8 - padNumber.length(), '0');
 	      id += padNumber;
@@ -505,7 +498,7 @@ void _outputSelectedIntervals(MergeConfig& c, TGenomeIntervals const& iSelected,
 	    // Add INFO fields
 	    if (precise) bcf_update_info_flag(hdr_out, rout, "PRECISE", NULL, 1);
 	    else bcf_update_info_flag(hdr_out, rout, "IMPRECISE", NULL, 1);
-	    bcf_update_info_string(hdr_out, rout, "SVTYPE", _addID(svType).c_str());
+	    bcf_update_info_string(hdr_out, rout, "SVTYPE", _addID(svtin).c_str());
 	    std::string dellyVersion("EMBL.DELLYv");
 	    dellyVersion += dellyVersionNumber;
 	    bcf_update_info_string(hdr_out,rout, "SVMETHOD", dellyVersion.c_str());
@@ -514,7 +507,7 @@ void _outputSelectedIntervals(MergeConfig& c, TGenomeIntervals const& iSelected,
 	    bcf_update_info_int32(hdr_out, rout, "PE", &peSupport, 1);
 	    int32_t tmpi = peMapQuality;
 	    bcf_update_info_int32(hdr_out, rout, "MAPQ", &tmpi, 1);
-	    bcf_update_info_string(hdr_out, rout, "CT", _addOrientation(ict).c_str());
+	    bcf_update_info_string(hdr_out, rout, "CT", _addOrientation(svtin).c_str());
 	    bcf_update_info_int32(hdr_out, rout, "CIPOS", cipos, 2);
 	    bcf_update_info_int32(hdr_out, rout, "CIEND", ciend, 2);
 	    if (precise) {
@@ -576,8 +569,8 @@ void _outputSelectedIntervals(MergeConfig& c, TGenomeIntervals const& iSelected,
 inline void
 mergeBCFs(MergeConfig& c, std::vector<boost::filesystem::path> const& cts) {
   boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
-  std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Merging CTs" << std::endl;
-  boost::progress_display show_progress( cts.size() );
+  std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Merging SV types" << std::endl;
+  boost::progress_display show_progress( 1 );
 
   // Parse temporary input VCF files
   typedef std::vector<htsFile*> THtsFile;
@@ -624,11 +617,11 @@ mergeBCFs(MergeConfig& c, std::vector<boost::filesystem::path> const& cts) {
     if (bcf_read(ifile[idx], hdr[idx], rec[idx]) == 0) bcf_unpack(rec[idx], BCF_UN_INFO);
     else {
       ++allEOF;
-      ++show_progress;
       eof[idx] = true;
     }
   }
-
+  ++show_progress;
+  
   // Clean-up
   for(unsigned int file_c = 0; file_c < cts.size(); ++file_c) {
     bcf_hdr_destroy(hdr[file_c]);
@@ -648,8 +641,8 @@ mergeBCFs(MergeConfig& c, std::vector<boost::filesystem::path> const& cts) {
   std::cout << '[' << boost::posix_time::to_simple_string(now) << "] Done." << std::endl;
 }
 
-template<typename TSVType>
-inline int mergeRun(MergeConfig& c, TSVType svType) {
+inline int
+mergeRun(MergeConfig& c, int32_t const svt) {
 
   // All files may use a different set of chromosomes
   typedef std::map<std::string, uint32_t> TContigMap;
@@ -675,18 +668,18 @@ inline int mergeRun(MergeConfig& c, TSVType svType) {
   typedef std::vector<TIntervalScores> TGenomeIntervals;
   TGenomeIntervals iScore;
   iScore.resize(numseq, TIntervalScores());
-  _fillIntervalMap(c, iScore, contigMap, svType);
+  _fillIntervalMap(c, iScore, contigMap, svt);
   for(uint32_t i = 0; i<numseq; ++i) std::sort(iScore[i].begin(), iScore[i].end(), SortIScores<IntervalScore>());
 
   // Filter intervals
   TGenomeIntervals iSelected;
   iSelected.resize(numseq, TIntervalScores());
-  _processIntervalMap(c, iScore, iSelected, svType);
+  _processIntervalMap(c, iScore, iSelected, svt);
   iScore.clear();
   for(uint32_t i = 0; i<numseq; ++i) std::sort(iSelected[i].begin(), iSelected[i].end(), SortIScores<IntervalScore>());
 
   // Output best intervals
-  _outputSelectedIntervals(c, iSelected, contigMap, svType);
+  _outputSelectedIntervals(c, iSelected, contigMap, svt);
 
   // End
   boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
@@ -703,7 +696,6 @@ int merge(int argc, char **argv) {
   boost::program_options::options_description generic("Generic options");
   generic.add_options()
     ("help,?", "show help message")
-    ("type,t", boost::program_options::value<std::string>(&c.svType)->default_value("DEL"), "SV type (DEL, DUP, INV, BND, INS)")
     ("outfile,o", boost::program_options::value<boost::filesystem::path>(&c.outfile)->default_value("sv.bcf"), "Merged SV BCF output file")
     ("minsize,m", boost::program_options::value<uint32_t>(&c.minsize)->default_value(0), "min. SV size")
     ("maxsize,n", boost::program_options::value<uint32_t>(&c.maxsize)->default_value(1000000), "max. SV size")
@@ -770,57 +762,23 @@ int merge(int argc, char **argv) {
   }
   
   // Run merging
-  if (c.svType == "DEL") {
-    c.reqCT = 2;
-    return mergeRun(c, SVType<DeletionTag>());
-  } else if (c.svType == "DUP") {
-    c.reqCT = 3;
-    return mergeRun(c, SVType<DuplicationTag>());
-  } else if (c.svType == "INV") {
-    boost::filesystem::path oldPath = c.outfile;
-    int rVal = 0;
-    std::vector<boost::filesystem::path> invCT(2);
-    for(int i = 0; i<2; ++i) {
-      c.reqCT = i;
-      invCT[i] = boost::filesystem::unique_path();
-      c.outfile = invCT[i];
-      rVal += mergeRun(c, SVType<InversionTag>());
-    }
-    // Merge temporary files
-    c.outfile = oldPath;
-    mergeBCFs(c, invCT);
-    for(int i = 0; i<2; ++i) {
-      boost::filesystem::remove(invCT[i]);
-      boost::filesystem::remove(boost::filesystem::path(invCT[i].string() + ".csi"));
-    }
-    return rVal;
-  } else if (c.svType == "BND") {
-    boost::filesystem::path oldPath = c.outfile;
-    int rVal = 0;
-    std::vector<boost::filesystem::path> traCT(4);
-    for(int i = 0; i<4; ++i) {
-      c.reqCT = i;
-      traCT[i] = boost::filesystem::unique_path();
-      c.outfile = traCT[i];
-      rVal += mergeRun(c, SVType<TranslocationTag>());
-    }
-    // Merge temporary files
-    c.outfile = oldPath;
-    mergeBCFs(c, traCT);
-    for(int i = 0; i<4; ++i) {
-      boost::filesystem::remove(traCT[i]);
-      boost::filesystem::remove(boost::filesystem::path(traCT[i].string() + ".csi"));
-    }
-    return rVal;
-  } 
-  else if (c.svType == "INS") {
-    c.reqCT = 4;
-    return mergeRun(c, SVType<InsertionTag>());
+  boost::filesystem::path oldPath = c.outfile;
+  int rVal = 0;
+  int32_t maxSvt = 15;
+  std::vector<boost::filesystem::path> svtCollect(maxSvt);
+  for(int32_t svt = 0; svt < maxSvt; ++svt) {
+    svtCollect[svt] = boost::filesystem::unique_path();
+    c.outfile = svtCollect[svt];
+    rVal += mergeRun(c, svt);
   }
-  else {
-    std::cerr << "SV analysis type not supported by Delly: " << c.svType << std::endl;
-    return 1;
+  // Merge temporary files
+  c.outfile = oldPath;
+  mergeBCFs(c, svtCollect);
+  for(int32_t svt = 0; svt < maxSvt; ++svt) {
+    boost::filesystem::remove(svtCollect[svt]);
+    boost::filesystem::remove(boost::filesystem::path(svtCollect[svt].string() + ".csi"));
   }
+  return rVal;
 }
 
 }
