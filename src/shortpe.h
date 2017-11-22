@@ -703,7 +703,7 @@ namespace torali
 	  while (sam_itr_next(samfile[file_c], iter, rec) >= 0) {
 	    if (rec->core.flag & (BAM_FSECONDARY | BAM_FQCFAIL | BAM_FDUP | BAM_FSUPPLEMENTARY | BAM_FUNMAP)) continue;
 	    if ((rec->core.qual < c.minMapQual) || (rec->core.tid<0)) continue;
-
+	    
 	    // Clean-up the read store for identical alignment positions
 	    if (rec->core.pos > lastAlignedPos) {
 	      lastAlignedPosReads.clear();
@@ -789,8 +789,9 @@ namespace torali
 	    
 	    // Paired-end clustering
 	    if (rec->core.flag & BAM_FPAIRED) {
-	      // Mate unmapped
+	      // Mate unmapped or blacklisted chr
 	      if ((rec->core.mtid<0) || (rec->core.flag & BAM_FMUNMAP)) continue;
+	      if (validRegions[rec->core.mtid].empty()) continue;
 
 	      // SV type
 	      int32_t svt = _isizeMappingPos(rec, overallMaxISize);
