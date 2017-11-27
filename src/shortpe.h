@@ -630,6 +630,14 @@ namespace torali
       idx[file_c] = sam_index_load(samfile[file_c], c.files[file_c].string().c_str());
     }
     bam_hdr_t* hdr = sam_hdr_read(samfile[0]);
+
+    // Qualities and alignment length for translocation pairs
+    typedef boost::unordered_map<std::size_t, uint8_t> TQualities;
+    std::vector<TQualities> qualitiestra;
+    qualitiestra.resize(c.files.size());
+    typedef boost::unordered_map<std::size_t, int32_t> TAlignmentLength;      
+    std::vector<TAlignmentLength> alentra;
+    alentra.resize(c.files.size());
     
     // Parse genome, process chromosome by chromosome
     boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
@@ -676,14 +684,6 @@ namespace torali
       typedef std::vector<TSplitRecord> TSvtSplitRecord;
       TSvtSplitRecord splitRecord(2, TSplitRecord());
 
-      // Qualities and alignment length for translocation pairs
-      typedef boost::unordered_map<std::size_t, uint8_t> TQualities;
-      std::vector<TQualities> qualitiestra;
-      qualitiestra.resize(c.files.size());
-      typedef boost::unordered_map<std::size_t, int32_t> TAlignmentLength;      
-      std::vector<TAlignmentLength> alentra;
-      alentra.resize(c.files.size());
-      
       // Iterate all samples
 #pragma omp parallel for default(shared)
       for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
@@ -792,7 +792,7 @@ namespace torali
 	      // Mate unmapped or blacklisted chr
 	      if ((rec->core.mtid<0) || (rec->core.flag & BAM_FMUNMAP)) continue;
 	      if (validRegions[rec->core.mtid].empty()) continue;
-
+	      
 	      // SV type
 	      int32_t svt = _isizeMappingPos(rec, overallMaxISize);
 	      if (svt == -1) continue;
