@@ -124,7 +124,7 @@ There is a delly discussion group [delly-users](http://groups.google.com/d/forum
 * Docker support?            
 There is a dockerized delly available [here](https://hub.docker.com/r/dellytools/delly/).
 
-* Bioconda support?
+* Bioconda support?             
 Delly is available via [bioconda](http://bioconda.github.io/recipes/delly/README.html).
 
 
