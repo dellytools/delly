@@ -2,7 +2,7 @@
   <a href="https://academic.oup.com/bioinformatics/article/28/18/i333/245403/DELLY-structural-variant-discovery-by-integrated">
     <img height="150" src="https://raw.githubusercontent.com/dellytools/assets/master/delly-logo/delly-logo-539x600.png">
   </a>
-  <h1 align="center">Delly2</h1>
+  <h1 align="center">Delly</h1>
 </p>
 
 [![install with bioconda](https://img.shields.io/badge/install%20with-bioconda-brightgreen.svg?style=flat-square)](http://bioconda.github.io/recipes/delly/README.html)
@@ -10,14 +10,14 @@
 [![Build Status](https://travis-ci.org/dellytools/delly.svg?branch=master)](https://travis-ci.org/dellytools/delly)
 [![Docker Automated buil](https://img.shields.io/docker/automated/jrottenberg/ffmpeg.svg?style=flat-square)](https://hub.docker.com/r/dellytools/delly/)
 
-Delly2 is an integrated structural variant prediction method that can discover, genotype and visualize deletions, tandem duplications, inversions and translocations at single-nucleotide resolution in short-read massively parallel sequencing data. It uses paired-ends and split-reads to sensitively and accurately delineate genomic rearrangements throughout the genome. Structural variants can be visualized using [Delly-maze](https://github.com/dellytools/maze) and [Delly-suave](https://github.com/dellytools/suave).
+Delly is an integrated structural variant prediction method that can discover, genotype and visualize deletions, tandem duplications, inversions and translocations at single-nucleotide resolution in short-read massively parallel sequencing data. It uses paired-ends and split-reads to sensitively and accurately delineate genomic rearrangements throughout the genome. Structural variants can be visualized using [Delly-maze](https://github.com/dellytools/maze) and [Delly-suave](https://github.com/dellytools/suave).
 
 
-Installing Delly2
------------------
+Installing Delly
+----------------
 
-The easiest way to get Delly2 is to download a statically linked binary from the [Delly github release page](https://github.com/dellytools/delly/releases/).
-Alternatively, you can build Delly2 from source. Delly2 dependencies are included as submodules so you need to do a recursive clone. 
+The easiest way to get Delly is to download a statically linked binary from the [Delly github release page](https://github.com/dellytools/delly/releases/).
+Alternatively, you can build Delly from source. Delly dependencies are included as submodules so you need to do a recursive clone. 
 
 `git clone --recursive https://github.com/dellytools/delly.git`
 
@@ -29,9 +29,9 @@ There is a Delly discussion group [delly-users](http://groups.google.com/d/forum
 
 
 
-Delly2 multi-threading mode
----------------------------
-Delly2 supports parallel computing using the OpenMP API (www.openmp.org).
+Delly multi-threading mode
+--------------------------
+Delly supports parallel computing using the OpenMP API (www.openmp.org).
 
 `make PARALLEL=1 -B src/delly`
 
@@ -42,12 +42,12 @@ You can set the number of threads using the environment variable OMP_NUM_THREADS
 
 `export OMP_NUM_THREADS=3`
 
-Delly2 primarily parallelizes on the sample level. Hence, OMP_NUM_THREADS should be always smaller or equal to the number of input samples. 
+Delly primarily parallelizes on the sample level. Hence, OMP_NUM_THREADS should be always smaller or equal to the number of input samples. 
 
-Running Delly2
---------------
+Running Delly
+-------------
 
-Delly2 needs a sorted and indexed bam file for every sample and the reference genome to identify split-reads. The output is in [bcf](http://samtools.github.io/bcftools/) format with a csi index. Prior duplicate marking is recommended. Delly2 supports germline and somatic SV discovery, genotyping and filtering. Because of that, Delly2 has been modularized and common workflows for germline and somatic SV calling are outlined below. If you do need VCF output you need a recent version of [bcftools](http://samtools.github.io/bcftools/) (included as a submodule in Delly2) for file conversion.
+Delly needs a sorted and indexed bam file for every sample and the reference genome to identify split-reads. The output is in [bcf](http://samtools.github.io/bcftools/) format with a csi index. Prior duplicate marking is recommended. Delly supports germline and somatic SV discovery, genotyping and filtering. Because of that, Delly has been modularized and common workflows for germline and somatic SV calling are outlined below. If you do need VCF output you need a recent version of [bcftools](http://samtools.github.io/bcftools/) (included as a submodule in Delly) for file conversion.
 
 `./delly/src/bcftools/bcftools view delly.bcf > delly.vcf`
 
@@ -101,7 +101,7 @@ Germline SV calling
 FAQ
 ---
 * What is the smallest SV size Delly can call?  
-This depends on the sharpness of the insert size distribution. For an insert size of 200-300bp with a 20-30bp standard deviation, Delly starts to call reliable SVs >=300bp. Delly2 also supports calling of small InDels using soft-clipped reads only. In this mode the smallest SV size called is 15bp.
+This depends on the sharpness of the insert size distribution. For an insert size of 200-300bp with a 20-30bp standard deviation, Delly starts to call reliable SVs >=300bp. Delly also supports calling of small InDels using soft-clipped reads only. In this mode the smallest SV size called is 15bp.
 
 * Can Delly be used on a non-diploid genome?  
 Yes and no. The SV site discovery works for any ploidy. However, Delly's genotyping model assumes hom. reference, het. and hom. alternative.
@@ -110,7 +110,7 @@ Yes and no. The SV site discovery works for any ploidy. However, Delly's genotyp
 Merge these bams using tools such as [Picard](http://broadinstitute.github.io/picard/) and tag each library with a unique ReadGroup. 
 
 * Delly is running too slowly what can I do?
-You should exclude telomere and centromere regions and also all unplaced contigs. Delly2 ships with such an exclude list for human and mouse samples. In addition, you can filter input reads more stringently using -q 20 and -s 15. You can also deactivate the small InDel calling using -n if you are only interested in large SVs.
+You should exclude telomere and centromere regions and also all unplaced contigs. Delly ships with such an exclude list for human and mouse samples. In addition, you can filter input reads more stringently using -q 20 and -s 15. You can also deactivate the small InDel calling using -n if you are only interested in large SVs.
 
 * Are non-unique alignments, multi-mappings and/or multiple split-read alignments allowed?  
 Delly expects two alignment records in the bam file for every paired-end, one for the first and one for the second read. Multiple split-read alignment records of a given read are allowed if and only if one of them (e.g. the longest split alignment) is a primary alignment whereas all others are marked as secondary or supplementary (flag 0x0100 or flag 0x0800). This is the default for bwa mem.
