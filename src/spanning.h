@@ -213,7 +213,7 @@ namespace torali {
 		else outerISize = rec->core.pos + alignmentLength(rec) - rec->core.mpos;
 		
 		// Insert the interval
-		if ((getSVType(rec->core) == libIt->second.defaultOrient) && (outerISize >= libIt->second.minNormalISize) && (outerISize <= libIt->second.maxNormalISize) && (rec->core.tid==rec->core.mtid)) {
+		if ((getSVType(rec->core) == 2) && (outerISize >= libIt->second.minNormalISize) && (outerISize <= libIt->second.maxNormalISize) && (rec->core.tid==rec->core.mtid)) {
 		  // Normal spanning coverage
 		  int32_t sPos = 0;
 		  int32_t ePos = 0;
@@ -244,7 +244,7 @@ namespace torali {
 		      }
 		    }
 		  }
-		} else if ((getSVType(rec->core) != libIt->second.defaultOrient) || (outerISize < libIt->second.minNormalISize) || (outerISize > libIt->second.maxNormalISize) || (rec->core.tid!=rec->core.mtid)) {
+		} else if ((getSVType(rec->core) != 2) || (outerISize < libIt->second.minNormalISize) || (outerISize > libIt->second.maxNormalISize) || (rec->core.tid!=rec->core.mtid)) {
 
 		  if (_isizeMappingPos(rec, varisize) != itSV->svt) continue;
 		  if (!(((itSV->chr == rec->core.tid) && (itSV->chr2 == rec->core.mtid)) || ((itSV->chr == rec->core.mtid) && (itSV->chr2 == rec->core.tid)))) continue;
@@ -264,14 +264,14 @@ namespace torali {
 		  int32_t svidnumLeft = -1;
 		  int32_t svidnumRight = -1;
 		  // Missing spanning coverage
-		  if (_mateIsUpstream(libIt->second.defaultOrient, (rec->core.flag & BAM_FREAD1), (rec->core.flag & BAM_FREVERSE))) {
+		  if (_mateIsUpstream(2, (rec->core.flag & BAM_FREAD1), (rec->core.flag & BAM_FREVERSE))) {
 		    if ((itSV->chr==rec->core.tid) && (itSV->svStart>=rec->core.pos) && (itSV->svStart<=(rec->core.pos + libIt->second.maxNormalISize))) svidnumLeft = itSV->id;
 		    if ((itSV->chr2==rec->core.tid) && (itSV->svEnd>=rec->core.pos) && (itSV->svEnd<=(rec->core.pos + libIt->second.maxNormalISize))) svidnumRight = itSV->id + lastId;
 		  } else {
 		    if ((itSV->chr==rec->core.tid) && (itSV->svStart>=std::max(0, rec->core.pos + (int) alignmentLength(rec) - libIt->second.maxNormalISize)) && (itSV->svStart<=(rec->core.pos + (int) alignmentLength(rec)))) svidnumLeft = itSV->id;
 		    if ((itSV->chr2==rec->core.tid) && (itSV->svEnd>=std::max(0, rec->core.pos + (int) alignmentLength(rec) - libIt->second.maxNormalISize)) && (itSV->svEnd<=(rec->core.pos + (int) alignmentLength(rec)))) svidnumRight = itSV->id + lastId;
 		  }
-		  if (_mateIsUpstream(libIt->second.defaultOrient, !(rec->core.flag & BAM_FREAD1), (rec->core.flag & BAM_FMREVERSE))) {
+		  if (_mateIsUpstream(2, !(rec->core.flag & BAM_FREAD1), (rec->core.flag & BAM_FMREVERSE))) {
 		    if ((itSV->chr==rec->core.mtid) && (itSV->svStart>=rec->core.mpos) && (itSV->svStart<=(rec->core.mpos + libIt->second.maxNormalISize))) svidnumLeft = itSV->id;
 		    if ((itSV->chr2==rec->core.mtid) && (itSV->svEnd>=rec->core.mpos) && (itSV->svEnd<=(rec->core.mpos + libIt->second.maxNormalISize)))  svidnumRight = itSV->id + lastId;
 		  } else {

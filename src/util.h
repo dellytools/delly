@@ -41,18 +41,16 @@ namespace torali
 
   struct LibraryInfo {
     int32_t rs;
-    int32_t avgdist;
     int32_t median;
     int32_t mad;
     int32_t minNormalISize;
     int32_t minISizeCutoff;
     int32_t maxNormalISize;
     int32_t maxISizeCutoff;
-    uint8_t defaultOrient;
     uint32_t abnormal_pairs;
-    float mappedAsPair;
 
-    LibraryInfo() : rs(0), avgdist(0), median(0), mad(0), minNormalISize(0), minISizeCutoff(0), maxNormalISize(0), maxISizeCutoff(0), defaultOrient(0), abnormal_pairs(0), mappedAsPair(0) {}
+
+    LibraryInfo() : rs(0), median(0), mad(0), minNormalISize(0), minISizeCutoff(0), maxNormalISize(0), maxISizeCutoff(0), abnormal_pairs(0) {}
   };
 
 
@@ -63,26 +61,16 @@ namespace torali
     int32_t lastReadPos;
     uint32_t processedNumPairs;
     uint32_t processedNumReads;
-    uint32_t orient[4];
-    uint8_t defaultOrient;
     int32_t median;
     int32_t mad;
     int32_t rs;
-    int32_t avgdist;
+    int32_t rplus;
+    int32_t nonrplus;
     TSizeVector vecISize;
     TSizeVector readSize;
     TSizeVector readDist;
 
-    LibraryParams() : lastReadPos(0), processedNumPairs(0), processedNumReads(0), defaultOrient(0), median(0), mad(0), rs(0), avgdist(0) {
-      for(uint32_t i=0;i<4;++i) orient[i]=0;
-    }
-    LibraryParams(int32_t maxPSize, int32_t maxRSize) : lastReadPos(0), processedNumPairs(0), processedNumReads(0), defaultOrient(0), median(0), mad(0), rs(0), avgdist(0) {
-      for(uint32_t i=0;i<4;++i) orient[i]=0;
-      vecISize.resize(maxPSize, 0);
-      readSize.resize(maxRSize, 0);
-      readDist.resize(maxRSize, 0);
-    }
-    
+    LibraryParams() : lastReadPos(0), processedNumPairs(0), processedNumReads(0), median(0), mad(0), rs(0), rplus(0), nonrplus(0) {}
   };
 
   // Read count struct
@@ -362,7 +350,8 @@ namespace torali
   }
 
   template<typename TConfig, typename TValidRegion, typename TSampleLibrary>
-    inline bool getLibraryParams(TConfig const& c, TValidRegion const& validRegions, TSampleLibrary& sampleLib) {
+  inline bool
+  getLibraryParams(TConfig const& c, TValidRegion const& validRegions, TSampleLibrary& sampleLib) {
     typedef typename TValidRegion::value_type TChrIntervals;
     typedef typename TSampleLibrary::value_type TLibraryMap;
 
@@ -383,6 +372,8 @@ namespace torali
 #pragma omp parallel for default(shared)
     for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
       // Minimum and maximum number of pairs used to estimate library parameters for each RG library
+      unsigned int maxAlignmentsScreened=10000000;
+      unsigned int alignmentCount=0;
       unsigned int maxNumAlignments=1000000;
       unsigned int minNumAlignments=10000;
 
@@ -413,13 +404,13 @@ namespace torali
 	      if (field == "ID") {
 		rgPresent = true;
 		std::string rgID = itKV->substr(sp+1);
-		params.insert(std::make_pair(rgID, LibraryParams(maxNumAlignments, minNumAlignments)));
+		params.insert(std::make_pair(rgID, LibraryParams()));
 	      }
 	    }
 	  }
 	}
       }
-      if (!rgPresent) params.insert(std::make_pair("DefaultLib", LibraryParams(maxNumAlignments, minNumAlignments)));
+      if (!rgPresent) params.insert(std::make_pair("DefaultLib", LibraryParams()));
 
       // Collect insert sizes
       uint32_t libCount = 0;
@@ -432,6 +423,9 @@ namespace torali
 	  while ((sam_itr_next(samfile[file_c], iter, rec) >= 0) && (libCount < allLibs)) {
 	    if (!(rec->core.flag & BAM_FREAD2) && (rec->core.l_qseq < 65000)) {
 	      if (rec->core.flag & (BAM_FSECONDARY | BAM_FQCFAIL | BAM_FDUP | BAM_FSUPPLEMENTARY | BAM_FUNMAP)) continue;
+	      if (alignmentCount > maxAlignmentsScreened) break;
+	      ++alignmentCount;
+	      
 	      std::string rG = "DefaultLib";
 	      uint8_t *rgptr = bam_aux_get(rec, "RG");
 	      if (rgptr) {
@@ -443,19 +437,26 @@ namespace torali
 		std::cerr << "Error: Unknown read group: " << rG << std::endl;
 		return false;
 	      }
-	      paramIt->second.readSize[paramIt->second.processedNumReads % minNumAlignments] = rec->core.l_qseq;
-	      paramIt->second.readDist[paramIt->second.processedNumReads % minNumAlignments] = rec->core.pos - paramIt->second.lastReadPos;
-	      paramIt->second.lastReadPos = rec->core.pos;
-	      ++paramIt->second.processedNumReads;
-	      if ((paramIt->second.processedNumReads >= minNumAlignments) && (paramIt->second.processedNumPairs == 0)) {
+	      if (paramIt->second.processedNumPairs >= maxNumAlignments) continue; // Paired-end library with enough pairs
+	      if ((paramIt->second.processedNumReads >= maxNumAlignments) && (paramIt->second.processedNumPairs == 0)) continue; // Single-end library with enough reads
+	      if (paramIt->second.processedNumReads < maxNumAlignments) {
+		paramIt->second.readSize.push_back(rec->core.l_qseq);
+		paramIt->second.readDist.push_back(rec->core.pos - paramIt->second.lastReadPos);
+		paramIt->second.lastReadPos = rec->core.pos;
+		++paramIt->second.processedNumReads;
+	      }
+	      if ((paramIt->second.processedNumReads == maxNumAlignments) && (paramIt->second.processedNumPairs == 0)) {
 		// Single-end library
-		if (paramIt->second.processedNumReads == minNumAlignments) ++libCount;
+		++libCount;
 		continue;
 	      }
 	      if ((rec->core.flag & BAM_FPAIRED) && !(rec->core.flag & BAM_FMUNMAP) && (rec->core.tid==rec->core.mtid)) {
-		paramIt->second.vecISize[paramIt->second.processedNumPairs % maxNumAlignments] = abs(rec->core.isize);
-		++paramIt->second.orient[getSVType(rec->core)];
-		++paramIt->second.processedNumPairs;
+		if (paramIt->second.processedNumPairs < maxNumAlignments) {
+		  paramIt->second.vecISize.push_back(abs(rec->core.isize));
+		  if (getSVType(rec->core) == 2) ++paramIt->second.rplus; // Normal illumina paired-end
+		  else ++paramIt->second.nonrplus;
+		  ++paramIt->second.processedNumPairs;
+		}
 		if (paramIt->second.processedNumPairs == maxNumAlignments) ++libCount;
 	      }
 	    }
@@ -468,41 +469,21 @@ namespace torali
       // Get library parameters
       for(TParams::iterator paramIt=params.begin(); paramIt != params.end(); ++paramIt) {
 	// Check single-end library parameters
-	if (paramIt->second.processedNumReads > 0) {
-	  if (paramIt->second.processedNumReads < minNumAlignments) {
-	    paramIt->second.readSize.resize(paramIt->second.processedNumReads);
-	    paramIt->second.readDist.resize(paramIt->second.processedNumReads);
-	  }
+	if (paramIt->second.processedNumReads >= minNumAlignments) {
 	  std::sort(paramIt->second.readSize.begin(), paramIt->second.readSize.end());
 	  paramIt->second.rs = paramIt->second.readSize[paramIt->second.readSize.size() / 2];
-	  std::sort(paramIt->second.readDist.begin(), paramIt->second.readDist.end());
-	  paramIt->second.avgdist = paramIt->second.readDist[paramIt->second.readDist.size() / 2];
 	}
-	
 	// Check that this is a proper paired-end library
-	if (paramIt->second.processedNumPairs>=minNumAlignments) {
-	  if (paramIt->second.processedNumPairs < maxNumAlignments) paramIt->second.vecISize.resize(paramIt->second.processedNumPairs);
-
+	if (paramIt->second.processedNumPairs >= minNumAlignments) {
 	  // Get default library orientation
-	  paramIt->second.defaultOrient=0;
-	  unsigned int maxOrient=paramIt->second.orient[0];
-	  for(unsigned int i=1;i<4;++i) {
-	    if (paramIt->second.orient[i]>maxOrient) {
-	      maxOrient=paramIt->second.orient[i];
-	      paramIt->second.defaultOrient=(uint8_t) i;
-	    }
+	  if (paramIt->second.rplus < paramIt->second.nonrplus) {
+	    std::cerr << "Error: One library has a non-default paired-end layout! Read-group: " << paramIt->first << std::endl;
+	    std::cerr << "The expected paired-end orientation is   ---Read1--->      <---Read2---  which is the default illumina paired-end layout." << std::endl;
+	    return false;
 	  }
 	  
 	  typedef typename LibraryParams::TSizeVector TVecISize;
 	  std::sort(paramIt->second.vecISize.begin(), paramIt->second.vecISize.end());
-
-	  // Mate-pair library (If yes, trim off the chimera peak < 1000bp)
-	  if ((paramIt->second.defaultOrient==3) && (paramIt->second.vecISize[paramIt->second.vecISize.size() / 2] >= 1000)) {
-	    TVecISize vecISizeTmp;
-	    for(typename TVecISize::const_iterator iSizeBeg = paramIt->second.vecISize.begin(); iSizeBeg<paramIt->second.vecISize.end();++iSizeBeg)
-	      if (*iSizeBeg >= 1000) vecISizeTmp.push_back(*iSizeBeg);
-	    paramIt->second.vecISize = vecISizeTmp;
-	  }
 	  paramIt->second.median = paramIt->second.vecISize[paramIt->second.vecISize.size() / 2];
 	  std::vector<int32_t> absDev;
 	  for(typename TVecISize::const_iterator iSizeBeg = paramIt->second.vecISize.begin(); iSizeBeg != paramIt->second.vecISize.end(); ++iSizeBeg) absDev.push_back(std::abs(*iSizeBeg - paramIt->second.median));
@@ -515,13 +496,8 @@ namespace torali
       {
 	for(TParams::iterator paramIt=params.begin(); paramIt != params.end(); ++paramIt) {
 	  typename TLibraryMap::iterator libInfoIt = sampleLib[file_c].insert(std::make_pair(paramIt->first, LibraryInfo())).first;
-	  if (paramIt->second.processedNumReads > 0) {
-	    libInfoIt->second.rs = paramIt->second.rs;
-	    libInfoIt->second.avgdist = paramIt->second.avgdist;
-	    libInfoIt->second.mappedAsPair = (float) paramIt->second.processedNumPairs / (float) paramIt->second.processedNumReads;
-	  }
+	  if (paramIt->second.processedNumReads > 0) libInfoIt->second.rs = paramIt->second.rs;
 	  if ((paramIt->second.median >= 50) && (paramIt->second.median<=100000)) {
-	    libInfoIt->second.defaultOrient = paramIt->second.defaultOrient;
 	    libInfoIt->second.median = paramIt->second.median;
 	    libInfoIt->second.mad = paramIt->second.mad;
 	    libInfoIt->second.maxNormalISize = libInfoIt->second.median + (5 * libInfoIt->second.mad);
