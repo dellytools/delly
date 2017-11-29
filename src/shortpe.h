@@ -539,8 +539,11 @@ namespace torali
 	svRec.svt = svt;
 	svRec.insLen = 0;
 	svRec.homLen = 0;
-	svRec.id = svs.size();
-	svs.push_back(svRec);
+#pragma omp critical
+	{
+	  svRec.id = svs.size();
+	  svs.push_back(svRec);
+	}
       }
     }
   }
