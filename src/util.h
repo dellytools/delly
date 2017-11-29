@@ -479,9 +479,14 @@ namespace torali
 	  if (paramIt->second.rplus < paramIt->second.nonrplus) {
 	    std::cerr << "Error: One library has a non-default paired-end layout! Read-group: " << paramIt->first << std::endl;
 	    std::cerr << "The expected paired-end orientation is   ---Read1--->      <---Read2---  which is the default illumina paired-end layout." << std::endl;
+	    // Clean-up
+	    for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
+	      bam_hdr_destroy(hdr[file_c]);
+	      hts_idx_destroy(idx[file_c]);
+	      sam_close(samfile[file_c]);
+	    }
 	    return false;
 	  }
-	  
 	  typedef typename LibraryParams::TSizeVector TVecISize;
 	  std::sort(paramIt->second.vecISize.begin(), paramIt->second.vecISize.end());
 	  paramIt->second.median = paramIt->second.vecISize[paramIt->second.vecISize.size() / 2];

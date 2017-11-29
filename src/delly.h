@@ -301,6 +301,8 @@ inline int dellyRun(TConfigStruct& c) {
   TSampleLibrary sampleLib(c.files.size());
   if (!getLibraryParams(c, validRegions, sampleLib)) {
     std::cerr << "Library parameters could not be estimated!" << std::endl;
+    bam_hdr_destroy(hdr);
+    sam_close(samfile);
     return 1;
   }
 
