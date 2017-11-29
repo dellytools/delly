@@ -369,6 +369,7 @@ namespace torali
       sampleLib[file_c] = TLibraryMap();
     }
 
+    bool retVal = true;
 #pragma omp parallel for default(shared)
     for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
       // Minimum and maximum number of pairs used to estimate library parameters for each RG library
@@ -435,7 +436,11 @@ namespace torali
 	      TParams::iterator paramIt = params.find(rG);
 	      if (paramIt == params.end()) {
 		std::cerr << "Error: Unknown read group: " << rG << std::endl;
-		return false;
+#pragma omp critical
+		{
+		  retVal = false;
+		}
+		continue;
 	      }
 	      if (paramIt->second.processedNumPairs >= maxNumAlignments) continue; // Paired-end library with enough pairs
 	      if ((paramIt->second.processedNumReads >= maxNumAlignments) && (paramIt->second.processedNumPairs == 0)) continue; // Single-end library with enough reads
@@ -479,13 +484,10 @@ namespace torali
 	  if (paramIt->second.rplus < paramIt->second.nonrplus) {
 	    std::cerr << "Error: One library has a non-default paired-end layout! Read-group: " << paramIt->first << std::endl;
 	    std::cerr << "The expected paired-end orientation is   ---Read1--->      <---Read2---  which is the default illumina paired-end layout." << std::endl;
-	    // Clean-up
-	    for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
-	      bam_hdr_destroy(hdr[file_c]);
-	      hts_idx_destroy(idx[file_c]);
-	      sam_close(samfile[file_c]);
+#pragma omp critical
+	    {
+	      retVal = false;
 	    }
-	    return false;
 	  }
 	  typedef typename LibraryParams::TSizeVector TVecISize;
 	  std::sort(paramIt->second.vecISize.begin(), paramIt->second.vecISize.end());
@@ -522,7 +524,7 @@ namespace torali
       hts_idx_destroy(idx[file_c]);
       sam_close(samfile[file_c]);
     }
-    return true;
+    return retVal;
   }
 
 
