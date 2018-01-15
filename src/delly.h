@@ -146,7 +146,8 @@ _annotateCoverage(TConfig const& c, bam_hdr_t* hdr, TSVs& svs, TCountMap& countM
   
   // Add control regions
   typedef std::vector<CovRecord> TCovRecord;
-  TCovRecord svc;
+  typedef std::vector<TCovRecord> TGenomicCovRecord;
+  TGenomicCovRecord svc(hdr->n_targets, TCovRecord());
   uint32_t lastId = svs.size();
   typedef std::vector<int32_t> TSVSize;
   TSVSize svSize(lastId);
@@ -156,22 +157,19 @@ _annotateCoverage(TConfig const& c, bam_hdr_t* hdr, TSVs& svs, TCountMap& countM
 
     // Left control region
     CovRecord sLeft;
-    sLeft.chr = itSV->chr;
     sLeft.id = lastId + itSV->id;
     sLeft.svStart = std::max(itSV->svStart - halfSize, 0);
     sLeft.svEnd = itSV->svStart;
-    sLeft.peSupport = 0;
-    typename TNIntervals::const_iterator itO = ni[sLeft.chr].find(boost::icl::discrete_interval<int>::right_open(sLeft.svStart, sLeft.svEnd));
-    while (itO != ni[sLeft.chr].end()) {
+    typename TNIntervals::const_iterator itO = ni[itSV->chr].find(boost::icl::discrete_interval<int>::right_open(sLeft.svStart, sLeft.svEnd));
+    while (itO != ni[itSV->chr].end()) {
       sLeft.svStart = std::max(itO->lower() - halfSize, 0);
       sLeft.svEnd = itO->lower();
-      itO = ni[sLeft.chr].find(boost::icl::discrete_interval<int>::right_open(sLeft.svStart, sLeft.svEnd));
+      itO = ni[itSV->chr].find(boost::icl::discrete_interval<int>::right_open(sLeft.svStart, sLeft.svEnd));
     }
-    svc.push_back(sLeft);
+    svc[itSV->chr].push_back(sLeft);
 
     // Actual SV
     CovRecord sMiddle;
-    sMiddle.chr = itSV->chr;
     sMiddle.id = itSV->id;
     sMiddle.svStart = itSV->svStart;
     sMiddle.svEnd = itSV->svEnd;
@@ -179,13 +177,11 @@ _annotateCoverage(TConfig const& c, bam_hdr_t* hdr, TSVs& svs, TCountMap& countM
       sMiddle.svStart = std::max(itSV->svStart - halfSize, 0);
       sMiddle.svEnd = itSV->svEnd + halfSize;
     }
-    sMiddle.peSupport = itSV->peSupport;
-    svc.push_back(sMiddle);
+    svc[itSV->chr].push_back(sMiddle);
     svSize[itSV->id] = (itSV->svEnd - itSV->svStart);
 
     // Right control region
     CovRecord sRight;
-    sRight.chr = itSV->chr;
     sRight.id = 2 * lastId + itSV->id;
     sRight.svStart = itSV->svEnd;
     sRight.svEnd = itSV->svEnd + halfSize;
@@ -193,23 +189,21 @@ _annotateCoverage(TConfig const& c, bam_hdr_t* hdr, TSVs& svs, TCountMap& countM
       sRight.svStart = itSV->svStart;
       sRight.svEnd = itSV->svStart + halfSize;
     }
-    sRight.peSupport = 0;
-    itO = ni[sRight.chr].find(boost::icl::discrete_interval<int>::right_open(sRight.svStart, sRight.svEnd));
-    while (itO != ni[sRight.chr].end()) {
+    itO = ni[itSV->chr].find(boost::icl::discrete_interval<int>::right_open(sRight.svStart, sRight.svEnd));
+    while (itO != ni[itSV->chr].end()) {
       sRight.svStart = itO->upper();
       sRight.svEnd = itO->upper() + halfSize;
-      itO = ni[sRight.chr].find(boost::icl::discrete_interval<int>::right_open(sRight.svStart, sRight.svEnd));
+      itO = ni[itSV->chr].find(boost::icl::discrete_interval<int>::right_open(sRight.svStart, sRight.svEnd));
     }
-    svc.push_back(sRight);
+    svc[itSV->chr].push_back(sRight);
     //std::cerr << itSV->id << ':' << sLeft.svStart << '-' << sLeft.svEnd << ',' << itSV->svStart << '-' << itSV->svEnd << ',' << sRight.svStart << '-' << sRight.svEnd << std::endl;
   }
   
-  typedef std::pair<int, int> TBpRead;
+  typedef std::pair<int32_t, int32_t> TBpRead;
   typedef std::vector<TBpRead> TSVReadCount;
   typedef std::vector<TSVReadCount> TSampleSVReadCount;
   TSampleSVReadCount readCountMap;
-  if (c.indels) annotateCoverage(c.files, c.minGenoQual, svc, readCountMap, BpLevelType<BpLevelCount>());
-  else annotateCoverage(c.files, c.minGenoQual, svc, readCountMap, BpLevelType<NoBpLevelCount>());
+  annotateCoverage(c.files, c.minGenoQual, svc, readCountMap);
   countMap.resize(c.files.size());
   for(uint32_t file_c = 0; file_c < c.files.size(); ++file_c) {
     countMap[file_c].resize(svs.size());

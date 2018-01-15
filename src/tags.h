@@ -30,18 +30,6 @@ namespace torali {
   #define DELLY_SVT_TRANS 5
   #endif
 
-  template<typename CoverageTag>
-    struct CoverageType {
-    };
-
-  struct BpLevelCount;
-  struct NoBpLevelCount;
-  
-  template<typename BpLevelTag>
-    struct BpLevelType {
-    };
-
-  
   inline bool
   _translocation(int32_t const svt) {
     return (DELLY_SVT_TRANS <= svt);
@@ -61,19 +49,6 @@ namespace torali {
       return svt;
     }
   }
-
-  
-  // Reduced structural variant record for cov
-  struct CovRecord {
-    int32_t chr;
-    int32_t svStart;
-    int32_t svEnd;
-    int32_t peSupport;
-    uint32_t id;
-
-  CovRecord() : chr(0), svStart(0), svEnd(0), peSupport(0), id(0) {}
-  CovRecord(int32_t const c, int32_t const s, int32_t const e) : chr(c), svStart(s), svEnd(e), peSupport(0), id(0) {}
-  };
 
   // Structural variant record
   struct StructuralVariantRecord {
