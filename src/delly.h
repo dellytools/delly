@@ -58,7 +58,6 @@ Contact: Tobias Rausch (rausch@embl.de)
 #include "tags.h"
 #include "spanning.h"
 #include "coverage.h"
-#include "junction.h"
 #include "msa.h"
 #include "split.h"
 #include "shortpe.h"
@@ -102,9 +101,9 @@ struct Config {
 
 
 
-template<typename TConfig, typename TSVs, typename TCountMap>
+template<typename TConfig, typename TSVs, typename TCountMap, typename TSampleSVJunctionMap>
 inline void
-_annotateCoverage(TConfig const& c, bam_hdr_t* hdr, TSVs& svs, TCountMap& countMap) 
+_annotateCoverage(TConfig& c, bam_hdr_t* hdr, TSVs& svs, TCountMap& countMap, TSampleSVJunctionMap& juncMap) 
 {
   // Find Ns in the reference genome
   typedef boost::icl::interval_set<int> TNIntervals;
@@ -114,7 +113,10 @@ _annotateCoverage(TConfig const& c, bam_hdr_t* hdr, TSVs& svs, TCountMap& countM
   // Find valid chromosomes
   typedef std::vector<bool> TValidChr;
   TValidChr validChr(hdr->n_targets, false);
-  for (typename TSVs::const_iterator itSV = svs.begin(); itSV != svs.end(); ++itSV) validChr[itSV->chr] = true;
+  for (typename TSVs::const_iterator itSV = svs.begin(); itSV != svs.end(); ++itSV) {
+    validChr[itSV->chr] = true;
+    validChr[itSV->chr2] = true;
+  }
 
   // Parse Ns
   faidx_t* fai = fai_load(c.genome.string().c_str());
@@ -175,27 +177,25 @@ _annotateCoverage(TConfig const& c, bam_hdr_t* hdr, TSVs& svs, TCountMap& countM
     sMiddle.svEnd = itSV->svEnd;
     if ((_translocation(itSV->svt)) || (itSV->svt == 4)) {
       sMiddle.svStart = std::max(itSV->svStart - halfSize, 0);
-      sMiddle.svEnd = itSV->svEnd + halfSize;
+      sMiddle.svEnd = itSV->svStart + halfSize;      
     }
-    svc[itSV->chr].push_back(sMiddle);
     svSize[itSV->id] = (itSV->svEnd - itSV->svStart);
+    if (_translocation(itSV->svt)) svSize[itSV->id] = 50000000;
+    svc[itSV->chr].push_back(sMiddle);
+    
 
     // Right control region
     CovRecord sRight;
     sRight.id = 2 * lastId + itSV->id;
     sRight.svStart = itSV->svEnd;
     sRight.svEnd = itSV->svEnd + halfSize;
-    if ((_translocation(itSV->svt)) || (itSV->svt == 4)) {
-      sRight.svStart = itSV->svStart;
-      sRight.svEnd = itSV->svStart + halfSize;
-    }
-    itO = ni[itSV->chr].find(boost::icl::discrete_interval<int>::right_open(sRight.svStart, sRight.svEnd));
-    while (itO != ni[itSV->chr].end()) {
+    itO = ni[itSV->chr2].find(boost::icl::discrete_interval<int>::right_open(sRight.svStart, sRight.svEnd));
+    while (itO != ni[itSV->chr2].end()) {
       sRight.svStart = itO->upper();
       sRight.svEnd = itO->upper() + halfSize;
-      itO = ni[itSV->chr].find(boost::icl::discrete_interval<int>::right_open(sRight.svStart, sRight.svEnd));
+      itO = ni[itSV->chr2].find(boost::icl::discrete_interval<int>::right_open(sRight.svStart, sRight.svEnd));
     }
-    svc[itSV->chr].push_back(sRight);
+    svc[itSV->chr2].push_back(sRight);
     //std::cerr << itSV->id << ':' << sLeft.svStart << '-' << sLeft.svEnd << ',' << itSV->svStart << '-' << itSV->svEnd << ',' << sRight.svStart << '-' << sRight.svEnd << std::endl;
   }
   
@@ -203,7 +203,7 @@ _annotateCoverage(TConfig const& c, bam_hdr_t* hdr, TSVs& svs, TCountMap& countM
   typedef std::vector<TBpRead> TSVReadCount;
   typedef std::vector<TSVReadCount> TSampleSVReadCount;
   TSampleSVReadCount readCountMap;
-  annotateCoverage(c.files, c.minGenoQual, svc, readCountMap);
+  annotateCoverage(c, svc, readCountMap, svs, juncMap);
   countMap.resize(c.files.size());
   for(uint32_t file_c = 0; file_c < c.files.size(); ++file_c) {
     countMap[file_c].resize(svs.size());
@@ -304,6 +304,11 @@ inline int dellyRun(TConfigStruct& c) {
   if (!c.hasVcfFile) shortPE(c, validRegions, svs, sampleLib);
   else vcfParse(c, hdr, svs);
 
+  // Re-number SVs
+  sort(svs.begin(), svs.end(), SortSVs<StructuralVariantRecord>());    
+  uint32_t cliqueCount = 0;
+  for(typename TVariants::iterator svIt = svs.begin(); svIt != svs.end(); ++svIt) svIt->id = cliqueCount++;
+
   // Annotate junction reads
   typedef std::vector<JunctionCount> TSVJunctionMap;
   typedef std::vector<TSVJunctionMap> TSampleSVJunctionMap;
@@ -321,9 +326,8 @@ inline int dellyRun(TConfigStruct& c) {
 
   // SV Genotyping
   if (!svs.empty()) {
-    annotateJunctionReads(c, svs, junctionCountMap);
     annotateSpanningCoverage(c, sampleLib, svs, spanCountMap);
-    _annotateCoverage(c, hdr, svs, rcMap);
+    _annotateCoverage(c, hdr, svs, rcMap, junctionCountMap);
   }
   
   // VCF output

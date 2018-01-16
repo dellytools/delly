@@ -56,7 +56,6 @@ Contact: Tobias Rausch (rausch@embl.de)
 #include "tags.h"
 #include "spanning.h"
 #include "coverage.h"
-#include "junction.h"
 #include "msa.h"
 #include "split.h"
 
@@ -1034,9 +1033,6 @@ namespace torali
 	
 	// Final set of precise and imprecise SVs
 	svs = svc;
-	// Re-number SVs
-	uint32_t cliqueCount = 0;
-	for(typename TVariants::iterator svIt = svs.begin(); svIt != svs.end(); ++svIt) svIt->id = cliqueCount++;
       }
     }
 

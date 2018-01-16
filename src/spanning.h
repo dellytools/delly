@@ -88,9 +88,6 @@ namespace torali {
     }
     bam_hdr_t* hdr = sam_hdr_read(samfile[0]);
 
-    // Sort Structural Variants
-    std::sort(svs.begin(), svs.end(), SortSVs<StructuralVariantRecord>());
-
     // Initialize count map
     spanCountMap.resize(c.files.size());
     uint32_t lastId = svs.size();
