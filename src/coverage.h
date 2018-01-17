@@ -26,14 +26,33 @@ Contact: Tobias Rausch (rausch@embl.de)
 
 #include <boost/container/flat_set.hpp>
 #include <boost/dynamic_bitset.hpp>
+#include <boost/iostreams/stream.hpp>
+#include <boost/iostreams/stream_buffer.hpp>
+#include <boost/iostreams/device/file.hpp>
+#include <boost/iostreams/filtering_stream.hpp>
+#include <boost/iostreams/filter/zlib.hpp>
+#include <boost/iostreams/filter/gzip.hpp>
+
 #include <htslib/sam.h>
+
 #include "tags.h"
 #include "util.h"
 #include "msa.h"
 #include "split.h"
 
+
 namespace torali {
 
+  struct SpanPoint {
+    int32_t bppos;
+    int32_t svt;
+    uint32_t id;
+
+    SpanPoint() : bppos(0), svt(0), id(0) {}
+    explicit SpanPoint(int32_t bp) : bppos(bp), svt(0), id(0) {}
+    SpanPoint(int32_t bp, int32_t s, uint32_t identifier) : bppos(bp), svt(s), id(identifier) {}
+  };
+  
   struct BpRegion {
     int32_t regionStart;
     int32_t regionEnd;
@@ -50,7 +69,7 @@ namespace torali {
   };
 
   template<typename TRecord>
-  struct SortBpRegion : public std::binary_function<TRecord, TRecord, bool> {
+  struct SortBp : public std::binary_function<TRecord, TRecord, bool> {
     inline bool operator()(TRecord const& s1, TRecord const& s2) const {
       return (s1.bppos < s2.bppos);
     }
@@ -70,6 +89,18 @@ namespace torali {
     inline bool operator()(TRecord const& s1, TRecord const& s2) const {
       return ((s1.svStart<s2.svStart) || ((s1.svStart==s2.svStart) && (s1.svEnd<s2.svEnd)) || ((s1.svStart==s2.svStart) && (s1.svEnd==s2.svEnd) && (s1.id < s2.id)));
     }
+  };
+
+
+  struct SpanningCount {
+    int32_t refh1;
+    int32_t refh2;
+    int32_t alth1;
+    int32_t alth2;
+    std::vector<uint8_t> ref;
+    std::vector<uint8_t> alt;
+
+    SpanningCount() : refh1(0), refh2(0), alth1(0), alth2(0) {}
   };
 
   
@@ -151,11 +182,13 @@ namespace torali {
 
   
 
-template<typename TConfig, typename TCovRecord, typename TCoverageCount, typename TSVs, typename TCountMap>
+template<typename TConfig, typename TSampleLibrary, typename TCovRecord, typename TCoverageCount, typename TSVs, typename TCountMap, typename TSpanMap>
 inline void
-annotateCoverage(TConfig& c, TCovRecord& ict, TCoverageCount& covCount, TSVs& svs, TCountMap& countMap)
+annotateCoverage(TConfig& c, TSampleLibrary& sampleLib, TCovRecord& ict, TCoverageCount& covCount, TSVs& svs, TCountMap& countMap, TSpanMap& spanMap)
 {
+  typedef typename TSpanMap::value_type::value_type TSpanPair;
   typedef typename TCountMap::value_type::value_type TCountPair;
+  typedef typename TSampleLibrary::value_type TLibraryMap;
   typedef std::vector<uint8_t> TQuality;
   
   // Open file handles
@@ -183,9 +216,11 @@ annotateCoverage(TConfig& c, TCovRecord& ict, TCoverageCount& covCount, TSVs& sv
   // Initialize coverage count maps
   covCount.resize(c.files.size());
   countMap.resize(c.files.size());
+  spanMap.resize(c.files.size());
   for(uint32_t file_c = 0; file_c < c.files.size(); ++file_c) {
     covCount[file_c].resize(totalSVs);
     countMap[file_c].resize(svs.size(), TCountPair());
+    spanMap[file_c].resize(svs.size(), TSpanPair());
   }
 
   // Preprocess REF and ALT
@@ -208,7 +243,11 @@ annotateCoverage(TConfig& c, TCovRecord& ict, TCoverageCount& covCount, TSVs& sv
   typedef std::vector<uint32_t> TRefAlignCount;
   typedef std::vector<TRefAlignCount> TFileRefAlignCount;
   TFileRefAlignCount refAlignedReadCount(c.files.size(), TRefAlignCount());
-  for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) refAlignedReadCount[file_c].resize(svs.size(), 0);
+  TFileRefAlignCount refAlignedSpanCount(c.files.size(), TRefAlignCount());
+  for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
+    refAlignedReadCount[file_c].resize(svs.size(), 0);
+    refAlignedSpanCount[file_c].resize(svs.size(), 0);
+  }
   
   // Iterate all structural variants
   {
@@ -291,7 +330,7 @@ annotateCoverage(TConfig& c, TCovRecord& ict, TCoverageCount& covCount, TSVs& sv
     fai_destroy(fai);
     for(int32_t refIndex=0; refIndex < (int32_t) hdr[0]->n_targets; ++refIndex) {
       // Sort breakpoint regions
-      std::sort(bpRegion[refIndex].begin(), bpRegion[refIndex].end(), SortBpRegion<BpRegion>());
+      std::sort(bpRegion[refIndex].begin(), bpRegion[refIndex].end(), SortBp<BpRegion>());
     }
   }
   // Debug
@@ -303,22 +342,28 @@ annotateCoverage(TConfig& c, TCovRecord& ict, TCoverageCount& covCount, TSVs& sv
   
   // Iterate all samples
   boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
-  std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Read-depth and Junction Read annotation" << std::endl;
+  std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "SV annotation" << std::endl;
   boost::progress_display show_progress( totalTarget );
 
   // Dump file
   boost::iostreams::filtering_ostream dumpOut;
-  if (c.srdumpflag) {
+  if (c.dumpflag) {
     dumpOut.push(boost::iostreams::gzip_compressor());
-    dumpOut.push(boost::iostreams::file_sink(c.srdump.string().c_str(), std::ios_base::out | std::ios_base::binary));
-    dumpOut << "#svid\tbam\tqname\tchr\tpos\tmatechr\tmatepos\tmapq" << std::endl;
+    dumpOut.push(boost::iostreams::file_sink(c.srpedump.string().c_str(), std::ios_base::out | std::ios_base::binary));
+    dumpOut << "#svid\tbam\tqname\tchr\tpos\tmatechr\tmatepos\tmapq\ttype" << std::endl;
   }
 
 #pragma omp parallel for default(shared)
   for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
+    int32_t overallMaxISize = getMaxISizeCutoff(sampleLib[file_c]);
+    
     // Pair qualities and features
     typedef boost::unordered_map<std::size_t, uint8_t> TQualities;
     TQualities qualities;
+    TQualities qualitiestra;
+    typedef boost::unordered_map<std::size_t, bool> TClip;
+    TClip clip;
+    TClip cliptra;
   
     // Iterate chromosomes
     for(int32_t refIndex=0; refIndex < (int32_t) hdr[file_c]->n_targets; ++refIndex) {
@@ -353,6 +398,24 @@ annotateCoverage(TConfig& c, TCovRecord& ict, TCoverageCount& covCount, TSVs& sv
 	  bpOccupied[k] = 1;
 	}
       }
+
+      // Flag spanning breakpoints
+      typedef std::vector<SpanPoint> TSpanPoint;
+      TSpanPoint spanPoint;
+      typedef boost::dynamic_bitset<> TBitSet;
+      TBitSet spanBp(hdr[file_c]->target_len[refIndex]);
+      for(typename TSVs::iterator itSV = svs.begin(); itSV != svs.end(); ++itSV) {
+	if (itSV->peSupport == 0) continue;
+	if ((itSV->chr == refIndex) && (itSV->svStart < (int32_t) hdr[file_c]->target_len[refIndex])) {
+	  spanBp[itSV->svStart] = 1;
+	  spanPoint.push_back(SpanPoint(itSV->svStart, itSV->svt, itSV->id));
+	}
+	if ((itSV->chr2 == refIndex) && (itSV->svEnd < (int32_t) hdr[file_c]->target_len[refIndex])) {
+	  spanBp[itSV->svEnd] = 1;
+	  spanPoint.push_back(SpanPoint(itSV->svEnd, itSV->svt, itSV->id));
+	}
+      }
+      std::sort(spanPoint.begin(), spanPoint.end(), SortBp<SpanPoint>());
       
       // Count reads
       hts_itr_t* iter = sam_itr_queryi(idx[file_c], refIndex, 0, hdr[file_c]->target_len[refIndex]);
@@ -363,20 +426,39 @@ annotateCoverage(TConfig& c, TCovRecord& ict, TCoverageCount& covCount, TSVs& sv
 	if (rec->core.flag & (BAM_FSECONDARY | BAM_FQCFAIL | BAM_FDUP | BAM_FSUPPLEMENTARY | BAM_FUNMAP | BAM_FMUNMAP)) continue;
 	if (rec->core.qual < c.minGenoQual) continue;
 
-	// Check read length for junction annotation
-	if (rec->core.l_qseq >= (2 * c.minimumFlankSize)) {
-	  // Any (leading) soft clip
-	  bool hasSoftClip = false;
-	  bool hasClip = false;
-	  int32_t leadingSC = 0;
+	// Count aligned basepair (small InDels)
+	{
+	  uint32_t rp = 0; // reference pointer
 	  uint32_t* cigar = bam_get_cigar(rec);
 	  for (std::size_t i = 0; i < rec->core.n_cigar; ++i) {
-	    if (bam_cigar_op(cigar[i]) == BAM_CSOFT_CLIP) {
-	      hasClip = true;
-	      hasSoftClip = true;
-	      if (i == 0) leadingSC = bam_cigar_oplen(cigar[i]);
-	    } else if (bam_cigar_op(cigar[i]) == BAM_CHARD_CLIP) hasClip = true;
+	    if (bam_cigar_op(cigar[i]) == BAM_CMATCH) {
+	      for(std::size_t k = 0; k<bam_cigar_oplen(cigar[i]);++k) {
+		if ((rec->core.pos + rp < hdr[file_c]->target_len[refIndex]) && (covBases[rec->core.pos + rp] < maxCoverage - 1)) ++covBases[rec->core.pos + rp];
+		++rp;
+	      }
+	    } else if (bam_cigar_op(cigar[i]) == BAM_CDEL) {
+	      rp += bam_cigar_oplen(cigar[i]);
+	    } else if (bam_cigar_op(cigar[i]) == BAM_CREF_SKIP) {
+	      rp += bam_cigar_oplen(cigar[i]);
+	    }
 	  }
+	}
+
+	// Any (leading) soft clip
+	bool hasSoftClip = false;
+	bool hasClip = false;
+	int32_t leadingSC = 0;
+	uint32_t* cigar = bam_get_cigar(rec);
+	for (std::size_t i = 0; i < rec->core.n_cigar; ++i) {
+	  if (bam_cigar_op(cigar[i]) == BAM_CSOFT_CLIP) {
+	    hasClip = true;
+	    hasSoftClip = true;
+	    if (i == 0) leadingSC = bam_cigar_oplen(cigar[i]);
+	  } else if (bam_cigar_op(cigar[i]) == BAM_CHARD_CLIP) hasClip = true;
+	}
+	
+	// Check read length for junction annotation
+	if (rec->core.l_qseq >= (2 * c.minimumFlankSize)) {
 	  bool bpvalid = false;
 	  int32_t rbegin = std::max(0, rec->core.pos - leadingSC);
 	  for(int32_t k = rbegin; ((k < (rec->core.pos + rec->core.l_qseq)) && (k < (int32_t) hdr[file_c]->target_len[refIndex])); ++k) {
@@ -387,7 +469,7 @@ annotateCoverage(TConfig& c, TCovRecord& ict, TCoverageCount& covCount, TSVs& sv
 	  }
 	  if (bpvalid) {
 	    // Fetch all relevant SVs
-	    typename TBpRegion::iterator itBp = std::lower_bound(bpRegion[refIndex].begin(), bpRegion[refIndex].end(), BpRegion(rbegin), SortBpRegion<BpRegion>());
+	    typename TBpRegion::iterator itBp = std::lower_bound(bpRegion[refIndex].begin(), bpRegion[refIndex].end(), BpRegion(rbegin), SortBp<BpRegion>());
 	    for(; ((itBp != bpRegion[refIndex].end()) && (rec->core.pos + rec->core.l_qseq >= itBp->bppos)); ++itBp) {
 	      // Read spans breakpoint?
 	      if ((hasSoftClip) || ((!hasClip) && (rec->core.pos + c.minimumFlankSize + itBp->homLeft <= itBp->bppos) &&  (rec->core.pos + rec->core.l_qseq >= itBp->bppos + c.minimumFlankSize + itBp->homRight))) {
@@ -461,12 +543,12 @@ annotateCoverage(TConfig& c, TCovRecord& ict, TCoverageCount& covCount, TSVs& sv
 		      uint8_t* hpptr = bam_aux_get(rec, "HP");
 #pragma omp critical
 		      {
-			if (c.srdumpflag) {
+			if (c.dumpflag) {
 			  std::string svid(_addID(itBp->svt));
 			  std::string padNumber = boost::lexical_cast<std::string>(itBp->id);
 			  padNumber.insert(padNumber.begin(), 8 - padNumber.length(), '0');
 			  svid += padNumber;
-			  dumpOut << svid << "\t" << c.files[file_c].string() << "\t" << bam_get_qname(rec) << "\t" << hdr[file_c]->target_name[rec->core.tid] << "\t" << rec->core.pos << "\t" << hdr[file_c]->target_name[rec->core.mtid] << "\t" << rec->core.mpos << "\t" << rec->core.qual << std::endl;
+			  dumpOut << svid << "\t" << c.files[file_c].string() << "\t" << bam_get_qname(rec) << "\t" << hdr[file_c]->target_name[rec->core.tid] << "\t" << rec->core.pos << "\t" << hdr[file_c]->target_name[rec->core.mtid] << "\t" << rec->core.mpos << "\t" << rec->core.qual << "\tSR" << std::endl;
 			}
 			countMap[file_c][itBp->id].alt.push_back((uint8_t) std::min(aq, (uint32_t) rec->core.qual));
 			if (hpptr) {
@@ -483,49 +565,145 @@ annotateCoverage(TConfig& c, TCovRecord& ict, TCoverageCount& covCount, TSVs& sv
 	    }
 	  }
 	}
-
 	
-	// Read-count annotation
-	if ((rec->core.tid != rec->core.mtid) || (!(rec->core.flag & BAM_FPAIRED))) continue;
+	// Read-count and spanning annotation
+	if ((!(rec->core.flag & BAM_FPAIRED)) || (ict[rec->core.mtid].empty())) continue;
 
 	// Clean-up the read store for identical alignment positions
 	if (rec->core.pos > lastAlignedPos) {
 	  lastAlignedPosReads.clear();
 	  lastAlignedPos = rec->core.pos;
 	}
-	
-	if ((rec->core.pos < rec->core.mpos) || ((rec->core.pos == rec->core.mpos) && (lastAlignedPosReads.find(hash_string(bam_get_qname(rec))) == lastAlignedPosReads.end()))) {
+
+	if (_firstPairObs(rec, lastAlignedPosReads)) {
 	  // First read
 	  lastAlignedPosReads.insert(hash_string(bam_get_qname(rec)));
 	  std::size_t hv = hash_pair(rec);
-	  qualities[hv] = rec->core.qual;
+	  if (rec->core.tid == rec->core.mtid) {
+	    qualities[hv] = rec->core.qual;
+	    clip[hv] = hasSoftClip;
+	  } else {
+	    qualitiestra[hv] = rec->core.qual;
+	    cliptra[hv] = hasSoftClip;
+	  }
 	} else {
 	  // Second read
 	  std::size_t hv = hash_pair_mate(rec);
-	  if (qualities.find(hv) == qualities.end()) continue; // Mate discarded
-	  uint8_t pairQuality = std::min((uint8_t) qualities[hv], (uint8_t) rec->core.qual);
-	  qualities[hv] = 0;
+	  uint8_t pairQuality = 0;
+	  bool pairClip = false;
+	  if (rec->core.tid == rec->core.mtid) {
+	    if (qualities.find(hv) == qualities.end()) continue; // Mate discarded
+	    pairQuality = std::min((uint8_t) qualities[hv], (uint8_t) rec->core.qual);
+	    if ((clip[hv]) || (hasSoftClip)) pairClip = true;
+	    qualities[hv] = 0;
+	    clip[hv] = false;
+	  } else {
+	    if (qualitiestra.find(hv) == qualitiestra.end()) continue; // Mate discarded
+	    pairQuality = std::min((uint8_t) qualitiestra[hv], (uint8_t) rec->core.qual);
+	    if ((cliptra[hv]) || (hasSoftClip)) pairClip = true;
+	    qualitiestra[hv] = 0;
+	    cliptra[hv] = false;
+	  }
 
 	  // Pair quality
 	  if (pairQuality < c.minGenoQual) continue; // Low quality pair
 
-	  // Count mid point (fragment counting)
-	  int32_t midPoint = rec->core.pos + halfAlignmentLength(rec);
-	  if ((midPoint < (int32_t) hdr[file_c]->target_len[refIndex]) && (covFragment[midPoint] < maxCoverage - 1)) ++covFragment[midPoint];
+	  // Read-depth fragment counting
+	  if (rec->core.tid == rec->core.mtid) {
+	    // Count mid point (fragment counting)
+	    int32_t midPoint = rec->core.pos + halfAlignmentLength(rec);
+	    if ((midPoint < (int32_t) hdr[file_c]->target_len[refIndex]) && (covFragment[midPoint] < maxCoverage - 1)) ++covFragment[midPoint];
+	  }
 
-	  // Count basepair (small InDels)
-	  uint32_t rp = 0; // reference pointer
-	  uint32_t* cigar = bam_get_cigar(rec);
-	  for (std::size_t i = 0; i < rec->core.n_cigar; ++i) {
-	    if (bam_cigar_op(cigar[i]) == BAM_CMATCH) {
-	      for(std::size_t k = 0; k<bam_cigar_oplen(cigar[i]);++k) {
-		if ((rec->core.pos + rp < hdr[file_c]->target_len[refIndex]) && (covBases[rec->core.pos + rp] < maxCoverage - 1)) ++covBases[rec->core.pos + rp];
-		++rp;
+	  // Spanning counting
+	  int32_t outerISize = 0;
+	  if (rec->core.pos < rec->core.mpos) outerISize = rec->core.mpos + rec->core.l_qseq - rec->core.pos;
+	  else outerISize = rec->core.pos + rec->core.l_qseq - rec->core.mpos;
+
+	  // Get the library information
+	  typename TLibraryMap::iterator libIt = _findLib(rec, sampleLib[file_c]);
+	  if (libIt->second.median == 0) continue; // Single-end library or non-valid library
+
+	  // Normal spanning pair
+	  if ((!pairClip) && (getSVType(rec->core) == 2) && (outerISize >= libIt->second.minNormalISize) && (outerISize <= libIt->second.maxNormalISize) && (rec->core.tid==rec->core.mtid)) {
+	    // Take X% of the outerisize as the spanned interval
+	    int32_t spanlen = 0.8 * outerISize;
+	    int32_t pbegin = std::min(rec->core.pos, rec->core.mpos);
+	    int32_t st = pbegin + (outerISize - spanlen) / 2;
+	    bool spanvalid = false;
+	    for(int32_t i = st; ((i < (st + spanlen)) &&  (i < (int32_t) hdr[file_c]->target_len[refIndex])); ++i) {
+	      if (spanBp[i]) {
+		spanvalid = true;
+		break;
 	      }
-	    } else if (bam_cigar_op(cigar[i]) == BAM_CDEL) {
-	      rp += bam_cigar_oplen(cigar[i]);
-	    } else if (bam_cigar_op(cigar[i]) == BAM_CREF_SKIP) {
-	      rp += bam_cigar_oplen(cigar[i]);
+	    }
+	    if (spanvalid) {
+	      // Fetch all relevant SVs
+	      typename TSpanPoint::iterator itSpan = std::lower_bound(spanPoint.begin(), spanPoint.end(), SpanPoint(st), SortBp<SpanPoint>());
+	      for(; ((itSpan != spanPoint.end()) && (st + spanlen >= itSpan->bppos)); ++itSpan) {
+		// Account for reference bias
+		if (++refAlignedSpanCount[file_c][itSpan->id] % 2) {
+		  uint8_t* hpptr = bam_aux_get(rec, "HP");
+#pragma omp critical
+		  {
+		    spanMap[file_c][itSpan->id].ref.push_back(pairQuality);
+		    if (hpptr) {
+		      c.isHaplotagged = true;
+		      int hap = bam_aux2i(hpptr);
+		      if (hap == 1) ++spanMap[file_c][itSpan->id].refh1;
+		      else ++spanMap[file_c][itSpan->id].refh2;
+		    }
+		  }
+		}
+	      }
+	    }
+	  }
+
+	  // Abnormal spanning coverage
+	  if ((getSVType(rec->core) != 2) || (outerISize < libIt->second.minNormalISize) || (outerISize > libIt->second.maxNormalISize) || (rec->core.tid!=rec->core.mtid)) {
+	    // SV type
+	    int32_t svt = _isizeMappingPos(rec, overallMaxISize);
+	    if (svt == -1) continue;
+	    
+	    // Spanning a breakpoint?
+	    bool spanvalid = false;
+	    int32_t pbegin = rec->core.pos;
+	    int32_t pend = std::min(rec->core.pos + libIt->second.maxNormalISize, (int32_t) hdr[file_c]->target_len[refIndex]);
+	    if (rec->core.flag & BAM_FREVERSE) {
+	      pbegin = std::max(0, rec->core.pos + rec->core.l_qseq - libIt->second.maxNormalISize);
+	      pend = std::min(rec->core.pos + rec->core.l_qseq, (int32_t) hdr[file_c]->target_len[refIndex]);
+	    }
+	    for(int32_t i = pbegin; i < pend; ++i) {
+	      if (spanBp[i]) {
+		spanvalid = true;
+		break;
+	      }
+	    }
+	    if (spanvalid) {
+	      // Fetch all relevant SVs
+	      typename TSpanPoint::iterator itSpan = std::lower_bound(spanPoint.begin(), spanPoint.end(), SpanPoint(pbegin), SortBp<SpanPoint>());
+	      for(; ((itSpan != spanPoint.end()) && (pend >= itSpan->bppos)); ++itSpan) {
+		if (svt == itSpan->svt) {
+		  uint8_t* hpptr = bam_aux_get(rec, "HP");
+#pragma omp critical
+		  {
+		    if (c.dumpflag) {
+		      std::string svid(_addID(itSpan->svt));
+		      std::string padNumber = boost::lexical_cast<std::string>(itSpan->id);
+		      padNumber.insert(padNumber.begin(), 8 - padNumber.length(), '0');
+		      svid += padNumber;
+		      dumpOut << svid << "\t" << c.files[file_c].string() << "\t" << bam_get_qname(rec) << "\t" << hdr[file_c]->target_name[rec->core.tid] << "\t" << rec->core.pos << "\t" << hdr[file_c]->target_name[rec->core.mtid] << "\t" << rec->core.mpos << "\t" << rec->core.qual << "\tPE" << std::endl;
+		    }
+		    spanMap[file_c][itSpan->id].alt.push_back(pairQuality);
+		    if (hpptr) {
+		      c.isHaplotagged = true;
+		      int hap = bam_aux2i(hpptr);
+		      if (hap == 1) ++spanMap[file_c][itSpan->id].alth1;
+		      else ++spanMap[file_c][itSpan->id].alth2;
+		    }
+		  }
+		}
+	      }
 	    }
 	  }
 	}
@@ -534,6 +712,7 @@ annotateCoverage(TConfig& c, TCovRecord& ict, TCoverageCount& covCount, TSVs& sv
       bam_destroy1(rec);
       hts_itr_destroy(iter);
       qualities.clear();
+      clip.clear();
 
       // Assign fragment and base counts to SVs
       for(uint32_t i = 0; i < ict[refIndex].size(); ++i) {

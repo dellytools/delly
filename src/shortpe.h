@@ -2,7 +2,7 @@
 ============================================================================
 DELLY: Structural variant discovery by integrated PE mapping and SR analysis
 ============================================================================
-Copyright (C) 2012 Tobias Rausch
+Copyright (C) 2012-2018 Tobias Rausch
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -54,7 +54,6 @@ Contact: Tobias Rausch (rausch@embl.de)
 #include "util.h"
 #include "bolog.h"
 #include "tags.h"
-#include "spanning.h"
 #include "coverage.h"
 #include "msa.h"
 #include "split.h"
@@ -704,6 +703,7 @@ namespace torali
 	  while (sam_itr_next(samfile[file_c], iter, rec) >= 0) {
 	    if (rec->core.flag & (BAM_FSECONDARY | BAM_FQCFAIL | BAM_FDUP | BAM_FSUPPLEMENTARY | BAM_FUNMAP)) continue;
 	    if ((rec->core.qual < c.minMapQual) || (rec->core.tid<0)) continue;
+
 	    
 	    // Clean-up the read store for identical alignment positions
 	    if (rec->core.pos > lastAlignedPos) {
@@ -793,6 +793,7 @@ namespace torali
 	      // Mate unmapped or blacklisted chr
 	      if ((rec->core.mtid<0) || (rec->core.flag & BAM_FMUNMAP)) continue;
 	      if (validRegions[rec->core.mtid].empty()) continue;
+	      if ((_translocation(rec)) && (rec->core.qual < c.minTraQual)) continue;
 	      
 	      // SV type
 	      int32_t svt = _isizeMappingPos(rec, overallMaxISize);
@@ -840,6 +841,7 @@ namespace torali
 		
 		// Pair quality
 		if (pairQuality < c.minMapQual) continue;
+		if ((_translocation(svt)) && (pairQuality < c.minTraQual)) continue;
 		
 #pragma omp critical
 		{

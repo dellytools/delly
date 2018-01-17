@@ -2,7 +2,7 @@
 ============================================================================
 DELLY: Structural variant discovery by integrated PE mapping and SR analysis
 ============================================================================
-Copyright (C) 2012 Tobias Rausch
+Copyright (C) 2012-2018 Tobias Rausch
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -56,7 +56,6 @@ Contact: Tobias Rausch (rausch@embl.de)
 #include "util.h"
 #include "bolog.h"
 #include "tags.h"
-#include "spanning.h"
 #include "coverage.h"
 #include "msa.h"
 #include "split.h"
@@ -75,6 +74,7 @@ namespace torali
 // Config arguments
 struct Config {
   unsigned short minMapQual;
+  unsigned short minTraQual;
   unsigned short minGenoQual;
   unsigned short madCutoff;
   int32_t minimumFlankSize;
@@ -85,25 +85,22 @@ struct Config {
   bool hasExcludeFile;
   bool hasVcfFile;
   bool isHaplotagged;
-  bool pedumpflag;
-  bool srdumpflag;
+  bool dumpflag;
   DnaScore<int> aliscore;
-  std::string format;
   boost::filesystem::path outfile;
   boost::filesystem::path vcffile;
   boost::filesystem::path genome;
   boost::filesystem::path exclude;
-  boost::filesystem::path srdump;
-  boost::filesystem::path pedump;
+  boost::filesystem::path srpedump;
   std::vector<boost::filesystem::path> files;
   std::vector<std::string> sampleName;
 };
 
 
 
-template<typename TConfig, typename TSVs, typename TCountMap, typename TSampleSVJunctionMap>
+template<typename TConfig, typename TSampleLib, typename TSVs, typename TCountMap, typename TSampleSVJunctionMap, typename TSpanningCoverage>
 inline void
-_annotateCoverage(TConfig& c, bam_hdr_t* hdr, TSVs& svs, TCountMap& countMap, TSampleSVJunctionMap& juncMap) 
+_annotateCoverage(TConfig& c, bam_hdr_t* hdr, TSampleLib& sampleLib, TSVs& svs, TCountMap& countMap, TSampleSVJunctionMap& juncMap, TSpanningCoverage& spanMap) 
 {
   // Find Ns in the reference genome
   typedef boost::icl::interval_set<int> TNIntervals;
@@ -203,7 +200,7 @@ _annotateCoverage(TConfig& c, bam_hdr_t* hdr, TSVs& svs, TCountMap& countMap, TS
   typedef std::vector<TBpRead> TSVReadCount;
   typedef std::vector<TSVReadCount> TSampleSVReadCount;
   TSampleSVReadCount readCountMap;
-  annotateCoverage(c, svc, readCountMap, svs, juncMap);
+  annotateCoverage(c, sampleLib, svc, readCountMap, svs, juncMap, spanMap);
   countMap.resize(c.files.size());
   for(uint32_t file_c = 0; file_c < c.files.size(); ++file_c) {
     countMap[file_c].resize(svs.size());
@@ -325,10 +322,7 @@ inline int dellyRun(TConfigStruct& c) {
   TSampleSVReadCount rcMap;
 
   // SV Genotyping
-  if (!svs.empty()) {
-    annotateSpanningCoverage(c, sampleLib, svs, spanCountMap);
-    _annotateCoverage(c, hdr, svs, rcMap, junctionCountMap);
-  }
+  if (!svs.empty()) _annotateCoverage(c, hdr, sampleLib, svs, rcMap, junctionCountMap, spanCountMap);
   
   // VCF output
   vcfOutput(c, svs, junctionCountMap, rcMap, spanCountMap);
@@ -373,24 +367,23 @@ int delly(int argc, char **argv) {
 
   boost::program_options::options_description disc("Discovery options");
   disc.add_options()
-    ("map-qual,q", boost::program_options::value<unsigned short>(&c.minMapQual)->default_value(1), "min. paired-end mapping quality")
+    ("map-qual,q", boost::program_options::value<unsigned short>(&c.minMapQual)->default_value(1), "min. paired-end (PE) mapping quality")
+    ("qual-tra,r", boost::program_options::value<unsigned short>(&c.minTraQual)->default_value(20), "min. PE quality for translocation")
     ("mad-cutoff,s", boost::program_options::value<unsigned short>(&c.madCutoff)->default_value(9), "insert size cutoff, median+s*MAD (deletions only)")
     ("noindels,n", "no small InDel calling")
     ;
 
   boost::program_options::options_description geno("Genotyping options");
   geno.add_options()
-    ("vcffile,v", boost::program_options::value<boost::filesystem::path>(&c.vcffile), "input VCF/BCF file for re-genotyping")
+    ("vcffile,v", boost::program_options::value<boost::filesystem::path>(&c.vcffile), "input VCF/BCF file for genotyping")
     ("geno-qual,u", boost::program_options::value<unsigned short>(&c.minGenoQual)->default_value(5), "min. mapping quality for genotyping")
+    ("dump,d", boost::program_options::value<boost::filesystem::path>(&c.srpedump), "dump SR and PE info (slow)")
     ;
 
   // Define hidden options
   boost::program_options::options_description hidden("Hidden options");
   hidden.add_options()
     ("input-file", boost::program_options::value< std::vector<boost::filesystem::path> >(&c.files), "input file")
-    ("format,f", boost::program_options::value<std::string>(&c.format)->default_value("bcf"), "output format (bcf, json.gz)")
-    ("pedump,p", boost::program_options::value<boost::filesystem::path>(&c.pedump), "outfile to dump PE info")
-    ("srdump,r", boost::program_options::value<boost::filesystem::path>(&c.srdump), "outfile to dump SR info")
     ("pruning,j", boost::program_options::value<uint32_t>(&c.graphPruning)->default_value(1000), "PE graph pruning cutoff")
     ;
 
@@ -415,11 +408,12 @@ int delly(int argc, char **argv) {
     return 0;
   }
 
-  // Flag dump files
-  if (vm.count("pedump")) c.pedumpflag = true;
-  else c.pedumpflag = false;
-  if (vm.count("srdump")) c.srdumpflag = true;
-  else c.srdumpflag = false;
+  // Dump PE and SR support?
+  if (vm.count("dump")) c.dumpflag = true;
+  else c.dumpflag = false;
+
+  // Check quality cuts
+  if (c.minMapQual > c.minTraQual) c.minTraQual = c.minMapQual;
   
   // Check reference
   if (!(boost::filesystem::exists(c.genome) && boost::filesystem::is_regular_file(c.genome) && boost::filesystem::file_size(c.genome))) {
@@ -492,20 +486,18 @@ int delly(int argc, char **argv) {
       std::cerr << "Input VCF/BCF file is missing: " << c.vcffile.string() << std::endl;
       return 1;
     }
-    if (c.format != "json.gz") {
-      htsFile* ifile = bcf_open(c.vcffile.string().c_str(), "r");
-      if (ifile == NULL) {
-	std::cerr << "Fail to open file " << c.vcffile.string() << std::endl;
-	return 1;
-      }
-      bcf_hdr_t* hdr = bcf_hdr_read(ifile);
-      if (hdr == NULL) {
-	std::cerr << "Fail to open index file " << c.vcffile.string() << std::endl;
-	return 1;
-      }
-      bcf_hdr_destroy(hdr);
-      bcf_close(ifile);
+    htsFile* ifile = bcf_open(c.vcffile.string().c_str(), "r");
+    if (ifile == NULL) {
+      std::cerr << "Fail to open file " << c.vcffile.string() << std::endl;
+      return 1;
     }
+    bcf_hdr_t* hdr = bcf_hdr_read(ifile);
+    if (hdr == NULL) {
+      std::cerr << "Fail to open index file " << c.vcffile.string() << std::endl;
+      return 1;
+    }
+    bcf_hdr_destroy(hdr);
+    bcf_close(ifile);
     c.hasVcfFile = true;
   } else c.hasVcfFile = false;
 

@@ -2,7 +2,7 @@
 ============================================================================
 DELLY: Structural variant discovery by integrated PE mapping and SR analysis
 ============================================================================
-Copyright (C) 2012 Tobias Rausch
+Copyright (C) 2012-2018 Tobias Rausch
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -485,7 +485,6 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
     
     // Iterate all structural variants
     typedef std::vector<TStructuralVariantRecord> TSVs;
-    uint32_t lastId = svs.size();
     now = boost::posix_time::second_clock::local_time();
     std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Genotyping" << std::endl;
     boost::progress_display show_progress( svs.size() );
@@ -571,24 +570,13 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
 	  hp1rvcount[file_c] = 0;
 	  hp2rvcount[file_c] = 0;
 	}
-	if (spanCountMap[file_c][svIter->id].ref.size() < spanCountMap[file_c][lastId + svIter->id].ref.size()) {
-	  drcount[file_c] = spanCountMap[file_c][svIter->id].ref.size();
-	  dvcount[file_c] = spanCountMap[file_c][svIter->id].alt.size();
-	  if (c.isHaplotagged) {
-	    hp1drcount[file_c] = spanCountMap[file_c][svIter->id].refh1;
-	    hp2drcount[file_c] = spanCountMap[file_c][svIter->id].refh2;
-	    hp1dvcount[file_c] = spanCountMap[file_c][svIter->id].alth1;
-	    hp2dvcount[file_c] = spanCountMap[file_c][svIter->id].alth2;
-	  }
-	} else {
-	  drcount[file_c] = spanCountMap[file_c][lastId + svIter->id].ref.size();
-	  dvcount[file_c] = spanCountMap[file_c][lastId + svIter->id].alt.size();
-	  if (c.isHaplotagged) {
-	    hp1drcount[file_c] = spanCountMap[file_c][lastId + svIter->id].refh1;
-	    hp2drcount[file_c] = spanCountMap[file_c][lastId + svIter->id].refh2;
-	    hp1dvcount[file_c] = spanCountMap[file_c][lastId + svIter->id].alth1;
-	    hp2dvcount[file_c] = spanCountMap[file_c][lastId + svIter->id].alth2;
-	  }
+	drcount[file_c] = spanCountMap[file_c][svIter->id].ref.size();
+	dvcount[file_c] = spanCountMap[file_c][svIter->id].alt.size();
+	if (c.isHaplotagged) {
+	  hp1drcount[file_c] = spanCountMap[file_c][svIter->id].refh1;
+	  hp2drcount[file_c] = spanCountMap[file_c][svIter->id].refh2;
+	  hp1dvcount[file_c] = spanCountMap[file_c][svIter->id].alth1;
+	  hp2dvcount[file_c] = spanCountMap[file_c][svIter->id].alth2;
 	}
 	rrcount[file_c] = jctCountMap[file_c][svIter->id].ref.size();
 	rvcount[file_c] = jctCountMap[file_c][svIter->id].alt.size();
@@ -601,12 +589,7 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
 	
 	// Compute GLs
 	if (svIter->precise) _computeGLs(bl, jctCountMap[file_c][svIter->id].ref, jctCountMap[file_c][svIter->id].alt, gls, gqval, gts, file_c);
-	else {  // Imprecise SVs
-	  if (spanCountMap[file_c][svIter->id].ref.size() < spanCountMap[file_c][lastId + svIter->id].ref.size()) 
-	    _computeGLs(bl, spanCountMap[file_c][svIter->id].ref, spanCountMap[file_c][svIter->id].alt, gls, gqval, gts, file_c);
-	  else
-	    _computeGLs(bl, spanCountMap[file_c][lastId + svIter->id].ref, spanCountMap[file_c][lastId + svIter->id].alt, gls, gqval, gts, file_c);
-	}
+	else _computeGLs(bl, spanCountMap[file_c][svIter->id].ref, spanCountMap[file_c][svIter->id].alt, gls, gqval, gts, file_c);
 	
 	// Compute RCs
 	rcl[file_c] = readCountMap[file_c][svIter->id].leftRC;
