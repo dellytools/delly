@@ -386,6 +386,7 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
 
   // Open one bam file header
   samFile* samfile = sam_open(c.files[0].string().c_str(), "r");
+  hts_set_fai_filename(samfile, c.genome.string().c_str());
   bam_hdr_t* bamhd = sam_hdr_read(samfile);
 
   // Output all structural variants
