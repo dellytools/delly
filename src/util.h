@@ -364,6 +364,7 @@ namespace torali
     TSamHeader hdr(c.files.size());
     for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
       samfile[file_c] = sam_open(c.files[file_c].string().c_str(), "r");
+      hts_set_fai_filename(samfile[file_c], c.genome.string().c_str());
       idx[file_c] = sam_index_load(samfile[file_c], c.files[file_c].string().c_str());
       hdr[file_c] = sam_hdr_read(samfile[file_c]);
       sampleLib[file_c] = TLibraryMap();
