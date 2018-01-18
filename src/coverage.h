@@ -549,7 +549,7 @@ annotateCoverage(TConfig& c, TSampleLibrary& sampleLib, TCovRecord& ict, TCovera
 			  std::string padNumber = boost::lexical_cast<std::string>(itBp->id);
 			  padNumber.insert(padNumber.begin(), 8 - padNumber.length(), '0');
 			  svid += padNumber;
-			  dumpOut << svid << "\t" << c.files[file_c].string() << "\t" << bam_get_qname(rec) << "\t" << hdr[file_c]->target_name[rec->core.tid] << "\t" << rec->core.pos << "\t" << hdr[file_c]->target_name[rec->core.mtid] << "\t" << rec->core.mpos << "\t" << rec->core.qual << "\tSR" << std::endl;
+			  dumpOut << svid << "\t" << c.files[file_c].string() << "\t" << bam_get_qname(rec) << "\t" << hdr[file_c]->target_name[rec->core.tid] << "\t" << rec->core.pos << "\t" << hdr[file_c]->target_name[rec->core.mtid] << "\t" << rec->core.mpos << "\t" << (int32_t) rec->core.qual << "\tSR" << std::endl;
 			}
 			countMap[file_c][itBp->id].alt.push_back((uint8_t) std::min(aq, (uint32_t) rec->core.qual));
 			if (hpptr) {
@@ -693,7 +693,7 @@ annotateCoverage(TConfig& c, TSampleLibrary& sampleLib, TCovRecord& ict, TCovera
 		      std::string padNumber = boost::lexical_cast<std::string>(itSpan->id);
 		      padNumber.insert(padNumber.begin(), 8 - padNumber.length(), '0');
 		      svid += padNumber;
-		      dumpOut << svid << "\t" << c.files[file_c].string() << "\t" << bam_get_qname(rec) << "\t" << hdr[file_c]->target_name[rec->core.tid] << "\t" << rec->core.pos << "\t" << hdr[file_c]->target_name[rec->core.mtid] << "\t" << rec->core.mpos << "\t" << rec->core.qual << "\tPE" << std::endl;
+		      dumpOut << svid << "\t" << c.files[file_c].string() << "\t" << bam_get_qname(rec) << "\t" << hdr[file_c]->target_name[rec->core.tid] << "\t" << rec->core.pos << "\t" << hdr[file_c]->target_name[rec->core.mtid] << "\t" << rec->core.mpos << "\t" << (int32_t) rec->core.qual << "\tPE" << std::endl;
 		    }
 		    spanMap[file_c][itSpan->id].alt.push_back(pairQuality);
 		    if (hpptr) {

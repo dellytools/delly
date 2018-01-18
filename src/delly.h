@@ -377,7 +377,7 @@ int delly(int argc, char **argv) {
   geno.add_options()
     ("vcffile,v", boost::program_options::value<boost::filesystem::path>(&c.vcffile), "input VCF/BCF file for genotyping")
     ("geno-qual,u", boost::program_options::value<unsigned short>(&c.minGenoQual)->default_value(5), "min. mapping quality for genotyping")
-    ("dump,d", boost::program_options::value<boost::filesystem::path>(&c.srpedump), "dump SR and PE info (slow)")
+    ("dump,d", boost::program_options::value<boost::filesystem::path>(&c.srpedump), "gzipped output file for SV-reads (optional)")
     ;
 
   // Define hidden options
