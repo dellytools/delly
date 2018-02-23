@@ -481,15 +481,6 @@ namespace torali
 	}
 	// Check that this is a proper paired-end library
 	if (paramIt->second.processedNumPairs >= minNumAlignments) {
-	  // Get default library orientation
-	  if (paramIt->second.rplus < paramIt->second.nonrplus) {
-	    std::cerr << "Error: One library has a non-default paired-end layout! Read-group: " << paramIt->first << std::endl;
-	    std::cerr << "The expected paired-end orientation is   ---Read1--->      <---Read2---  which is the default illumina paired-end layout." << std::endl;
-#pragma omp critical
-	    {
-	      retVal = false;
-	    }
-	  }
 	  typedef typename LibraryParams::TSizeVector TVecISize;
 	  std::sort(paramIt->second.vecISize.begin(), paramIt->second.vecISize.end());
 	  paramIt->second.median = paramIt->second.vecISize[paramIt->second.vecISize.size() / 2];
@@ -505,15 +496,22 @@ namespace torali
 	for(TParams::iterator paramIt=params.begin(); paramIt != params.end(); ++paramIt) {
 	  typename TLibraryMap::iterator libInfoIt = sampleLib[file_c].insert(std::make_pair(paramIt->first, LibraryInfo())).first;
 	  if (paramIt->second.processedNumReads > 0) libInfoIt->second.rs = paramIt->second.rs;
-	  if ((paramIt->second.median >= 50) && (paramIt->second.median<=100000)) {
-	    libInfoIt->second.median = paramIt->second.median;
-	    libInfoIt->second.mad = paramIt->second.mad;
-	    libInfoIt->second.maxNormalISize = libInfoIt->second.median + (5 * libInfoIt->second.mad);
-	    libInfoIt->second.minNormalISize = libInfoIt->second.median - (5 * libInfoIt->second.mad);
-	    if (libInfoIt->second.minNormalISize < 0) libInfoIt->second.minNormalISize=0;
-	    libInfoIt->second.maxISizeCutoff = libInfoIt->second.median + (c.madCutoff * libInfoIt->second.mad);
-	    libInfoIt->second.minISizeCutoff = libInfoIt->second.median - (c.madCutoff * libInfoIt->second.mad);
-	    if (libInfoIt->second.minISizeCutoff < 0) libInfoIt->second.minISizeCutoff=0;
+
+	  // Get default library orientation
+	  if (paramIt->second.rplus < paramIt->second.nonrplus) {
+	    std::cerr << "Warning: One library has a non-default paired-end layout! Read-group: " << paramIt->first << std::endl;
+	    std::cerr << "The expected paired-end orientation is   ---Read1--->      <---Read2---  which is the default illumina paired-end layout." << std::endl;
+	  } else {
+	    if ((paramIt->second.median >= 50) && (paramIt->second.median<=100000)) {
+	      libInfoIt->second.median = paramIt->second.median;
+	      libInfoIt->second.mad = paramIt->second.mad;
+	      libInfoIt->second.maxNormalISize = libInfoIt->second.median + (5 * libInfoIt->second.mad);
+	      libInfoIt->second.minNormalISize = libInfoIt->second.median - (5 * libInfoIt->second.mad);
+	      if (libInfoIt->second.minNormalISize < 0) libInfoIt->second.minNormalISize=0;
+	      libInfoIt->second.maxISizeCutoff = libInfoIt->second.median + (c.madCutoff * libInfoIt->second.mad);
+	      libInfoIt->second.minISizeCutoff = libInfoIt->second.median - (c.madCutoff * libInfoIt->second.mad);
+	      if (libInfoIt->second.minISizeCutoff < 0) libInfoIt->second.minISizeCutoff=0;
+	    }
 	  }
 	}
       }
