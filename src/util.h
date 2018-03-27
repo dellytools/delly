@@ -234,7 +234,7 @@ namespace torali
     bool rgPresent = false;
     for(;itH!=itHEnd; ++itH) {
       if (itH->find("@RG")==0) {
-	std::string delim("\t ");
+	std::string delim("\t");
 	TStrParts keyval;
 	boost::split(keyval, *itH, boost::is_any_of(delim));
 	TStrParts::const_iterator itKV = keyval.begin();
