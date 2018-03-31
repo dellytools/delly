@@ -94,7 +94,7 @@ Germline SV calling
 
 `bcftools merge -m id -O b -o merged.bcf s1.geno.bcf s2.geno.bcf ... sN.geno.bcf`
 
-* Apply the germline SV filter
+* Apply the germline SV filter which requires at least 20 unrelated samples
 
 `delly filter -f germline -o germline.bcf merged.bcf`
 
