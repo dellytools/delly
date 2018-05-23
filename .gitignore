@@ -1,6 +1,4 @@
-.boost
 .htslib
-.bcftools
 *.pyc
 
 # Binaries

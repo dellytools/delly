@@ -2,11 +2,3 @@
 	path = src/htslib
 	url = https://github.com/samtools/htslib.git
 	ignore = dirty
-[submodule "src/modular-boost"]
-	path = src/modular-boost
-	url = https://github.com/boostorg/boost.git
-	ignore = dirty
-[submodule "src/bcftools"]
-	path = src/bcftools
-	url = https://github.com/samtools/bcftools.git
-	ignore = dirty

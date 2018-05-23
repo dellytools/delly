@@ -4,13 +4,17 @@ STATIC ?= 0
 
 # Submodules
 PWD = $(shell pwd)
-SEQTK_ROOT ?= ${PWD}/src/htslib/
-BOOST_ROOT ?= ${PWD}/src/modular-boost
+EBROOTHTSLIB ?= ${PWD}/src/htslib/
+
+# Install dir
+prefix = ${PWD}
+exec_prefix = $(prefix)
+bindir ?= $(exec_prefix)/bin
 
 # Flags
 CXX=g++
-CXXFLAGS += -isystem ${SEQTK_ROOT} -isystem ${BOOST_ROOT} -pedantic -W -Wall -Wno-unknown-pragmas -D__STDC_LIMIT_MACROS -fno-strict-aliasing
-LDFLAGS += -L${SEQTK_ROOT} -L${BOOST_ROOT}/stage/lib -lboost_iostreams -lboost_filesystem -lboost_system -lboost_program_options -lboost_date_time 
+CXXFLAGS += -isystem ${EBROOTHTSLIB} -pedantic -W -Wall -Wno-unknown-pragmas -D__STDC_LIMIT_MACROS -fno-strict-aliasing
+LDFLAGS += -L${EBROOTHTSLIB} -L${EBROOTHTSLIB}/lib -lboost_iostreams -lboost_filesystem -lboost_system -lboost_program_options -lboost_date_time 
 
 # Additional flags for release/debug
 ifeq (${PARALLEL}, 1)
@@ -23,7 +27,7 @@ endif
 ifeq (${STATIC}, 1)
 	LDFLAGS += -static -static-libgcc -pthread -lhts -lz -llzma -lbz2
 else
-	LDFLAGS += -lhts -lz -llzma -lbz2 -Wl,-rpath,${SEQTK_ROOT},-rpath,${BOOST_ROOT}/stage/lib
+	LDFLAGS += -lhts -lz -llzma -lbz2 -Wl,-rpath,${EBROOTHTSLIB}
 endif
 ifeq (${DEBUG}, 1)
 	CXXFLAGS += -g -O0 -fno-inline -DDEBUG
@@ -33,34 +37,34 @@ else ifeq (${DEBUG}, 2)
 else
 	CXXFLAGS += -O3 -fno-tree-vectorize -DNDEBUG
 endif
+ifeq (${EBROOTHTSLIB}, ${PWD}/src/htslib/)
+	SUBMODULES += .htslib
+endif
 
 
 # External sources
 HTSLIBSOURCES = $(wildcard src/htslib/*.c) $(wildcard src/htslib/*.h)
-BOOSTSOURCES = $(wildcard src/modular-boost/libs/iostreams/include/boost/iostreams/*.hpp)
-DELLYSOURCES = $(wildcard src/*.h) $(wildcard src/*.cpp)
+SOURCES = $(wildcard src/*.h) $(wildcard src/*.cpp)
 
 # Targets
-TARGETS = .htslib .bcftools .boost src/delly src/dpe
+BUILT_PROGRAMS = src/delly
+TARGETS = ${SUBMODULES} ${BUILT_PROGRAMS}
 
 all:   	$(TARGETS)
 
 .htslib: $(HTSLIBSOURCES)
 	cd src/htslib && make && make lib-static && cd ../../ && touch .htslib
 
-.bcftools: $(HTSLIBSOURCES)
-	cd src/bcftools && make && cd ../../ && touch .bcftools
-
-.boost: $(BOOSTSOURCES)
-	cd src/modular-boost && ./bootstrap.sh --prefix=${PWD}/src/modular-boost --without-icu --with-libraries=iostreams,filesystem,system,program_options,date_time && ./b2 && ./b2 headers && cd ../../ && touch .boost
-
-src/delly: .htslib .bcftools .boost $(DELLYSOURCES)
+src/delly: ${SUBMODULES} $(SOURCES)
 	$(CXX) $(CXXFLAGS) $@.cpp -o $@ $(LDFLAGS)
 
-src/dpe: .htslib .bcftools .boost $(DELLYSOURCES)
+src/dpe: ${SUBMODULES} $(SOURCES)
 	$(CXX) $(CXXFLAGS) $@.cpp -o $@ $(LDFLAGS)
+
+install: ${BUILT_PROGRAMS}
+	mkdir -p ${bindir}
+	install -p ${BUILT_PROGRAMS} ${bindir}
 
 clean:
 	cd src/htslib && make clean
-	cd src/modular-boost && ./b2 --clean-all
-	rm -f $(TARGETS) $(TARGETS:=.o) .htslib .boost .bcftools
+	rm -f $(TARGETS) $(TARGETS:=.o) ${SUBMODULES}
