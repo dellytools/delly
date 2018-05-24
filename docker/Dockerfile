@@ -30,7 +30,7 @@ RUN apt-get update && apt-get install -y \
 
 # set environment
 ENV BOOST_ROOT /usr
-ENV SEQTK_ROOT /opt/htslib
+ENV EBROOTHTSLIB /opt/htslib
 
 # install delly
 RUN cd /opt \
@@ -54,12 +54,8 @@ RUN cd /opt \
 RUN cd /opt \
     && git clone https://github.com/tobiasrausch/delly.git \
     && cd /opt/delly/ \
-    && touch .bcftools .htslib .boost \
     && make all \
-    && install -p /opt/delly/src/delly /usr/local/bin/
-
-# install python variant filtering dependencies
-#RUN pip install -r delly/complexVariants/requirements.txt
+    && make install
 
 # add user
 RUN groupadd -r -g 1000 ubuntu && useradd -r -g ubuntu -u 1000 -m ubuntu
