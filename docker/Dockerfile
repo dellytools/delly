@@ -52,7 +52,7 @@ RUN cd /opt \
     && make \
     && make install
 RUN cd /opt \
-    && git clone https://github.com/tobiasrausch/delly.git \
+    && git clone https://github.com/dellytools/delly.git \
     && cd /opt/delly/ \
     && make all \
     && make install
