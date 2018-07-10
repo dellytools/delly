@@ -56,4 +56,4 @@ WORKDIR /root/
 ENV PATH="/opt/delly/bin:${PATH}"
 
 # by default /bin/bash is executed
-CMD ["/bin/bash"]
+CMD ["/bin/sh"]
