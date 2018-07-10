@@ -5,8 +5,6 @@ MAINTAINER Tobias Rausch rausch@embl.de
 
 # install required packages
 RUN apt-get update && apt-get install -y \
-    ant \
-    asciidoc \
     build-essential \
     cmake \
     g++ \
@@ -22,11 +20,9 @@ RUN apt-get update && apt-get install -y \
     libhdf5-dev \
     libncurses-dev \
     liblzma-dev \
-    python \
-    python-dev \
-    python-pip \
     zlib1g-dev \
-    && apt-get clean
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
 # set environment
 ENV BOOST_ROOT /usr
@@ -40,26 +36,21 @@ RUN cd /opt \
     && make lib-static \
     && make install
 RUN cd /opt \
-    && git clone https://github.com/samtools/bcftools.git \
-    && cd /opt/bcftools \
-    && git checkout tags/1.4 \
-    && make \
-    && make docs \
-    && make install
-RUN cd /opt \
-    && git clone https://github.com/samtools/samtools.git \
-    && cd /opt/samtools \
-    && make \
-    && make install
-RUN cd /opt \
     && git clone https://github.com/dellytools/delly.git \
     && cd /opt/delly/ \
-    && make all \
+    && make STATIC=1 all \
     && make install
 
-# add user
-RUN groupadd -r -g 1000 ubuntu && useradd -r -g ubuntu -u 1000 -m ubuntu
-USER ubuntu
+
+# Multi-stage build
+FROM alpine:latest
+RUN apk --no-cache add ca-certificates
+RUN mkdir -p /opt/delly/bin
+WORKDIR /opt/delly/bin
+COPY --from=0 /opt/delly/bin/delly .
+
+# Workdir
+WORKDIR /root/
 
 # Add Delly to PATH
 ENV PATH="/opt/delly/bin:${PATH}"
