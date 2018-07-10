@@ -61,5 +61,8 @@ RUN cd /opt \
 RUN groupadd -r -g 1000 ubuntu && useradd -r -g ubuntu -u 1000 -m ubuntu
 USER ubuntu
 
+# Add Delly to PATH
+ENV PATH="/opt/delly/bin:${PATH}"
+
 # by default /bin/bash is executed
 CMD ["/bin/bash"]
