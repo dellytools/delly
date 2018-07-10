@@ -7,7 +7,7 @@ Dockerized DELLY
 
 You can then run DELLY from that image. Below we assume your alignment files in BAM format are in /var/data which is mounted as /root in the docker container:
 
-`docker run -it -v /var/data/:/root dellytools/delly /bin/sh`
+`docker run -it -v /var/data/:/root dellytools/delly`
 
 `delly call -o /root/sv.bcf -g /root/ref.fa /root/control.bam /root/tumor.bam`
 
