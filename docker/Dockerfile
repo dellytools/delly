@@ -44,7 +44,6 @@ RUN cd /opt \
 
 # Multi-stage build
 FROM alpine:latest
-RUN apk --no-cache add ca-certificates
 RUN mkdir -p /opt/delly/bin
 WORKDIR /opt/delly/bin
 COPY --from=0 /opt/delly/bin/delly .
