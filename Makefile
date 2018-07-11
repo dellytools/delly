@@ -16,19 +16,21 @@ CXX=g++
 CXXFLAGS += -isystem ${EBROOTHTSLIB} -pedantic -W -Wall -Wno-unknown-pragmas -D__STDC_LIMIT_MACROS -fno-strict-aliasing
 LDFLAGS += -L${EBROOTHTSLIB} -L${EBROOTHTSLIB}/lib -lboost_iostreams -lboost_filesystem -lboost_system -lboost_program_options -lboost_date_time 
 
-# Additional flags for release/debug
+# Flags for parallel computation
 ifeq (${PARALLEL}, 1)
 	CXXFLAGS += -fopenmp -DOPENMP
 else
 	CXXFLAGS += -DNOPENMP
 endif
 
-# Additional flags for release/debug
+# Flags for static compile
 ifeq (${STATIC}, 1)
 	LDFLAGS += -static -static-libgcc -pthread -lhts -lz -llzma -lbz2
 else
 	LDFLAGS += -lhts -lz -llzma -lbz2 -Wl,-rpath,${EBROOTHTSLIB}
 endif
+
+# Flags for debugging, profiling and releases
 ifeq (${DEBUG}, 1)
 	CXXFLAGS += -g -O0 -fno-inline -DDEBUG
 else ifeq (${DEBUG}, 2)
@@ -53,12 +55,7 @@ TARGETS = ${SUBMODULES} ${BUILT_PROGRAMS}
 all:   	$(TARGETS)
 
 .htslib: $(HTSLIBSOURCES)
-	if [ -r src/htslib/Makefile ]; then \
-	  cd src/htslib && make && make lib-static ; \
-	else \
-	  echo "I: No htslib in src/htslib, assuming global installation"; \
-	fi
-	touch .htslib
+	if [ -r src/htslib/Makefile ]; then cd src/htslib && make && make lib-static && cd ../../ && touch .htslib; fi
 
 src/delly: ${SUBMODULES} $(SOURCES)
 	$(CXX) $(CXXFLAGS) $@.cpp -o $@ $(LDFLAGS)
