@@ -53,7 +53,12 @@ TARGETS = ${SUBMODULES} ${BUILT_PROGRAMS}
 all:   	$(TARGETS)
 
 .htslib: $(HTSLIBSOURCES)
-	cd src/htslib && make && make lib-static && cd ../../ && touch .htslib
+	if [ -r src/htslib/Makefile ]; then \
+	  cd src/htslib && make && make lib-static ; \
+	else \
+	  echo "I: No htslib in src/htslib, assuming global installation"; \
+	fi
+	touch .htslib
 
 src/delly: ${SUBMODULES} $(SOURCES)
 	$(CXX) $(CXXFLAGS) $@.cpp -o $@ $(LDFLAGS)
@@ -66,5 +71,10 @@ install: ${BUILT_PROGRAMS}
 	install -p ${BUILT_PROGRAMS} ${bindir}
 
 clean:
-	cd src/htslib && make clean
+	if [ -r src/htslib/Makefile ]; then cd src/htslib && make clean; fi
 	rm -f $(TARGETS) $(TARGETS:=.o) ${SUBMODULES}
+
+distclean: clean
+	rm -f ${BUILT_PROGRAMS}
+
+.PHONY: clean distclean install all
