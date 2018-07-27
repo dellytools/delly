@@ -86,6 +86,8 @@ struct Config {
   bool hasVcfFile;
   bool isHaplotagged;
   bool dumpflag;
+  bool svtcmd;
+  std::set<int32_t> svtset;
   DnaScore<int> aliscore;
   boost::filesystem::path outfile;
   boost::filesystem::path vcffile;
@@ -357,9 +359,11 @@ int delly(int argc, char **argv) {
   c.isHaplotagged = false;
 
   // Define generic options
+  std::string svtype;
   boost::program_options::options_description generic("Generic options");
   generic.add_options()
     ("help,?", "show help message")
+    ("svtype,t", boost::program_options::value<std::string>(&svtype)->default_value("ALL"), "SV type to compute [DEL, INS, DUP, INV, BND, ALL]")
     ("genome,g", boost::program_options::value<boost::filesystem::path>(&c.genome), "genome fasta file")
     ("exclude,x", boost::program_options::value<boost::filesystem::path>(&c.exclude), "file with regions to exclude")
     ("outfile,o", boost::program_options::value<boost::filesystem::path>(&c.outfile)->default_value("sv.bcf"), "SV BCF output file")
@@ -408,6 +412,29 @@ int delly(int argc, char **argv) {
     return 0;
   }
 
+  // Only one SV type to compute?
+  c.svtcmd = false;
+  if (vm.count("svtype")) {
+    c.svtcmd = true;
+    if (svtype == "DEL") {
+      c.svtset.insert(2);
+    } else if (svtype == "INS") {
+      c.svtset.insert(4);
+    } else if (svtype == "DUP") {
+      c.svtset.insert(3);
+    } else if (svtype == "INV") {
+      c.svtset.insert(0);
+      c.svtset.insert(1);
+    } else if (svtype == "BND") {
+      c.svtset.insert(DELLY_SVT_TRANS + 0);
+      c.svtset.insert(DELLY_SVT_TRANS + 1);
+      c.svtset.insert(DELLY_SVT_TRANS + 2);
+      c.svtset.insert(DELLY_SVT_TRANS + 3);
+    } else {
+      c.svtcmd = false;
+    }
+  }
+  
   // Dump PE and SR support?
   if (vm.count("dump")) c.dumpflag = true;
   else c.dumpflag = false;

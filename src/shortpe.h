@@ -716,6 +716,7 @@ namespace torali
 	    // Small indel detection using soft clips
 	    if (c.indels) {
 	      for(int32_t svt = 2; svt<5; svt += 2) {
+		if ((c.svtcmd) && (c.svtset.find(svt) == c.svtset.end())) continue;
 		int clipSize = 0;
 		int splitPoint = 0;
 		bool leadingSoftClip = false;
@@ -800,6 +801,7 @@ namespace torali
 	      // SV type
 	      int32_t svt = _isizeMappingPos(rec, overallMaxISize);
 	      if (svt == -1) continue;
+	      if ((c.svtcmd) && (c.svtset.find(svt) == c.svtset.end())) continue;
 
 	      // Library
 	      typename TLibraryMap::iterator libIt = _findLib(rec, sampleLib[file_c]);
