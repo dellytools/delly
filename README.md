@@ -9,7 +9,6 @@
 [![Anaconda-Server Badge](https://anaconda.org/bioconda/delly/badges/downloads.svg)](https://anaconda.org/bioconda/delly)
 [![Build Status](https://travis-ci.org/dellytools/delly.svg?branch=master)](https://travis-ci.org/dellytools/delly)
 [![Docker Build](https://img.shields.io/docker/build/dellytools/delly.svg)](https://hub.docker.com/r/dellytools/delly/)
-[![Docker Pulls](https://img.shields.io/docker/pulls/dellytools/delly.svg)](https://hub.docker.com/r/dellytools/delly/)
 [![GitHub license](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://raw.githubusercontent.com/dellytools/delly/master/LICENSE)
 [![GitHub Releases](https://img.shields.io/github/release/dellytools/delly.svg)](https://github.com/dellytools/delly/releases)
 [![GitHub Issues](https://img.shields.io/github/issues/dellytools/delly.svg)](https://github.com/dellytools/delly/issues)
