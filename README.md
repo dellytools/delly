@@ -106,7 +106,7 @@ FAQ
 * What is the smallest SV size Delly can call?  
 This depends on the sharpness of the insert size distribution. For an insert size of 200-300bp with a 20-30bp standard deviation, Delly starts to call reliable SVs >=300bp. Delly also supports calling of small InDels using soft-clipped reads only (-i option). In this mode the smallest SV size called is 15bp.
 
-* Is Delly read-group aware?
+* Is Delly read-group aware?   
 Yes. If you want to estimate separate insert size distributions for every read-group then use the -e option.
 
 * Can Delly be used on a non-diploid genome?  
@@ -115,7 +115,7 @@ Yes and no. The SV site discovery works for any ploidy. However, Delly's genotyp
 * How do I run Delly if I have multiple different libraries/bam files for a single sample?    
 Merge these BAMs using tools such as [Picard](http://broadinstitute.github.io/picard/) and tag each library with a unique ReadGroup. If you have a sample with multiple read-groups please run delly with the -e option.
 
-* Delly is running too slowly what can I do?
+* Delly is running too slowly what can I do?    
 You should exclude telomere and centromere regions and also all unplaced contigs. Delly ships with such an exclude list for human and mouse samples. In addition, you can filter input reads more stringently using -q 20 and -s 15. Small InDel calling takes more time (-i option), leave it out if you are only interested in large SVs (>=300bp).
 
 * Are non-unique alignments, multi-mappings and/or multiple split-read alignments allowed?  
