@@ -50,7 +50,10 @@ Delly primarily parallelizes on the sample level. Hence, OMP_NUM_THREADS should 
 Running Delly
 -------------
 
-Delly needs a sorted, indexed and duplicate marked bam file for every input sample. An indexed reference genome is required to identify split-reads. The output is in [BCF](http://samtools.github.io/bcftools/) format with a csi index. Delly supports germline and somatic SV discovery, genotyping and filtering. Because of that, Delly has been modularized and common workflows for germline and somatic SV calling are outlined below. If you do need VCF output you need a recent version of [BCFtools](http://samtools.github.io/bcftools/) for file conversion.
+Delly needs a sorted, indexed and duplicate marked bam file for every input sample. An indexed reference genome is required to identify split-reads. The output is in [BCF](http://samtools.github.io/bcftools/) format with a csi index. Delly supports germline and somatic SV discovery, genotyping and filtering. Because of that, Delly has been modularized and common workflows for germline and somatic SV calling are outlined below. If you do need VCF output you need a recent version of [BCFtools](http://samtools.github.io/bcftools/) for file conversion
+.
+
+`delly call -x hg19.excl -o delly.bcf -g hg19.fa input.bam`
 
 `bcftools view delly.bcf > delly.vcf`
 
