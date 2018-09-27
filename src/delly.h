@@ -81,6 +81,7 @@ struct Config {
   int32_t indelsize;
   uint32_t graphPruning;
   float flankQuality;
+  bool ignoreRG;
   bool indels;
   bool hasExcludeFile;
   bool hasVcfFile;
@@ -400,7 +401,8 @@ int delly(int argc, char **argv) {
     ("map-qual,q", boost::program_options::value<unsigned short>(&c.minMapQual)->default_value(1), "min. paired-end (PE) mapping quality")
     ("qual-tra,r", boost::program_options::value<unsigned short>(&c.minTraQual)->default_value(20), "min. PE quality for translocation")
     ("mad-cutoff,s", boost::program_options::value<unsigned short>(&c.madCutoff)->default_value(9), "insert size cutoff, median+s*MAD (deletions only)")
-    ("noindels,n", "no small InDel calling")
+    ("indels,i", "activate small InDel calling")
+    ("readgroup,e", "enable read-group aware calling")
     ;
 
   boost::program_options::options_description geno("Genotyping options");
@@ -590,9 +592,13 @@ int delly(int argc, char **argv) {
   if (c.minGenoQual<5) c.minGenoQual=5;
 
   // Small InDels?
-  if (vm.count("noindels")) c.indels = false;
-  else c.indels = true;
-  
+  if (vm.count("indels")) c.indels = true;
+  else c.indels = false;
+
+  // Read-group aware calling
+  if (vm.count("readgroup")) c.ignoreRG = false;
+  else c.ignoreRG = true;
+
   // Run main program
   c.aliscore = DnaScore<int>(5, -4, -10, -1);
   c.flankQuality = 0.95;
