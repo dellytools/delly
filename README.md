@@ -50,9 +50,9 @@ Delly primarily parallelizes on the sample level. Hence, OMP_NUM_THREADS should 
 Running Delly
 -------------
 
-Delly needs a sorted, indexed and duplicate marked bam file for every input sample. An indexed reference genome is required to identify split-reads. The output is in [BCF](http://samtools.github.io/bcftools/) format with a csi index. Delly supports germline and somatic SV discovery, genotyping and filtering. Because of that, Delly has been modularized and common workflows for germline and somatic SV calling are outlined below. If you do need VCF output you need a recent version of [BCFtools](http://samtools.github.io/bcftools/) (included as a submodule in Delly) for file conversion.
+Delly needs a sorted, indexed and duplicate marked bam file for every input sample. An indexed reference genome is required to identify split-reads. The output is in [BCF](http://samtools.github.io/bcftools/) format with a csi index. Delly supports germline and somatic SV discovery, genotyping and filtering. Because of that, Delly has been modularized and common workflows for germline and somatic SV calling are outlined below. If you do need VCF output you need a recent version of [BCFtools](http://samtools.github.io/bcftools/) for file conversion.
 
-`./delly/src/bcftools/bcftools view delly.bcf > delly.vcf`
+`bcftools view delly.bcf > delly.vcf`
 
 
 Somatic SV calling
@@ -104,16 +104,19 @@ Germline SV calling
 FAQ
 ---
 * What is the smallest SV size Delly can call?  
-This depends on the sharpness of the insert size distribution. For an insert size of 200-300bp with a 20-30bp standard deviation, Delly starts to call reliable SVs >=300bp. Delly also supports calling of small InDels using soft-clipped reads only. In this mode the smallest SV size called is 15bp.
+This depends on the sharpness of the insert size distribution. For an insert size of 200-300bp with a 20-30bp standard deviation, Delly starts to call reliable SVs >=300bp. Delly also supports calling of small InDels using soft-clipped reads only (-i option). In this mode the smallest SV size called is 15bp.
+
+* Is Delly read-group aware?
+Yes. If you want to estimate separate insert size distributions for every read-group then use the -e option.
 
 * Can Delly be used on a non-diploid genome?  
 Yes and no. The SV site discovery works for any ploidy. However, Delly's genotyping model assumes diploidy (hom. reference, het. and hom. alternative).
 
 * How do I run Delly if I have multiple different libraries/bam files for a single sample?    
-Merge these BAMs using tools such as [Picard](http://broadinstitute.github.io/picard/) and tag each library with a unique ReadGroup. 
+Merge these BAMs using tools such as [Picard](http://broadinstitute.github.io/picard/) and tag each library with a unique ReadGroup. If you have a sample with multiple read-groups please run delly with the -e option.
 
 * Delly is running too slowly what can I do?
-You should exclude telomere and centromere regions and also all unplaced contigs. Delly ships with such an exclude list for human and mouse samples. In addition, you can filter input reads more stringently using -q 20 and -s 15. You can also deactivate the small InDel calling using -n if you are only interested in large SVs (>=300bp).
+You should exclude telomere and centromere regions and also all unplaced contigs. Delly ships with such an exclude list for human and mouse samples. In addition, you can filter input reads more stringently using -q 20 and -s 15. Small InDel calling takes more time (-i option), leave it out if you are only interested in large SVs (>=300bp).
 
 * Are non-unique alignments, multi-mappings and/or multiple split-read alignments allowed?  
 Delly expects two alignment records in the bam file for every paired-end, one for the first and one for the second read. Multiple split-read alignment records of a given read are allowed if and only if one of them (e.g. the longest split alignment) is a primary alignment whereas all others are marked as secondary or supplementary (flag 0x0100 or flag 0x0800). This is the default for bwa mem.
