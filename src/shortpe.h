@@ -618,7 +618,6 @@ namespace torali
   inline void
   shortPE(TConfig const& c, TValidRegion const& validRegions, TVariants& svs, TSampleLib& sampleLib)
   {
-    typedef typename TSampleLib::value_type TLibraryMap;
     typedef typename TValidRegion::value_type TChrIntervals;
 
     // Open file handles
@@ -804,11 +803,12 @@ namespace torali
 	      if ((c.svtcmd) && (c.svtset.find(svt) == c.svtset.end())) continue;
 
 	      // Library
-	      typename TLibraryMap::iterator libIt = _findLib(rec, sampleLib[file_c]);
-	      if (libIt->second.median == 0) continue; // Single-end library
+	      int32_t libIdx = 0;
+	      if (!c.ignoreRG) libIdx = _findLib(rec, sampleLib[file_c]);
+	      if (sampleLib[file_c][libIdx].median == 0) continue; // Single-end library
 
 	      // Check library-specific insert size for deletions
-	      if ((svt == 2) && (libIt->second.maxISizeCutoff > std::abs(rec->core.isize))) continue;
+	      if ((svt == 2) && (sampleLib[file_c][libIdx].maxISizeCutoff > std::abs(rec->core.isize))) continue;
 
 	      // Get or store the mapping quality for the partner
 	      if (_firstPairObs(rec, lastAlignedPosReads)) {
@@ -849,9 +849,9 @@ namespace torali
 		
 #pragma omp critical
 		{
-		  bamRecord[svt].push_back(BamAlignRecord(rec, pairQuality, alignmentLength(rec), alenmate, libIt->second.median, libIt->second.mad, libIt->second.maxNormalISize));
+		  bamRecord[svt].push_back(BamAlignRecord(rec, pairQuality, alignmentLength(rec), alenmate, sampleLib[file_c][libIdx].median, sampleLib[file_c][libIdx].mad, sampleLib[file_c][libIdx].maxNormalISize));
 		}
-		++libIt->second.abnormal_pairs;
+		++sampleLib[file_c][libIdx].abnormal_pairs;
 	      }
 	    }
 	  }

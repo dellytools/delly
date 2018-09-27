@@ -242,7 +242,7 @@ namespace torali {
   }
 
   template<typename TLibraryMap>
-  inline typename TLibraryMap::iterator
+  inline int32_t
   _findLib(bam1_t* rec, TLibraryMap& lib) {
     std::string rG = "DefaultLib";
     uint8_t *rgptr = bam_aux_get(rec, "RG");
@@ -250,7 +250,9 @@ namespace torali {
       char* rg = (char*) (rgptr + 1);
       rG = std::string(rg);
     }
-    return lib.find(rG);
+    for(uint32_t libIdx = 0; libIdx < lib.size(); ++libIdx)
+      if (lib[libIdx].rg == rG) return libIdx;
+    return 0;
   }
   
 

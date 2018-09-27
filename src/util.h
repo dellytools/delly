@@ -48,9 +48,9 @@ namespace torali
     int32_t maxNormalISize;
     int32_t maxISizeCutoff;
     uint32_t abnormal_pairs;
+    std::string rg;
 
-
-    LibraryInfo() : rs(0), median(0), mad(0), minNormalISize(0), minISizeCutoff(0), maxNormalISize(0), maxISizeCutoff(0), abnormal_pairs(0) {}
+    LibraryInfo() : rs(0), median(0), mad(0), minNormalISize(0), minISizeCutoff(0), maxNormalISize(0), maxISizeCutoff(0), abnormal_pairs(0), rg("DefaultLib") {}
   };
 
 
@@ -281,26 +281,25 @@ namespace torali
     percentile = *(vec.begin() + int(vec.size() * p));
   }
 
-  template<typename TLibraryMap>
   inline int32_t
-  getMaxISizeCutoff(TLibraryMap const& lib) {
+  getMaxISizeCutoff(std::vector<LibraryInfo> const& lib) {
     int32_t overallVariability = 0;
-    for(typename TLibraryMap::const_iterator libIt = lib.begin(); libIt != lib.end(); ++libIt) {
-      if (libIt->second.maxISizeCutoff > overallVariability) overallVariability = libIt->second.maxISizeCutoff;
-      if (libIt->second.rs > overallVariability) overallVariability = libIt->second.rs;
+    for(uint32_t libIdx = 0; libIdx < lib.size(); ++libIdx) {
+      if (lib[libIdx].maxISizeCutoff > overallVariability) overallVariability = lib[libIdx].maxISizeCutoff;
+      if (lib[libIdx].rs > overallVariability) overallVariability = lib[libIdx].rs;
     }
     return overallVariability;
   }
 
-  template<typename TConfig, typename TLibraryMap>
+  template<typename TConfig>
   inline int32_t
-  getVariability(TConfig const& c, std::vector<TLibraryMap> const& sampleLib)
+  getVariability(TConfig const& c, std::vector< std::vector<LibraryInfo> > const& sampleLib)
   {
     int32_t overallVariability = 0;
     for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
-      for(typename TLibraryMap::const_iterator libIt=sampleLib[file_c].begin();libIt!=sampleLib[file_c].end();++libIt) {
-	if (libIt->second.maxNormalISize > overallVariability) overallVariability = libIt->second.maxNormalISize;
-	if (libIt->second.rs > overallVariability) overallVariability = libIt->second.rs;
+      for(uint32_t libIdx = 0; libIdx < sampleLib[file_c].size(); ++libIdx) {
+	if (sampleLib[file_c][libIdx].maxNormalISize > overallVariability) overallVariability = sampleLib[file_c][libIdx].maxNormalISize;
+	if (sampleLib[file_c][libIdx].rs > overallVariability) overallVariability = sampleLib[file_c][libIdx].rs;
       }
     }
     return overallVariability;
@@ -308,12 +307,11 @@ namespace torali
 
   template<typename TConfig>
   inline int32_t
-  getVariability(TConfig const&, boost::unordered_map<std::string, LibraryInfo> const& sampleLib) {
-    typedef boost::unordered_map<std::string, LibraryInfo> TLibraryMap;
+  getVariability(TConfig const&, std::vector<LibraryInfo> const& lib) {
     int32_t overallVariability = 0;
-    for(typename TLibraryMap::const_iterator libIt=sampleLib.begin();libIt!=sampleLib.end();++libIt) {
-      if (libIt->second.maxNormalISize > overallVariability) overallVariability = libIt->second.maxNormalISize;
-      if (libIt->second.rs > overallVariability) overallVariability = libIt->second.rs;
+    for(int32_t libIdx = 0; libIdx < lib.size(); ++libIdx) {
+      if (lib[libIdx].maxNormalISize > overallVariability) overallVariability = lib[libIdx].maxNormalISize;
+      if (lib[libIdx].rs > overallVariability) overallVariability = lib[libIdx].rs;
     }
     return overallVariability;
   }
@@ -384,29 +382,31 @@ namespace torali
       TParams params;
 
       // Get read groups
-      std::string header(hdr[file_c]->text);
-      std::string delimiters("\n");
-      typedef std::vector<std::string> TStrParts;
-      TStrParts lines;
-      boost::split(lines, header, boost::is_any_of(delimiters));
-      TStrParts::const_iterator itH = lines.begin();
-      TStrParts::const_iterator itHEnd = lines.end();
       bool rgPresent = false;
-      for(;itH!=itHEnd; ++itH) {
-	if (itH->find("@RG")==0) {
-	  std::string delim("\t");
-	  TStrParts keyval;
-	  boost::split(keyval, *itH, boost::is_any_of(delim));
-	  TStrParts::const_iterator itKV = keyval.begin();
-	  TStrParts::const_iterator itKVEnd = keyval.end();
-	  for(;itKV != itKVEnd; ++itKV) {
-	    size_t sp = itKV->find(":");
-	    if (sp != std::string::npos) {
-	      std::string field = itKV->substr(0, sp);
-	      if (field == "ID") {
-		rgPresent = true;
-		std::string rgID = itKV->substr(sp+1);
-		params.insert(std::make_pair(rgID, LibraryParams()));
+      if (!c.ignoreRG) {
+	std::string header(hdr[file_c]->text);
+	std::string delimiters("\n");
+	typedef std::vector<std::string> TStrParts;
+	TStrParts lines;
+	boost::split(lines, header, boost::is_any_of(delimiters));
+	TStrParts::const_iterator itH = lines.begin();
+	TStrParts::const_iterator itHEnd = lines.end();
+	for(;itH!=itHEnd; ++itH) {
+	  if (itH->find("@RG")==0) {
+	    std::string delim("\t");
+	    TStrParts keyval;
+	    boost::split(keyval, *itH, boost::is_any_of(delim));
+	    TStrParts::const_iterator itKV = keyval.begin();
+	    TStrParts::const_iterator itKVEnd = keyval.end();
+	    for(;itKV != itKVEnd; ++itKV) {
+	      size_t sp = itKV->find(":");
+	      if (sp != std::string::npos) {
+		std::string field = itKV->substr(0, sp);
+		if (field == "ID") {
+		  rgPresent = true;
+		  std::string rgID = itKV->substr(sp+1);
+		  params.insert(std::make_pair(rgID, LibraryParams()));
+		}
 	      }
 	    }
 	  }
@@ -429,10 +429,12 @@ namespace torali
 	      ++alignmentCount;
 	      
 	      std::string rG = "DefaultLib";
-	      uint8_t *rgptr = bam_aux_get(rec, "RG");
-	      if (rgptr) {
-		char* rg = (char*) (rgptr + 1);
-		rG = std::string(rg);
+	      if (!c.ignoreRG) {
+		uint8_t *rgptr = bam_aux_get(rec, "RG");
+		if (rgptr) {
+		  char* rg = (char*) (rgptr + 1);
+		  rG = std::string(rg);
+		}
 	      }
 	      TParams::iterator paramIt = params.find(rG);
 	      if (paramIt == params.end()) {
@@ -493,9 +495,11 @@ namespace torali
 
 #pragma omp critical
       {
-	for(TParams::iterator paramIt=params.begin(); paramIt != params.end(); ++paramIt) {
-	  typename TLibraryMap::iterator libInfoIt = sampleLib[file_c].insert(std::make_pair(paramIt->first, LibraryInfo())).first;
-	  if (paramIt->second.processedNumReads > 0) libInfoIt->second.rs = paramIt->second.rs;
+	sampleLib[file_c].resize(params.size(), LibraryInfo());
+	int32_t libIdx = 0;
+	for(TParams::iterator paramIt=params.begin(); paramIt != params.end(); ++paramIt, ++libIdx) {
+	  sampleLib[file_c][libIdx].rg = paramIt->first;
+	  if (paramIt->second.processedNumReads > 0) sampleLib[file_c][libIdx].rs = paramIt->second.rs;
 
 	  // Get default library orientation
 	  if (paramIt->second.rplus < paramIt->second.nonrplus) {
@@ -503,14 +507,14 @@ namespace torali
 	    std::cerr << "The expected paired-end orientation is   ---Read1--->      <---Read2---  which is the default illumina paired-end layout." << std::endl;
 	  } else {
 	    if ((paramIt->second.median >= 50) && (paramIt->second.median<=100000)) {
-	      libInfoIt->second.median = paramIt->second.median;
-	      libInfoIt->second.mad = paramIt->second.mad;
-	      libInfoIt->second.maxNormalISize = libInfoIt->second.median + (5 * libInfoIt->second.mad);
-	      libInfoIt->second.minNormalISize = libInfoIt->second.median - (5 * libInfoIt->second.mad);
-	      if (libInfoIt->second.minNormalISize < 0) libInfoIt->second.minNormalISize=0;
-	      libInfoIt->second.maxISizeCutoff = libInfoIt->second.median + (c.madCutoff * libInfoIt->second.mad);
-	      libInfoIt->second.minISizeCutoff = libInfoIt->second.median - (c.madCutoff * libInfoIt->second.mad);
-	      if (libInfoIt->second.minISizeCutoff < 0) libInfoIt->second.minISizeCutoff=0;
+	      sampleLib[file_c][libIdx].median = paramIt->second.median;
+	      sampleLib[file_c][libIdx].mad = paramIt->second.mad;
+	      sampleLib[file_c][libIdx].maxNormalISize = sampleLib[file_c][libIdx].median + (5 * sampleLib[file_c][libIdx].mad);
+	      sampleLib[file_c][libIdx].minNormalISize = sampleLib[file_c][libIdx].median - (5 * sampleLib[file_c][libIdx].mad);
+	      if (sampleLib[file_c][libIdx].minNormalISize < 0) sampleLib[file_c][libIdx].minNormalISize=0;
+	      sampleLib[file_c][libIdx].maxISizeCutoff = sampleLib[file_c][libIdx].median + (c.madCutoff * sampleLib[file_c][libIdx].mad);
+	      sampleLib[file_c][libIdx].minISizeCutoff = sampleLib[file_c][libIdx].median - (c.madCutoff * sampleLib[file_c][libIdx].mad);
+	      if (sampleLib[file_c][libIdx].minISizeCutoff < 0) sampleLib[file_c][libIdx].minISizeCutoff=0;
 	    }
 	  }
 	}
