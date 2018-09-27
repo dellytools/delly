@@ -957,7 +957,7 @@ namespace torali
 	    // Append new edge
 	    TCompEdgeList::iterator compEdgeIt = compEdge.find(compIndex);
 	    if (compEdgeIt->second.size() < c.graphPruning) {
-	      TWeightType weight = (TWeightType) ( std::log1p((double) abs( abs( (_minCoord(bamItNext->pos, bamItNext->mpos, svt) - minCoord) - (_maxCoord(bamItNext->pos, bamItNext->mpos, svt) - maxCoord) ) - abs(bamIt->Median - bamItNext->Median))) / std::log(2.0) );
+	      TWeightType weight = (TWeightType) ( std::log((double) abs( abs( (_minCoord(bamItNext->pos, bamItNext->mpos, svt) - minCoord) - (_maxCoord(bamItNext->pos, bamItNext->mpos, svt) - maxCoord) ) - abs(bamIt->Median - bamItNext->Median)) + 1) / std::log(2) );
 	      compEdgeIt->second.push_back(TEdgeRecord(bamItIndex, bamItIndexNext, weight));
 	    }
 	  }
