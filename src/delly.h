@@ -81,7 +81,7 @@ struct Config {
   int32_t indelsize;
   uint32_t graphPruning;
   float flankQuality;
-  bool ignoreRG;
+  bool readgroups;
   bool indels;
   bool hasExcludeFile;
   bool hasVcfFile;
@@ -208,7 +208,7 @@ _annotateCoverage(TConfig& c, bam_hdr_t* hdr, TSampleLib& sampleLib, TSVs& svs, 
   for(uint32_t file_c = 0; file_c < c.files.size(); ++file_c) {
     countMap[file_c].resize(svs.size());
     for (uint32_t id = 0; id < svs.size(); ++id) {
-      if ((c.indels) && (svSize[id] <= c.indelsize)) {
+      if (svSize[id] <= c.indelsize) {
 	countMap[file_c][id].rc = readCountMap[file_c][id].first;
 	countMap[file_c][id].leftRC = readCountMap[file_c][id + lastId].first;
 	countMap[file_c][id].rightRC = readCountMap[file_c][id + 2*lastId].first;
@@ -596,8 +596,8 @@ int delly(int argc, char **argv) {
   else c.indels = false;
 
   // Read-group aware calling
-  if (vm.count("readgroup")) c.ignoreRG = false;
-  else c.ignoreRG = true;
+  if (vm.count("readgroup")) c.readgroups = true;
+  else c.readgroups = false;
 
   // Run main program
   c.aliscore = DnaScore<int>(5, -4, -10, -1);

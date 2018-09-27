@@ -383,7 +383,7 @@ namespace torali
 
       // Get read groups
       bool rgPresent = false;
-      if (!c.ignoreRG) {
+      if (c.readgroups) {
 	std::string header(hdr[file_c]->text);
 	std::string delimiters("\n");
 	typedef std::vector<std::string> TStrParts;
@@ -429,7 +429,7 @@ namespace torali
 	      ++alignmentCount;
 	      
 	      std::string rG = "DefaultLib";
-	      if (!c.ignoreRG) {
+	      if (c.readgroups) {
 		uint8_t *rgptr = bam_aux_get(rec, "RG");
 		if (rgptr) {
 		  char* rg = (char*) (rgptr + 1);
