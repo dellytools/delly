@@ -96,7 +96,7 @@ namespace torali {
     std::string part1;
 
     Breakpoint() : svStartBeg(0), svStartEnd(0), svEndBeg(0), svEndEnd(0), svStart(0), svEnd(0), peSupport(0), svt(-1), chr(0), chr2(0) {}
-    Breakpoint(StructuralVariantRecord const& sv) : svStartBeg(sv.svStart), svStartEnd(sv.svStart), svEndBeg(sv.svEnd), svEndEnd(sv.svEnd), svStart(sv.svStart), svEnd(sv.svEnd), peSupport(sv.peSupport), svt(sv.svt), chr(sv.chr), chr2(sv.chr2) {}
+    explicit Breakpoint(StructuralVariantRecord const& sv) : svStartBeg(sv.svStart), svStartEnd(sv.svStart), svEndBeg(sv.svEnd), svEndEnd(sv.svEnd), svStart(sv.svStart), svEnd(sv.svEnd), peSupport(sv.peSupport), svt(sv.svt), chr(sv.chr), chr2(sv.chr2) {}
     
   };
 
