@@ -104,7 +104,7 @@ namespace torali
 	rev[row][col] = std::max(std::max(rev[row-1][col-1] + (sRev1[row-1] == sRev2[col-1] ? sc.match : sc.mismatch), rev[row-1][col] + _verticalGap(ac, col, n, sc.ge)), rev[row][col-1] + _horizontalGap(ac, row, m, sc.ge));
 
     if (mat[m][n] != rev[m][n]) {
-      std::cerr << "Warning: Alignment scores disagree!" << std::endl;
+      //std::cerr << "Warning: Alignment scores disagree!" << std::endl;
       return false;
     } else {
       // Find best join
