@@ -259,9 +259,35 @@ inline int dellyRun(TConfigStruct& c) {
 	  int32_t tid = bam_name2id(hdr, chrName.c_str());
 	  if (tid >= 0) {
 	    if (tokIter!=tokens.end()) {
-	      int32_t start = boost::lexical_cast<int32_t>(*tokIter++);
-	      int32_t end = boost::lexical_cast<int32_t>(*tokIter++);
-	      exclg[tid].insert(TIVal::right_open(start, end));
+	      int32_t start = 0;
+	      try {
+		start = boost::lexical_cast<int32_t>(*tokIter++);
+	      } catch (boost::bad_lexical_cast&) {
+		std::cerr << "Exclude file needs to be in tab-delimited format: chr, start, end" << std::endl;
+		std::cerr << "Offending line: " << chrFromFile << std::endl;
+		return 1;
+	      }
+	      if (tokIter!=tokens.end()) {
+		int32_t end = start + 1;
+		try {
+		  end = boost::lexical_cast<int32_t>(*tokIter++);
+		} catch (boost::bad_lexical_cast&) {
+		  std::cerr << "Exclude file needs to be in tab-delimited format: chr, start, end" << std::endl;
+		  std::cerr << "Offending line: " << chrFromFile << std::endl;
+		  return 1;
+		}
+		if (start < end) {
+		  exclg[tid].insert(TIVal::right_open(start, end));
+		} else {
+		  std::cerr << "Exclude file needs to be in tab-delimited format (chr, start, end) and start < end." << std::endl;
+		  std::cerr << "Offending line: " << chrFromFile << std::endl;
+		  return 1;
+		}
+	      } else {
+		std::cerr << "Exclude file needs to be in tab-delimited format: chr, start, end" << std::endl;
+		std::cerr << "Offending line: " << chrFromFile << std::endl;
+		return 1;
+	      }
 	    } else validChr[tid] = false; // Exclude entire chromosome
 	  }
 	}
