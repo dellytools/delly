@@ -2,8 +2,6 @@
 ============================================================================
 DELLY: Structural variant discovery by integrated PE mapping and SR analysis
 ============================================================================
-Copyright (C) 2012-2018 Tobias Rausch
-
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
 the Free Software Foundation, either version 3 of the License, or
@@ -30,21 +28,28 @@ Contact: Tobias Rausch (rausch@embl.de)
 
 namespace torali {
 
-  inline int
+  inline int32_t
   lcs(std::string const& s1, std::string const& s2) {
-    int m = s1.size();
-    int n = s2.size();
-    typedef boost::multi_array<int, 2> T2DArray;
-    typedef T2DArray::index T2DIndex;
-    T2DArray L(boost::extents[m+1][n+1]);
-    for(T2DIndex i=0; i<=m; ++i) {
-      for(T2DIndex j=0; j<=n; ++j) {
-	if ((i==0) || (j==0)) L[i][j]=0;
-	else if (s1[i-1] == s2[j-1]) L[i][j] = L[i-1][j-1] + 1;
-	else L[i][j] = (L[i-1][j] > L[i][j-1]) ? L[i-1][j] : L[i][j-1];
+    uint32_t m = s1.size();
+    uint32_t n = s2.size();
+    int32_t prevdiag = 0;
+    int32_t prevprevdiag = 0;
+    std::vector<int32_t> onecol(n+1, 0);
+    for(uint32_t i = 0; i <= m; ++i) {
+      for(uint32_t j = 0; j <= n; ++j) {
+	if ((i==0) || (j==0)) {
+	  onecol[j] = 0;
+	  prevprevdiag = 0;
+	  prevdiag = 0;
+	} else {
+	  prevprevdiag = prevdiag;
+	  prevdiag = onecol[j];
+	  if (s1[i-1] == s2[j-1]) onecol[j] = prevprevdiag + 1;
+	  else onecol[j] = (onecol[j] > onecol[j-1]) ? onecol[j] : onecol[j-1];
+	}
       }
     }
-    return L[m][n];
+    return onecol[n];
   }
 
   template<typename TSplitReadSet, typename TDistArray>
