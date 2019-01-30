@@ -353,7 +353,7 @@ annotateCoverage(TConfig& c, TSampleLibrary& sampleLib, TCovRecord& ict, TCovera
 
 #pragma omp parallel for default(shared)
   for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
-    int32_t overallMaxISize = getMaxISizeCutoff(sampleLib[file_c]);
+    int32_t overallMaxISize = std::max(sampleLib[file_c].maxISizeCutoff, sampleLib[file_c].rs);
     
     // Pair qualities and features
     typedef boost::unordered_map<std::size_t, uint8_t> TQualities;
@@ -619,11 +619,10 @@ annotateCoverage(TConfig& c, TSampleLibrary& sampleLib, TCovRecord& ict, TCovera
 	  else outerISize = rec->core.pos + rec->core.l_qseq - rec->core.mpos;
 
 	  // Get the library information
-	  int32_t libIdx = 0;
-	  if (sampleLib[file_c][libIdx].median == 0) continue; // Single-end library or non-valid library
+	  if (sampleLib[file_c].median == 0) continue; // Single-end library or non-valid library
 
 	  // Normal spanning pair
-	  if ((!pairClip) && (getSVType(rec->core) == 2) && (outerISize >= sampleLib[file_c][libIdx].minNormalISize) && (outerISize <= sampleLib[file_c][libIdx].maxNormalISize) && (rec->core.tid==rec->core.mtid)) {
+	  if ((!pairClip) && (getSVType(rec->core) == 2) && (outerISize >= sampleLib[file_c].minNormalISize) && (outerISize <= sampleLib[file_c].maxNormalISize) && (rec->core.tid==rec->core.mtid)) {
 	    // Take X% of the outerisize as the spanned interval
 	    int32_t spanlen = 0.8 * outerISize;
 	    int32_t pbegin = std::min(rec->core.pos, rec->core.mpos);
@@ -658,7 +657,7 @@ annotateCoverage(TConfig& c, TSampleLibrary& sampleLib, TCovRecord& ict, TCovera
 	  }
 
 	  // Abnormal spanning coverage
-	  if ((getSVType(rec->core) != 2) || (outerISize < sampleLib[file_c][libIdx].minNormalISize) || (outerISize > sampleLib[file_c][libIdx].maxNormalISize) || (rec->core.tid!=rec->core.mtid)) {
+	  if ((getSVType(rec->core) != 2) || (outerISize < sampleLib[file_c].minNormalISize) || (outerISize > sampleLib[file_c].maxNormalISize) || (rec->core.tid!=rec->core.mtid)) {
 	    // SV type
 	    int32_t svt = _isizeMappingPos(rec, overallMaxISize);
 	    if (svt == -1) continue;
@@ -666,9 +665,9 @@ annotateCoverage(TConfig& c, TSampleLibrary& sampleLib, TCovRecord& ict, TCovera
 	    // Spanning a breakpoint?
 	    bool spanvalid = false;
 	    int32_t pbegin = rec->core.pos;
-	    int32_t pend = std::min(rec->core.pos + sampleLib[file_c][libIdx].maxNormalISize, (int32_t) hdr[file_c]->target_len[refIndex]);
+	    int32_t pend = std::min(rec->core.pos + sampleLib[file_c].maxNormalISize, (int32_t) hdr[file_c]->target_len[refIndex]);
 	    if (rec->core.flag & BAM_FREVERSE) {
-	      pbegin = std::max(0, rec->core.pos + rec->core.l_qseq - sampleLib[file_c][libIdx].maxNormalISize);
+	      pbegin = std::max(0, rec->core.pos + rec->core.l_qseq - sampleLib[file_c].maxNormalISize);
 	      pend = std::min(rec->core.pos + rec->core.l_qseq, (int32_t) hdr[file_c]->target_len[refIndex]);
 	    }
 	    for(int32_t i = pbegin; i < pend; ++i) {

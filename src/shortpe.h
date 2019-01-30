@@ -687,7 +687,7 @@ namespace torali
 #pragma omp parallel for default(shared)
       for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
 	// Maximum insert size
-	int32_t overallMaxISize = getMaxISizeCutoff(sampleLib[file_c]);
+	int32_t overallMaxISize = std::max(sampleLib[file_c].maxISizeCutoff, sampleLib[file_c].rs);
 
 	// Qualities and alignment length
 	TQualities qualities;
@@ -801,11 +801,10 @@ namespace torali
 	      if ((c.svtcmd) && (c.svtset.find(svt) == c.svtset.end())) continue;
 
 	      // Library
-	      int32_t libIdx = 0;
-	      if (sampleLib[file_c][libIdx].median == 0) continue; // Single-end library
+	      if (sampleLib[file_c].median == 0) continue; // Single-end library
 
 	      // Check library-specific insert size for deletions
-	      if ((svt == 2) && (sampleLib[file_c][libIdx].maxISizeCutoff > std::abs(rec->core.isize))) continue;
+	      if ((svt == 2) && (sampleLib[file_c].maxISizeCutoff > std::abs(rec->core.isize))) continue;
 
 	      // Get or store the mapping quality for the partner
 	      if (_firstPairObs(rec, lastAlignedPosReads)) {
@@ -846,9 +845,9 @@ namespace torali
 		
 #pragma omp critical
 		{
-		  bamRecord[svt].push_back(BamAlignRecord(rec, pairQuality, alignmentLength(rec), alenmate, sampleLib[file_c][libIdx].median, sampleLib[file_c][libIdx].mad, sampleLib[file_c][libIdx].maxNormalISize));
+		  bamRecord[svt].push_back(BamAlignRecord(rec, pairQuality, alignmentLength(rec), alenmate, sampleLib[file_c].median, sampleLib[file_c].mad, sampleLib[file_c].maxNormalISize));
 		}
-		++sampleLib[file_c][libIdx].abnormal_pairs;
+		++sampleLib[file_c].abnormal_pairs;
 	      }
 	    }
 	  }

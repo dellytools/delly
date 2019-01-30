@@ -316,6 +316,8 @@ inline int dellyRun(TConfigStruct& c) {
   TRegionsGenome validRegions;
   if (!_parseExcludeIntervals(c, hdr, validRegions)) {
     std::cerr << "Delly couldn't parse excluce intervals!" << std::endl;
+    bam_hdr_destroy(hdr);
+    sam_close(samfile);
     return 1;
   }
 
@@ -327,14 +329,16 @@ inline int dellyRun(TConfigStruct& c) {
   //}
   
   // Create library objects
-  typedef std::vector<LibraryInfo> TLibraryMap;
-  typedef std::vector<TLibraryMap> TSampleLibrary;
-  TSampleLibrary sampleLib(c.files.size());
-  if (!getLibraryParams(c, validRegions, sampleLib)) {
-    std::cerr << "Library parameters could not be estimated!" << std::endl;
-    bam_hdr_destroy(hdr);
-    sam_close(samfile);
-    return 1;
+  typedef std::vector<LibraryInfo> TSampleLibrary;
+  TSampleLibrary sampleLib(c.files.size(), LibraryInfo());
+  getLibraryParams(c, validRegions, sampleLib);
+  for(uint32_t i = 0; i<sampleLib.size(); ++i) {
+    if (sampleLib[i].rs == 0) {
+      std::cerr << "Sample has not enough data to estimate library parameters! File: " << c.files[i].string() << std::endl;
+      bam_hdr_destroy(hdr);
+      sam_close(samfile);
+      return 1;
+    }
   }
 
   // SV Discovery
@@ -373,12 +377,9 @@ inline int dellyRun(TConfigStruct& c) {
 
   // Output library statistics
   boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
-  std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Library statistics" << std::endl;
+  std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Sample statistics" << std::endl;
   for(uint32_t file_c = 0; file_c < c.files.size(); ++file_c) {
-    std::cout << "Sample: " << c.sampleName[file_c] << std::endl;
-    for(uint32_t libIdx = 0; libIdx < sampleLib[file_c].size(); ++libIdx) {
-      std::cout << "RG: ID=" << sampleLib[file_c][libIdx].rg << ",ReadSize=" << sampleLib[file_c][libIdx].rs << ",Median=" << sampleLib[file_c][libIdx].median << ",MAD=" << sampleLib[file_c][libIdx].mad << ",UniqueDiscordantPairs=" << sampleLib[file_c][libIdx].abnormal_pairs << std::endl;
-    }
+    std::cout << "Sample: " << c.sampleName[file_c] << ",ReadSize=" << sampleLib[file_c].rs << ",Median=" << sampleLib[file_c].median << ",MAD=" << sampleLib[file_c].mad << ",UniqueDiscordantPairs=" << sampleLib[file_c].abnormal_pairs << std::endl;
   }
   
 #ifdef PROFILE
