@@ -802,7 +802,6 @@ namespace torali
 
 	      // Library
 	      int32_t libIdx = 0;
-	      if ((c.readgroups) && (sampleLib[file_c].size() > 1)) libIdx = _findLib(rec, sampleLib[file_c]);
 	      if (sampleLib[file_c][libIdx].median == 0) continue; // Single-end library
 
 	      // Check library-specific insert size for deletions

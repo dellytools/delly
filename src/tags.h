@@ -239,21 +239,6 @@ namespace torali {
     else return (rec->core.tid < rec->core.mtid);
   }
 
-  template<typename TLibraryMap>
-  inline int32_t
-  _findLib(bam1_t* rec, TLibraryMap& lib) {
-    std::string rG = "DefaultLib";
-    uint8_t *rgptr = bam_aux_get(rec, "RG");
-    if (rgptr) {
-      char* rg = (char*) (rgptr + 1);
-      rG = std::string(rg);
-    }
-    for(uint32_t libIdx = 0; libIdx < lib.size(); ++libIdx)
-      if (lib[libIdx].rg == rG) return libIdx;
-    return 0;
-  }
-  
-
   // Deletions
   template<typename TSize, typename TISize>
   inline bool

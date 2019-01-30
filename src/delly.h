@@ -79,7 +79,6 @@ struct Config {
   int32_t indelsize;
   uint32_t graphPruning;
   float flankQuality;
-  bool readgroups;
   bool indels;
   bool hasExcludeFile;
   bool hasVcfFile;
@@ -219,6 +218,84 @@ _annotateCoverage(TConfig& c, bam_hdr_t* hdr, TSampleLib& sampleLib, TSVs& svs, 
   }
 }
 
+
+ template<typename TConfig, typename TRegionsGenome>
+ inline int32_t
+ _parseExcludeIntervals(TConfig const& c, bam_hdr_t* hdr, TRegionsGenome& validRegions) {
+   typedef typename TRegionsGenome::value_type TChrIntervals;
+   typedef typename TChrIntervals::interval_type TIVal;
+   
+   validRegions.resize(hdr->n_targets);
+   TRegionsGenome exclg;
+   exclg.resize(hdr->n_targets);
+   std::vector<bool> validChr;
+   validChr.resize(hdr->n_targets, true);
+   if (c.hasExcludeFile) {
+     std::ifstream chrFile(c.exclude.string().c_str(), std::ifstream::in);
+     if (chrFile.is_open()) {
+       while (chrFile.good()) {
+	 std::string chrFromFile;
+	 getline(chrFile, chrFromFile);
+	 typedef boost::tokenizer< boost::char_separator<char> > Tokenizer;
+	 boost::char_separator<char> sep(" \t,;");
+	 Tokenizer tokens(chrFromFile, sep);
+	 Tokenizer::iterator tokIter = tokens.begin();
+	 if (tokIter!=tokens.end()) {
+	   std::string chrName = *tokIter++;
+	   int32_t tid = bam_name2id(hdr, chrName.c_str());
+	   if (tid >= 0) {
+	     if (tokIter!=tokens.end()) {
+	       int32_t start = 0;
+	       try {
+		 start = boost::lexical_cast<int32_t>(*tokIter++);
+	       } catch (boost::bad_lexical_cast&) {
+		 std::cerr << "Exclude file needs to be in tab-delimited format: chr, start, end" << std::endl;
+		 std::cerr << "Offending line: " << chrFromFile << std::endl;
+		 return false;
+	       }
+	       if (tokIter!=tokens.end()) {
+		 int32_t end = start + 1;
+		 try {
+		   end = boost::lexical_cast<int32_t>(*tokIter++);
+		 } catch (boost::bad_lexical_cast&) {
+		   std::cerr << "Exclude file needs to be in tab-delimited format: chr, start, end" << std::endl;
+		   std::cerr << "Offending line: " << chrFromFile << std::endl;
+		   return false;
+		 }
+		 if (start < end) {
+		   exclg[tid].insert(TIVal::right_open(start, end));
+		 } else {
+		   std::cerr << "Exclude file needs to be in tab-delimited format (chr, start, end) and start < end." << std::endl;
+		   std::cerr << "Offending line: " << chrFromFile << std::endl;
+		   return false;
+		 }
+	       } else {
+		 std::cerr << "Exclude file needs to be in tab-delimited format: chr, start, end" << std::endl;
+		 std::cerr << "Offending line: " << chrFromFile << std::endl;
+		 return false;
+	       }
+	     } else validChr[tid] = false; // Exclude entire chromosome
+	   }
+	 }
+       }
+       chrFile.close();
+     }
+   }
+   // Create the valid regions
+   for (int32_t i = 0; i<hdr->n_targets; ++i) {
+     if (!validChr[i]) continue;
+     uint32_t istart = 0;
+     for(typename TChrIntervals::iterator it = exclg[i].begin(); it != exclg[i].end(); ++it) {
+       if (istart + 1 < it->lower()) validRegions[i].insert(TIVal::right_open(istart, it->lower() - 1));
+       istart = it->upper();
+     }
+     if (istart + 1 < hdr->target_len[i]) validRegions[i].insert(TIVal::right_open(istart, hdr->target_len[i]));
+   }
+   exclg.clear();
+   return true;
+ }
+ 
+
 template<typename TConfigStruct>
 inline int dellyRun(TConfigStruct& c) {
 #ifdef PROFILE
@@ -235,76 +312,12 @@ inline int dellyRun(TConfigStruct& c) {
 
   // Exclude intervals
   typedef boost::icl::interval_set<uint32_t> TChrIntervals;
-  typedef typename TChrIntervals::interval_type TIVal;
   typedef std::vector<TChrIntervals> TRegionsGenome;
   TRegionsGenome validRegions;
-  validRegions.resize(hdr->n_targets);
-  TRegionsGenome exclg;
-  exclg.resize(hdr->n_targets);
-  std::vector<bool> validChr;
-  validChr.resize(hdr->n_targets, true);
-  if (c.hasExcludeFile) {
-    std::ifstream chrFile(c.exclude.string().c_str(), std::ifstream::in);
-    if (chrFile.is_open()) {
-      while (chrFile.good()) {
-	std::string chrFromFile;
-	getline(chrFile, chrFromFile);
-	typedef boost::tokenizer< boost::char_separator<char> > Tokenizer;
-	boost::char_separator<char> sep(" \t,;");
-	Tokenizer tokens(chrFromFile, sep);
-	Tokenizer::iterator tokIter = tokens.begin();
-	if (tokIter!=tokens.end()) {
-	  std::string chrName = *tokIter++;
-	  int32_t tid = bam_name2id(hdr, chrName.c_str());
-	  if (tid >= 0) {
-	    if (tokIter!=tokens.end()) {
-	      int32_t start = 0;
-	      try {
-		start = boost::lexical_cast<int32_t>(*tokIter++);
-	      } catch (boost::bad_lexical_cast&) {
-		std::cerr << "Exclude file needs to be in tab-delimited format: chr, start, end" << std::endl;
-		std::cerr << "Offending line: " << chrFromFile << std::endl;
-		return 1;
-	      }
-	      if (tokIter!=tokens.end()) {
-		int32_t end = start + 1;
-		try {
-		  end = boost::lexical_cast<int32_t>(*tokIter++);
-		} catch (boost::bad_lexical_cast&) {
-		  std::cerr << "Exclude file needs to be in tab-delimited format: chr, start, end" << std::endl;
-		  std::cerr << "Offending line: " << chrFromFile << std::endl;
-		  return 1;
-		}
-		if (start < end) {
-		  exclg[tid].insert(TIVal::right_open(start, end));
-		} else {
-		  std::cerr << "Exclude file needs to be in tab-delimited format (chr, start, end) and start < end." << std::endl;
-		  std::cerr << "Offending line: " << chrFromFile << std::endl;
-		  return 1;
-		}
-	      } else {
-		std::cerr << "Exclude file needs to be in tab-delimited format: chr, start, end" << std::endl;
-		std::cerr << "Offending line: " << chrFromFile << std::endl;
-		return 1;
-	      }
-	    } else validChr[tid] = false; // Exclude entire chromosome
-	  }
-	}
-      }
-      chrFile.close();
-    }
+  if (!_parseExcludeIntervals(c, hdr, validRegions)) {
+    std::cerr << "Delly couldn't parse excluce intervals!" << std::endl;
+    return 1;
   }
-  // Create the valid regions
-  for (int32_t i = 0; i<hdr->n_targets; ++i) {
-    if (!validChr[i]) continue;
-    uint32_t istart = 0;
-    for(typename TChrIntervals::iterator it = exclg[i].begin(); it != exclg[i].end(); ++it) {
-      if (istart + 1 < it->lower()) validRegions[i].insert(TIVal::right_open(istart, it->lower() - 1));
-      istart = it->upper();
-    }
-    if (istart + 1 < hdr->target_len[i]) validRegions[i].insert(TIVal::right_open(istart, hdr->target_len[i]));
-  }
-  exclg.clear();
 
   // Debug code
   //for(int32_t refIndex = 0; refIndex < hdr->n_targets; ++refIndex) {
@@ -400,7 +413,6 @@ int delly(int argc, char **argv) {
     ("qual-tra,r", boost::program_options::value<unsigned short>(&c.minTraQual)->default_value(20), "min. PE quality for translocation")
     ("mad-cutoff,s", boost::program_options::value<unsigned short>(&c.madCutoff)->default_value(9), "insert size cutoff, median+s*MAD (deletions only)")
     ("indels,i", "activate small InDel calling")
-    ("readgroup,e", "enable read-group aware calling")
     ;
 
   boost::program_options::options_description geno("Genotyping options");
@@ -592,10 +604,6 @@ int delly(int argc, char **argv) {
   // Small InDels?
   if (vm.count("indels")) c.indels = true;
   else c.indels = false;
-
-  // Read-group aware calling
-  if (vm.count("readgroup")) c.readgroups = true;
-  else c.readgroups = false;
 
   // Run main program
   c.aliscore = DnaScore<int>(5, -4, -10, -1);

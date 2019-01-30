@@ -380,37 +380,7 @@ namespace torali
       TParams params;
 
       // Get read groups
-      bool rgPresent = false;
-      if (c.readgroups) {
-	std::string header(hdr[file_c]->text);
-	std::string delimiters("\n");
-	typedef std::vector<std::string> TStrParts;
-	TStrParts lines;
-	boost::split(lines, header, boost::is_any_of(delimiters));
-	TStrParts::const_iterator itH = lines.begin();
-	TStrParts::const_iterator itHEnd = lines.end();
-	for(;itH!=itHEnd; ++itH) {
-	  if (itH->find("@RG")==0) {
-	    std::string delim("\t");
-	    TStrParts keyval;
-	    boost::split(keyval, *itH, boost::is_any_of(delim));
-	    TStrParts::const_iterator itKV = keyval.begin();
-	    TStrParts::const_iterator itKVEnd = keyval.end();
-	    for(;itKV != itKVEnd; ++itKV) {
-	      size_t sp = itKV->find(":");
-	      if (sp != std::string::npos) {
-		std::string field = itKV->substr(0, sp);
-		if (field == "ID") {
-		  rgPresent = true;
-		  std::string rgID = itKV->substr(sp+1);
-		  params.insert(std::make_pair(rgID, LibraryParams()));
-		}
-	      }
-	    }
-	  }
-	}
-      }
-      if (!rgPresent) params.insert(std::make_pair("DefaultLib", LibraryParams()));
+      params.insert(std::make_pair("DefaultLib", LibraryParams()));
 
       // Collect insert sizes
       uint32_t libCount = 0;
@@ -427,13 +397,6 @@ namespace torali
 	      ++alignmentCount;
 	      
 	      std::string rG = "DefaultLib";
-	      if (c.readgroups) {
-		uint8_t *rgptr = bam_aux_get(rec, "RG");
-		if (rgptr) {
-		  char* rg = (char*) (rgptr + 1);
-		  rG = std::string(rg);
-		}
-	      }
 	      TParams::iterator paramIt = params.find(rG);
 	      if (paramIt == params.end()) {
 		std::cerr << "Error: Unknown read group: " << rG << std::endl;
