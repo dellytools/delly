@@ -2,8 +2,6 @@
 ============================================================================
 DELLY: Structural variant discovery by integrated PE mapping and SR analysis
 ============================================================================
-Copyright (C) 2012-2018 Tobias Rausch
-
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
 the Free Software Foundation, either version 3 of the License, or
@@ -23,6 +21,8 @@ Contact: Tobias Rausch (rausch@embl.de)
 
 #ifndef ALIGN_H
 #define ALIGN_H
+
+#include <boost/multi_array.hpp>
 
 #include <iostream>
 
@@ -130,7 +130,7 @@ namespace torali
       else return sc.mismatch;
     } else {
       typedef typename TProfile::index TPIndex;
-      double score = 0;
+      float score = 0;
       for(TPIndex k1 = 0; k1<5; ++k1) 
 	for(TPIndex k2 = 0; k2<5; ++k2) 
 	  score += p1[k1][row] * p2[k2][col] * ( (k1 == k2) ? sc.match : sc.mismatch );
@@ -180,14 +180,13 @@ namespace torali
     }
   }
 
-
   template<typename TTrace, typename TAlign>
   inline void
-  _createAlignment(TTrace const& trace, std::string const& s1, std::string const& s2, TAlign& align)
+  _createLocalAlignment(TTrace const& trace, std::string const& s1, std::string const& s2, TAlign& align, int32_t const maxRow, int32_t const maxCol)
   {
     align.resize(boost::extents[2][trace.size()]);
-    std::size_t row = 0;
-    std::size_t col = 0;
+    std::size_t row = maxRow;
+    std::size_t col = maxCol;
     std::size_t ai = 0;
     for(typename TTrace::const_reverse_iterator itT = trace.rbegin(); itT != trace.rend(); ++itT, ++ai) {
       if (*itT == 's') {
@@ -203,6 +202,12 @@ namespace torali
     }
   }
 
+  template<typename TTrace, typename TAlign>
+  inline void
+  _createAlignment(TTrace const& trace, std::string const& s1, std::string const& s2, TAlign& align)
+  {
+    _createLocalAlignment(trace, s1, s2, align, 0, 0);
+  }
 
   template<typename TTrace, typename TChar, typename TAlign>
   inline void
