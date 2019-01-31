@@ -73,7 +73,7 @@ namespace torali
     int32_t alignend;
     uint8_t MapQuality;
     
-    SplitAlignRecord(int32_t ab, int32_t sb, int32_t se, int32_t ae, uint8_t mq) : alignbeg(ab), splitbeg(sb), splitend(se), alignend(ae), MapQuality(mq) {}
+    SplitAlignRecord(int32_t const ab, int32_t const sb, int32_t const se, int32_t const ae, uint8_t const mq) : alignbeg(ab), splitbeg(sb), splitend(se), alignend(ae), MapQuality(mq) {}
   };
   
   // Sort split alignment records
@@ -631,12 +631,9 @@ namespace torali
     bam_hdr_t* hdr = sam_hdr_read(samfile[0]);
 
     // Qualities and alignment length for translocation pairs
-    typedef boost::unordered_map<std::size_t, uint8_t> TQualities;
-    std::vector<TQualities> qualitiestra;
-    qualitiestra.resize(c.files.size());
-    typedef boost::unordered_map<std::size_t, int32_t> TAlignmentLength;      
-    std::vector<TAlignmentLength> alentra;
-    alentra.resize(c.files.size());
+    typedef std::pair<uint8_t, int32_t> TQualLen;
+    typedef boost::unordered_map<std::size_t, TQualLen> TMateMap;
+    std::vector<TMateMap> matetra(c.files.size());
     
     // Parse genome, process chromosome by chromosome
     boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
@@ -689,9 +686,8 @@ namespace torali
 	// Maximum insert size
 	int32_t overallMaxISize = std::max(sampleLib[file_c].maxISizeCutoff, sampleLib[file_c].rs);
 
-	// Qualities and alignment length
-	TQualities qualities;
-	TAlignmentLength alen;
+	// Mate map and alignment length
+	TMateMap mateMap;
 	
 	// Read alignments
 	for(typename TChrIntervals::const_iterator vRIt = validRegions[refIndex].begin(); vRIt != validRegions[refIndex].end(); ++vRIt) {
@@ -702,13 +698,6 @@ namespace torali
 	  while (sam_itr_next(samfile[file_c], iter, rec) >= 0) {
 	    if (rec->core.flag & (BAM_FSECONDARY | BAM_FQCFAIL | BAM_FDUP | BAM_FSUPPLEMENTARY | BAM_FUNMAP)) continue;
 	    if ((rec->core.qual < c.minMapQual) || (rec->core.tid<0)) continue;
-
-	    
-	    // Clean-up the read store for identical alignment positions
-	    if (rec->core.pos > lastAlignedPos) {
-	      lastAlignedPosReads.clear();
-	      lastAlignedPos = rec->core.pos;
-	    }
 	    
 	    // Small indel detection using soft clips
 	    if (c.indels) {
@@ -790,36 +779,35 @@ namespace torali
 	    
 	    // Paired-end clustering
 	    if (rec->core.flag & BAM_FPAIRED) {
+	      // Single-end library
+	      if (sampleLib[file_c].median == 0) continue; // Single-end library
+
 	      // Mate unmapped or blacklisted chr
 	      if ((rec->core.mtid<0) || (rec->core.flag & BAM_FMUNMAP)) continue;
 	      if (validRegions[rec->core.mtid].empty()) continue;
 	      if ((_translocation(rec)) && (rec->core.qual < c.minTraQual)) continue;
-	      
+
 	      // SV type
 	      int32_t svt = _isizeMappingPos(rec, overallMaxISize);
 	      if (svt == -1) continue;
 	      if ((c.svtcmd) && (c.svtset.find(svt) == c.svtset.end())) continue;
 
-	      // Library
-	      if (sampleLib[file_c].median == 0) continue; // Single-end library
-
 	      // Check library-specific insert size for deletions
 	      if ((svt == 2) && (sampleLib[file_c].maxISizeCutoff > std::abs(rec->core.isize))) continue;
-
+	      
+	      // Clean-up the read store for identical alignment positions
+	      if (rec->core.pos > lastAlignedPos) {
+		lastAlignedPosReads.clear();
+		lastAlignedPos = rec->core.pos;
+	      }
+	      
 	      // Get or store the mapping quality for the partner
 	      if (_firstPairObs(rec, lastAlignedPosReads)) {
 		// First read
 		lastAlignedPosReads.insert(hash_string(bam_get_qname(rec)));
 		std::size_t hv = hash_pair(rec);
-		if (_translocation(svt)) {
-		  // Inter-chromosomal
-		  qualitiestra[file_c][hv]= rec->core.qual;
-		  alentra[file_c][hv]= alignmentLength(rec);
-		} else {
-		  // Intra-chromosomal
-		  qualities[hv]= rec->core.qual;
-		  alen[hv]= alignmentLength(rec);
-		}
+		if (_translocation(svt)) matetra[file_c][hv]= std::make_pair((uint8_t) rec->core.qual, alignmentLength(rec));
+		else mateMap[hv]= std::make_pair((uint8_t) rec->core.qual, alignmentLength(rec));
 	      } else {
 		// Second read
 		std::size_t hv = hash_pair_mate(rec);
@@ -827,22 +815,20 @@ namespace torali
 		uint8_t pairQuality = 0;
 	        if (_translocation(svt)) {
 		  // Inter-chromosomal
-		  if (qualitiestra[file_c].find(hv) == qualitiestra[file_c].end()) continue; // Mate discarded
-		  pairQuality = std::min((uint8_t) qualitiestra[file_c][hv], (uint8_t) rec->core.qual);
-		  alenmate = alentra[file_c][hv];
-		  qualitiestra[file_c][hv] = 0;
+		  if ((matetra[file_c].find(hv) == matetra[file_c].end()) || (!matetra[file_c][hv].first)) continue; // Mate discarded
+		  TQualLen p = matetra[file_c][hv];
+		  pairQuality = std::min((uint8_t) p.first, (uint8_t) rec->core.qual);
+		  alenmate = p.second;
+		  matetra[file_c][hv].first = 0;
 		} else {
 		  // Intra-chromosomal
-		  if (qualities.find(hv) == qualities.end()) continue; // Mate discarded
-		  pairQuality = std::min((uint8_t) qualities[hv], (uint8_t) rec->core.qual);
-		  alenmate = alen[hv];
-		  qualities[hv] = 0;
+		  if ((mateMap.find(hv) == mateMap.end()) || (!mateMap[hv].first)) continue; // Mate discarded
+		  TQualLen p = mateMap[hv];
+		  pairQuality = std::min((uint8_t) p.first, (uint8_t) rec->core.qual);
+		  alenmate = p.second;
+		  mateMap[hv].first = 0;
 		}
-		
-		// Pair quality
-		if (pairQuality < c.minMapQual) continue;
-		if ((_translocation(svt)) && (pairQuality < c.minTraQual)) continue;
-		
+				
 #pragma omp critical
 		{
 		  bamRecord[svt].push_back(BamAlignRecord(rec, pairQuality, alignmentLength(rec), alenmate, sampleLib[file_c].median, sampleLib[file_c].mad, sampleLib[file_c].maxNormalISize));

@@ -117,9 +117,9 @@ namespace torali
   
   inline unsigned int alignmentLength(bam1_t* rec) {
     uint32_t* cigar = bam_get_cigar(rec);
-    unsigned int alen = 0;
-    for (unsigned int i = 0; i < rec->core.n_cigar; ++i)
-      if (bam_cigar_op(cigar[i]) == BAM_CMATCH) alen+=bam_cigar_oplen(cigar[i]);
+    uint32_t alen = 0;
+    for (uint32_t i = 0; i < rec->core.n_cigar; ++i)
+      if ((bam_cigar_op(cigar[i]) == BAM_CMATCH) || (bam_cigar_op(cigar[i]) == BAM_CEQUAL) || (bam_cigar_op(cigar[i]) == BAM_CDIFF) || (bam_cigar_op(cigar[i]) == BAM_CDEL) || (bam_cigar_op(cigar[i]) == BAM_CREF_SKIP)) alen += bam_cigar_oplen(cigar[i]);
     return alen;
   }
 

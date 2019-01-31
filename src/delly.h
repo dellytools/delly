@@ -71,10 +71,10 @@ namespace torali
 
 // Config arguments
 struct Config {
-  unsigned short minMapQual;
-  unsigned short minTraQual;
-  unsigned short minGenoQual;
-  unsigned short madCutoff;
+  uint16_t minMapQual;
+  uint16_t minTraQual;
+  uint16_t minGenoQual;
+  uint16_t madCutoff;
   int32_t minimumFlankSize;
   int32_t indelsize;
   uint32_t graphPruning;
@@ -379,7 +379,7 @@ inline int dellyRun(TConfigStruct& c) {
   boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
   std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Sample statistics" << std::endl;
   for(uint32_t file_c = 0; file_c < c.files.size(); ++file_c) {
-    std::cout << "Sample: " << c.sampleName[file_c] << ",ReadSize=" << sampleLib[file_c].rs << ",Median=" << sampleLib[file_c].median << ",MAD=" << sampleLib[file_c].mad << ",UniqueDiscordantPairs=" << sampleLib[file_c].abnormal_pairs << std::endl;
+    std::cout << "Sample:" << c.sampleName[file_c] << ",ReadSize=" << sampleLib[file_c].rs << ",Median=" << sampleLib[file_c].median << ",MAD=" << sampleLib[file_c].mad << ",UniqueDiscordantPairs=" << sampleLib[file_c].abnormal_pairs << std::endl;
   }
   
 #ifdef PROFILE
@@ -410,16 +410,16 @@ int delly(int argc, char **argv) {
 
   boost::program_options::options_description disc("Discovery options");
   disc.add_options()
-    ("map-qual,q", boost::program_options::value<unsigned short>(&c.minMapQual)->default_value(1), "min. paired-end (PE) mapping quality")
-    ("qual-tra,r", boost::program_options::value<unsigned short>(&c.minTraQual)->default_value(20), "min. PE quality for translocation")
-    ("mad-cutoff,s", boost::program_options::value<unsigned short>(&c.madCutoff)->default_value(9), "insert size cutoff, median+s*MAD (deletions only)")
+    ("map-qual,q", boost::program_options::value<uint16_t>(&c.minMapQual)->default_value(1), "min. paired-end (PE) mapping quality")
+    ("qual-tra,r", boost::program_options::value<uint16_t>(&c.minTraQual)->default_value(20), "min. PE quality for translocation")
+    ("mad-cutoff,s", boost::program_options::value<uint16_t>(&c.madCutoff)->default_value(9), "insert size cutoff, median+s*MAD (deletions only)")
     ("indels,i", "activate small InDel calling")
     ;
 
   boost::program_options::options_description geno("Genotyping options");
   geno.add_options()
     ("vcffile,v", boost::program_options::value<boost::filesystem::path>(&c.vcffile), "input VCF/BCF file for genotyping")
-    ("geno-qual,u", boost::program_options::value<unsigned short>(&c.minGenoQual)->default_value(5), "min. mapping quality for genotyping")
+    ("geno-qual,u", boost::program_options::value<uint16_t>(&c.minGenoQual)->default_value(5), "min. mapping quality for genotyping")
     ("dump,d", boost::program_options::value<boost::filesystem::path>(&c.srpedump), "gzipped output file for SV-reads (optional)")
     ;
 
