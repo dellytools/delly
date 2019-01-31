@@ -553,10 +553,12 @@ namespace torali
     typedef std::vector<BamAlignRecord> TBamRecord;
     typedef std::vector<TBamRecord> TSvtBamRecord;
     TSvtBamRecord bamRecord(2 * DELLY_SVT_TRANS, TBamRecord());
+
+    TSvtSRBamRecord peBR(2 * DELLY_SVT_TRANS, TSRBamRecord());
      
     // Parse genome, process chromosome by chromosome
     boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
-    std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Paired-end clustering" << std::endl;
+    std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Paired-end and split-read scanning" << std::endl;
     boost::progress_display show_progress( c.files.size() * hdr->n_targets );
     // Iterate all samples
 #pragma omp parallel for default(shared)
@@ -606,39 +608,37 @@ namespace torali
 	    unsigned seed = hash_string(bam_get_qname(rec));
 	    
 	    // SV detection using single-end read
-	    if (c.indels) {
-	      uint32_t rp = rec->core.pos; // reference pointer
-	      uint32_t sp = 0; // sequence pointer
+	    uint32_t rp = rec->core.pos; // reference pointer
+	    uint32_t sp = 0; // sequence pointer
 
-	      // Parse the CIGAR
-	      uint32_t* cigar = bam_get_cigar(rec);
-	      for (std::size_t i = 0; i < rec->core.n_cigar; ++i) {
-		if ((bam_cigar_op(cigar[i]) == BAM_CMATCH) || (bam_cigar_op(cigar[i]) == BAM_CEQUAL) || (bam_cigar_op(cigar[i]) == BAM_CDIFF)) {
-		  // match or mismatch
-		  for(std::size_t k = 0; k<bam_cigar_oplen(cigar[i]);++k) {
-		    ++sp;
-		    ++rp;
-		  }
-		} else if (bam_cigar_op(cigar[i]) == BAM_CDEL) {
-		  if (bam_cigar_oplen(cigar[i]) > c.minRefSep) _insertJunction(readBp, seed, rec, rp, sp, false);
-		  rp += bam_cigar_oplen(cigar[i]);
-		  if (bam_cigar_oplen(cigar[i]) > c.minRefSep) _insertJunction(readBp, seed, rec, rp, sp, true);
-		} else if (bam_cigar_op(cigar[i]) == BAM_CINS) {
-		  sp += bam_cigar_oplen(cigar[i]);
-		} else if ((bam_cigar_op(cigar[i]) == BAM_CSOFT_CLIP) || (bam_cigar_op(cigar[i]) == BAM_CHARD_CLIP)) {
-		  int32_t finalsp = sp;
-		  bool scleft = false;
-		  if (sp == 0) {
-		    finalsp += bam_cigar_oplen(cigar[i]); // Leading soft-clip / hard-clip
-		    scleft = true;
-		  }
-		  sp += bam_cigar_oplen(cigar[i]);
-		  if (bam_cigar_oplen(cigar[i]) > c.minClip) _insertJunction(readBp, seed, rec, rp, finalsp, scleft);
-		} else if (bam_cigar_op(cigar[i]) == BAM_CREF_SKIP) {
-		  rp += bam_cigar_oplen(cigar[i]);
-		} else {
-		  std::cerr << "Warning: Unknown Cigar operation!" << std::endl;
+	    // Parse the CIGAR
+	    uint32_t* cigar = bam_get_cigar(rec);
+	    for (std::size_t i = 0; i < rec->core.n_cigar; ++i) {
+	      if ((bam_cigar_op(cigar[i]) == BAM_CMATCH) || (bam_cigar_op(cigar[i]) == BAM_CEQUAL) || (bam_cigar_op(cigar[i]) == BAM_CDIFF)) {
+		// match or mismatch
+		for(std::size_t k = 0; k<bam_cigar_oplen(cigar[i]);++k) {
+		  ++sp;
+		  ++rp;
 		}
+	      } else if (bam_cigar_op(cigar[i]) == BAM_CDEL) {
+		if (bam_cigar_oplen(cigar[i]) > c.minRefSep) _insertJunction(readBp, seed, rec, rp, sp, false);
+		rp += bam_cigar_oplen(cigar[i]);
+		if (bam_cigar_oplen(cigar[i]) > c.minRefSep) _insertJunction(readBp, seed, rec, rp, sp, true);
+	      } else if (bam_cigar_op(cigar[i]) == BAM_CINS) {
+		sp += bam_cigar_oplen(cigar[i]);
+	      } else if ((bam_cigar_op(cigar[i]) == BAM_CSOFT_CLIP) || (bam_cigar_op(cigar[i]) == BAM_CHARD_CLIP)) {
+		int32_t finalsp = sp;
+		bool scleft = false;
+		if (sp == 0) {
+		  finalsp += bam_cigar_oplen(cigar[i]); // Leading soft-clip / hard-clip
+		  scleft = true;
+		  }
+		sp += bam_cigar_oplen(cigar[i]);
+		if (bam_cigar_oplen(cigar[i]) > c.minClip) _insertJunction(readBp, seed, rec, rp, finalsp, scleft);
+	      } else if (bam_cigar_op(cigar[i]) == BAM_CREF_SKIP) {
+		rp += bam_cigar_oplen(cigar[i]);
+	      } else {
+		std::cerr << "Warning: Unknown Cigar operation!" << std::endl;
 	      }
 	    }
 	    
@@ -694,10 +694,30 @@ namespace torali
 		  alenmate = p.second;
 		  mateMap[hv].first = 0;
 		}
-				
+
+		// Adjust start and end
+		int32_t svStart = 0;
+		int32_t svEnd = 0;
+		if (svt == 0) {
+		  svStart = rec->core.mpos + sampleLib[file_c].median / 2;
+		  svEnd = rec->core.pos + sampleLib[file_c].median / 2;
+		} else if (svt == 1) {
+		  svStart = rec->core.mpos + alenmate - sampleLib[file_c].median / 2;
+		  svEnd = rec->core.pos + alignmentLength(rec) - sampleLib[file_c].median / 2;
+		} else if (svt == 2) {
+		  svStart = rec->core.mpos + sampleLib[file_c].median / 2;
+		  svEnd = rec->core.pos + alignmentLength(rec) - sampleLib[file_c].median / 2;
+		} else if (svt == 3) {
+		  svStart = rec->core.mpos + alenmate - sampleLib[file_c].median / 2;
+		  svEnd = rec->core.pos + sampleLib[file_c].median / 2;
+		} else if (svt == 4) continue;  // No insertion calling
+
+		if (_svSizeCheck(svStart, svEnd, svt)) {
 #pragma omp critical
-		{
-		  bamRecord[svt].push_back(BamAlignRecord(rec, pairQuality, alignmentLength(rec), alenmate, sampleLib[file_c].median, sampleLib[file_c].mad, sampleLib[file_c].maxNormalISize));
+		  {
+		    bamRecord[svt].push_back(BamAlignRecord(rec, pairQuality, alignmentLength(rec), alenmate, sampleLib[file_c].median, sampleLib[file_c].mad, sampleLib[file_c].maxNormalISize));
+		    peBR[svt].push_back(SRBamRecord(rec->core.mtid, svStart, rec->core.tid, svEnd, pairQuality, 0));
+		  }
 		}
 		++sampleLib[file_c].abnormal_pairs;
 	      }
@@ -728,23 +748,45 @@ namespace torali
     //outputSRBamRecords(c, srBR);
 
     // Cluster split-read records
+    now = boost::posix_time::second_clock::local_time();
+    std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Split-read clustering" << std::endl;
+    boost::progress_display spSR( srBR.size() );
     TVariants srSVs;
     for(uint32_t svt = 0; svt < srBR.size(); ++svt) {
+      ++spSR;
+      
       // Sort
       std::sort(srBR[svt].begin(), srBR[svt].end(), SortSRBamRecord<SRBamRecord>());
 
       // Cluster
-      cluster(c, srBR[svt], srSVs);
+      cluster(c, srBR[svt], srSVs, c.maxReadSep);
       for(uint32_t i = 0; i < srSVs.size(); ++i) {
 	if (srSVs[i].svt == -1) srSVs[i].svt = svt;
       }
     }
 
-    // Debug SR SVs
-    //outputStructuralVariants(c, srSVs);
-      
-    // Maximum insert size
+    // Cluster paired-end records
+    now = boost::posix_time::second_clock::local_time();
+    std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Paired-end clustering" << std::endl;
+    boost::progress_display spPE( peBR.size() );
+    TVariants peSVs;
     int32_t varisize = getVariability(c, sampleLib);
+    for(uint32_t svt = 0; svt < peBR.size(); ++svt) {
+      ++spPE;
+      
+      // Sort
+      std::sort(peBR[svt].begin(), peBR[svt].end(), SortSRBamRecord<SRBamRecord>());
+
+      // Cluster
+      cluster(c, peBR[svt], peSVs, varisize);
+      for(uint32_t i = 0; i < peSVs.size(); ++i) {
+	if (peSVs[i].svt == -1) peSVs[i].svt = svt;
+      }
+    }
+
+    // Debug SR SVs
+    //outputStructuralVariants(c, srSVs, "SR");
+    //outputStructuralVariants(c, peSVs, "PE");
       
 #pragma omp parallel for default(shared)
     for(int32_t svt = 0; svt < (int32_t) bamRecord.size(); ++svt) {

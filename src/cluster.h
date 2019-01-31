@@ -61,9 +61,9 @@ namespace torali
   };
 
 
-  template<typename TConfig, typename TCompEdgeList>
+  template<typename TCompEdgeList>
   inline void
-  _searchCliques(TConfig const& c, TCompEdgeList& compEdge, std::vector<SRBamRecord>& br, std::vector<StructuralVariantRecord>& sv) {
+  _searchCliques(TCompEdgeList& compEdge, std::vector<SRBamRecord>& br, std::vector<StructuralVariantRecord>& sv, uint32_t const wiggle) {
     typedef typename TCompEdgeList::mapped_type TEdgeList;
     typedef typename TEdgeList::value_type TEdgeRecord;
     typedef typename TEdgeRecord::TVertexType TVertex;
@@ -110,7 +110,7 @@ namespace torali
 	  int32_t newCiPosHigh = std::max(br[v].pos, ciposhigh);
 	  int32_t newCiEndLow = std::min(br[v].pos2, ciendlow);
 	  int32_t newCiEndHigh = std::max(br[v].pos2, ciendhigh);
-	  if (((newCiPosHigh - newCiPosLow) < (int32_t) c.maxReadSep) && ((newCiEndHigh - newCiEndLow) < (int32_t) c.maxReadSep)) cliqueGrow = true;
+	  if (((newCiPosHigh - newCiPosLow) < (int32_t) wiggle) && ((newCiEndHigh - newCiEndLow) < (int32_t) wiggle)) cliqueGrow = true;
 	  if (cliqueGrow) {
 	    // Accept new vertex
 	    clique.insert(v);
@@ -142,7 +142,7 @@ namespace torali
 
   template<typename TConfig>
   inline void
-  cluster(TConfig const& c, std::vector<SRBamRecord>& br, std::vector<StructuralVariantRecord>& sv) {
+  cluster(TConfig const& c, std::vector<SRBamRecord>& br, std::vector<StructuralVariantRecord>& sv, uint32_t const wiggle) {
     uint32_t count = 0;
     for(int32_t refIdx = 0; refIdx < c.nchr; ++refIdx) {
       
@@ -171,7 +171,7 @@ namespace torali
 	    // Clean edge lists
 	    if (!compEdge.empty()) {
 	      // Search cliques
-	      _searchCliques(c, compEdge, br, sv);
+	      _searchCliques(compEdge, br, sv, wiggle);
 	      lastConnectedNodeStart = lastConnectedNode;
 	      compEdge.clear();
 	    }
@@ -180,8 +180,8 @@ namespace torali
 	  
 	  for(uint32_t j = i + 1; j<br.size(); ++j) {
 	    if (br[j].chr == refIdx) {
-	      if ( (uint32_t) (br[j].pos - br[i].pos) > c.maxReadSep) break;
-	      if ( (uint32_t) std::abs(br[j].pos2 - br[i].pos2) < c.maxReadSep) {
+	      if ( (uint32_t) (br[j].pos - br[i].pos) > wiggle) break;
+	      if ( (uint32_t) std::abs(br[j].pos2 - br[i].pos2) < wiggle) {
 		// Update last connected node
 		if (j > lastConnectedNode) lastConnectedNode = j;
 		
@@ -241,7 +241,7 @@ namespace torali
       }
       // Search cliques
       if (!compEdge.empty()) {
-	_searchCliques(c, compEdge, br, sv);
+	_searchCliques(compEdge, br, sv, wiggle);
 	compEdge.clear();
       }
     }

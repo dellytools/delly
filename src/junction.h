@@ -303,17 +303,17 @@ namespace torali
 
   template<typename TConfig>
   inline void
-  outputStructuralVariants(TConfig const& c, std::vector<StructuralVariantRecord> const& svs) {
+  outputStructuralVariants(TConfig const& c, std::vector<StructuralVariantRecord> const& svs, std::string const& tag) {
     samFile* samfile = sam_open(c.files[0].string().c_str(), "r");
     hts_set_fai_filename(samfile, c.genome.string().c_str());
     bam_hdr_t* hdr = sam_hdr_read(samfile);
 
     // Header
-    std::cerr << "chr1\tpos1\tchr2\tpos2\tsvtype\tct" << std::endl;
+    std::cerr << "chr1\tpos1\tchr2\tpos2\tsvtype\tct\ttag" << std::endl;
 
     // SVs
     for(uint32_t i = 0; i < svs.size(); ++i) {
-      std::cerr << hdr->target_name[svs[i].chr] << '\t' << svs[i].svStart << '\t' << hdr->target_name[svs[i].chr2] << '\t' << svs[i].svEnd << '\t' << _addID(svs[i].svt) << '\t' << _addOrientation(svs[i].svt) << std::endl;
+      std::cerr << hdr->target_name[svs[i].chr] << '\t' << svs[i].svStart << '\t' << hdr->target_name[svs[i].chr2] << '\t' << svs[i].svEnd << '\t' << _addID(svs[i].svt) << '\t' << _addOrientation(svs[i].svt) << '\t' << tag << std::endl;
     }
 
     // Clean-up
