@@ -50,7 +50,9 @@ namespace torali {
 
   // Structural variant record
   struct StructuralVariantRecord {
+    int32_t chr;
     int32_t svStart;
+    int32_t chr2;
     int32_t svEnd;
     int32_t ciposlow;
     int32_t ciposhigh;
@@ -64,21 +66,18 @@ namespace torali {
     int32_t svt;
     uint32_t id;
     float srAlignQuality;
-    bool precise;
     uint8_t peMapQuality;
-    int32_t chr;
-    int32_t chr2;
+    bool precise;
     std::string alleles;
     std::string consensus;
 
     
-  StructuralVariantRecord() : svStart(0), svEnd(0), peSupport(0), srSupport(0), wiggle(0), insLen(0), homLen(0), svt(-1), id(0), srAlignQuality(0), precise(false), peMapQuality(0), chr(0), chr2(0) {}
-  StructuralVariantRecord(int32_t const c, int32_t const s, int32_t const e) : svStart(s), svEnd(e), peSupport(0), srSupport(0), wiggle(0), insLen(0), homLen(0), svt(-1), id(0), srAlignQuality(0), precise(false), peMapQuality(0), chr(c), chr2(c) {}
+    StructuralVariantRecord() : svt(-1) {}
+
+  StructuralVariantRecord(int32_t const c, int32_t const s, int32_t const e) : chr(c), svStart(s), chr2(c), svEnd(e), peSupport(0), svt(-1) {}
 
 
-  StructuralVariantRecord(int32_t const c1, int32_t const s, int32_t const c2, int32_t const e, int32_t const cipl, int32_t const ciph, int32_t const ciel, int32_t const cieh, int32_t const sup, uint8_t mq, int32_t const ilen): chr(c1), svStart(s), chr2(c2), svEnd(e), ciposlow(cipl), ciposhigh(ciph), ciendlow(ciel), ciendhigh(cieh), srSupport(sup), peMapQuality(mq), insLen(ilen) {
-    svt = -1;  // Unknown
-  }
+    StructuralVariantRecord(int32_t const c1, int32_t const s, int32_t const c2, int32_t const e, int32_t const cipl, int32_t const ciph, int32_t const ciel, int32_t const cieh, int32_t const sup, uint8_t mq, int32_t const ilen): chr(c1), svStart(s), chr2(c2), svEnd(e), ciposlow(cipl), ciposhigh(ciph), ciendlow(ciel), ciendhigh(cieh), peSupport(0), srSupport(sup), insLen(ilen), svt(-1), peMapQuality(mq), precise(true) {}
     
   };
 

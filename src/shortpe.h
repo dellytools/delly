@@ -519,7 +519,6 @@ namespace torali
 	svRec.homLen = 0;
 #pragma omp critical
 	{
-	  svRec.id = svs.size();
 	  svs.push_back(svRec);
 	}
       }
@@ -553,8 +552,6 @@ namespace torali
     typedef std::vector<BamAlignRecord> TBamRecord;
     typedef std::vector<TBamRecord> TSvtBamRecord;
     TSvtBamRecord bamRecord(2 * DELLY_SVT_TRANS, TBamRecord());
-
-    TSvtSRBamRecord peBR(2 * DELLY_SVT_TRANS, TSRBamRecord());
      
     // Parse genome, process chromosome by chromosome
     boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
@@ -695,29 +692,9 @@ namespace torali
 		  mateMap[hv].first = 0;
 		}
 
-		// Adjust start and end
-		int32_t svStart = 0;
-		int32_t svEnd = 0;
-		if (svt == 0) {
-		  svStart = rec->core.mpos + sampleLib[file_c].median / 2;
-		  svEnd = rec->core.pos + sampleLib[file_c].median / 2;
-		} else if (svt == 1) {
-		  svStart = rec->core.mpos + alenmate - sampleLib[file_c].median / 2;
-		  svEnd = rec->core.pos + alignmentLength(rec) - sampleLib[file_c].median / 2;
-		} else if (svt == 2) {
-		  svStart = rec->core.mpos + sampleLib[file_c].median / 2;
-		  svEnd = rec->core.pos + alignmentLength(rec) - sampleLib[file_c].median / 2;
-		} else if (svt == 3) {
-		  svStart = rec->core.mpos + alenmate - sampleLib[file_c].median / 2;
-		  svEnd = rec->core.pos + sampleLib[file_c].median / 2;
-		} else if (svt == 4) continue;  // No insertion calling
-
-		if (_svSizeCheck(svStart, svEnd, svt)) {
 #pragma omp critical
-		  {
-		    bamRecord[svt].push_back(BamAlignRecord(rec, pairQuality, alignmentLength(rec), alenmate, sampleLib[file_c].median, sampleLib[file_c].mad, sampleLib[file_c].maxNormalISize));
-		    peBR[svt].push_back(SRBamRecord(rec->core.mtid, svStart, rec->core.tid, svEnd, pairQuality, 0));
-		  }
+		{
+		  bamRecord[svt].push_back(BamAlignRecord(rec, pairQuality, alignmentLength(rec), alenmate, sampleLib[file_c].median, sampleLib[file_c].mad, sampleLib[file_c].maxNormalISize));
 		}
 		++sampleLib[file_c].abnormal_pairs;
 	      }
@@ -768,28 +745,14 @@ namespace torali
     // Cluster paired-end records
     now = boost::posix_time::second_clock::local_time();
     std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Paired-end clustering" << std::endl;
-    boost::progress_display spPE( peBR.size() );
-    TVariants peSVs;
+    boost::progress_display spPE( bamRecord.size() );
+
+    // Maximum variability in insert size
     int32_t varisize = getVariability(c, sampleLib);
-    for(uint32_t svt = 0; svt < peBR.size(); ++svt) {
-      ++spPE;
-      
-      // Sort
-      std::sort(peBR[svt].begin(), peBR[svt].end(), SortSRBamRecord<SRBamRecord>());
-
-      // Cluster
-      cluster(c, peBR[svt], peSVs, varisize);
-      for(uint32_t i = 0; i < peSVs.size(); ++i) {
-	if (peSVs[i].svt == -1) peSVs[i].svt = svt;
-      }
-    }
-
-    // Debug SR SVs
-    //outputStructuralVariants(c, srSVs, "SR");
-    //outputStructuralVariants(c, peSVs, "PE");
       
 #pragma omp parallel for default(shared)
     for(int32_t svt = 0; svt < (int32_t) bamRecord.size(); ++svt) {
+      ++spPE;
       if (bamRecord[svt].empty()) continue;
 	
       // Sort BAM records according to position
@@ -896,32 +859,6 @@ namespace torali
     // Sort SVs for look-up
     sort(svs.begin(), svs.end(), SortSVs<StructuralVariantRecord>());
     
-    // Add the soft clip SV records
-    if (c.indels) {
-      /*
-	for(int32_t svt = 2; svt < 5; svt += 2) {
-	int32_t bpWindowLen = 10;
-	int32_t maxLookAhead = 0;
-	std::sort(splitRecord[svt/2 - 1].begin(), splitRecord[svt/2 - 1].end(), SortSplitRecords<SplitAlignRecord>());
-	TSplitRecord::const_iterator splitClusterIt = splitRecord[svt/2 - 1].end();
-	for(TSplitRecord::const_iterator splitIt = splitRecord[svt/2 - 1].begin(); splitIt!=splitRecord[svt/2 - 1].end(); ++splitIt) {
-	if ((maxLookAhead) && (splitIt->splitbeg > maxLookAhead)) {
-	// Process split read cluster
-	_processSRCluster(splitClusterIt, splitIt, refIndex, bpWindowLen, svs, svt);
-	maxLookAhead = 0;
-	splitClusterIt = splitRecord[svt/2 - 1].end();
-	}
-	if ((!maxLookAhead) || (splitIt->splitbeg < maxLookAhead)) {
-	if (!maxLookAhead) splitClusterIt = splitIt;
-	maxLookAhead = splitIt->splitbeg + bpWindowLen;
-	}
-	}
-	TSplitRecord::const_iterator splitIt = splitRecord[svt/2 - 1].end();
-	_processSRCluster(splitClusterIt, splitIt, refIndex, bpWindowLen, svs, svt);
-	}
-      */
-    }
-  
     // Split-read search
     if (!svs.empty()) {
       findPutativeSplitReads(c, validRegions, svs);
