@@ -78,6 +78,9 @@ struct Config {
   int32_t minimumFlankSize;
   int32_t indelsize;
   uint32_t graphPruning;
+  uint32_t minRefSep;
+  uint32_t maxReadSep;
+  uint32_t minClip;
   float flankQuality;
   bool indels;
   bool hasExcludeFile;
@@ -413,6 +416,9 @@ int delly(int argc, char **argv) {
     ("map-qual,q", boost::program_options::value<uint16_t>(&c.minMapQual)->default_value(1), "min. paired-end (PE) mapping quality")
     ("qual-tra,r", boost::program_options::value<uint16_t>(&c.minTraQual)->default_value(20), "min. PE quality for translocation")
     ("mad-cutoff,s", boost::program_options::value<uint16_t>(&c.madCutoff)->default_value(9), "insert size cutoff, median+s*MAD (deletions only)")
+    ("minclip,c", boost::program_options::value<uint32_t>(&c.minClip)->default_value(25), "min. clipping length")
+    ("minrefsep,m", boost::program_options::value<uint32_t>(&c.minRefSep)->default_value(50), "min. reference separation")
+    ("maxreadsep,n", boost::program_options::value<uint32_t>(&c.maxReadSep)->default_value(10), "max. read separation")
     ("indels,i", "activate small InDel calling")
     ;
 

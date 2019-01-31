@@ -113,7 +113,14 @@ namespace torali
     else if (ct==3) return "5to3";
     else return "NtoN";
   }
-  
+
+  inline uint32_t sequenceLength(bam1_t const* rec) {
+    uint32_t* cigar = bam_get_cigar(rec);
+    uint32_t slen = 0;
+    for (uint32_t i = 0; i < rec->core.n_cigar; ++i)
+      if ((bam_cigar_op(cigar[i]) == BAM_CMATCH) || (bam_cigar_op(cigar[i]) == BAM_CEQUAL) || (bam_cigar_op(cigar[i]) == BAM_CDIFF) || (bam_cigar_op(cigar[i]) == BAM_CINS) || (bam_cigar_op(cigar[i]) == BAM_CSOFT_CLIP) || (bam_cigar_op(cigar[i]) == BAM_CHARD_CLIP)) slen += bam_cigar_oplen(cigar[i]);
+    return slen;
+  }
   
   inline unsigned int alignmentLength(bam1_t* rec) {
     uint32_t* cigar = bam_get_cigar(rec);

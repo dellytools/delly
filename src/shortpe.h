@@ -55,6 +55,7 @@ Contact: Tobias Rausch (rausch@embl.de)
 #include "coverage.h"
 #include "msa.h"
 #include "split.h"
+#include "junction.h"
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -64,7 +65,7 @@ Contact: Tobias Rausch (rausch@embl.de)
 
 namespace torali
 {
-
+  
   // Reduced split alignment record
   struct SplitAlignRecord {
     int32_t alignbeg;
@@ -634,13 +635,15 @@ namespace torali
     typedef std::pair<uint8_t, int32_t> TQualLen;
     typedef boost::unordered_map<std::size_t, TQualLen> TMateMap;
     std::vector<TMateMap> matetra(c.files.size());
-    
+
+    // Split-read records
+    typedef std::vector<SRBamRecord> TSRBamRecord;
+    std::vector<TSRBamRecord> srBR(c.files.size());
+
     // Parse genome, process chromosome by chromosome
     boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
     std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Paired-end clustering" << std::endl;
-    boost::progress_display show_progress( hdr->n_targets );
-    
-    faidx_t* fai = fai_load(c.genome.string().c_str());
+    boost::progress_display show_progress( hdr->n_targets );    
     for(int32_t refIndex=0; refIndex < (int32_t) hdr->n_targets; ++refIndex) {
       ++show_progress;
       if (validRegions[refIndex].empty()) continue;
@@ -662,14 +665,6 @@ namespace torali
       }
       if (nodata) continue;
 
-      // Load reference sequence
-      char* seq = NULL;
-      if (c.indels) {
-	int32_t seqlen = -1;
-	std::string tname(hdr->target_name[refIndex]);
-	seq = faidx_fetch_seq(fai, tname.c_str(), 0, hdr->target_len[refIndex], &seqlen);
-      }
-      
       // Create bam alignment record vector
       typedef std::vector<BamAlignRecord> TBamRecord;
       typedef std::vector<TBamRecord> TSvtBamRecord;
@@ -688,6 +683,11 @@ namespace torali
 
 	// Mate map and alignment length
 	TMateMap mateMap;
+
+	// Split-read junctions
+	typedef std::vector<Junction> TJunctionVector;
+	typedef std::map<unsigned, TJunctionVector> TReadBp;
+	TReadBp readBp;
 	
 	// Read alignments
 	for(typename TChrIntervals::const_iterator vRIt = validRegions[refIndex].begin(); vRIt != validRegions[refIndex].end(); ++vRIt) {
@@ -696,83 +696,44 @@ namespace torali
 	  int32_t lastAlignedPos = 0;
 	  std::set<std::size_t> lastAlignedPosReads;
 	  while (sam_itr_next(samfile[file_c], iter, rec) >= 0) {
-	    if (rec->core.flag & (BAM_FSECONDARY | BAM_FQCFAIL | BAM_FDUP | BAM_FSUPPLEMENTARY | BAM_FUNMAP)) continue;
+	    if (rec->core.flag & (BAM_FQCFAIL | BAM_FDUP | BAM_FUNMAP)) continue;
 	    if ((rec->core.qual < c.minMapQual) || (rec->core.tid<0)) continue;
+
+	    unsigned seed = hash_string(bam_get_qname(rec));
 	    
-	    // Small indel detection using soft clips
+	    // SV detection using single-end read
 	    if (c.indels) {
-	      for(int32_t svt = 2; svt<5; svt += 2) {
-		if ((c.svtcmd) && (c.svtset.find(svt) == c.svtset.end())) continue;
-		int clipSize = 0;
-		int splitPoint = 0;
-		bool leadingSoftClip = false;
-		if (_validSoftClip(rec, clipSize, splitPoint, leadingSoftClip, c.minMapQual, svt)) {
-		  if (clipSize > (int32_t) (log10(rec->core.l_qseq) * 5)) {
-		    // Iterate both possible breakpoints
-		    for (int bpPoint = 0; bpPoint < 2; ++bpPoint) {
-		      // Leading or trailing softclip?
-		      if (_validSCOrientation(bpPoint, leadingSoftClip, svt)) {
-			// Get the sequence
-			std::string sequence;
-			sequence.resize(rec->core.l_qseq);
-			uint8_t* seqptr = bam_get_seq(rec);
-			for (int i = 0; i < rec->core.l_qseq; ++i) sequence[i] = "=ACMGRSVTWYHKDBN"[bam_seqi(seqptr, i)];
-			
-			// Check sequence
-			size_t nCount = std::count(sequence.begin(), sequence.end(), 'N');
-			if ((nCount * 100) / sequence.size() == 0) {
-			  std::string cstr = compressStr(sequence);
-			  double seqComplexity = (double) cstr.size() / (double) sequence.size();
-			  if (seqComplexity >= 0.45) {
-			    
-			    // Adjust orientation if necessary
-			    _adjustOrientation(sequence, bpPoint, svt);
-			    
-			    // Align to local reference
-			    int32_t localrefStart = 0;
-			    int32_t localrefEnd = 0;
-			    int32_t seqLeftOver = 0;
-			    if (bpPoint) {
-			      seqLeftOver = sequence.size() - clipSize;
-			      localrefStart = std::max(0, rec->core.pos - (c.indelsize + clipSize));
-			      localrefEnd = std::min(rec->core.pos + seqLeftOver + 25, (int32_t) hdr->target_len[refIndex]);
-			    } else {
-			      seqLeftOver = sequence.size() - (splitPoint - rec->core.pos);
-			      localrefStart = rec->core.pos;
-			      localrefEnd = std::min(splitPoint + c.indelsize + seqLeftOver, (int32_t) hdr->target_len[refIndex]);
-			    }
-			    std::string localref = boost::to_upper_copy(std::string(seq + localrefStart, seq + localrefEnd));
-			    typedef boost::multi_array<char, 2> TAlign;
-			    TAlign align;
-			    AlignConfig<true, false> semiglobal;
-			    DnaScore<int> sc(5, -4, -1 * c.aliscore.match * 15, 0);
-			    int altScore = gotoh(sequence, localref, align, semiglobal, sc);
-			    altScore += c.aliscore.match * 15;
-			    
-			    // Candidate small indel?
-			    AlignDescriptor ad;
-			    if (_findSplit(c, sequence, localref, align, ad, svt)) {
-			      int scoreThresholdAlt = (int) (c.flankQuality * (sequence.size() - (ad.cEnd - ad.cStart - 1)) * sc.match + (1.0 - c.flankQuality) * (sequence.size() - (ad.cEnd - ad.cStart - 1)) * sc.mismatch);
-			      if (altScore > scoreThresholdAlt) {
-				
-				// Debug consensus to reference alignment
-				//for(TAIndex i = 0; i<align.shape()[0]; ++i) {
-				//for(TAIndex j = 0; j<align.shape()[1]; ++j) std::cerr << align[i][j];
-				//std::cerr << std::endl;
-				//}
-				//std::cerr << svt << ',' << bpPoint << ',' << ad.cStart << ',' << ad.cEnd << ',' << ad.rStart << ',' << ad.rEnd << std::endl;
-				
-#pragma omp critical
-				{
-				  splitRecord[svt/2 - 1].push_back(SplitAlignRecord(localrefStart + ad.rStart - ad.cStart, localrefStart + ad.rStart, localrefStart + ad.rEnd, localrefStart + ad.rEnd + seqLeftOver + 25, rec->core.qual));
-				}
-			      }
-			    }
-			  }
-			}
-		      }
-		    }
+	      uint32_t rp = rec->core.pos; // reference pointer
+	      uint32_t sp = 0; // sequence pointer
+
+	      // Parse the CIGAR
+	      uint32_t* cigar = bam_get_cigar(rec);
+	      for (std::size_t i = 0; i < rec->core.n_cigar; ++i) {
+		if ((bam_cigar_op(cigar[i]) == BAM_CMATCH) || (bam_cigar_op(cigar[i]) == BAM_CEQUAL) || (bam_cigar_op(cigar[i]) == BAM_CDIFF)) {
+		  // match or mismatch
+		  for(std::size_t k = 0; k<bam_cigar_oplen(cigar[i]);++k) {
+		    ++sp;
+		    ++rp;
 		  }
+		} else if (bam_cigar_op(cigar[i]) == BAM_CDEL) {
+		  if (bam_cigar_oplen(cigar[i]) > c.minRefSep) _insertJunction(readBp, seed, rec, rp, sp, false);
+		  rp += bam_cigar_oplen(cigar[i]);
+		  if (bam_cigar_oplen(cigar[i]) > c.minRefSep) _insertJunction(readBp, seed, rec, rp, sp, true);
+		} else if (bam_cigar_op(cigar[i]) == BAM_CINS) {
+		  sp += bam_cigar_oplen(cigar[i]);
+		} else if ((bam_cigar_op(cigar[i]) == BAM_CSOFT_CLIP) || (bam_cigar_op(cigar[i]) == BAM_CHARD_CLIP)) {
+		  int32_t finalsp = sp;
+		  bool scleft = false;
+		  if (sp == 0) {
+		    finalsp += bam_cigar_oplen(cigar[i]); // Leading soft-clip / hard-clip
+		    scleft = true;
+		  }
+		  sp += bam_cigar_oplen(cigar[i]);
+		  if (bam_cigar_oplen(cigar[i]) > c.minClip) _insertJunction(readBp, seed, rec, rp, finalsp, scleft);
+		} else if (bam_cigar_op(cigar[i]) == BAM_CREF_SKIP) {
+		  rp += bam_cigar_oplen(cigar[i]);
+		} else {
+		  std::cerr << "Warning: Unknown Cigar operation!" << std::endl;
 		}
 	      }
 	    }
@@ -782,7 +743,8 @@ namespace torali
 	      // Single-end library
 	      if (sampleLib[file_c].median == 0) continue; // Single-end library
 
-	      // Mate unmapped or blacklisted chr
+	      // Secondary/supplementary alignments, mate unmapped or blacklisted chr
+	      if (rec->core.flag & (BAM_FSECONDARY | BAM_FSUPPLEMENTARY)) continue;
 	      if ((rec->core.mtid<0) || (rec->core.flag & BAM_FMUNMAP)) continue;
 	      if (validRegions[rec->core.mtid].empty()) continue;
 	      if ((_translocation(rec)) && (rec->core.qual < c.minTraQual)) continue;
@@ -804,7 +766,7 @@ namespace torali
 	      // Get or store the mapping quality for the partner
 	      if (_firstPairObs(rec, lastAlignedPosReads)) {
 		// First read
-		lastAlignedPosReads.insert(hash_string(bam_get_qname(rec)));
+		lastAlignedPosReads.insert(seed);
 		std::size_t hv = hash_pair(rec);
 		if (_translocation(svt)) matetra[file_c][hv]= std::make_pair((uint8_t) rec->core.qual, alignmentLength(rec));
 		else mateMap[hv]= std::make_pair((uint8_t) rec->core.qual, alignmentLength(rec));
@@ -840,8 +802,22 @@ namespace torali
 	  bam_destroy1(rec);
 	  hts_itr_destroy(iter);
 	}
-      }
 
+	// Sort junctions
+	for(typename TReadBp::iterator it = readBp.begin(); it != readBp.end(); ++it) {
+	  std::sort(it->second.begin(), it->second.end(), SortJunction<Junction>());
+	}
+	
+	// Collect split-read SVs
+	selectDeletions(c, readBp, srBR[file_c]);
+	selectDuplications(c, readBp, srBR[file_c]);
+	selectInversions(c, readBp, srBR[file_c]);
+	selectInsertions(c, readBp, srBR[file_c]);
+	std::cout << readBp.size() << ',' << srBR[file_c].size() << std::endl;
+
+	//selectTranslocations(c, readBp, br[file_c]);  Useless currently
+      }
+      
       // Maximum insert size
       int32_t varisize = getVariability(c, sampleLib);
       
@@ -976,9 +952,7 @@ namespace torali
 	  _processSRCluster(splitClusterIt, splitIt, refIndex, bpWindowLen, svs, svt);
 	}
       }
-      if (seq != NULL) free(seq);
     }
-    fai_destroy(fai);
   
     // Split-read search
     if (!svs.empty()) {
