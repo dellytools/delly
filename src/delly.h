@@ -75,6 +75,7 @@ struct Config {
   uint16_t minTraQual;
   uint16_t minGenoQual;
   uint16_t madCutoff;
+  int32_t nchr;
   int32_t minimumFlankSize;
   int32_t indelsize;
   uint32_t graphPruning;
@@ -504,6 +505,7 @@ int delly(int argc, char **argv) {
 
   // Check input files
   c.sampleName.resize(c.files.size());
+  c.nchr = 0;
   for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
     if (!(boost::filesystem::exists(c.files[file_c]) && boost::filesystem::is_regular_file(c.files[file_c]) && boost::filesystem::file_size(c.files[file_c]))) {
       std::cerr << "Alignment file is missing: " << c.files[file_c].string() << std::endl;
@@ -523,6 +525,13 @@ int delly(int argc, char **argv) {
     if (hdr == NULL) {
       std::cerr << "Fail to open header for " << c.files[file_c].string() << std::endl;
       return 1;
+    }
+    if (!c.nchr) c.nchr = hdr->n_targets;
+    else {
+      if (c.nchr != hdr->n_targets) {
+	std::cerr << "BAM files have different number of chromosomes!" << std::endl;
+	return 1;
+      }
     }
     faidx_t* fai = fai_load(c.genome.string().c_str());
     for(int32_t refIndex=0; refIndex < hdr->n_targets; ++refIndex) {

@@ -56,6 +56,7 @@ Contact: Tobias Rausch (rausch@embl.de)
 #include "msa.h"
 #include "split.h"
 #include "junction.h"
+#include "cluster.h"
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -65,27 +66,6 @@ Contact: Tobias Rausch (rausch@embl.de)
 
 namespace torali
 {
-  
-  // Reduced split alignment record
-  struct SplitAlignRecord {
-    int32_t alignbeg;
-    int32_t splitbeg;
-    int32_t splitend;
-    int32_t alignend;
-    uint8_t MapQuality;
-    
-    SplitAlignRecord(int32_t const ab, int32_t const sb, int32_t const se, int32_t const ae, uint8_t const mq) : alignbeg(ab), splitbeg(sb), splitend(se), alignend(ae), MapQuality(mq) {}
-  };
-  
-  // Sort split alignment records
-  template<typename TRecord>
-  struct SortSplitRecords : public std::binary_function<TRecord, TRecord, bool>
-  {
-    inline bool operator()(TRecord const& s1, TRecord const& s2) const {
-      return ((s1.splitbeg < s2.splitbeg) || ((s1.splitbeg == s2.splitbeg) && (s1.splitend < s2.splitend)) || ((s1.splitbeg == s2.splitbeg) && (s1.splitend == s2.splitend) && (s1.alignbeg < s2.alignbeg)));
-    }
-  };
-  
   
   // Reduced bam alignment record data structure
   struct BamAlignRecord {
@@ -546,73 +526,6 @@ namespace torali
     }
   }
   
-  template<typename TIterator, typename TSVs>
-  inline void
-  _processSRCluster(TIterator itInit, TIterator itEnd, int32_t refIndex, int32_t bpWindowLen, TSVs& svs, int32_t const svt) 
-  {
-    typedef typename TSVs::value_type TStructuralVariant;
-    
-    int32_t bestDistance = bpWindowLen;
-    TIterator bestSplit = itEnd;
-    for (TIterator itBeg = itInit; itBeg != itEnd; ++itBeg) {
-      TIterator itNext = itBeg;
-      ++itNext;
-      for(; itNext != itEnd; ++itNext) {
-	int32_t distance = std::abs(itNext->splitbeg - itBeg->splitbeg) + std::abs(itNext->splitend - itBeg->splitend);
-	if (distance < bestDistance) {
-	  bestDistance = distance;
-	  bestSplit = itBeg;
-	}
-      }
-    }
-    if (bestDistance < bpWindowLen) {
-      int32_t svStart = bestSplit->splitbeg;
-      int32_t svEnd = bestSplit->splitend;
-      std::vector<uint8_t> mapQV;
-      for (TIterator itBeg = itInit; itBeg != itEnd; ++itBeg)
-	if ( (std::abs(itBeg->splitbeg - svStart) + std::abs(itBeg->splitend - svEnd)) < bpWindowLen )
-	  mapQV.push_back(itBeg->MapQuality);
-      
-      // Augment existing SV call or create a new record
-      int32_t searchWindow = 50;
-      bool svExists = false;
-      typename TSVs::iterator itSV = std::lower_bound(svs.begin(), svs.end(), TStructuralVariant(refIndex, std::max(0, svStart - searchWindow), svEnd), SortSVs<TStructuralVariant>());
-      for(; ((itSV != svs.end()) && (std::abs(itSV->svStart - svStart) < searchWindow)); ++itSV) {
-	if ((!itSV->precise) && ((std::abs(itSV->svStart - svStart) + std::abs(itSV->svEnd - svEnd)) < searchWindow) && (itSV->chr == refIndex) && (itSV->chr2 == refIndex)) {
-	  if ((itSV->svEnd < svStart) || (svEnd < itSV->svStart)) continue;
-	  // Augment existing SV call
-	  itSV->svStart = svStart;
-	  itSV->svEnd = svEnd;
-	  
-	  // Found match
-	  svExists = true;
-	  break;
-	}
-      }
-      if (!svExists) {
-	// Create SV record
-	StructuralVariantRecord svRec;
-	svRec.chr = refIndex;
-	svRec.chr2 = refIndex;
-	svRec.svStart = svStart;
-	svRec.svEnd = svEnd;
-	svRec.peSupport = 0;
-	svRec.wiggle = bpWindowLen;
-	std::sort(mapQV.begin(), mapQV.end());
-	svRec.peMapQuality = mapQV[mapQV.size()/2];
-	svRec.srSupport=mapQV.size();
-	svRec.srAlignQuality=0;
-	svRec.precise=true;
-	svRec.svt = svt;
-	svRec.insLen = 0;
-	svRec.homLen = 0;
-	svRec.id = svs.size();
-	if (svRec.svStart < svRec.svEnd) svs.push_back(svRec);
-      }
-    }
-  }
-
- 
   template<typename TConfig, typename TValidRegion, typename TVariants, typename TSampleLib>
   inline void
   shortPE(TConfig const& c, TValidRegion const& validRegions, TVariants& svs, TSampleLib& sampleLib)
@@ -631,64 +544,55 @@ namespace torali
     }
     bam_hdr_t* hdr = sam_hdr_read(samfile[0]);
 
-    // Qualities and alignment length for translocation pairs
-    typedef std::pair<uint8_t, int32_t> TQualLen;
-    typedef boost::unordered_map<std::size_t, TQualLen> TMateMap;
-    std::vector<TMateMap> matetra(c.files.size());
-
     // Split-read records
     typedef std::vector<SRBamRecord> TSRBamRecord;
-    std::vector<TSRBamRecord> srBR(c.files.size());
+    typedef std::vector<TSRBamRecord> TSvtSRBamRecord;
+    TSvtSRBamRecord srBR(2 * DELLY_SVT_TRANS, TSRBamRecord());
 
+    // Create bam alignment record vector
+    typedef std::vector<BamAlignRecord> TBamRecord;
+    typedef std::vector<TBamRecord> TSvtBamRecord;
+    TSvtBamRecord bamRecord(2 * DELLY_SVT_TRANS, TBamRecord());
+     
     // Parse genome, process chromosome by chromosome
     boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
     std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Paired-end clustering" << std::endl;
-    boost::progress_display show_progress( hdr->n_targets );    
-    for(int32_t refIndex=0; refIndex < (int32_t) hdr->n_targets; ++refIndex) {
-      ++show_progress;
-      if (validRegions[refIndex].empty()) continue;
-      bool nodata = true;
-      for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
+    boost::progress_display show_progress( c.files.size() * hdr->n_targets );
+    // Iterate all samples
+#pragma omp parallel for default(shared)
+    for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
+      // Maximum insert size
+      int32_t overallMaxISize = std::max(sampleLib[file_c].maxISizeCutoff, sampleLib[file_c].rs);
+
+      // Inter-chromosomal mate map and alignment length
+      typedef std::pair<uint8_t, int32_t> TQualLen;
+      typedef boost::unordered_map<std::size_t, TQualLen> TMateMap;
+      std::vector<TMateMap> matetra(c.files.size());
+
+      // Split-read junctions
+      typedef std::vector<Junction> TJunctionVector;
+      typedef std::map<unsigned, TJunctionVector> TReadBp;
+      TReadBp readBp;
+      
+      // Iterate all chromosomes for that sample
+      for(int32_t refIndex=0; refIndex < (int32_t) hdr->n_targets; ++refIndex) {
+	++show_progress;
+
+	// Any data?
+	if (validRegions[refIndex].empty()) continue;
+	bool nodata = true;
 	std::string suffix("cram");
 	std::string str(c.files[file_c].string());
-	if ((str.size() >= suffix.size()) && (str.compare(str.size() - suffix.size(), suffix.size(), suffix) == 0)) {
-	  nodata = false;
-	  break;
-	}
+	if ((str.size() >= suffix.size()) && (str.compare(str.size() - suffix.size(), suffix.size(), suffix) == 0)) nodata = false;
 	uint64_t mapped = 0;
 	uint64_t unmapped = 0;
 	hts_idx_get_stat(idx[file_c], refIndex, &mapped, &unmapped);
-	if (mapped) {
-	  nodata = false;
-	  break;
-	}
-      }
-      if (nodata) continue;
+	if (mapped) nodata = false;
+	if (nodata) continue;
 
-      // Create bam alignment record vector
-      typedef std::vector<BamAlignRecord> TBamRecord;
-      typedef std::vector<TBamRecord> TSvtBamRecord;
-      TSvtBamRecord bamRecord(2 * DELLY_SVT_TRANS, TBamRecord());
-      
-      // Create split alignment record vector
-      typedef std::vector<SplitAlignRecord> TSplitRecord;
-      typedef std::vector<TSplitRecord> TSvtSplitRecord;
-      TSvtSplitRecord splitRecord(2, TSplitRecord());
-
-      // Iterate all samples
-#pragma omp parallel for default(shared)
-      for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
-	// Maximum insert size
-	int32_t overallMaxISize = std::max(sampleLib[file_c].maxISizeCutoff, sampleLib[file_c].rs);
-
-	// Mate map and alignment length
+	// Intra-chromosomal mate map and alignment length
 	TMateMap mateMap;
 
-	// Split-read junctions
-	typedef std::vector<Junction> TJunctionVector;
-	typedef std::map<unsigned, TJunctionVector> TReadBp;
-	TReadBp readBp;
-	
 	// Read alignments
 	for(typename TChrIntervals::const_iterator vRIt = validRegions[refIndex].begin(); vRIt != validRegions[refIndex].end(); ++vRIt) {
 	  hts_itr_t* iter = sam_itr_queryi(idx[file_c], refIndex, vRIt->lower(), vRIt->upper());
@@ -802,156 +706,178 @@ namespace torali
 	  bam_destroy1(rec);
 	  hts_itr_destroy(iter);
 	}
-
-	// Sort junctions
-	for(typename TReadBp::iterator it = readBp.begin(); it != readBp.end(); ++it) {
-	  std::sort(it->second.begin(), it->second.end(), SortJunction<Junction>());
-	}
-	
-	// Collect split-read SVs
-	selectDeletions(c, readBp, srBR[file_c]);
-	selectDuplications(c, readBp, srBR[file_c]);
-	selectInversions(c, readBp, srBR[file_c]);
-	selectInsertions(c, readBp, srBR[file_c]);
-	std::cout << readBp.size() << ',' << srBR[file_c].size() << std::endl;
-
-	//selectTranslocations(c, readBp, br[file_c]);  Useless currently
       }
+
+      // Process all junctions for this BAM file
+      for(typename TReadBp::iterator it = readBp.begin(); it != readBp.end(); ++it) {
+	std::sort(it->second.begin(), it->second.end(), SortJunction<Junction>());
+      }
+	
+      // Collect split-read SVs
+#pragma omp critical
+      {
+	selectDeletions(c, readBp, srBR);
+	selectDuplications(c, readBp, srBR);
+	selectInversions(c, readBp, srBR);
+	selectInsertions(c, readBp, srBR);
+	selectTranslocations(c, readBp, srBR);
+      }
+    }
+
+    // Debug abnormal paired-ends and split-reads
+    //outputSRBamRecords(c, srBR);
+
+    // Cluster split-read records
+    TVariants srSVs;
+    for(uint32_t svt = 0; svt < srBR.size(); ++svt) {
+      // Sort
+      std::sort(srBR[svt].begin(), srBR[svt].end(), SortSRBamRecord<SRBamRecord>());
+
+      // Cluster
+      cluster(c, srBR[svt], srSVs);
+      for(uint32_t i = 0; i < srSVs.size(); ++i) {
+	if (srSVs[i].svt == -1) srSVs[i].svt = svt;
+      }
+    }
+
+    // Debug SR SVs
+    //outputStructuralVariants(c, srSVs);
       
-      // Maximum insert size
-      int32_t varisize = getVariability(c, sampleLib);
+    // Maximum insert size
+    int32_t varisize = getVariability(c, sampleLib);
       
 #pragma omp parallel for default(shared)
-      for(int32_t svt = 0; svt < (int32_t) bamRecord.size(); ++svt) {
-	if (bamRecord[svt].empty()) continue;
+    for(int32_t svt = 0; svt < (int32_t) bamRecord.size(); ++svt) {
+      if (bamRecord[svt].empty()) continue;
 	
-	// Sort BAM records according to position
-	std::sort(bamRecord[svt].begin(), bamRecord[svt].end(), SortBamRecords<BamAlignRecord>());
+      // Sort BAM records according to position
+      std::sort(bamRecord[svt].begin(), bamRecord[svt].end(), SortBamRecords<BamAlignRecord>());
       
-	// Components
-	typedef std::vector<uint32_t> TComponent;
-	TComponent comp;
-	comp.resize(bamRecord[svt].size(), 0);
-	uint32_t numComp = 0;
+      // Components
+      typedef std::vector<uint32_t> TComponent;
+      TComponent comp;
+      comp.resize(bamRecord[svt].size(), 0);
+      uint32_t numComp = 0;
       
-	// Edge lists for each component
-	typedef uint8_t TWeightType;
-	typedef EdgeRecord<TWeightType, std::size_t> TEdgeRecord;
-	typedef std::vector<TEdgeRecord> TEdgeList;
-	typedef std::map<uint32_t, TEdgeList> TCompEdgeList;
-	TCompEdgeList compEdge;
+      // Edge lists for each component
+      typedef uint8_t TWeightType;
+      typedef EdgeRecord<TWeightType, std::size_t> TEdgeRecord;
+      typedef std::vector<TEdgeRecord> TEdgeList;
+      typedef std::map<uint32_t, TEdgeList> TCompEdgeList;
+      TCompEdgeList compEdge;
       
-	// Iterate the chromosome range
-	std::size_t lastConnectedNode = 0;
-	std::size_t lastConnectedNodeStart = 0;
-	std::size_t bamItIndex = 0;
-	for(TBamRecord::const_iterator bamIt = bamRecord[svt].begin(); bamIt != bamRecord[svt].end(); ++bamIt, ++bamItIndex) {
-	  // Safe to clean the graph?
-	  if (bamItIndex > lastConnectedNode) {
-	    // Clean edge lists
-	    if (!compEdge.empty()) {
-	      _searchCliques(hdr, compEdge, bamRecord[svt], svs, svt);
-	      lastConnectedNodeStart = lastConnectedNode;
-	      compEdge.clear();
-	    }
+      // Iterate the chromosome range
+      std::size_t lastConnectedNode = 0;
+      std::size_t lastConnectedNodeStart = 0;
+      std::size_t bamItIndex = 0;
+      for(TBamRecord::const_iterator bamIt = bamRecord[svt].begin(); bamIt != bamRecord[svt].end(); ++bamIt, ++bamItIndex) {
+	// Safe to clean the graph?
+	if (bamItIndex > lastConnectedNode) {
+	  // Clean edge lists
+	  if (!compEdge.empty()) {
+	    _searchCliques(hdr, compEdge, bamRecord[svt], svs, svt);
+	    lastConnectedNodeStart = lastConnectedNode;
+	    compEdge.clear();
 	  }
-	  int32_t const minCoord = _minCoord(bamIt->pos, bamIt->mpos, svt);
-	  int32_t const maxCoord = _maxCoord(bamIt->pos, bamIt->mpos, svt);
-	  TBamRecord::const_iterator bamItNext = bamIt;
-	  ++bamItNext;
-	  std::size_t bamItIndexNext = bamItIndex + 1;
-	  for(; ((bamItNext != bamRecord[svt].end()) && (abs(_minCoord(bamItNext->pos, bamItNext->mpos, svt) + bamItNext->alen - minCoord) <= varisize)) ; ++bamItNext, ++bamItIndexNext) {
-	    // Check that mate chr agree (only for translocations)
-	    if (bamIt->mtid != bamItNext->mtid) continue;
-
-	    // Check combinability of pairs
-	    if (_pairsDisagree(minCoord, maxCoord, bamIt->alen, bamIt->maxNormalISize, _minCoord(bamItNext->pos, bamItNext->mpos, svt), _maxCoord(bamItNext->pos, bamItNext->mpos, svt), bamItNext->alen, bamItNext->maxNormalISize, svt)) continue;
-	    
-	    // Update last connected node
-	    if (bamItIndexNext > lastConnectedNode ) lastConnectedNode = bamItIndexNext;
+	}
+	int32_t const minCoord = _minCoord(bamIt->pos, bamIt->mpos, svt);
+	int32_t const maxCoord = _maxCoord(bamIt->pos, bamIt->mpos, svt);
+	TBamRecord::const_iterator bamItNext = bamIt;
+	++bamItNext;
+	std::size_t bamItIndexNext = bamItIndex + 1;
+	for(; ((bamItNext != bamRecord[svt].end()) && (abs(_minCoord(bamItNext->pos, bamItNext->mpos, svt) + bamItNext->alen - minCoord) <= varisize)) ; ++bamItNext, ++bamItIndexNext) {
+	  // Check that mate chr agree (only for translocations)
+	  if (bamIt->mtid != bamItNext->mtid) continue;
 	  
-	    // Assign components
-	    uint32_t compIndex = 0;
-	    if (!comp[bamItIndex]) {
-	      if (!comp[bamItIndexNext]) {
-		// Both vertices have no component
-		compIndex = ++numComp;
-		comp[bamItIndex] = compIndex;
-		comp[bamItIndexNext] = compIndex;
-		compEdge.insert(std::make_pair(compIndex, TEdgeList()));
-	      } else {
-		compIndex = comp[bamItIndexNext];
-		comp[bamItIndex] = compIndex;
-	      }
+	  // Check combinability of pairs
+	  if (_pairsDisagree(minCoord, maxCoord, bamIt->alen, bamIt->maxNormalISize, _minCoord(bamItNext->pos, bamItNext->mpos, svt), _maxCoord(bamItNext->pos, bamItNext->mpos, svt), bamItNext->alen, bamItNext->maxNormalISize, svt)) continue;
+	  
+	  // Update last connected node
+	  if (bamItIndexNext > lastConnectedNode ) lastConnectedNode = bamItIndexNext;
+	  
+	  // Assign components
+	  uint32_t compIndex = 0;
+	  if (!comp[bamItIndex]) {
+	    if (!comp[bamItIndexNext]) {
+	      // Both vertices have no component
+	      compIndex = ++numComp;
+	      comp[bamItIndex] = compIndex;
+	      comp[bamItIndexNext] = compIndex;
+	      compEdge.insert(std::make_pair(compIndex, TEdgeList()));
 	    } else {
-	      if (!comp[bamItIndexNext]) {
-		compIndex = comp[bamItIndex];
-		comp[bamItIndexNext] = compIndex;
+	      compIndex = comp[bamItIndexNext];
+	      comp[bamItIndex] = compIndex;
+	    }
+	  } else {
+	    if (!comp[bamItIndexNext]) {
+	      compIndex = comp[bamItIndex];
+	      comp[bamItIndexNext] = compIndex;
+	    } else {
+	      // Both vertices have a component
+	      if (comp[bamItIndexNext] == comp[bamItIndex]) {
+		compIndex = comp[bamItIndexNext];
 	      } else {
-		// Both vertices have a component
-		if (comp[bamItIndexNext] == comp[bamItIndex]) {
+		// Merge components
+		compIndex = comp[bamItIndex];
+		uint32_t otherIndex = comp[bamItIndexNext];
+		if (otherIndex < compIndex) {
 		  compIndex = comp[bamItIndexNext];
-		} else {
-		  // Merge components
-		  compIndex = comp[bamItIndex];
-		  uint32_t otherIndex = comp[bamItIndexNext];
-		  if (otherIndex < compIndex) {
-		    compIndex = comp[bamItIndexNext];
-		    otherIndex = comp[bamItIndex];
-		  }
-		  // Re-label other index
-		  for(std::size_t i = lastConnectedNodeStart; i <= lastConnectedNode; ++i) {
-		    if (otherIndex == comp[i]) comp[i] = compIndex;
-		  }
-		  // Merge edge lists
-		  TCompEdgeList::iterator compEdgeIt = compEdge.find(compIndex);
-		  TCompEdgeList::iterator compEdgeOtherIt = compEdge.find(otherIndex);
-		  compEdgeIt->second.insert(compEdgeIt->second.end(), compEdgeOtherIt->second.begin(), compEdgeOtherIt->second.end());
-		  compEdge.erase(compEdgeOtherIt);
+		  otherIndex = comp[bamItIndex];
 		}
+		// Re-label other index
+		for(std::size_t i = lastConnectedNodeStart; i <= lastConnectedNode; ++i) {
+		  if (otherIndex == comp[i]) comp[i] = compIndex;
+		}
+		// Merge edge lists
+		TCompEdgeList::iterator compEdgeIt = compEdge.find(compIndex);
+		TCompEdgeList::iterator compEdgeOtherIt = compEdge.find(otherIndex);
+		compEdgeIt->second.insert(compEdgeIt->second.end(), compEdgeOtherIt->second.begin(), compEdgeOtherIt->second.end());
+		compEdge.erase(compEdgeOtherIt);
 	      }
 	    }
-	    
-	    // Append new edge
-	    TCompEdgeList::iterator compEdgeIt = compEdge.find(compIndex);
-	    if (compEdgeIt->second.size() < c.graphPruning) {
-	      TWeightType weight = (TWeightType) ( std::log((double) abs( abs( (_minCoord(bamItNext->pos, bamItNext->mpos, svt) - minCoord) - (_maxCoord(bamItNext->pos, bamItNext->mpos, svt) - maxCoord) ) - abs(bamIt->Median - bamItNext->Median)) + 1) / std::log(2) );
-	      compEdgeIt->second.push_back(TEdgeRecord(bamItIndex, bamItIndexNext, weight));
-	    }
+	  }
+	  
+	  // Append new edge
+	  TCompEdgeList::iterator compEdgeIt = compEdge.find(compIndex);
+	  if (compEdgeIt->second.size() < c.graphPruning) {
+	    TWeightType weight = (TWeightType) ( std::log((double) abs( abs( (_minCoord(bamItNext->pos, bamItNext->mpos, svt) - minCoord) - (_maxCoord(bamItNext->pos, bamItNext->mpos, svt) - maxCoord) ) - abs(bamIt->Median - bamItNext->Median)) + 1) / std::log(2) );
+	    compEdgeIt->second.push_back(TEdgeRecord(bamItIndex, bamItIndexNext, weight));
 	  }
 	}
-	if (!compEdge.empty()) {
-	  _searchCliques(hdr, compEdge, bamRecord[svt], svs, svt);
-	  compEdge.clear();
-	}
       }
+      if (!compEdge.empty()) {
+	_searchCliques(hdr, compEdge, bamRecord[svt], svs, svt);
+	compEdge.clear();
+      }
+    }
 
-      // Sort SVs for look-up
-      sort(svs.begin(), svs.end(), SortSVs<StructuralVariantRecord>());
+    // Sort SVs for look-up
+    sort(svs.begin(), svs.end(), SortSVs<StructuralVariantRecord>());
     
-      // Add the soft clip SV records
-      if (c.indels) {
+    // Add the soft clip SV records
+    if (c.indels) {
+      /*
 	for(int32_t svt = 2; svt < 5; svt += 2) {
-	  int32_t bpWindowLen = 10;
-	  int32_t maxLookAhead = 0;
-	  std::sort(splitRecord[svt/2 - 1].begin(), splitRecord[svt/2 - 1].end(), SortSplitRecords<SplitAlignRecord>());
-	  TSplitRecord::const_iterator splitClusterIt = splitRecord[svt/2 - 1].end();
-	  for(TSplitRecord::const_iterator splitIt = splitRecord[svt/2 - 1].begin(); splitIt!=splitRecord[svt/2 - 1].end(); ++splitIt) {
-	    if ((maxLookAhead) && (splitIt->splitbeg > maxLookAhead)) {
-	      // Process split read cluster
-	      _processSRCluster(splitClusterIt, splitIt, refIndex, bpWindowLen, svs, svt);
-	      maxLookAhead = 0;
-	      splitClusterIt = splitRecord[svt/2 - 1].end();
-	    }
-	    if ((!maxLookAhead) || (splitIt->splitbeg < maxLookAhead)) {
-	      if (!maxLookAhead) splitClusterIt = splitIt;
-	      maxLookAhead = splitIt->splitbeg + bpWindowLen;
-	    }
-	  }
-	  TSplitRecord::const_iterator splitIt = splitRecord[svt/2 - 1].end();
-	  _processSRCluster(splitClusterIt, splitIt, refIndex, bpWindowLen, svs, svt);
+	int32_t bpWindowLen = 10;
+	int32_t maxLookAhead = 0;
+	std::sort(splitRecord[svt/2 - 1].begin(), splitRecord[svt/2 - 1].end(), SortSplitRecords<SplitAlignRecord>());
+	TSplitRecord::const_iterator splitClusterIt = splitRecord[svt/2 - 1].end();
+	for(TSplitRecord::const_iterator splitIt = splitRecord[svt/2 - 1].begin(); splitIt!=splitRecord[svt/2 - 1].end(); ++splitIt) {
+	if ((maxLookAhead) && (splitIt->splitbeg > maxLookAhead)) {
+	// Process split read cluster
+	_processSRCluster(splitClusterIt, splitIt, refIndex, bpWindowLen, svs, svt);
+	maxLookAhead = 0;
+	splitClusterIt = splitRecord[svt/2 - 1].end();
 	}
-      }
+	if ((!maxLookAhead) || (splitIt->splitbeg < maxLookAhead)) {
+	if (!maxLookAhead) splitClusterIt = splitIt;
+	maxLookAhead = splitIt->splitbeg + bpWindowLen;
+	}
+	}
+	TSplitRecord::const_iterator splitIt = splitRecord[svt/2 - 1].end();
+	_processSRCluster(splitClusterIt, splitIt, refIndex, bpWindowLen, svs, svt);
+	}
+      */
     }
   
     // Split-read search
