@@ -42,7 +42,7 @@ void _remove_format_tag(bcf_hdr_t* hdr, bcf1_t* rec, std::string const& tag) {
 }
 
 void _remove_info(bcf_hdr_t* hdr, bcf1_t* rec) {
-  std::string tmp[] = {"CT", "PRECISE", "IMPRECISE", "SVTYPE", "SVMETHOD", "CIEND", "CIPOS", "CHR2", "END", "PE", "MAPQ", "SR", "SRQ", "CONSENSUS"};
+  std::string tmp[] = {"CT", "PRECISE", "IMPRECISE", "SVTYPE", "SVMETHOD", "CIEND", "CIPOS", "CHR2", "END", "PE", "MAPQ", "SRMAPQ", "SR", "SRQ", "CONSENSUS"};
   std::set<std::string> keepInfo(tmp, tmp + sizeof(tmp)/sizeof(tmp[0]));
 
   if (!(rec->unpacked & BCF_UN_INFO)) bcf_unpack(rec, BCF_UN_INFO);
@@ -252,10 +252,24 @@ vcfParse(TConfig const& c, bam_hdr_t* hd, std::vector<TStructuralVariantRecord>&
       else svRec.svEnd = rec->pos + 2;
       if (bcf_get_info_string(hdr, rec, "CONSENSUS", &cons, &ncons) > 0) svRec.consensus = std::string(cons);
       else svRec.precise = false;
-      if (bcf_get_info_int32(hdr, rec, "CIPOS", &cipos, &ncipos) > 0) svRec.wiggle = cipos[1];
-      else svRec.wiggle = 0;
+      if (bcf_get_info_int32(hdr, rec, "CIPOS", &cipos, &ncipos) > 0) {
+	svRec.ciposlow = cipos[0];
+	svRec.ciposhigh = cipos[1];
+      } else {
+	svRec.ciposlow = -50;
+	svRec.ciposhigh = 50;
+      }
+      if (bcf_get_info_int32(hdr, rec, "CIEND", &cipos, &ncipos) > 0) {
+	svRec.ciendlow = cipos[0];
+	svRec.ciendhigh = cipos[1];
+      } else {
+	svRec.ciendlow = -50;
+	svRec.ciendhigh = 50;
+      }
       if (bcf_get_info_int32(hdr, rec, "MAPQ", &mapq, &nmapq) > 0) svRec.peMapQuality = (uint8_t) *mapq;
       else svRec.peMapQuality = 0;
+      if (bcf_get_info_int32(hdr, rec, "SRMAPQ", &mapq, &nmapq) > 0) svRec.srMapQuality = (uint8_t) *mapq;
+      else svRec.srMapQuality = 0;
       if (bcf_get_info_float(hdr, rec, "SRQ", &srq, &nsrq) > 0) svRec.srAlignQuality = (double) *srq;
       else svRec.srAlignQuality = 0;
       if ((bcf_get_info_string(hdr, rec, "SVTYPE", &svt, &nsvt) > 0) && (bcf_get_info_string(hdr, rec, "CT", &ct, &nct) > 0)) svRec.svt = _decodeOrientation(std::string(ct), std::string(svt));
@@ -316,7 +330,10 @@ vcfParse(TConfig const& c, bam_hdr_t* hd, std::vector<TStructuralVariantRecord>&
 	svRec.srSupport = 5;
 	svRec.peMapQuality = 20;
 	svRec.srAlignQuality = 1;
-	svRec.wiggle = 150;
+	svRec.ciposlow = -50;
+	svRec.ciposhigh = 50;
+	svRec.ciendlow = -50;
+	svRec.ciendhigh = 50;
 
 	// Lazy loading of reference sequence
 	if ((seq == NULL) || (tid != lastRefIndex)) {
@@ -409,6 +426,7 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
   bcf_hdr_append(hdr, "##INFO=<ID=END,Number=1,Type=Integer,Description=\"End position of the structural variant\">");
   bcf_hdr_append(hdr, "##INFO=<ID=PE,Number=1,Type=Integer,Description=\"Paired-end support of the structural variant\">");
   bcf_hdr_append(hdr, "##INFO=<ID=MAPQ,Number=1,Type=Integer,Description=\"Median mapping quality of paired-ends\">");
+  bcf_hdr_append(hdr, "##INFO=<ID=SRMAPQ,Number=1,Type=Integer,Description=\"Median mapping quality of split-reads\">");
   bcf_hdr_append(hdr, "##INFO=<ID=SR,Number=1,Type=Integer,Description=\"Split-read support\">");
   bcf_hdr_append(hdr, "##INFO=<ID=SRQ,Number=1,Type=Float,Description=\"Split-read consensus alignment quality\">");
   bcf_hdr_append(hdr, "##INFO=<ID=CONSENSUS,Number=1,Type=String,Description=\"Split-read consensus sequence\">");
@@ -529,15 +547,17 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
       bcf_update_info_int32(hdr, rec, "MAPQ", &tmpi, 1);
       bcf_update_info_string(hdr, rec, "CT", _addOrientation(svIter->svt).c_str());
       int32_t ciend[2];
-      ciend[0] = -svIter->wiggle;
-      ciend[1] = svIter->wiggle;
+      ciend[0] = svIter->ciendlow;
+      ciend[1] = svIter->ciendhigh;
       int32_t cipos[2];
-      cipos[0] = -svIter->wiggle;
-      cipos[1] = svIter->wiggle;
+      cipos[0] = svIter->ciposlow;
+      cipos[1] = svIter->ciposhigh;
       bcf_update_info_int32(hdr, rec, "CIPOS", cipos, 2);
       bcf_update_info_int32(hdr, rec, "CIEND", ciend, 2);
       
       if (svIter->precise)  {
+	tmpi = svIter->srMapQuality;
+	bcf_update_info_int32(hdr, rec, "SRMAPQ", &tmpi, 1);
 	tmpi = svIter->insLen;
 	bcf_update_info_int32(hdr, rec, "INSLEN", &tmpi, 1);
 	tmpi = svIter->homLen;

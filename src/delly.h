@@ -363,7 +363,7 @@ inline int dellyRun(TConfigStruct& c) {
     }
 
     // Sort and merge PE and SR calls
-    mergeSort(c, svs, srSVs);
+    mergeSort(svs, srSVs);
   } else vcfParse(c, hdr, svs);
 
   // Re-number SVs

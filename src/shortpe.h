@@ -161,14 +161,15 @@ namespace torali
 	  for(uint32_t svid = 0; svid < seqStore.size(); ++svid) {
 	    if ((!svDone[svid]) && ((seqStore[svid].size() == maxReadPerSV) || (seqStore[svid].size() == (uint32_t) svs[svid].srSupport))) {
 	      // MSA
+	      bool msaSuccess = false;
 	      if ((!_translocation(svs[svid].svt)) && (seqStore[svid].size() > 1)) {
 		msa(c, seqStore[svid], svs[svid].consensus);
 		char* sndSeq = NULL;
-		if (!alignConsensus(c, hdr, seq, sndSeq, svs[svid])) {
-		  // MSA failed
-		  svs[svid].consensus = "";
-		  svs[svid].srSupport = 0;
-		}
+		if (alignConsensus(c, hdr, seq, sndSeq, svs[svid])) msaSuccess = true;
+	      }
+	      if (!msaSuccess) {
+		svs[svid].consensus = "";
+		svs[svid].srSupport = 0;
 	      }
 
 	      // Clean-up
@@ -444,60 +445,54 @@ namespace torali
   }
 
 
-  template<typename TConfig>
   inline void
-  mergeSort(TConfig const& c, std::vector<StructuralVariantRecord>& pe, std::vector<StructuralVariantRecord>& sr) { 
-  
-  /*
-      
-    // Sort SVs for look-up
-    sort(svs.begin(), svs.end(), SortSVs<StructuralVariantRecord>());
-    
-    // Split-read search
-    if (!svs.empty()) {
-      findPutativeSplitReads(c, validRegions, svs);
-      
-      if (c.indels) {
-	// Sort SVs for look-up and by decreasing PE support
-	sort(svs.begin(), svs.end(), SortSVs<StructuralVariantRecord>());
-	
-	// Temporary SV container
-	TVariants svc;
-	
-	// Clean-up SV set
-	for(int32_t svt = 0; svt < 10; ++svt) {
-	  for(typename TVariants::iterator svIt = svs.begin(); svIt != svs.end(); ++svIt) {
-	    if (svIt->svt != svt) continue;
+  mergeSort(std::vector<StructuralVariantRecord>& pe, std::vector<StructuralVariantRecord>& sr) {
+    typedef typename std::vector<StructuralVariantRecord> TVariants;
+    // Sort PE records for look-up
+    sort(pe.begin(), pe.end(), SortSVs<StructuralVariantRecord>());
 
-	    // Unresolved soft clips
-	    if ((svIt->precise) && (svIt->srAlignQuality == 0)) continue;
-	  
-	    // Precise duplicates
-	    int32_t searchWindow = 10;
-	    bool svExists = false;
-	    typename TVariants::iterator itOther = std::lower_bound(svc.begin(), svc.end(), StructuralVariantRecord(svIt->chr, std::max(0, svIt->svStart - searchWindow), svIt->svEnd), SortSVs<StructuralVariantRecord>());
-	    for(; ((itOther != svc.end()) && (std::abs(itOther->svStart - svIt->svStart) < searchWindow)); ++itOther) {
-	      if (itOther->svt != svt) continue;
-	      if (!svIt->precise) continue;
-	      if ((svIt->chr != itOther->chr) || (svIt->chr2 != itOther->chr2)) continue;
-	      if ((std::abs(svIt->svStart - itOther->svStart) + std::abs(svIt->svEnd - itOther->svEnd)) > searchWindow) continue;
-	      if ((svIt->svEnd < itOther->svStart) || (itOther->svEnd < svIt->svStart)) continue;
-	      svExists=true;
-	      break;
+    // Sort SR records for look-up
+    sort(sr.begin(), sr.end(), SortSVs<StructuralVariantRecord>());
+    
+    // Augment PE SVs and append missing SR SVs
+    for(int32_t svt = 0; svt < 10; ++svt) {
+      for(uint32_t i = 0; i < sr.size(); ++i) {
+	if (sr[i].svt != svt) continue;
+	if (sr[i].srSupport == 0) continue; // SR assembly failed
+
+	// Precise duplicates
+	int32_t searchWindow = 500;
+	bool svExists = false;
+	typename TVariants::iterator itOther = std::lower_bound(pe.begin(), pe.end(), StructuralVariantRecord(sr[i].chr, std::max(0, sr[i].svStart - searchWindow), sr[i].svEnd), SortSVs<StructuralVariantRecord>());
+	for(; ((itOther != pe.end()) && (std::abs(itOther->svStart - sr[i].svStart) < searchWindow)); ++itOther) {
+	  if ((itOther->svt != svt) || (itOther->precise)) continue; 
+	  if ((sr[i].chr != itOther->chr) || (sr[i].chr2 != itOther->chr2)) continue;  // Mismatching chr
+
+	  // Breakpoints within PE confidence interval?
+	  if ((itOther->svStart + itOther->ciposlow < sr[i].svStart) && (sr[i].svStart < itOther->svStart + itOther->ciposhigh)) {
+	    if ((itOther->svEnd + itOther->ciendlow < sr[i].svEnd) && (sr[i].svEnd < itOther->svEnd + itOther->ciendhigh)) {
+	      svExists = true;
+	      // Augment PE record
+	      itOther->svStart = sr[i].svStart;
+	      itOther->svEnd = sr[i].svEnd;
+	      itOther->ciposlow = sr[i].ciposlow;
+	      itOther->ciposhigh = sr[i].ciposhigh;
+	      itOther->ciendlow = sr[i].ciendlow;
+	      itOther->ciendhigh = sr[i].ciendhigh;
+	      itOther->srSupport = sr[i].srSupport;
+	      itOther->insLen = sr[i].insLen;
+	      itOther->homLen = sr[i].homLen;
+	      itOther->srAlignQuality = sr[i].srAlignQuality;
+	      itOther->precise = true;
+	      itOther->consensus = sr[i].consensus;
 	    }
-	    if (svExists) continue;
-	    
-	    // Add SV
-	    svc.push_back(*svIt);
 	  }
 	}
 	
-	// Final set of precise and imprecise SVs
-	svs = svc;
+	// SR only SV
+	if (!svExists) pe.push_back(sr[i]);
       }
     }
-  }
-  */
   }
   
 

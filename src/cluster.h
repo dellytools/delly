@@ -501,7 +501,11 @@ namespace torali
 	svRec.svStart = (uint32_t) svStart + 1;
 	svRec.svEnd = (uint32_t) svEnd + 1;
 	svRec.peSupport = clique.size();
-	svRec.wiggle = std::max(abs(wiggle), 50);
+	int32_t ci_wiggle = std::max(abs(wiggle), 50);
+	svRec.ciposlow = -ci_wiggle;
+	svRec.ciposhigh = ci_wiggle;
+	svRec.ciendlow = -ci_wiggle;
+	svRec.ciendhigh = ci_wiggle;
 	std::vector<uint8_t> mapQV;
 	for(typename TCliqueMembers::const_iterator itC = clique.begin(); itC!=clique.end(); ++itC) mapQV.push_back(bamRecord[*itC].MapQuality);
 	std::sort(mapQV.begin(), mapQV.end());

@@ -60,12 +60,12 @@ namespace torali {
     int32_t ciendhigh;
     int32_t peSupport;
     int32_t srSupport;
-    int32_t wiggle;
     int32_t insLen;
     int32_t homLen;
     int32_t svt;
     uint32_t id;
     float srAlignQuality;
+    uint8_t srMapQuality;
     uint8_t peMapQuality;
     bool precise;
     std::string alleles;
@@ -76,7 +76,7 @@ namespace torali {
 
     StructuralVariantRecord(int32_t const c, int32_t const s, int32_t const e) : chr(c), svStart(s), chr2(c), svEnd(e), peSupport(0), svt(-1) {}
 
-    StructuralVariantRecord(int32_t const c1, int32_t const s, int32_t const c2, int32_t const e, int32_t const cipl, int32_t const ciph, int32_t const ciel, int32_t const cieh, int32_t const sup, int32_t const ilen, int32_t const svtype, int32_t const idval, uint8_t mq): chr(c1), svStart(s), chr2(c2), svEnd(e), ciposlow(cipl), ciposhigh(ciph), ciendlow(ciel), ciendhigh(cieh), peSupport(0), srSupport(sup), insLen(ilen), svt(svtype), id(idval), peMapQuality(mq), precise(true) {}
+    StructuralVariantRecord(int32_t const c1, int32_t const s, int32_t const c2, int32_t const e, int32_t const cipl, int32_t const ciph, int32_t const ciel, int32_t const cieh, int32_t const sup, int32_t const ilen, int32_t const svtype, int32_t const idval, uint8_t mq): chr(c1), svStart(s), chr2(c2), svEnd(e), ciposlow(cipl), ciposhigh(ciph), ciendlow(ciel), ciendhigh(cieh), peSupport(0), srSupport(sup), insLen(ilen), svt(svtype), id(idval), srMapQuality(mq), peMapQuality(0), precise(true) {}
     
   };
 
