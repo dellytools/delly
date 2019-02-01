@@ -74,10 +74,10 @@ namespace torali {
     
     StructuralVariantRecord() : svt(-1) {}
 
-  StructuralVariantRecord(int32_t const c, int32_t const s, int32_t const e) : chr(c), svStart(s), chr2(c), svEnd(e), peSupport(0), svt(-1) {}
+    StructuralVariantRecord(int32_t const c, int32_t const s, int32_t const e) : chr(c), svStart(s), chr2(c), svEnd(e), peSupport(0), svt(-1) {}
 
 
-    StructuralVariantRecord(int32_t const c1, int32_t const s, int32_t const c2, int32_t const e, int32_t const cipl, int32_t const ciph, int32_t const ciel, int32_t const cieh, int32_t const sup, uint8_t mq, int32_t const ilen): chr(c1), svStart(s), chr2(c2), svEnd(e), ciposlow(cipl), ciposhigh(ciph), ciendlow(ciel), ciendhigh(cieh), peSupport(0), srSupport(sup), insLen(ilen), svt(-1), peMapQuality(mq), precise(true) {}
+    StructuralVariantRecord(int32_t const c1, int32_t const s, int32_t const c2, int32_t const e, int32_t const cipl, int32_t const ciph, int32_t const ciel, int32_t const cieh, int32_t const sup, int32_t const svtype, uint8_t mq, int32_t const ilen): chr(c1), svStart(s), chr2(c2), svEnd(e), ciposlow(cipl), ciposhigh(ciph), ciendlow(ciel), ciendhigh(cieh), peSupport(0), srSupport(sup), insLen(ilen), svt(svtype), peMapQuality(mq), precise(true) {}
     
   };
 

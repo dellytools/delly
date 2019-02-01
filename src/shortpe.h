@@ -67,61 +67,6 @@ Contact: Tobias Rausch (rausch@embl.de)
 namespace torali
 {
   
-  // Reduced bam alignment record data structure
-  struct BamAlignRecord {
-    int32_t tid;         
-    int32_t pos;
-    int32_t mtid; 
-    int32_t mpos;
-    int32_t alen;
-    int32_t malen;
-    int32_t Median;
-    int32_t Mad;
-    int32_t maxNormalISize;
-    uint32_t flag;
-    uint8_t MapQuality;
-  
-    BamAlignRecord(bam1_t* rec, uint8_t pairQuality, uint16_t a, uint16_t ma, int32_t median, int32_t mad, int32_t maxISize) : tid(rec->core.tid), pos(rec->core.pos), mtid(rec->core.mtid), mpos(rec->core.mpos), alen(a), malen(ma), Median(median), Mad(mad), maxNormalISize(maxISize), flag(rec->core.flag), MapQuality(pairQuality) {}
-  };
-
-  // Sort reduced bam alignment records
-  template<typename TRecord>
-  struct SortBamRecords : public std::binary_function<TRecord, TRecord, bool>
-  {
-    inline bool operator()(TRecord const& s1, TRecord const& s2) const {
-      if (s1.tid==s1.mtid) {
-	return ((std::min(s1.pos, s1.mpos) < std::min(s2.pos, s2.mpos)) || 
-		((std::min(s1.pos, s1.mpos) == std::min(s2.pos, s2.mpos)) && (std::max(s1.pos, s1.mpos) < std::max(s2.pos, s2.mpos))) ||
-		((std::min(s1.pos, s1.mpos) == std::min(s2.pos, s2.mpos)) && (std::max(s1.pos, s1.mpos) == std::max(s2.pos, s2.mpos)) && (s1.maxNormalISize < s2.maxNormalISize)));
-      } else {
-	return ((s1.pos < s2.pos) ||
-		((s1.pos == s2.pos) && (s1.mpos < s2.mpos)) ||
-		((s1.pos == s2.pos) && (s1.mpos == s2.mpos) && (s1.maxNormalISize < s2.maxNormalISize)));
-      }
-    }
-  };
-  
-
-  // Edge struct
-  template<typename TWeight, typename TVertex>
-  struct EdgeRecord {
-    TVertex source;
-    TVertex target;
-    TWeight weight;
-    
-    EdgeRecord(TVertex s, TVertex t, TWeight w) : source(s), target(t), weight(w) {}
-  };
-
-  // Sort edge records
-  template<typename TRecord>
-  struct SortEdgeRecords : public std::binary_function<TRecord, TRecord, bool>
-  {
-    inline bool operator()(TRecord const& e1, TRecord const& e2) const {
-      return ((e1.weight < e2.weight) || ((e1.weight == e2.weight) && (e1.source < e2.source)) || ((e1.weight == e2.weight) && (e1.source == e2.source) && (e1.target < e2.target)));
-    }
-  };
-
-
   template<typename TValue, typename TPosition>
   inline void
   _movingAverage(std::vector<TValue> const& spp, TPosition const windowSize, TValue& movingAverage, TPosition& lowerBound, TPosition& upperBound) {
@@ -315,216 +260,6 @@ namespace torali
   }
   
 
-  // Initialize clique, deletions
-  template<typename TBamRecord, typename TSize>
-  inline void
-  _initClique(TBamRecord const& el, TSize& svStart, TSize& svEnd, TSize& wiggle, int32_t const svt) {
-    if (_translocation(svt)) {
-      uint8_t ct = _getSpanOrientation(svt);
-      if (ct%2==0) {
-	svStart = el.pos + el.alen;
-	if (ct>=2) svEnd = el.mpos;
-	else svEnd = el.mpos + el.malen;
-      } else {
-	svStart = el.pos;
-	if (ct>=2) svEnd = el.mpos + el.malen;
-	else svEnd = el.mpos;
-      }
-      wiggle=el.maxNormalISize;
-    } else {
-      if (svt == 0) {
-	svStart = el.mpos + el.malen;
-	svEnd = el.pos + el.alen;
-	wiggle = el.maxNormalISize - std::max(el.alen, el.malen);
-      } else if (svt == 1) {
-	svStart = el.mpos;
-	svEnd = el.pos;
-	wiggle = el.maxNormalISize - std::max(el.alen, el.malen);
-      } else if (svt == 2) {
-	svStart = el.mpos + el.malen;
-	svEnd = el.pos;
-	wiggle =  -el.maxNormalISize;
-      } else if (svt == 3) {
-	svStart = el.mpos;
-	svEnd = el.pos + el.alen;
-	wiggle = el.maxNormalISize;
-      }
-    } 
-  }
-
-  // Update clique, deletions
-  template<typename TBamRecord, typename TSize>
-  inline bool 
-  _updateClique(TBamRecord const& el, TSize& svStart, TSize& svEnd, TSize& wiggle, int32_t const svt) 
-  {
-    if (_translocation(svt)) {
-      int ct = _getSpanOrientation(svt);
-      TSize newSvStart;
-      TSize newSvEnd;
-      TSize newWiggle = wiggle;
-      if (ct%2==0) {
-	newSvStart = std::max(svStart, el.pos + el.alen);
-	newWiggle -= (newSvStart - svStart);
-	if (ct>=2) {
-	  newSvEnd = std::min(svEnd, el.mpos);
-	  newWiggle -= (svEnd - newSvEnd);
-	} else  {
-	  newSvEnd = std::max(svEnd, el.mpos + el.malen);
-	  newWiggle -= (newSvEnd - svEnd);
-	}
-      } else {
-	newSvStart = std::min(svStart, el.pos);
-	newWiggle -= (svStart - newSvStart);
-	if (ct>=2) {
-	  newSvEnd = std::max(svEnd, el.mpos + el.malen);
-	  newWiggle -= (newSvEnd - svEnd);
-	} else {
-	  newSvEnd = std::min(svEnd, el.mpos);
-	  newWiggle -= (svEnd - newSvEnd);
-	}
-      }
-      // Is this still a valid translocation cluster?
-      if (newWiggle>0) {
-	svStart = newSvStart;
-	svEnd = newSvEnd;
-	wiggle = newWiggle;
-	return true;
-      }
-      return false;
-    } else {
-      if ((svt == 0) || (svt == 1)) { 
-	int ct = _getSpanOrientation(svt);
-	TSize newSvStart;
-	TSize newSvEnd;
-	TSize newWiggle;
-	TSize wiggleChange;
-	if (!ct) {
-	  newSvStart = std::max(svStart, el.mpos + el.malen);
-	  newSvEnd = std::max(svEnd, el.pos + el.alen);
-	  newWiggle = std::min(el.maxNormalISize - (newSvStart - el.mpos), el.maxNormalISize - (newSvEnd - el.pos));
-	  wiggleChange = wiggle - std::max(newSvStart - svStart, newSvEnd - svEnd);
-	} else {
-	  newSvStart = std::min(svStart, el.mpos);
-	  newSvEnd = std::min(svEnd, el.pos);
-	  newWiggle = std::min(el.maxNormalISize - (el.mpos + el.malen - newSvStart), el.maxNormalISize - (el.pos + el.alen - newSvEnd));
-	  wiggleChange = wiggle - std::max(svStart - newSvStart, svEnd - newSvEnd);
-	}
-	if (wiggleChange < newWiggle) newWiggle=wiggleChange;
-	
-	// Does the new inversion size agree with all pairs
-	if ((newSvStart < newSvEnd) && (newWiggle>=0)) {
-	  svStart = newSvStart;
-	  svEnd = newSvEnd;
-	  wiggle = newWiggle;
-	  return true;
-	}
-	return false;
-      } else if (svt == 2) {
-	TSize newSvStart = std::max(svStart, el.mpos + el.malen);
-	TSize newSvEnd = std::min(svEnd, el.pos);
-	TSize newWiggle = el.pos + el.alen - el.mpos - el.maxNormalISize - (newSvEnd - newSvStart);
-	TSize wiggleChange = wiggle + (svEnd-svStart) - (newSvEnd - newSvStart);
-	if (wiggleChange > newWiggle) newWiggle=wiggleChange;
-	
-	// Does the new deletion size agree with all pairs
-	if ((newSvStart < newSvEnd) && (newWiggle<=0)) {
-	  svStart = newSvStart;
-	  svEnd = newSvEnd;
-	  wiggle = newWiggle;
-	  return true;
-	}
-	return false;
-      } else if (svt == 3) {
-	TSize newSvStart = std::min(svStart, el.mpos);
-	TSize newSvEnd = std::max(svEnd, el.pos + el.alen);
-	TSize newWiggle = el.pos - (el.mpos + el.malen) + el.maxNormalISize - (newSvEnd - newSvStart);
-	TSize wiggleChange = wiggle - ((newSvEnd - newSvStart) - (svEnd-svStart));
-	if (wiggleChange < newWiggle) newWiggle = wiggleChange;
-	
-	// Does the new duplication size agree with all pairs
-	if ((newSvStart < newSvEnd) && (newWiggle>=0)) {
-	  svStart = newSvStart;
-	  svEnd = newSvEnd;
-	  wiggle = newWiggle;
-	  return true;
-	}
-	return false;
-      }
-    }
-    return false;
-  }
-
-
-  template<typename TCompEdgeList, typename TBamRecord, typename TSVs>
-  inline void
-  _searchCliques(bam_hdr_t* hdr, TCompEdgeList& compEdge, TBamRecord const& bamRecord, TSVs& svs, int32_t const svt) {
-    typedef typename TCompEdgeList::mapped_type TEdgeList;
-    typedef typename TEdgeList::value_type TEdgeRecord;
-
-    // Iterate all components
-    for(typename TCompEdgeList::iterator compIt = compEdge.begin(); compIt != compEdge.end(); ++compIt) {
-      // Sort edges by weight
-      std::sort(compIt->second.begin(), compIt->second.end(), SortEdgeRecords<TEdgeRecord>());
-      
-      // Find a large clique
-      typename TEdgeList::const_iterator itWEdge = compIt->second.begin();
-      typename TEdgeList::const_iterator itWEdgeEnd = compIt->second.end();
-      typedef std::set<std::size_t> TCliqueMembers;
-      
-      TCliqueMembers clique;
-      TCliqueMembers incompatible;
-      int32_t svStart = -1;
-      int32_t svEnd = -1;
-      int32_t wiggle = 0;
-      int32_t clusterRefID=bamRecord[itWEdge->source].tid;
-      int32_t clusterMateRefID=bamRecord[itWEdge->source].mtid;
-      _initClique(bamRecord[itWEdge->source], svStart, svEnd, wiggle, svt);
-      if ((clusterRefID==clusterMateRefID) && (svStart >= svEnd))  continue;
-      clique.insert(itWEdge->source);
-      
-      // Grow the clique from the seeding edge
-      bool cliqueGrow=true;
-      while (cliqueGrow) {
-	itWEdge = compIt->second.begin();
-	cliqueGrow = false;
-	for(;(!cliqueGrow) && (itWEdge != itWEdgeEnd);++itWEdge) {
-	  std::size_t v;
-	  if ((clique.find(itWEdge->source) == clique.end()) && (clique.find(itWEdge->target) != clique.end())) v = itWEdge->source;
-	  else if ((clique.find(itWEdge->source) != clique.end()) && (clique.find(itWEdge->target) == clique.end())) v = itWEdge->target;
-	  else continue;
-	  if (incompatible.find(v) != incompatible.end()) continue;
-	  cliqueGrow = _updateClique(bamRecord[v], svStart, svEnd, wiggle, svt);
-	  if (cliqueGrow) clique.insert(v);
-	  else incompatible.insert(v);
-	}
-      }
-      
-      if ((clique.size()>1) && (_svSizeCheck(svStart, svEnd, svt))) {
-	StructuralVariantRecord svRec;
-	svRec.chr = clusterRefID;
-	svRec.chr2 = clusterMateRefID;
-	svRec.svStart = std::min((uint32_t) svStart + 1, hdr->target_len[clusterRefID]);
-	svRec.svEnd = std::min((uint32_t) svEnd+1, hdr->target_len[clusterMateRefID]);
-	svRec.peSupport = clique.size();
-	svRec.wiggle = std::max(abs(wiggle), 50);
-	std::vector<uint8_t> mapQV;
-	for(typename TCliqueMembers::const_iterator itC = clique.begin(); itC!=clique.end(); ++itC) mapQV.push_back(bamRecord[*itC].MapQuality);
-	std::sort(mapQV.begin(), mapQV.end());
-	svRec.peMapQuality = mapQV[mapQV.size()/2];
-	svRec.srSupport=0;
-	svRec.srAlignQuality=0;
-	svRec.precise=false;
-	svRec.svt = svt;
-	svRec.insLen = 0;
-	svRec.homLen = 0;
-#pragma omp critical
-	{
-	  svs.push_back(svRec);
-	}
-      }
-    }
-  }
-  
   template<typename TConfig, typename TValidRegion, typename TVariants, typename TSampleLib>
   inline void
   shortPE(TConfig const& c, TValidRegion const& validRegions, TVariants& svs, TSampleLib& sampleLib)
@@ -731,15 +466,13 @@ namespace torali
     TVariants srSVs;
     for(uint32_t svt = 0; svt < srBR.size(); ++svt) {
       ++spSR;
+      if (srBR[svt].empty()) continue;
       
       // Sort
       std::sort(srBR[svt].begin(), srBR[svt].end(), SortSRBamRecord<SRBamRecord>());
 
       // Cluster
-      cluster(c, srBR[svt], srSVs, c.maxReadSep);
-      for(uint32_t i = 0; i < srSVs.size(); ++i) {
-	if (srSVs[i].svt == -1) srSVs[i].svt = svt;
-      }
+      cluster(c, srBR[svt], srSVs, c.maxReadSep, svt);
     }
 
     // Cluster paired-end records
@@ -748,114 +481,19 @@ namespace torali
     boost::progress_display spPE( bamRecord.size() );
 
     // Maximum variability in insert size
-    int32_t varisize = getVariability(c, sampleLib);
-      
-#pragma omp parallel for default(shared)
+    int32_t varisize = getVariability(c, sampleLib);      
     for(int32_t svt = 0; svt < (int32_t) bamRecord.size(); ++svt) {
       ++spPE;
       if (bamRecord[svt].empty()) continue;
 	
       // Sort BAM records according to position
       std::sort(bamRecord[svt].begin(), bamRecord[svt].end(), SortBamRecords<BamAlignRecord>());
-      
-      // Components
-      typedef std::vector<uint32_t> TComponent;
-      TComponent comp;
-      comp.resize(bamRecord[svt].size(), 0);
-      uint32_t numComp = 0;
-      
-      // Edge lists for each component
-      typedef uint8_t TWeightType;
-      typedef EdgeRecord<TWeightType, std::size_t> TEdgeRecord;
-      typedef std::vector<TEdgeRecord> TEdgeList;
-      typedef std::map<uint32_t, TEdgeList> TCompEdgeList;
-      TCompEdgeList compEdge;
-      
-      // Iterate the chromosome range
-      std::size_t lastConnectedNode = 0;
-      std::size_t lastConnectedNodeStart = 0;
-      std::size_t bamItIndex = 0;
-      for(TBamRecord::const_iterator bamIt = bamRecord[svt].begin(); bamIt != bamRecord[svt].end(); ++bamIt, ++bamItIndex) {
-	// Safe to clean the graph?
-	if (bamItIndex > lastConnectedNode) {
-	  // Clean edge lists
-	  if (!compEdge.empty()) {
-	    _searchCliques(hdr, compEdge, bamRecord[svt], svs, svt);
-	    lastConnectedNodeStart = lastConnectedNode;
-	    compEdge.clear();
-	  }
-	}
-	int32_t const minCoord = _minCoord(bamIt->pos, bamIt->mpos, svt);
-	int32_t const maxCoord = _maxCoord(bamIt->pos, bamIt->mpos, svt);
-	TBamRecord::const_iterator bamItNext = bamIt;
-	++bamItNext;
-	std::size_t bamItIndexNext = bamItIndex + 1;
-	for(; ((bamItNext != bamRecord[svt].end()) && (abs(_minCoord(bamItNext->pos, bamItNext->mpos, svt) + bamItNext->alen - minCoord) <= varisize)) ; ++bamItNext, ++bamItIndexNext) {
-	  // Check that mate chr agree (only for translocations)
-	  if (bamIt->mtid != bamItNext->mtid) continue;
-	  
-	  // Check combinability of pairs
-	  if (_pairsDisagree(minCoord, maxCoord, bamIt->alen, bamIt->maxNormalISize, _minCoord(bamItNext->pos, bamItNext->mpos, svt), _maxCoord(bamItNext->pos, bamItNext->mpos, svt), bamItNext->alen, bamItNext->maxNormalISize, svt)) continue;
-	  
-	  // Update last connected node
-	  if (bamItIndexNext > lastConnectedNode ) lastConnectedNode = bamItIndexNext;
-	  
-	  // Assign components
-	  uint32_t compIndex = 0;
-	  if (!comp[bamItIndex]) {
-	    if (!comp[bamItIndexNext]) {
-	      // Both vertices have no component
-	      compIndex = ++numComp;
-	      comp[bamItIndex] = compIndex;
-	      comp[bamItIndexNext] = compIndex;
-	      compEdge.insert(std::make_pair(compIndex, TEdgeList()));
-	    } else {
-	      compIndex = comp[bamItIndexNext];
-	      comp[bamItIndex] = compIndex;
-	    }
-	  } else {
-	    if (!comp[bamItIndexNext]) {
-	      compIndex = comp[bamItIndex];
-	      comp[bamItIndexNext] = compIndex;
-	    } else {
-	      // Both vertices have a component
-	      if (comp[bamItIndexNext] == comp[bamItIndex]) {
-		compIndex = comp[bamItIndexNext];
-	      } else {
-		// Merge components
-		compIndex = comp[bamItIndex];
-		uint32_t otherIndex = comp[bamItIndexNext];
-		if (otherIndex < compIndex) {
-		  compIndex = comp[bamItIndexNext];
-		  otherIndex = comp[bamItIndex];
-		}
-		// Re-label other index
-		for(std::size_t i = lastConnectedNodeStart; i <= lastConnectedNode; ++i) {
-		  if (otherIndex == comp[i]) comp[i] = compIndex;
-		}
-		// Merge edge lists
-		TCompEdgeList::iterator compEdgeIt = compEdge.find(compIndex);
-		TCompEdgeList::iterator compEdgeOtherIt = compEdge.find(otherIndex);
-		compEdgeIt->second.insert(compEdgeIt->second.end(), compEdgeOtherIt->second.begin(), compEdgeOtherIt->second.end());
-		compEdge.erase(compEdgeOtherIt);
-	      }
-	    }
-	  }
-	  
-	  // Append new edge
-	  TCompEdgeList::iterator compEdgeIt = compEdge.find(compIndex);
-	  if (compEdgeIt->second.size() < c.graphPruning) {
-	    TWeightType weight = (TWeightType) ( std::log((double) abs( abs( (_minCoord(bamItNext->pos, bamItNext->mpos, svt) - minCoord) - (_maxCoord(bamItNext->pos, bamItNext->mpos, svt) - maxCoord) ) - abs(bamIt->Median - bamItNext->Median)) + 1) / std::log(2) );
-	    compEdgeIt->second.push_back(TEdgeRecord(bamItIndex, bamItIndexNext, weight));
-	  }
-	}
-      }
-      if (!compEdge.empty()) {
-	_searchCliques(hdr, compEdge, bamRecord[svt], svs, svt);
-	compEdge.clear();
-      }
-    }
 
+      // Cluster
+      cluster(c, bamRecord[svt], svs, varisize, svt);
+    }
+  
+      
     // Sort SVs for look-up
     sort(svs.begin(), svs.end(), SortSVs<StructuralVariantRecord>());
     

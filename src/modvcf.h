@@ -498,7 +498,12 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
 	if ((svIter->peSupport < 3) || (svIter->peMapQuality < 20) || ( (svIter->chr != svIter->chr2) && (svIter->peSupport < 5) ) ) tmpi = bcf_hdr_id2int(hdr, BCF_DT_ID, "LowQual");
       }
       rec->rid = bcf_hdr_name2id(hdr, bamhd->target_name[svIter->chr]);
-      rec->pos = svIter->svStart - 1;
+      int32_t svStartPos = svIter->svStart - 1;
+      if (svStartPos < 1) svStartPos = 1;
+      int32_t svEndPos = svIter->svEnd;
+      if (svEndPos < 1) svEndPos = 1;
+      if (svEndPos >= (int32_t) bamhd->target_len[svIter->chr]) svEndPos = bamhd->target_len[svIter->chr] - 1;
+      rec->pos = svStartPos;
       std::string id(_addID(svIter->svt));
       std::string padNumber = boost::lexical_cast<std::string>(svIter->id);
       padNumber.insert(padNumber.begin(), 8 - padNumber.length(), '0');
@@ -516,7 +521,7 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
       dellyVersion += dellyVersionNumber;
       bcf_update_info_string(hdr,rec, "SVMETHOD", dellyVersion.c_str());
       bcf_update_info_string(hdr,rec, "CHR2", bamhd->target_name[svIter->chr2]);
-      tmpi = svIter->svEnd;
+      tmpi = svEndPos;
       bcf_update_info_int32(hdr, rec, "END", &tmpi, 1);
       tmpi = svIter->peSupport;
       bcf_update_info_int32(hdr, rec, "PE", &tmpi, 1);

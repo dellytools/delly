@@ -46,8 +46,10 @@ namespace torali
     int32_t pos2;
     int32_t qual;
     int32_t inslen;
+    std::size_t id;
+    bool svassigned;
         
-    SRBamRecord(int32_t const c, int32_t const p, int32_t const c2, int32_t const p2, int32_t const qval, int32_t const il) : chr(c), pos(p), chr2(c2), pos2(p2), qual(qval), inslen(il) {}
+  SRBamRecord(int32_t const c, int32_t const p, int32_t const c2, int32_t const p2, int32_t const qval, int32_t const il, std::size_t const idval) : chr(c), pos(p), chr2(c2), pos2(p2), qual(qval), inslen(il), id(idval), svassigned(false) {}
   };
 
   template<typename TSRBamRecord>
@@ -116,11 +118,11 @@ namespace torali
 		// Correct clipping architecture, note: soft-clipping of error-prone reads can lead to switching left/right breakpoints
 		if (it->second[i].refpos <= it->second[j].refpos) {
 		  if ((!it->second[i].scleft) && (it->second[j].scleft)) {
-		    br[2].push_back(SRBamRecord(it->second[i].refidx, it->second[i].refpos, it->second[j].refidx, it->second[j].refpos, qval, std::abs(it->second[j].seqpos - it->second[i].seqpos)));
+		    br[2].push_back(SRBamRecord(it->second[i].refidx, it->second[i].refpos, it->second[j].refidx, it->second[j].refpos, qval, std::abs(it->second[j].seqpos - it->second[i].seqpos), it->first));
 		  }
 		} else {
 		  if ((it->second[i].scleft) && (!it->second[j].scleft)) {
-		    br[2].push_back(SRBamRecord(it->second[j].refidx, it->second[j].refpos, it->second[i].refidx, it->second[i].refpos, qval, std::abs(it->second[j].seqpos - it->second[i].seqpos)));
+		    br[2].push_back(SRBamRecord(it->second[j].refidx, it->second[j].refpos, it->second[i].refidx, it->second[i].refpos, qval, std::abs(it->second[j].seqpos - it->second[i].seqpos), it->first));
 		  }
 		}
 	      }
@@ -150,11 +152,11 @@ namespace torali
 		// Correct clipping architecture, note: soft-clipping of error-prone reads can lead to switching left/right breakpoints
 		if (it->second[i].refpos <= it->second[j].refpos) {
 		  if ((it->second[i].scleft) && (!it->second[j].scleft)) {
-		    br[3].push_back(SRBamRecord(it->second[i].refidx, it->second[i].refpos, it->second[j].refidx, it->second[j].refpos, qval, std::abs(it->second[j].seqpos - it->second[i].seqpos)));
+		    br[3].push_back(SRBamRecord(it->second[i].refidx, it->second[i].refpos, it->second[j].refidx, it->second[j].refpos, qval, std::abs(it->second[j].seqpos - it->second[i].seqpos), it->first));
 		  }
 		} else {
 		  if ((!it->second[i].scleft) && (it->second[j].scleft)) {
-		    br[3].push_back(SRBamRecord(it->second[j].refidx, it->second[j].refpos, it->second[i].refidx, it->second[i].refpos, qval, std::abs(it->second[j].seqpos - it->second[i].seqpos)));
+		    br[3].push_back(SRBamRecord(it->second[j].refidx, it->second[j].refpos, it->second[i].refidx, it->second[i].refpos, qval, std::abs(it->second[j].seqpos - it->second[i].seqpos), it->first));
 		  }
 		}
 	      }
@@ -183,12 +185,12 @@ namespace torali
 		//std::cout << it->second[i].refidx << ':' <<  it->second[i].refpos << "(S:" << it->second[i].seqpos << ',' << it->second[i].forward << ',' << it->second[i].scleft << ')' << it->second[j].refidx << ':' << it->second[j].refpos << "(S:" << it->second[j].seqpos << ',' << it->second[j].forward << ',' << it->second[j].scleft << ')' << std::endl;
 		if (it->second[i].refpos <= it->second[j].refpos) {
 		  // Need to differentiate 3to3 and 5to5
-		  if (it->second[i].scleft) br[1].push_back(SRBamRecord(it->second[i].refidx, it->second[i].refpos, it->second[j].refidx, it->second[j].refpos, qval, std::abs(it->second[j].seqpos - it->second[i].seqpos)));
-		  else br[0].push_back(SRBamRecord(it->second[i].refidx, it->second[i].refpos, it->second[j].refidx, it->second[j].refpos, qval, std::abs(it->second[j].seqpos - it->second[i].seqpos)));
+		  if (it->second[i].scleft) br[1].push_back(SRBamRecord(it->second[i].refidx, it->second[i].refpos, it->second[j].refidx, it->second[j].refpos, qval, std::abs(it->second[j].seqpos - it->second[i].seqpos), it->first));
+		  else br[0].push_back(SRBamRecord(it->second[i].refidx, it->second[i].refpos, it->second[j].refidx, it->second[j].refpos, qval, std::abs(it->second[j].seqpos - it->second[i].seqpos), it->first));
 		} else {
 		  // Need to differentiate 3to3 and 5to5
-		  if (it->second[i].scleft) br[1].push_back(SRBamRecord(it->second[j].refidx, it->second[j].refpos, it->second[i].refidx, it->second[i].refpos, qval, std::abs(it->second[j].seqpos - it->second[i].seqpos)));
-		  else br[0].push_back(SRBamRecord(it->second[j].refidx, it->second[j].refpos, it->second[i].refidx, it->second[i].refpos, qval, std::abs(it->second[j].seqpos - it->second[i].seqpos)));
+		  if (it->second[i].scleft) br[1].push_back(SRBamRecord(it->second[j].refidx, it->second[j].refpos, it->second[i].refidx, it->second[i].refpos, qval, std::abs(it->second[j].seqpos - it->second[i].seqpos), it->first));
+		  else br[0].push_back(SRBamRecord(it->second[j].refidx, it->second[j].refpos, it->second[i].refidx, it->second[i].refpos, qval, std::abs(it->second[j].seqpos - it->second[i].seqpos), it->first));
 		}
 	      }
 	    }
@@ -215,9 +217,9 @@ namespace torali
 		  // Avg. qval
 		  int32_t qval = (int32_t) (((int32_t) it->second[i].qual + (int32_t) it->second[j].qual) / 2);
 		  if (it->second[i].refpos <= it->second[j].refpos) {
-		    br[4].push_back(SRBamRecord(it->second[i].refidx, it->second[i].refpos, it->second[j].refidx, it->second[j].refpos, qval, std::abs(it->second[j].seqpos - it->second[i].seqpos)));
+		    br[4].push_back(SRBamRecord(it->second[i].refidx, it->second[i].refpos, it->second[j].refidx, it->second[j].refpos, qval, std::abs(it->second[j].seqpos - it->second[i].seqpos), it->first));
 		  } else {
-		    br[4].push_back(SRBamRecord(it->second[j].refidx, it->second[j].refpos, it->second[i].refidx, it->second[i].refpos, qval, std::abs(it->second[j].seqpos - it->second[i].seqpos)));
+		    br[4].push_back(SRBamRecord(it->second[j].refidx, it->second[j].refpos, it->second[i].refidx, it->second[i].refpos, qval, std::abs(it->second[j].seqpos - it->second[i].seqpos), it->first));
 		  }
 		}
 	      }
@@ -253,10 +255,10 @@ namespace torali
 		if (it->second[chr1ev].scleft != it->second[chr2ev].scleft) {
 		  if (it->second[chr1ev].scleft) {
 		    // 5to3
-		    br[DELLY_SVT_TRANS + 3].push_back(SRBamRecord(it->second[chr1ev].refidx, it->second[chr1ev].refpos, it->second[chr2ev].refidx, it->second[chr2ev].refpos, qval, std::abs(it->second[j].seqpos - it->second[i].seqpos)));
+		    br[DELLY_SVT_TRANS + 3].push_back(SRBamRecord(it->second[chr1ev].refidx, it->second[chr1ev].refpos, it->second[chr2ev].refidx, it->second[chr2ev].refpos, qval, std::abs(it->second[j].seqpos - it->second[i].seqpos), it->first));
 		  } else {
 		    // 3to5
-		    br[DELLY_SVT_TRANS + 2].push_back(SRBamRecord(it->second[chr1ev].refidx, it->second[chr1ev].refpos, it->second[chr2ev].refidx, it->second[chr2ev].refpos, qval, std::abs(it->second[j].seqpos - it->second[i].seqpos)));
+		    br[DELLY_SVT_TRANS + 2].push_back(SRBamRecord(it->second[chr1ev].refidx, it->second[chr1ev].refpos, it->second[chr2ev].refidx, it->second[chr2ev].refpos, qval, std::abs(it->second[j].seqpos - it->second[i].seqpos), it->first));
 		  }
 		}
 	      } else {
@@ -264,10 +266,10 @@ namespace torali
 		if (it->second[chr1ev].scleft == it->second[chr2ev].scleft) {
 		  if (it->second[chr1ev].scleft) {
 		    // 3to3
-		    br[DELLY_SVT_TRANS + 0].push_back(SRBamRecord(it->second[chr1ev].refidx, it->second[chr1ev].refpos, it->second[chr2ev].refidx, it->second[chr2ev].refpos, qval, std::abs(it->second[j].seqpos - it->second[i].seqpos)));
+		    br[DELLY_SVT_TRANS + 0].push_back(SRBamRecord(it->second[chr1ev].refidx, it->second[chr1ev].refpos, it->second[chr2ev].refidx, it->second[chr2ev].refpos, qval, std::abs(it->second[j].seqpos - it->second[i].seqpos), it->first));
 		  } else {
 		    // 5to5
-		    br[DELLY_SVT_TRANS + 1].push_back(SRBamRecord(it->second[chr1ev].refidx, it->second[chr1ev].refpos, it->second[chr2ev].refidx, it->second[chr2ev].refpos, qval, std::abs(it->second[j].seqpos - it->second[i].seqpos)));
+		    br[DELLY_SVT_TRANS + 1].push_back(SRBamRecord(it->second[chr1ev].refidx, it->second[chr1ev].refpos, it->second[chr2ev].refidx, it->second[chr2ev].refpos, qval, std::abs(it->second[j].seqpos - it->second[i].seqpos), it->first));
 		  }
 		}
 	      }
