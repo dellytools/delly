@@ -144,7 +144,7 @@ namespace torali
 		// Adjust orientation
 		bool bpPoint = false;
 		if (_translocation(rec)) {
-		  if (rec->core.mtid == refIndex) bpPoint = true;
+		  if (rec->core.tid == svs[svid].chr2) bpPoint = true;
 		} else {
 		  if (rec->core.pos > svs[svid].svStart) bpPoint = true;
 		}
@@ -425,11 +425,11 @@ namespace torali
       // Collect split-read SVs
 #pragma omp critical
       {
-	selectDeletions(c, readBp, srBR);
-	selectDuplications(c, readBp, srBR);
-	selectInversions(c, readBp, srBR);
-	selectInsertions(c, readBp, srBR);
-	selectTranslocations(c, readBp, srBR);
+	if ((!c.svtcmd) || (c.svtset.find(2) != c.svtset.end())) selectDeletions(c, readBp, srBR);
+	if ((!c.svtcmd) || (c.svtset.find(3) != c.svtset.end())) selectDuplications(c, readBp, srBR);
+	if ((!c.svtcmd) || (c.svtset.find(0) != c.svtset.end()) || (c.svtset.find(1) != c.svtset.end())) selectInversions(c, readBp, srBR);
+	if ((!c.svtcmd) || (c.svtset.find(4) != c.svtset.end())) selectInsertions(c, readBp, srBR);
+	if ((!c.svtcmd) || (c.svtset.find(DELLY_SVT_TRANS) != c.svtset.end()) || (c.svtset.find(DELLY_SVT_TRANS + 1) != c.svtset.end()) || (c.svtset.find(DELLY_SVT_TRANS + 2) != c.svtset.end()) || (c.svtset.find(DELLY_SVT_TRANS + 3) != c.svtset.end())) selectTranslocations(c, readBp, srBR);
       }
     }
 
@@ -442,6 +442,7 @@ namespace torali
     boost::progress_display spSR( srBR.size() );
     for(uint32_t svt = 0; svt < srBR.size(); ++svt) {
       ++spSR;
+      if ((c.svtcmd) && (c.svtset.find(svt) == c.svtset.end())) continue;
       if (srBR[svt].empty()) continue;
       
       // Sort
@@ -450,6 +451,9 @@ namespace torali
       // Cluster
       cluster(c, srBR[svt], srSVs, c.maxReadSep, svt);
     }
+
+    // Debug SR SVs
+    //outputStructuralVariants(c, srSVs);
 
     // Cluster paired-end records
     now = boost::posix_time::second_clock::local_time();
@@ -460,6 +464,7 @@ namespace torali
     int32_t varisize = getVariability(c, sampleLib);      
     for(int32_t svt = 0; svt < (int32_t) bamRecord.size(); ++svt) {
       ++spPE;
+      if ((c.svtcmd) && (c.svtset.find(svt) == c.svtset.end())) continue;
       if (bamRecord[svt].empty()) continue;
 	
       // Sort BAM records according to position

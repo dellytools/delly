@@ -470,8 +470,7 @@ namespace torali
     //}
     //std::cerr << std::endl;
     //}
-    //std::cerr << std::endl;
-
+    
     // Check breakpoint
     AlignDescriptor ad;
     if (!_findSplit(c, sv.consensus, svRefStr, align, ad, sv.svt)) return false;

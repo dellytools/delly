@@ -487,10 +487,22 @@ int delly(int argc, char **argv) {
     } else if (svtype == "INV") {
       c.svtset.insert(0);
       c.svtset.insert(1);
+    } else if (svtype == "INV_3to3") {
+      c.svtset.insert(0);
+    } else if (svtype == "INV_5to5") {
+      c.svtset.insert(1);
     } else if (svtype == "BND") {
       c.svtset.insert(DELLY_SVT_TRANS + 0);
       c.svtset.insert(DELLY_SVT_TRANS + 1);
       c.svtset.insert(DELLY_SVT_TRANS + 2);
+      c.svtset.insert(DELLY_SVT_TRANS + 3);
+    } else if (svtype == "BND_3to3") {
+      c.svtset.insert(DELLY_SVT_TRANS + 0);
+    } else if (svtype == "BND_5to5") {
+      c.svtset.insert(DELLY_SVT_TRANS + 1);
+    } else if (svtype == "BND_3to5") {
+      c.svtset.insert(DELLY_SVT_TRANS + 2);
+    } else if (svtype == "BND_5to3") {
       c.svtset.insert(DELLY_SVT_TRANS + 3);
     } else {
       c.svtcmd = false;

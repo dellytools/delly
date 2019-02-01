@@ -255,10 +255,10 @@ namespace torali
 		if (it->second[chr1ev].scleft != it->second[chr2ev].scleft) {
 		  if (it->second[chr1ev].scleft) {
 		    // 5to3
-		    br[DELLY_SVT_TRANS + 3].push_back(SRBamRecord(it->second[chr2ev].refidx, it->second[chr2ev].refpos, it->second[chr1ev].refidx, it->second[chr1ev].refpos, qval, std::abs(it->second[j].seqpos - it->second[i].seqpos), it->first));
+		    br[DELLY_SVT_TRANS + 2].push_back(SRBamRecord(it->second[chr2ev].refidx, it->second[chr2ev].refpos, it->second[chr1ev].refidx, it->second[chr1ev].refpos, qval, std::abs(it->second[j].seqpos - it->second[i].seqpos), it->first));
 		  } else {
 		    // 3to5
-		    br[DELLY_SVT_TRANS + 2].push_back(SRBamRecord(it->second[chr2ev].refidx, it->second[chr2ev].refpos, it->second[chr1ev].refidx, it->second[chr1ev].refpos, qval, std::abs(it->second[j].seqpos - it->second[i].seqpos), it->first));
+		    br[DELLY_SVT_TRANS + 3].push_back(SRBamRecord(it->second[chr2ev].refidx, it->second[chr2ev].refpos, it->second[chr1ev].refidx, it->second[chr1ev].refpos, qval, std::abs(it->second[j].seqpos - it->second[i].seqpos), it->first));
 		  }
 		}
 	      } else {
@@ -266,10 +266,10 @@ namespace torali
 		if (it->second[chr1ev].scleft == it->second[chr2ev].scleft) {
 		  if (it->second[chr1ev].scleft) {
 		    // 3to3
-		    br[DELLY_SVT_TRANS + 0].push_back(SRBamRecord(it->second[chr2ev].refidx, it->second[chr2ev].refpos, it->second[chr1ev].refidx, it->second[chr1ev].refpos, qval, std::abs(it->second[j].seqpos - it->second[i].seqpos), it->first));
+		    br[DELLY_SVT_TRANS + 1].push_back(SRBamRecord(it->second[chr2ev].refidx, it->second[chr2ev].refpos, it->second[chr1ev].refidx, it->second[chr1ev].refpos, qval, std::abs(it->second[j].seqpos - it->second[i].seqpos), it->first));
 		  } else {
 		    // 5to5
-		    br[DELLY_SVT_TRANS + 1].push_back(SRBamRecord(it->second[chr2ev].refidx, it->second[chr2ev].refpos, it->second[chr1ev].refidx, it->second[chr1ev].refpos, qval, std::abs(it->second[j].seqpos - it->second[i].seqpos), it->first));
+		    br[DELLY_SVT_TRANS + 0].push_back(SRBamRecord(it->second[chr2ev].refidx, it->second[chr2ev].refpos, it->second[chr1ev].refidx, it->second[chr1ev].refpos, qval, std::abs(it->second[j].seqpos - it->second[i].seqpos), it->first));
 		  }
 		}
 	      }
@@ -305,17 +305,17 @@ namespace torali
 
   template<typename TConfig>
   inline void
-  outputStructuralVariants(TConfig const& c, std::vector<StructuralVariantRecord> const& svs, std::string const& tag) {
+  outputStructuralVariants(TConfig const& c, std::vector<StructuralVariantRecord> const& svs) {
     samFile* samfile = sam_open(c.files[0].string().c_str(), "r");
     hts_set_fai_filename(samfile, c.genome.string().c_str());
     bam_hdr_t* hdr = sam_hdr_read(samfile);
 
     // Header
-    std::cerr << "chr1\tpos1\tchr2\tpos2\tsvtype\tct\ttag" << std::endl;
+    std::cerr << "chr1\tpos1\tchr2\tpos2\tsvtype\tct\tpeSupport\tsrSupport" << std::endl;
 
     // SVs
     for(uint32_t i = 0; i < svs.size(); ++i) {
-      std::cerr << hdr->target_name[svs[i].chr] << '\t' << svs[i].svStart << '\t' << hdr->target_name[svs[i].chr2] << '\t' << svs[i].svEnd << '\t' << _addID(svs[i].svt) << '\t' << _addOrientation(svs[i].svt) << '\t' << tag << std::endl;
+      std::cerr << hdr->target_name[svs[i].chr] << '\t' << svs[i].svStart << '\t' << hdr->target_name[svs[i].chr2] << '\t' << svs[i].svEnd << '\t' << _addID(svs[i].svt) << '\t' << _addOrientation(svs[i].svt) << '\t' << svs[i].peSupport << '\t' << svs[i].srSupport << std::endl;
     }
 
     // Clean-up
