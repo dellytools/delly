@@ -170,6 +170,7 @@ namespace torali
 	      if (!msaSuccess) {
 		svs[svid].consensus = "";
 		svs[svid].srSupport = 0;
+		svs[svid].srAlignQuality = 0;
 	      }
 
 	      // Clean-up
@@ -458,7 +459,7 @@ namespace torali
     for(int32_t svt = 0; svt < 10; ++svt) {
       for(uint32_t i = 0; i < sr.size(); ++i) {
 	if (sr[i].svt != svt) continue;
-	if (sr[i].srSupport == 0) continue; // SR assembly failed
+	if ((sr[i].srSupport == 0) || (sr[i].srAlignQuality == 0)) continue; // SR assembly failed
 
 	// Precise duplicates
 	int32_t searchWindow = 500;
