@@ -143,9 +143,9 @@ namespace torali
   }
 
   // Deletions
-  template<typename TConfig, typename TSeq, typename TSVRecord, typename TRef>
+  template<typename TSeq, typename TSVRecord, typename TRef>
   inline std::string
-  _getSVRef(TConfig const& c, TSeq const* const ref, TSVRecord const& svRec, TRef const refIndex, int32_t const svt) {
+  _getSVRef(TSeq const* const ref, TSVRecord const& svRec, TRef const refIndex, int32_t const svt) {
     if (_translocation(svt)) {
       uint8_t ct = _getSpanOrientation(svt);
       if (svRec.chr==refIndex) {
@@ -189,11 +189,7 @@ namespace torali
       }
     } else {
       if (svt == 2) {
-	if ((c.indels) && (svRec.peSupport == 0) && (svRec.svEnd - svRec.svStart <= c.indelsize)) {
-	  return boost::to_upper_copy(std::string(ref + svRec.svStartBeg, ref + svRec.svEndEnd));
-	} else {
-	  return boost::to_upper_copy(std::string(ref + svRec.svStartBeg, ref + svRec.svStartEnd)) + boost::to_upper_copy(std::string(ref + svRec.svEndBeg, ref + svRec.svEndEnd));
-	}
+	return boost::to_upper_copy(std::string(ref + svRec.svStartBeg, ref + svRec.svStartEnd)) + boost::to_upper_copy(std::string(ref + svRec.svEndBeg, ref + svRec.svEndEnd));
       } else if (svt == 4) {
 	return boost::to_upper_copy(std::string(ref + svRec.svStartBeg, ref + svRec.svEndEnd));
       } else if (svt == 3) {
@@ -236,9 +232,9 @@ namespace torali
   }
 
 
-  template<typename TConfig, typename TString, typename TSvRecord, typename TAlignDescriptor, typename TPosition>
+  template<typename TString, typename TSvRecord, typename TAlignDescriptor, typename TPosition>
   inline bool
-  _coordTransform(TConfig const& c, TString const& ref, TSvRecord const& sv, TAlignDescriptor const& ad, TPosition& finalGapStart, TPosition& finalGapEnd, int32_t svt) {
+  _coordTransform(TString const& ref, TSvRecord const& sv, TAlignDescriptor const& ad, TPosition& finalGapStart, TPosition& finalGapEnd, int32_t svt) {
     if (_translocation(svt)) {
       uint8_t ct = _getSpanOrientation(svt);
       if (ct == 0) {
@@ -265,15 +261,10 @@ namespace torali
       return true;
     } else {
       if (svt == 2) {
-	if ((c.indels) && (sv.peSupport == 0) && (sv.svEnd - sv.svStart <= c.indelsize)) {
-	  finalGapStart = sv.svStartBeg + ad.rStart;
-	  finalGapEnd = sv.svStartBeg + ad.rEnd;
-	} else {
-	  int32_t annealed = sv.svStartEnd - sv.svStartBeg;
-	  if ((ad.rStart >= annealed) || (ad.rEnd < annealed)) return false;
-	  finalGapStart = sv.svStartBeg + ad.rStart;
-	  finalGapEnd = sv.svEndBeg + (ad.rEnd - annealed);
-	}
+	int32_t annealed = sv.svStartEnd - sv.svStartBeg;
+	if ((ad.rStart >= annealed) || (ad.rEnd < annealed)) return false;
+	finalGapStart = sv.svStartBeg + ad.rStart;
+	finalGapEnd = sv.svEndBeg + (ad.rEnd - annealed);
 	return true;
       } else if (svt == 3) {
 	int32_t annealed = sv.svEndEnd - sv.svEndBeg;
@@ -463,8 +454,8 @@ namespace torali
     // Get reference slice
     Breakpoint bp(sv);
     _initBreakpoint(hdr, bp, sv.consensus.size(), sv.svt);
-    if (bp.chr != bp.chr2) bp.part1 = _getSVRef(c, sndSeq, bp, bp.chr2, sv.svt);
-    std::string svRefStr = _getSVRef(c, seq, bp, bp.chr, sv.svt);
+    if (bp.chr != bp.chr2) bp.part1 = _getSVRef(sndSeq, bp, bp.chr2, sv.svt);
+    std::string svRefStr = _getSVRef(seq, bp, bp.chr, sv.svt);
 
     // Consensus to reference alignment
     typedef boost::multi_array<char, 2> TAlign;
@@ -488,7 +479,7 @@ namespace torali
     // Get the start and end of the structural variant
     unsigned int finalGapStart = 0;
     unsigned int finalGapEnd = 0;
-    if (!_coordTransform(c, svRefStr, bp, ad, finalGapStart, finalGapEnd, sv.svt)) return false;
+    if (!_coordTransform(svRefStr, bp, ad, finalGapStart, finalGapEnd, sv.svt)) return false;
 	
     sv.precise=true;
     sv.svStart=finalGapStart;
@@ -497,15 +488,6 @@ namespace torali
     sv.insLen=ad.cEnd - ad.cStart - 1;
     sv.homLen=std::max(0, ad.homLeft + ad.homRight - 2);
     sv.wiggle=std::max(ad.homLeft, ad.homRight);
-    // Set breakpoint, quality and REF & ALT alleles
-    if ((c.indels) && (sv.peSupport == 0) && (sv.svEnd - sv.svStart <= c.indelsize)) {
-      std::string precChar = svRefStr.substr(ad.rStart - 1, 1);
-      std::string refPart = precChar;
-      if (ad.rEnd > ad.rStart + 1) refPart += svRefStr.substr(ad.rStart, (ad.rEnd - ad.rStart) - 1);
-      std::string altPart = precChar;
-      if (ad.cEnd > ad.cStart + 1) altPart += sv.consensus.substr(ad.cStart, (ad.cEnd - ad.cStart) - 1);
-      sv.alleles = refPart + "," + altPart;
-    }
     return true;
   }
 

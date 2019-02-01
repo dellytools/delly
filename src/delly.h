@@ -83,7 +83,6 @@ struct Config {
   uint32_t maxReadSep;
   uint32_t minClip;
   float flankQuality;
-  bool indels;
   bool hasExcludeFile;
   bool hasVcfFile;
   bool isHaplotagged;
@@ -352,20 +351,25 @@ inline int dellyRun(TConfigStruct& c) {
     TVariants srSVs;
 
     // SR Store
-    typedef std::pair<int32_t, std::size_t> TPosRead;
-    typedef boost::unordered_map<TPosRead, int32_t> TPosReadSV;
-    typedef std::vector<TPosReadSV> TGenomicPosReadSV;
-    TGenomicPosReadSV srStore(c.nchr, TPosReadSV());
-    scanPEandSR(c, validRegions, svs, srSVs, srStore, sampleLib);
+    {
+      typedef std::pair<int32_t, std::size_t> TPosRead;
+      typedef boost::unordered_map<TPosRead, int32_t> TPosReadSV;
+      typedef std::vector<TPosReadSV> TGenomicPosReadSV;
+      TGenomicPosReadSV srStore(c.nchr, TPosReadSV());
+      scanPEandSR(c, validRegions, svs, srSVs, srStore, sampleLib);
 
-    // Assemble split-read calls
-    assembleSplitReads(c, validRegions, srStore, srSVs);
+      // Assemble split-read calls
+      assembleSplitReads(c, validRegions, srStore, srSVs);
+    }
+
+    // Sort and merge PE and SR calls
+    mergeSort(c, svs, srSVs);
   } else vcfParse(c, hdr, svs);
 
   // Re-number SVs
   sort(svs.begin(), svs.end(), SortSVs<StructuralVariantRecord>());    
   uint32_t cliqueCount = 0;
-  for(typename TVariants::iterator svIt = svs.begin(); svIt != svs.end(); ++svIt) svIt->id = cliqueCount++;
+  for(typename TVariants::iterator svIt = svs.begin(); svIt != svs.end(); ++svIt, ++cliqueCount) svIt->id = cliqueCount;
 
   // Annotate junction reads
   typedef std::vector<JunctionCount> TSVJunctionMap;
@@ -629,10 +633,6 @@ int delly(int argc, char **argv) {
 
   // Always ignore reads of mapping quality <5 for genotyping, otherwise het. is more likely!
   if (c.minGenoQual<5) c.minGenoQual=5;
-
-  // Small InDels?
-  if (vm.count("indels")) c.indels = true;
-  else c.indels = false;
 
   // Run main program
   c.aliscore = DnaScore<int>(5, -4, -10, -1);

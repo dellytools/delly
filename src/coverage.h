@@ -267,7 +267,7 @@ annotateCoverage(TConfig& c, TSampleLibrary& sampleLib, TCovRecord& ict, TCovera
 	}
 
 	// Set tag alleles
-	if (itSV->chr2 == refIndex) {
+	if (itSV->chr == refIndex) {
 	  itSV->alleles = _addAlleles(boost::to_upper_copy(std::string(seq + itSV->svStart - 1, seq + itSV->svStart)), std::string(hdr[0]->target_name[itSV->chr2]), *itSV, itSV->svt);
 	}
 	if (!itSV->precise) continue;
@@ -276,13 +276,13 @@ annotateCoverage(TConfig& c, TSampleLibrary& sampleLib, TCovRecord& ict, TCovera
 	if ((itSV->chr != itSV->chr2) && (itSV->chr2 == refIndex)) {
 	  Breakpoint bp(*itSV);
 	  _initBreakpoint(hdr[0], bp, (int32_t) itSV->consensus.size(), itSV->svt);
-	  refProbes[itSV->id] = _getSVRef(c, seq, bp, refIndex, itSV->svt);
+	  refProbes[itSV->id] = _getSVRef(seq, bp, refIndex, itSV->svt);
 	}
 	if (itSV->chr == refIndex) {
 	  Breakpoint bp(*itSV);
 	  bp.part1 = refProbes[itSV->id];
 	  _initBreakpoint(hdr[0], bp, (int32_t) itSV->consensus.size(), itSV->svt);
-	  std::string svRefStr = _getSVRef(c, seq, bp, refIndex, itSV->svt);
+	  std::string svRefStr = _getSVRef(seq, bp, refIndex, itSV->svt);
 
 	  // Find breakpoint to reference
 	  typedef boost::multi_array<char, 2> TAlign;

@@ -444,7 +444,9 @@ namespace torali
   }
 
 
-
+  template<typename TConfig>
+  inline void
+  mergeSort(TConfig const& c, std::vector<StructuralVariantRecord>& pe, std::vector<StructuralVariantRecord>& sr) { 
   
   /*
       
@@ -496,6 +498,7 @@ namespace torali
     }
   }
   */
+  }
   
 
 }
