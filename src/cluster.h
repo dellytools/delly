@@ -333,9 +333,10 @@ namespace torali
 	if ((ciposlow > svStart) || (ciposhigh < svStart) || (ciendlow > svEnd) || (ciendhigh < svEnd)) {
 	  std::cerr << "Warning: Confidence intervals out of bounds: " << ciposlow << ',' << svStart << ',' << ciposhigh << ':' << ciendlow << ',' << svEnd << ',' << ciendhigh << std::endl;
 	}
-	sv.push_back(StructuralVariantRecord(chr, svStart, chr2, svEnd, (ciposlow - svStart), (ciposhigh - svStart), (ciendlow - svEnd), (ciendhigh - svEnd), clique.size(), svt, mapq, svInsLen));
+	int32_t svid = sv.size();
+	sv.push_back(StructuralVariantRecord(chr, svStart, chr2, svEnd, (ciposlow - svStart), (ciposhigh - svStart), (ciendlow - svEnd), (ciendhigh - svEnd), clique.size(), svInsLen, svt, svid, mapq));
 	// Reads assigned
-	for(typename TCliqueMembers::iterator itC = clique.begin(); itC != clique.end(); ++itC) br[*itC].svassigned = true;
+	for(typename TCliqueMembers::iterator itC = clique.begin(); itC != clique.end(); ++itC) br[*itC].svid = svid;
       }
     }
   }
@@ -446,9 +447,6 @@ namespace torali
 	compEdge.clear();
       }
     }
-
-    // Sort SVs
-    std::sort(sv.begin(), sv.end(), SortSVs<StructuralVariantRecord>());
   }
 
 
@@ -523,7 +521,7 @@ namespace torali
 
   template<typename TConfig>
   inline void
-    cluster(TConfig const& c, std::vector<BamAlignRecord>& bamRecord, std::vector<StructuralVariantRecord>& svs, uint32_t const varisize, int32_t const svt) {
+  cluster(TConfig const& c, std::vector<BamAlignRecord>& bamRecord, std::vector<StructuralVariantRecord>& svs, uint32_t const varisize, int32_t const svt) {
     typedef typename std::vector<BamAlignRecord> TBamRecord;
     // Components
     typedef std::vector<uint32_t> TComponent;

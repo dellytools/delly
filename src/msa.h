@@ -293,6 +293,7 @@ namespace torali {
     //}
     //std::cerr << std::endl;
     //}
+    
 
     // Sequence to profile re-alignment
     //sprealign(align);

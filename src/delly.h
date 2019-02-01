@@ -346,8 +346,21 @@ inline int dellyRun(TConfigStruct& c) {
   }
 
   // SV Discovery
-  if (!c.hasVcfFile) shortPE(c, validRegions, svs, sampleLib);
-  else vcfParse(c, hdr, svs);
+  if (!c.hasVcfFile) {
+    // Split-read SVs
+    typedef std::vector<StructuralVariantRecord> TVariants;
+    TVariants srSVs;
+
+    // SR Store
+    typedef std::pair<int32_t, std::size_t> TPosRead;
+    typedef boost::unordered_map<TPosRead, int32_t> TPosReadSV;
+    typedef std::vector<TPosReadSV> TGenomicPosReadSV;
+    TGenomicPosReadSV srStore(c.nchr, TPosReadSV());
+    scanPEandSR(c, validRegions, svs, srSVs, srStore, sampleLib);
+
+    // Assemble split-read calls
+    assembleSplitReads(c, validRegions, srStore, srSVs);
+  } else vcfParse(c, hdr, svs);
 
   // Re-number SVs
   sort(svs.begin(), svs.end(), SortSVs<StructuralVariantRecord>());    

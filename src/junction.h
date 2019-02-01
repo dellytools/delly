@@ -46,10 +46,10 @@ namespace torali
     int32_t pos2;
     int32_t qual;
     int32_t inslen;
+    int32_t svid;
     std::size_t id;
-    bool svassigned;
         
-  SRBamRecord(int32_t const c, int32_t const p, int32_t const c2, int32_t const p2, int32_t const qval, int32_t const il, std::size_t const idval) : chr(c), pos(p), chr2(c2), pos2(p2), qual(qval), inslen(il), id(idval), svassigned(false) {}
+  SRBamRecord(int32_t const c, int32_t const p, int32_t const c2, int32_t const p2, int32_t const qval, int32_t const il, std::size_t const idval) : chr(c), pos(p), chr2(c2), pos2(p2), qual(qval), inslen(il), svid(-1), id(idval) {}
   };
 
   template<typename TSRBamRecord>

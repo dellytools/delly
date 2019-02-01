@@ -88,11 +88,12 @@ namespace torali
     else lowerBound = 0;
   }
 
-  template<typename TConfig, typename TValidRegion, typename TStructuralVariantRecord>
-  inline bool
-  findPutativeSplitReads(TConfig const& c, TValidRegion const& validRegions, std::vector<TStructuralVariantRecord>& svs) 
+  template<typename TConfig, typename TValidRegion, typename TSRStore, typename TStructuralVariantRecord>
+  inline void
+  assembleSplitReads(TConfig const& c, TValidRegion const& validRegions, TSRStore const& srStore, std::vector<TStructuralVariantRecord>& svs) 
   {
-    typedef std::vector<TStructuralVariantRecord> TSVs;
+    typedef typename TValidRegion::value_type TChrIntervals;
+    typedef typename TSRStore::value_type TPosReadSV;
 
     // Open file handles
     typedef std::vector<samFile*> TSamFile;
@@ -105,15 +106,115 @@ namespace torali
       idx[file_c] = sam_index_load(samfile[file_c], c.files[file_c].string().c_str());
     }
     bam_hdr_t* hdr = sam_hdr_read(samfile[0]);
+
+    // Reads per SV
+    typedef std::vector<std::string> TSequences;
+    typedef std::vector<TSequences> TSVSequences;
+    TSVSequences traSeq(svs.size(), TSequences());
+    uint32_t maxReadPerSV = 20;
     
-    // Parse genome, no single-anchored reads anymore only soft-clipped reads
-    unsigned int totalSplitReadsAligned = 0;
+    // Parse BAM
     boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
-    std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Split-read alignment" << std::endl;
+    std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Split-read assembly" << std::endl;
     boost::progress_display show_progress( hdr->n_targets );
 
     faidx_t* fai = fai_load(c.genome.string().c_str());
-    // Find reference index
+    for(int32_t refIndex = 0; refIndex < hdr->n_targets; ++refIndex) {
+      ++show_progress;
+      if (validRegions[refIndex].empty()) continue;
+      if (srStore[refIndex].empty()) continue;
+
+      // Load sequence
+      char* seq = NULL;
+      int32_t seqlen = -1;
+      std::string tname(hdr->target_name[refIndex]);
+      seq = faidx_fetch_seq(fai, tname.c_str(), 0, hdr->target_len[refIndex], &seqlen);
+      
+      // Collect all split-read pos
+      typedef boost::dynamic_bitset<> TBitSet;
+      TBitSet hits(hdr->target_len[refIndex]);
+      for(typename TPosReadSV::const_iterator it = srStore[refIndex].begin(); it != srStore[refIndex].end(); ++it) hits[it->first.first] = 1;
+
+      // Sequences
+      TSVSequences seqStore(svs.size(), TSequences());
+      std::vector<bool> svDone(svs.size(), false);
+      
+      // Collect reads from all samples
+      for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
+	// Read alignments
+	for(typename TChrIntervals::const_iterator vRIt = validRegions[refIndex].begin(); vRIt != validRegions[refIndex].end(); ++vRIt) {
+	  hts_itr_t* iter = sam_itr_queryi(idx[file_c], refIndex, vRIt->lower(), vRIt->upper());
+	  bam1_t* rec = bam_init1();
+	  while (sam_itr_next(samfile[file_c], iter, rec) >= 0) {
+	    if (rec->core.flag & (BAM_FQCFAIL | BAM_FDUP | BAM_FUNMAP | BAM_FSECONDARY | BAM_FSUPPLEMENTARY)) continue;
+	    if ((rec->core.qual < c.minMapQual) || (rec->core.tid<0)) continue;
+	    if (!hits[rec->core.pos]) continue;
+
+	    // Valid split-read
+	    std::size_t seed = hash_string(bam_get_qname(rec));
+	    typename TPosReadSV::const_iterator it = srStore[refIndex].find(std::make_pair(rec->core.pos, seed));
+	    if (it != srStore[refIndex].end()) {
+	      int32_t svid = it->second;
+
+	      // Get the sequence
+	      if (it->second == (int32_t) svs[svid].id) {  // Should be always true
+		std::string sequence;
+		sequence.resize(rec->core.l_qseq);
+		uint8_t* seqptr = bam_get_seq(rec);
+		for (int i = 0; i < rec->core.l_qseq; ++i) sequence[i] = "=ACMGRSVTWYHKDBN"[bam_seqi(seqptr, i)];
+
+		// Adjust orientation
+		bool bpPoint = false;
+		if (_translocation(rec)) {
+		  if (rec->core.mtid == refIndex) bpPoint = true;
+		} else {
+		  if (rec->core.pos > svs[svid].svStart) bpPoint = true;
+		}
+		_adjustOrientation(sequence, bpPoint, svs[svid].svt);
+		
+		// At most n split-reads
+		if ((!svDone[it->second]) && (seqStore[it->second].size() < maxReadPerSV)) seqStore[it->second].push_back(sequence);
+	      }
+	    }
+	  }
+
+	  // Do we have all SVs for one SV
+	  for(uint32_t svid = 0; svid < seqStore.size(); ++svid) {
+	    if ((!svDone[svid]) && ((seqStore[svid].size() == maxReadPerSV) || (seqStore[svid].size() == (uint32_t) svs[svid].srSupport))) {
+	      // MSA
+	      if ((!_translocation(svs[svid].svt)) && (seqStore[svid].size() > 1)) {
+		msa(c, seqStore[svid], svs[svid].consensus);
+		char* sndSeq = NULL;
+		if (!alignConsensus(c, hdr, seq, sndSeq, svs[svid])) {
+		  // MSA failed
+		  svs[svid].consensus = "";
+		  svs[svid].srSupport = 0;
+		}
+	      }
+
+	      // Clean-up
+	      seqStore[svid].clear();
+	      svDone[svid] = true;
+	    }
+	  }
+	}	
+      }
+
+      // Clean-up
+      if (seq != NULL) free(seq);
+    }
+    // Clean-up
+    fai_destroy(fai);
+    bam_hdr_destroy(hdr);
+    for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
+      hts_idx_destroy(idx[file_c]);
+      sam_close(samfile[file_c]);
+    }
+  }
+
+      
+
+      /*
     for(int32_t refIndex2 = 0; refIndex2 < hdr->n_targets; ++refIndex2) {
       ++show_progress;
       if (validRegions[refIndex2].empty()) continue;
@@ -232,37 +333,17 @@ namespace torali
 	    else break;
 	  totalSplitReadsAligned += splitReadSet.size();
 	  
-	  // MSA
-	  if (splitReadSet.size() > 1) {
-	    svIt->srSupport = msa(c, splitReadSet, svIt->consensus);
-	    if (!alignConsensus(c, hdr, seq, sndSeq, *svIt)) {
-	      svIt->consensus = "";
-	      svIt->srSupport = 0;
-	    } else {
-	      // Update REF & ALT alleles because of split-read refinement (except for the small InDels)
-	      if ((svIt->peSupport != 0) || (!c.indels)) svIt->alleles = _addAlleles(boost::to_upper_copy(std::string(seq + svIt->svStart - 1, seq + svIt->svStart)), std::string(hdr->target_name[svIt->chr2]), *svIt, svIt->svt);
-	    }
-	  }
 	}
 	if (seq != NULL) free(seq);
       }
       if (sndSeq != NULL) free(sndSeq);
     }
-    // Clean-up
-    fai_destroy(fai);
-    bam_hdr_destroy(hdr);
-    for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
-      hts_idx_destroy(idx[file_c]);
-      sam_close(samfile[file_c]);
-    }
-    
-    return (totalSplitReadsAligned>0);
-  }
+      */
   
 
-  template<typename TConfig, typename TValidRegion, typename TVariants, typename TSampleLib>
+  template<typename TConfig, typename TValidRegion, typename TSRStore, typename TSampleLib>
   inline void
-  shortPE(TConfig const& c, TValidRegion const& validRegions, TVariants& svs, TSampleLib& sampleLib)
+  scanPEandSR(TConfig const& c, TValidRegion const& validRegions, std::vector<StructuralVariantRecord>& svs, std::vector<StructuralVariantRecord>& srSVs, TSRStore& srStore, TSampleLib& sampleLib)
   {
     typedef typename TValidRegion::value_type TChrIntervals;
 
@@ -463,7 +544,6 @@ namespace torali
     now = boost::posix_time::second_clock::local_time();
     std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Split-read clustering" << std::endl;
     boost::progress_display spSR( srBR.size() );
-    TVariants srSVs;
     for(uint32_t svt = 0; svt < srBR.size(); ++svt) {
       ++spSR;
       if (srBR[svt].empty()) continue;
@@ -492,7 +572,30 @@ namespace torali
       // Cluster
       cluster(c, bamRecord[svt], svs, varisize, svt);
     }
+
+    // Track split-reads
+    for(uint32_t svt = 0; svt < srBR.size(); ++svt) {
+      for(uint32_t i = 0; i < srBR[svt].size(); ++i) {
+	// Read assigned?
+	if (srBR[svt][i].svid != -1) {
+	  srStore[srBR[svt][i].chr][std::make_pair(srBR[svt][i].pos, srBR[svt][i].id)] = srBR[svt][i].svid;
+	  srStore[srBR[svt][i].chr2][std::make_pair(srBR[svt][i].pos2, srBR[svt][i].id)] = srBR[svt][i].svid;
+	}
+      }
+    }
+
+    // Clean-up
+    bam_hdr_destroy(hdr);
+    for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
+      hts_idx_destroy(idx[file_c]);
+      sam_close(samfile[file_c]);
+    }
+  }
+
+
+
   
+  /*
       
     // Sort SVs for look-up
     sort(svs.begin(), svs.end(), SortSVs<StructuralVariantRecord>());
@@ -540,14 +643,8 @@ namespace torali
 	svs = svc;
       }
     }
-
-    // Clean-up
-    bam_hdr_destroy(hdr);
-    for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
-      hts_idx_destroy(idx[file_c]);
-      sam_close(samfile[file_c]);
-    }
   }
+  */
   
 
 }

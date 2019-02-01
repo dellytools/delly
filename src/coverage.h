@@ -257,7 +257,6 @@ annotateCoverage(TConfig& c, TSampleLibrary& sampleLib, TCovRecord& ict, TCovera
 
       // Iterate all structural variants
       for(typename TSVs::iterator itSV = svs.begin(); itSV != svs.end(); ++itSV) {
-	if (!itSV->precise) continue;
 	if ((itSV->chr != refIndex) && (itSV->chr2 != refIndex)) continue;
 
 	// Lazy loading of reference sequence
@@ -266,6 +265,12 @@ annotateCoverage(TConfig& c, TSampleLibrary& sampleLib, TCovRecord& ict, TCovera
 	  std::string tname(hdr[0]->target_name[refIndex]);
 	  seq = faidx_fetch_seq(fai, tname.c_str(), 0, hdr[0]->target_len[refIndex], &seqlen);
 	}
+
+	// Set tag alleles
+	if (itSV->chr2 == refIndex) {
+	  itSV->alleles = _addAlleles(boost::to_upper_copy(std::string(seq + itSV->svStart - 1, seq + itSV->svStart)), std::string(hdr[0]->target_name[itSV->chr2]), *itSV, itSV->svt);
+	}
+	if (!itSV->precise) continue;
 
 	// Get the reference sequence
 	if ((itSV->chr != itSV->chr2) && (itSV->chr2 == refIndex)) {
@@ -278,7 +283,7 @@ annotateCoverage(TConfig& c, TSampleLibrary& sampleLib, TCovRecord& ict, TCovera
 	  bp.part1 = refProbes[itSV->id];
 	  _initBreakpoint(hdr[0], bp, (int32_t) itSV->consensus.size(), itSV->svt);
 	  std::string svRefStr = _getSVRef(c, seq, bp, refIndex, itSV->svt);
-	  
+
 	  // Find breakpoint to reference
 	  typedef boost::multi_array<char, 2> TAlign;
 	  TAlign align;
