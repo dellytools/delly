@@ -87,15 +87,15 @@ namespace torali
     bam_hdr_t* hdr = sam_hdr_read(samfile[0]);
 
     // Reads per SV
-    typedef std::vector<std::string> TSequences;
+    typedef std::set<std::string> TSequences;
     typedef std::vector<TSequences> TSVSequences;
-    TSVSequences traSeq(svs.size(), TSequences());
+    TSVSequences traStore(svs.size(), TSequences());
     uint32_t maxReadPerSV = 20;
     
     // Parse BAM
     boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
     std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Split-read assembly" << std::endl;
-    boost::progress_display show_progress( hdr->n_targets );
+    boost::progress_display show_progress( 2 * hdr->n_targets );
 
     faidx_t* fai = fai_load(c.genome.string().c_str());
     for(int32_t refIndex = 0; refIndex < hdr->n_targets; ++refIndex) {
@@ -116,7 +116,6 @@ namespace torali
 
       // Sequences
       TSVSequences seqStore(svs.size(), TSequences());
-      std::vector<bool> svDone(svs.size(), false);
       
       // Collect reads from all samples
       for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
@@ -152,38 +151,82 @@ namespace torali
 		_adjustOrientation(sequence, bpPoint, svs[svid].svt);
 		
 		// At most n split-reads
-		if ((!svDone[it->second]) && (seqStore[it->second].size() < maxReadPerSV)) seqStore[it->second].push_back(sequence);
+		if (seqStore[it->second].size() < maxReadPerSV) {
+		  if (_translocation(svs[svid].svt)) traStore[it->second].insert(sequence);
+		  else seqStore[it->second].insert(sequence);
+		}
 	      }
 	    }
 	  }
-
-	  // Do we have all SVs for one SV
-	  for(uint32_t svid = 0; svid < seqStore.size(); ++svid) {
-	    if ((!svDone[svid]) && ((seqStore[svid].size() == maxReadPerSV) || (seqStore[svid].size() == (uint32_t) svs[svid].srSupport))) {
-	      // MSA
-	      bool msaSuccess = false;
-	      if ((!_translocation(svs[svid].svt)) && (seqStore[svid].size() > 1)) {
-		msa(c, seqStore[svid], svs[svid].consensus);
-		char* sndSeq = NULL;
-		if (alignConsensus(c, hdr, seq, sndSeq, svs[svid])) msaSuccess = true;
-	      }
-	      if (!msaSuccess) {
-		svs[svid].consensus = "";
-		svs[svid].srSupport = 0;
-		svs[svid].srAlignQuality = 0;
-	      }
-
-	      // Clean-up
-	      seqStore[svid].clear();
-	      svDone[svid] = true;
-	    }
-	  }
-	}	
+	}
       }
 
+      // Process all SVs on this chromosome
+      for(uint32_t svid = 0; svid < seqStore.size(); ++svid) {
+	if (_translocation(svs[svid].svt)) continue;
+	if (svs[svid].chr != refIndex) continue;
+
+	// MSA
+	bool msaSuccess = false;
+	if (seqStore[svid].size() > 1) {
+	  msa(c, seqStore[svid], svs[svid].consensus);
+	  if (alignConsensus(c, hdr, seq, NULL, svs[svid])) msaSuccess = true;
+	}
+	if (!msaSuccess) {
+	  svs[svid].consensus = "";
+	  svs[svid].srSupport = 0;
+	  svs[svid].srAlignQuality = 0;
+	} else {
+	  svs[svid].srSupport = seqStore[svid].size();
+	}
+      }
       // Clean-up
       if (seq != NULL) free(seq);
     }
+
+    // Process translocations
+    for(int32_t refIndex2 = 0; refIndex2 < hdr->n_targets; ++refIndex2) {
+      ++show_progress;
+      if (validRegions[refIndex2].empty()) continue;
+      char* sndSeq = NULL;
+      for(int32_t refIndex = refIndex2 + 1; refIndex < hdr->n_targets; ++refIndex) {
+	if (validRegions[refIndex].empty()) continue;
+	char* seq = NULL;
+
+	// Iterate SVs
+	for(uint32_t svid = 0; svid < traStore.size(); ++svid) {
+	  if (!_translocation(svs[svid].svt)) continue;
+	  if ((svs[svid].chr != refIndex) || (svs[svid].chr2 != refIndex2)) continue;
+
+	  bool msaSuccess = false;
+	  if (traStore[svid].size() > 1) {
+	    // Lazy loading of references
+	    if (seq == NULL) {
+	      int32_t seqlen = -1;
+	      std::string tname(hdr->target_name[refIndex]);
+	      seq = faidx_fetch_seq(fai, tname.c_str(), 0, hdr->target_len[refIndex], &seqlen);
+	    }
+	    if (sndSeq == NULL) {
+	      int32_t seqlen = -1;
+	      std::string tname(hdr->target_name[refIndex2]);
+	      sndSeq = faidx_fetch_seq(fai, tname.c_str(), 0, hdr->target_len[refIndex2], &seqlen);
+	    }
+	    msa(c, traStore[svid], svs[svid].consensus);
+	    if (alignConsensus(c, hdr, seq, sndSeq, svs[svid])) msaSuccess = true;
+	  }
+	  if (!msaSuccess) {
+	    svs[svid].consensus = "";
+	    svs[svid].srSupport = 0;
+	    svs[svid].srAlignQuality = 0;
+	  } else {
+	    svs[svid].srSupport = traStore[svid].size();
+	  }
+	}
+	if (seq != NULL) free(seq);
+      }
+      if (sndSeq != NULL) free(sndSeq);
+    }
+
     // Clean-up
     fai_destroy(fai);
     bam_hdr_destroy(hdr);
