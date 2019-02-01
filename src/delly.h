@@ -437,7 +437,6 @@ int delly(int argc, char **argv) {
     ("minclip,c", boost::program_options::value<uint32_t>(&c.minClip)->default_value(25), "min. clipping length")
     ("minrefsep,m", boost::program_options::value<uint32_t>(&c.minRefSep)->default_value(50), "min. reference separation")
     ("maxreadsep,n", boost::program_options::value<uint32_t>(&c.maxReadSep)->default_value(10), "max. read separation")
-    ("indels,i", "activate small InDel calling")
     ;
 
   boost::program_options::options_description geno("Genotyping options");
