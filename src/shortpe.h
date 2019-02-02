@@ -478,9 +478,12 @@ namespace torali
     for(uint32_t svt = 0; svt < srBR.size(); ++svt) {
       for(uint32_t i = 0; i < srBR[svt].size(); ++i) {
 	// Read assigned?
-	if (srBR[svt][i].svid != -1) {
-	  srStore[srBR[svt][i].chr][std::make_pair(srBR[svt][i].pos, srBR[svt][i].id)] = srBR[svt][i].svid;
-	  srStore[srBR[svt][i].chr2][std::make_pair(srBR[svt][i].pos2, srBR[svt][i].id)] = srBR[svt][i].svid;
+	if ((srBR[svt][i].svid != -1) && (srBR[svt][i].rstart != -1)) {
+	  srStore[srBR[svt][i].chr][std::make_pair(srBR[svt][i].rstart, srBR[svt][i].id)] = srBR[svt][i].svid;
+	  if (srBR[svt][i].chr != srBR[svt][i].chr2) {
+	    // Unclear which chr was primary alignment so insert both
+	    srStore[srBR[svt][i].chr2][std::make_pair(srBR[svt][i].rstart, srBR[svt][i].id)] = srBR[svt][i].svid;
+	  }
 	}
       }
     }

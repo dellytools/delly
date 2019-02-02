@@ -628,6 +628,8 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
       }
       // ToDo
       //rec->qual = 0;
+
+      // Todo, PE=0 calls are LowQual --> fix needed
       
       
       bcf_update_genotypes(hdr, rec, gts, bcf_hdr_nsamples(hdr) * 2);
