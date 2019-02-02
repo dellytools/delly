@@ -547,6 +547,7 @@ namespace torali
 	      itOther->ciposhigh = sr[i].ciposhigh;
 	      itOther->ciendlow = sr[i].ciendlow;
 	      itOther->ciendhigh = sr[i].ciendhigh;
+	      itOther->srMapQuality = sr[i].srMapQuality;
 	      itOther->srSupport = sr[i].srSupport;
 	      itOther->insLen = sr[i].insLen;
 	      itOther->homLen = sr[i].homLen;
