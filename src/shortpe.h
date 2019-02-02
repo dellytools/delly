@@ -288,9 +288,6 @@ namespace torali
     // Iterate all samples
 #pragma omp parallel for default(shared)
     for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
-      // Maximum insert size
-      int32_t overallMaxISize = std::max(sampleLib[file_c].maxISizeCutoff, sampleLib[file_c].rs);
-
       // Inter-chromosomal mate map and alignment length
       typedef std::pair<uint8_t, int32_t> TQualLen;
       typedef boost::unordered_map<std::size_t, TQualLen> TMateMap;
@@ -378,8 +375,8 @@ namespace torali
 	      if (validRegions[rec->core.mtid].empty()) continue;
 	      if ((_translocation(rec)) && (rec->core.qual < c.minTraQual)) continue;
 
-	      // SV type
-	      int32_t svt = _isizeMappingPos(rec, overallMaxISize);
+	      // SV type	      
+	      int32_t svt = _isizeMappingPos(rec, sampleLib[file_c].maxISizeCutoff);
 	      if (svt == -1) continue;
 	      if ((c.svtcmd) && (c.svtset.find(svt) == c.svtset.end())) continue;
 

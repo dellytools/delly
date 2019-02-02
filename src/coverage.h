@@ -358,8 +358,6 @@ annotateCoverage(TConfig& c, TSampleLibrary& sampleLib, TCovRecord& ict, TCovera
 
 #pragma omp parallel for default(shared)
   for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
-    int32_t overallMaxISize = std::max(sampleLib[file_c].maxISizeCutoff, sampleLib[file_c].rs);
-    
     // Pair qualities and features
     typedef boost::unordered_map<std::size_t, uint8_t> TQualities;
     TQualities qualities;
@@ -664,7 +662,7 @@ annotateCoverage(TConfig& c, TSampleLibrary& sampleLib, TCovRecord& ict, TCovera
 	  // Abnormal spanning coverage
 	  if ((getSVType(rec->core) != 2) || (outerISize < sampleLib[file_c].minNormalISize) || (outerISize > sampleLib[file_c].maxNormalISize) || (rec->core.tid!=rec->core.mtid)) {
 	    // SV type
-	    int32_t svt = _isizeMappingPos(rec, overallMaxISize);
+	    int32_t svt = _isizeMappingPos(rec, sampleLib[file_c].maxISizeCutoff);
 	    if (svt == -1) continue;
 	    
 	    // Spanning a breakpoint?

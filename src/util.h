@@ -416,6 +416,11 @@ namespace torali
 	  if (sampleLib[file_c].minNormalISize < 0) sampleLib[file_c].minNormalISize=0;
 	  sampleLib[file_c].maxISizeCutoff = median + (c.madCutoff * mad);
 	  sampleLib[file_c].minISizeCutoff = median - (c.madCutoff * mad);
+
+	  // Deletion insert-size sanity checks
+	  sampleLib[file_c].maxISizeCutoff = std::max(sampleLib[file_c].maxISizeCutoff, 2*sampleLib[file_c].rs);
+	  sampleLib[file_c].maxISizeCutoff = std::max(sampleLib[file_c].maxISizeCutoff, 500);
+
 	  if (sampleLib[file_c].minISizeCutoff < 0) sampleLib[file_c].minISizeCutoff=0;
 	}
       }
