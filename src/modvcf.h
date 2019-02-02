@@ -419,7 +419,7 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
   bcf_hdr_append(hdr, "##ALT=<ID=INV,Description=\"Inversion\">");
   bcf_hdr_append(hdr, "##ALT=<ID=BND,Description=\"Translocation\">");
   bcf_hdr_append(hdr, "##ALT=<ID=INS,Description=\"Insertion\">");
-  bcf_hdr_append(hdr, "##FILTER=<ID=LowQual,Description=\"PE/SR support below 3 or mapping quality below 20.\">");
+  bcf_hdr_append(hdr, "##FILTER=<ID=LowQual,Description=\"Poor quality and insufficient number of PEs and SRs.\">");
   bcf_hdr_append(hdr, "##INFO=<ID=CIEND,Number=2,Type=Integer,Description=\"PE confidence interval around END\">");
   bcf_hdr_append(hdr, "##INFO=<ID=CIPOS,Number=2,Type=Integer,Description=\"PE confidence interval around POS\">");
   bcf_hdr_append(hdr, "##INFO=<ID=CHR2,Number=1,Type=String,Description=\"Chromosome for END coordinate in case of a translocation\">");
@@ -510,10 +510,12 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
       ++show_progress;
       // Output main vcf fields
       int32_t tmpi = bcf_hdr_id2int(hdr, BCF_DT_ID, "PASS");
-      if ((svIter->precise) && (svIter->chr == svIter->chr2)) {
-	if ((svIter->srSupport < 3) || (svIter->peMapQuality < 20)) tmpi = bcf_hdr_id2int(hdr, BCF_DT_ID, "LowQual");
+      if (svIter->chr == svIter->chr2) {
+	// Intra-chromosomal
+	if (((svIter->peSupport < 3) || (svIter->peMapQuality < 20)) && ((svIter->srSupport < 3) || (svIter->srMapQuality < 20))) tmpi = bcf_hdr_id2int(hdr, BCF_DT_ID, "LowQual");
       } else {
-	if ((svIter->peSupport < 3) || (svIter->peMapQuality < 20) || ( (svIter->chr != svIter->chr2) && (svIter->peSupport < 5) ) ) tmpi = bcf_hdr_id2int(hdr, BCF_DT_ID, "LowQual");
+	// Inter-chromosomal
+	if (((svIter->peSupport < 5) || (svIter->peMapQuality < 20)) && ((svIter->srSupport < 5) || (svIter->srMapQuality < 20))) tmpi = bcf_hdr_id2int(hdr, BCF_DT_ID, "LowQual");
       }
       rec->rid = bcf_hdr_name2id(hdr, bamhd->target_name[svIter->chr]);
       int32_t svStartPos = svIter->svStart - 1;
@@ -629,8 +631,6 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
       // ToDo
       //rec->qual = 0;
 
-      // Todo, PE=0 calls are LowQual --> fix needed
-      
       
       bcf_update_genotypes(hdr, rec, gts, bcf_hdr_nsamples(hdr) * 2);
       bcf_update_format_float(hdr, rec, "GL",  gls, bcf_hdr_nsamples(hdr) * 3);
