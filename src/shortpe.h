@@ -91,6 +91,9 @@ namespace torali
     typedef std::vector<TSequences> TSVSequences;
     TSVSequences traStore(svs.size(), TSequences());
     uint32_t maxReadPerSV = 20;
+    typedef std::vector<uint8_t> TQualities;
+    typedef std::vector<TQualities> TQualVectors;
+    TQualVectors traQualStore(svs.size(), TQualities());
     
     // Parse BAM
     boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
@@ -116,6 +119,7 @@ namespace torali
 
       // Sequences
       TSVSequences seqStore(svs.size(), TSequences());
+      TQualVectors qualStore(svs.size(), TQualities());
       
       // Collect reads from all samples
       for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
@@ -152,8 +156,14 @@ namespace torali
 		
 		// At most n split-reads
 		if (seqStore[it->second].size() < maxReadPerSV) {
-		  if (_translocation(svs[svid].svt)) traStore[it->second].insert(sequence);
-		  else seqStore[it->second].insert(sequence);
+		  bool insertSuccess = false;
+		  if (_translocation(svs[svid].svt)) insertSuccess = traStore[it->second].insert(sequence).second;
+		  else insertSuccess = seqStore[it->second].insert(sequence).second;
+		  // Store qualities
+		  if (insertSuccess) {
+		    if (_translocation(svs[svid].svt)) traQualStore[it->second].push_back(rec->core.qual);
+		    else qualStore[it->second].push_back(rec->core.qual);
+		  }
 		}
 	      }
 	    }
@@ -177,7 +187,10 @@ namespace torali
 	  svs[svid].srSupport = 0;
 	  svs[svid].srAlignQuality = 0;
 	} else {
+	  // SR support and qualities
+	  std::sort(qualStore[svid].begin(), qualStore[svid].end());
 	  svs[svid].srSupport = seqStore[svid].size();
+	  svs[svid].srMapQuality = qualStore[svid][qualStore[svid].size()/2];
 	}
       }
       // Clean-up
@@ -219,7 +232,10 @@ namespace torali
 	    svs[svid].srSupport = 0;
 	    svs[svid].srAlignQuality = 0;
 	  } else {
+	    // SR support and qualities
+	    std::sort(traQualStore[svid].begin(), traQualStore[svid].end());
 	    svs[svid].srSupport = traStore[svid].size();
+	    svs[svid].srMapQuality = traQualStore[svid][traQualStore[svid].size()/2];
 	  }
 	}
 	if (seq != NULL) free(seq);

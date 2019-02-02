@@ -289,7 +289,6 @@ namespace torali
       int32_t ciendlow = br[itWEdge->source].pos2;
       uint64_t pos2 = br[itWEdge->source].pos2;
       int32_t ciendhigh = br[itWEdge->source].pos2;
-      int32_t mapq = br[itWEdge->source].qual;
       int32_t inslen = br[itWEdge->source].inslen;
 
       // Grow clique
@@ -319,7 +318,6 @@ namespace torali
 	    ciendlow = newCiEndLow;
 	    pos2 += br[v].pos2;
 	    ciendhigh = newCiEndHigh;
-	    mapq += br[v].qual;
 	    inslen += br[v].inslen;
 	  } else incompatible.insert(v);
 	}
@@ -334,7 +332,7 @@ namespace torali
 	  std::cerr << "Warning: Confidence intervals out of bounds: " << ciposlow << ',' << svStart << ',' << ciposhigh << ':' << ciendlow << ',' << svEnd << ',' << ciendhigh << std::endl;
 	}
 	int32_t svid = sv.size();
-	sv.push_back(StructuralVariantRecord(chr, svStart, chr2, svEnd, (ciposlow - svStart), (ciposhigh - svStart), (ciendlow - svEnd), (ciendhigh - svEnd), clique.size(), svInsLen, svt, svid, mapq));
+	sv.push_back(StructuralVariantRecord(chr, svStart, chr2, svEnd, (ciposlow - svStart), (ciposhigh - svStart), (ciendlow - svEnd), (ciendhigh - svEnd), clique.size(), svInsLen, svt, svid));
 	// Reads assigned
 	for(typename TCliqueMembers::iterator itC = clique.begin(); itC != clique.end(); ++itC) br[*itC].svid = svid;
       }
