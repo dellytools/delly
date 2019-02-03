@@ -139,7 +139,7 @@ namespace torali
 	      int32_t svid = it->second;
 
 	      // Get the sequence
-	      if (it->second == (int32_t) svs[svid].id) {  // Should be always true
+	      if (svid == (int32_t) svs[svid].id) {  // Should be always true
 		std::string sequence;
 		sequence.resize(rec->core.l_qseq);
 		uint8_t* seqptr = bam_get_seq(rec);
@@ -155,14 +155,14 @@ namespace torali
 		_adjustOrientation(sequence, bpPoint, svs[svid].svt);
 		
 		// At most n split-reads
-		if (seqStore[it->second].size() < maxReadPerSV) {
+		if (seqStore[svid].size() < maxReadPerSV) {
 		  bool insertSuccess = false;
-		  if (_translocation(svs[svid].svt)) insertSuccess = traStore[it->second].insert(sequence).second;
-		  else insertSuccess = seqStore[it->second].insert(sequence).second;
+		  if (_translocation(svs[svid].svt)) insertSuccess = traStore[svid].insert(sequence).second;
+		  else insertSuccess = seqStore[svid].insert(sequence).second;
 		  // Store qualities
 		  if (insertSuccess) {
-		    if (_translocation(svs[svid].svt)) traQualStore[it->second].push_back(rec->core.qual);
-		    else qualStore[it->second].push_back(rec->core.qual);
+		    if (_translocation(svs[svid].svt)) traQualStore[svid].push_back(rec->core.qual);
+		    else qualStore[svid].push_back(rec->core.qual);
 		  }
 		}
 	      }
@@ -492,10 +492,10 @@ namespace torali
       for(uint32_t i = 0; i < srBR[svt].size(); ++i) {
 	// Read assigned?
 	if ((srBR[svt][i].svid != -1) && (srBR[svt][i].rstart != -1)) {
-	  srStore[srBR[svt][i].chr][std::make_pair(srBR[svt][i].rstart, srBR[svt][i].id)] = srBR[svt][i].svid;
+	  if (srBR[svt][i].rstart < (int32_t) hdr->target_len[srBR[svt][i].chr]) srStore[srBR[svt][i].chr].insert(std::make_pair(std::make_pair(srBR[svt][i].rstart, srBR[svt][i].id), srBR[svt][i].svid));
 	  if (srBR[svt][i].chr != srBR[svt][i].chr2) {
-	    // Unclear which chr was primary alignment so insert both
-	    srStore[srBR[svt][i].chr2][std::make_pair(srBR[svt][i].rstart, srBR[svt][i].id)] = srBR[svt][i].svid;
+	    // Unclear which chr was primary alignment so insert both if and only if rstart < reference length
+	    if (srBR[svt][i].rstart < (int32_t) hdr->target_len[srBR[svt][i].chr2]) srStore[srBR[svt][i].chr2].insert(std::make_pair(std::make_pair(srBR[svt][i].rstart, srBR[svt][i].id), srBR[svt][i].svid));
 	  }
 	}
       }
