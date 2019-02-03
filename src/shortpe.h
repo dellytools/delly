@@ -175,6 +175,8 @@ namespace torali
 	      }
 	    }
 	  }
+	  bam_destroy1(rec);
+          hts_itr_destroy(iter);
 	}
       }
 
