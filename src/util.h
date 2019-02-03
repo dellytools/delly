@@ -401,27 +401,28 @@ namespace torali
 	for(uint32_t i = 0; i < vecISize.size(); ++i) absDev.push_back(std::abs((int32_t) vecISize[i] - median));
 	std::sort(absDev.begin(), absDev.end());
 	mad = absDev[absDev.size() / 2];
-      }
-      // Get default library orientation
-      if (rplus < nonrplus) {
-	std::cerr << "Warning: Sample has a non-default paired-end layout! File: " << c.files[file_c].string() << std::endl;
-	std::cerr << "The expected paired-end orientation is   ---Read1--->      <---Read2---  which is the default illumina paired-end layout." << std::endl;
-      } else {
-	// Sensible library size?
+
+	// Get default library orientation
 	if ((median >= 50) && (median<=100000)) {
-	  sampleLib[file_c].median = median;
-	  sampleLib[file_c].mad = mad;
-	  sampleLib[file_c].maxNormalISize = median + (5 * mad);
-	  sampleLib[file_c].minNormalISize = median - (5 * mad);
-	  if (sampleLib[file_c].minNormalISize < 0) sampleLib[file_c].minNormalISize=0;
-	  sampleLib[file_c].maxISizeCutoff = median + (c.madCutoff * mad);
-	  sampleLib[file_c].minISizeCutoff = median - (c.madCutoff * mad);
+	  if (rplus < nonrplus) {
+	    std::cerr << "Warning: Sample has a non-default paired-end layout! File: " << c.files[file_c].string() << std::endl;
+	    std::cerr << "The expected paired-end orientation is   ---Read1--->      <---Read2---  which is the default illumina paired-end layout." << std::endl;
+	    
+	  } else {
+	    sampleLib[file_c].median = median;
+	    sampleLib[file_c].mad = mad;
+	    sampleLib[file_c].maxNormalISize = median + (5 * mad);
+	    sampleLib[file_c].minNormalISize = median - (5 * mad);
+	    if (sampleLib[file_c].minNormalISize < 0) sampleLib[file_c].minNormalISize=0;
+	    sampleLib[file_c].maxISizeCutoff = median + (c.madCutoff * mad);
+	    sampleLib[file_c].minISizeCutoff = median - (c.madCutoff * mad);
 
-	  // Deletion insert-size sanity checks
-	  sampleLib[file_c].maxISizeCutoff = std::max(sampleLib[file_c].maxISizeCutoff, 2*sampleLib[file_c].rs);
-	  sampleLib[file_c].maxISizeCutoff = std::max(sampleLib[file_c].maxISizeCutoff, 500);
+	    // Deletion insert-size sanity checks
+	    sampleLib[file_c].maxISizeCutoff = std::max(sampleLib[file_c].maxISizeCutoff, 2*sampleLib[file_c].rs);
+	    sampleLib[file_c].maxISizeCutoff = std::max(sampleLib[file_c].maxISizeCutoff, 500);
 
-	  if (sampleLib[file_c].minISizeCutoff < 0) sampleLib[file_c].minISizeCutoff=0;
+	    if (sampleLib[file_c].minISizeCutoff < 0) sampleLib[file_c].minISizeCutoff=0;
+	  }
 	}
       }
     }

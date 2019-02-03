@@ -147,10 +147,17 @@ namespace torali
 
 		// Adjust orientation
 		bool bpPoint = false;
-		if (_translocation(rec)) {
+		if (_translocation(svs[svid].svt)) {
 		  if (rec->core.tid == svs[svid].chr2) bpPoint = true;
 		} else {
-		  if (rec->core.pos > svs[svid].svStart) bpPoint = true;
+		  // Only relevant for inversions
+		  if (svs[svid].svt == 0) {
+		    if (rec->core.pos + 25 > svs[svid].svStart) bpPoint = true;
+		    else bpPoint = false;
+		  } else if (svs[svid].svt == 1) {
+		    if (rec->core.pos + 25 > svs[svid].svEnd) bpPoint = true;
+		    else bpPoint = false;
+		  }
 		}
 		_adjustOrientation(sequence, bpPoint, svs[svid].svt);
 		
