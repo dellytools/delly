@@ -522,7 +522,7 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
       if (svStartPos < 1) svStartPos = 1;
       int32_t svEndPos = svIter->svEnd;
       if (svEndPos < 1) svEndPos = 1;
-      if (svEndPos >= (int32_t) bamhd->target_len[svIter->chr]) svEndPos = bamhd->target_len[svIter->chr] - 1;
+      if (svEndPos >= (int32_t) bamhd->target_len[svIter->chr2]) svEndPos = bamhd->target_len[svIter->chr2] - 1;
       rec->pos = svStartPos;
       std::string id(_addID(svIter->svt));
       std::string padNumber = boost::lexical_cast<std::string>(svIter->id);
