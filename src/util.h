@@ -334,7 +334,6 @@ namespace torali
       uint32_t maxNumAlignments=1000000;
       uint32_t minNumAlignments=1000;
       uint32_t alignmentCount=0;
-      uint32_t lastReadPos = 0;
       uint32_t processedNumPairs = 0;
       uint32_t processedNumReads = 0;
       uint32_t rplus = 0;
@@ -342,7 +341,6 @@ namespace torali
       typedef std::vector<uint32_t> TSizeVector;
       TSizeVector vecISize;
       TSizeVector readSize;
-      TSizeVector readDist;
 
       // Collect insert sizes
       bool libCharacterized = false;
@@ -364,8 +362,6 @@ namespace torali
 	      // Single-end
 	      if (processedNumReads < maxNumAlignments) {
 		readSize.push_back(rec->core.l_qseq);
-		readDist.push_back(rec->core.pos - lastReadPos);
-		lastReadPos = rec->core.pos;
 		++processedNumReads;
 	      }
 	      
