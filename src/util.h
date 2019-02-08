@@ -346,7 +346,7 @@ namespace torali
       bool libCharacterized = false;
       for(uint32_t refIndex=0; refIndex < (uint32_t) hdr[0]->n_targets; ++refIndex) {
 	if (validRegions[refIndex].empty()) continue;
-	for(typename TChrIntervals::const_iterator vRIt = validRegions[refIndex].begin(); vRIt != validRegions[refIndex].end(); ++vRIt) {
+	for(typename TChrIntervals::const_iterator vRIt = validRegions[refIndex].begin(); ((vRIt != validRegions[refIndex].end()) && (!libCharacterized)); ++vRIt) {
 	  hts_itr_t* iter = sam_itr_queryi(idx[file_c], refIndex, vRIt->lower(), vRIt->upper());
 	  bam1_t* rec = bam_init1();
 	  while (sam_itr_next(samfile[file_c], iter, rec) >= 0) {
