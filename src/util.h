@@ -207,7 +207,7 @@ namespace torali
   }
 
 
-  inline bool
+  inline void
   getSMTag(std::string const& header, std::string const& fileName, std::string& sampleName) {
     std::set<std::string> smIdentifiers;
     std::string delimiters("\n");
@@ -239,13 +239,11 @@ namespace torali
     }
     if (!rgPresent) {
       sampleName = fileName;
-      return true;
     } else if (smIdentifiers.size() == 1) {
       sampleName = *(smIdentifiers.begin());
-      return true;
-    } else {
-      sampleName = "";
-      return false;
+    } else if (smIdentifiers.size() > 1) {
+      sampleName = *(smIdentifiers.begin());
+      std::cerr << "Warning: Multiple sample names (@RG:SM) present in the BAM file!" << std::endl;
     }
   }
 

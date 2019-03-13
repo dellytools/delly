@@ -570,11 +570,9 @@ int delly(int argc, char **argv) {
       }
     }
     fai_destroy(fai);
-    std::string sampleName;
-    if (!getSMTag(std::string(hdr->text), c.files[file_c].stem().string(), sampleName)) {
-      std::cerr << "Only one sample (@RG:SM) is allowed per input BAM file " << c.files[file_c].string() << std::endl;
-      return 1;
-    } else c.sampleName[file_c] = sampleName;
+    std::string sampleName = "unknown";
+    getSMTag(std::string(hdr->text), c.files[file_c].stem().string(), sampleName);
+    c.sampleName[file_c] = sampleName;
     bam_hdr_destroy(hdr);
     hts_idx_destroy(idx);
     sam_close(samfile);
