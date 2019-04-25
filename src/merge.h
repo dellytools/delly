@@ -757,7 +757,7 @@ int merge(int argc, char **argv) {
   
   // Run merging
   boost::filesystem::path oldPath = c.outfile;
-  std::vector<boost::filesystem::path> svtCollect(maxSvt);
+  std::vector<boost::filesystem::path> svtCollect(9);
   for(int32_t svt = 0; svt < 9; ++svt) {
     boost::uuids::uuid uuid = boost::uuids::random_generator()();
     std::string filename = boost::lexical_cast<std::string>(uuid) + ".bcf";
