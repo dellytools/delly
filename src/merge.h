@@ -128,10 +128,10 @@ void _fillIntervalMap(MergeConfig const& c, TGenomeIntervals& iScore, TContigMap
     int32_t* sr = NULL;
     int32_t nmapq = 0;
     int32_t* mapq = NULL;
+    int32_t nsrmapq = 0;
+    int32_t* srmapq = NULL;
     int32_t nct = 0;
     char* ct = NULL;
-    int32_t nsrq = 0;
-    float* srq = NULL;
     int32_t nsvt = 0;
     char* svt = NULL;
     while (bcf_read(ifile, hdr, rec) == 0) {
@@ -167,20 +167,19 @@ void _fillIntervalMap(MergeConfig const& c, TGenomeIntervals& iScore, TContigMap
       if (bcf_get_info_flag(hdr, rec, "PRECISE", 0, 0) > 0) precise=true;
       if ((c.filterForPrecise) && (!precise)) continue;
 
-      unsigned int peSupport = 0;
+      int32_t peSupport = 0;
       if (bcf_get_info_int32(hdr, rec, "PE", &pe, &npe) > 0) peSupport = *pe;
-      unsigned int srSupport = 0;
+      int32_t srSupport = 0;
       if (bcf_get_info_int32(hdr, rec, "SR", &sr, &nsr) > 0) srSupport = *sr;
-      // Remove this line
-      //if (srSupport > 0) precise = true;
 
-      uint8_t peMapQuality = 0;
-      if (bcf_get_info_int32(hdr, rec, "MAPQ", &mapq, &nmapq) > 0) peMapQuality = (uint8_t) *mapq;
-      float srAlignQuality = 0;
-      if (bcf_get_info_float(hdr, rec, "SRQ", &srq, &nsrq) > 0) srAlignQuality = *srq;
+      int32_t peMapQuality = 0;
+      if (bcf_get_info_int32(hdr, rec, "MAPQ", &mapq, &nmapq) > 0) peMapQuality = *mapq;
+      int32_t srMapQuality = 0;
+      if (bcf_get_info_int32(hdr, rec, "SRMAPQ", &srmapq, &nsrmapq) > 0) srMapQuality = *srmapq;
 
+      std::cout << peSupport << ',' << srSupport << ',' << peMapQuality << ',' << srMapQuality << std::endl;
       // Quality score for the SV
-      uint32_t score = 0;
+      int32_t score = srSupport * (uint32_t) srMapQuality + peSupport * (uint32_t) peMapQuality;
       if (_isKeyPresent(hdr, "SCORE")) {
 	int32_t nvcfscore = 0;
 	if (_getInfoType(hdr, "SCORE") == BCF_HT_INT) {
@@ -194,9 +193,6 @@ void _fillIntervalMap(MergeConfig const& c, TGenomeIntervals& iScore, TContigMap
 	  score = (uint32_t) (*vcfscore * 10000); // for scores in [0,1] 
 	  free(vcfscore);
 	}
-      } else {
-	if (precise) score = srSupport * (uint32_t) (100 * srAlignQuality);
-	else score = peSupport * (uint32_t) peMapQuality;
       }
 
       // Store the interval
@@ -208,7 +204,7 @@ void _fillIntervalMap(MergeConfig const& c, TGenomeIntervals& iScore, TContigMap
     if (sr != NULL) free(sr);
     if (mapq != NULL) free(mapq);
     if (ct != NULL) free(ct);
-    if (srq != NULL) free(srq);
+    if (srmapq != NULL) free(srmapq);
     if (svt != NULL) free(svt);
     bcf_hdr_destroy(hdr);
     bcf_close(ifile);
@@ -353,10 +349,10 @@ void _outputSelectedIntervals(MergeConfig& c, TGenomeIntervals const& iSelected,
   int32_t* homlen = NULL;
   int32_t nmapq = 0;
   int32_t* mapq = NULL;
-  int32_t nct = 0;
-  char* ct = NULL;
   int32_t nsrq = 0;
   float* srq = NULL;
+  int32_t nct = 0;
+  char* ct = NULL;
   int32_t nsvt = 0;
   char* svt = NULL;
   int32_t nchr2 = 0;
