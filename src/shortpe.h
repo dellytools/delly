@@ -530,7 +530,7 @@ namespace torali
     
     // Augment PE SVs and append missing SR SVs
     for(int32_t svt = 0; svt < 10; ++svt) {
-      for(uint32_t i = 0; i < sr.size(); ++i) {
+      for(int32_t i = 0; i < (int32_t) sr.size(); ++i) {
 	if (sr[i].svt != svt) continue;
 	if ((sr[i].srSupport == 0) || (sr[i].srAlignQuality == 0)) continue; // SR assembly failed
 
@@ -565,7 +565,38 @@ namespace torali
 	}
 	
 	// SR only SV
-	if (!svExists) pe.push_back(sr[i]);
+	if (!svExists) {
+	  // Make sure there is no PRECISE duplicate
+	  int32_t precSearchWindow = 10;
+	  bool preciseDuplicate = false;
+	  for(int32_t j = i + 1; j < (int32_t) sr.size(); ++j) {
+	    if (std::abs(sr[i].svStart - sr[j].svStart) > precSearchWindow) break;
+	    if (sr[i].svt != sr[j].svt) continue;   // Mismatching SV types
+	    if ((sr[i].chr != sr[j].chr) || (sr[i].chr2 != sr[j].chr2)) continue;  // Mismatching chr
+
+	    // Breakpoints within PE confidence interval?
+	    if ((sr[j].svStart + sr[j].ciposlow <= sr[i].svStart) && (sr[i].svStart <= sr[j].svStart + sr[j].ciposhigh)) {
+	      if ((sr[j].svEnd + sr[j].ciendlow <= sr[i].svEnd) && (sr[i].svEnd <= sr[j].svEnd + sr[j].ciendhigh)) {
+		// Duplicate, keep better call
+		if ((sr[i].srSupport < sr[j].srSupport) || ((sr[i].srSupport == sr[j].srSupport) && (i < j))) preciseDuplicate = true;
+	      }
+	    }
+	  }
+	  for(int32_t j = i - 1; j>=0; --j) {
+	    if (std::abs(sr[i].svStart - sr[j].svStart) > precSearchWindow) break;
+	    if (sr[i].svt != sr[j].svt) continue;   // Mismatching SV types
+	    if ((sr[i].chr != sr[j].chr) || (sr[i].chr2 != sr[j].chr2)) continue;  // Mismatching chr
+
+	    // Breakpoints within PE confidence interval?
+	    if ((sr[j].svStart + sr[j].ciposlow < sr[i].svStart) && (sr[i].svStart < sr[j].svStart + sr[j].ciposhigh)) {
+	      if ((sr[j].svEnd + sr[j].ciendlow < sr[i].svEnd) && (sr[i].svEnd < sr[j].svEnd + sr[j].ciendhigh)) {
+		// Duplicate, keep better call
+		if ((sr[i].srSupport < sr[j].srSupport) || ((sr[i].srSupport == sr[j].srSupport) && (i < j))) preciseDuplicate = true;
+	      }
+	    }
+	  }
+	  if (!preciseDuplicate) pe.push_back(sr[i]);
+	}
       }
     }
   }
