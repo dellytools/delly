@@ -557,7 +557,7 @@ namespace torali
       TBamRecord::const_iterator bamItNext = bamIt;
       ++bamItNext;
       std::size_t bamItIndexNext = bamItIndex + 1;
-      for(; ((bamItNext != bamRecord.end()) && (abs(_minCoord(bamItNext->pos, bamItNext->mpos, svt) + bamItNext->alen - minCoord) <= varisize)) ; ++bamItNext, ++bamItIndexNext) {
+      for(; ((bamItNext != bamRecord.end()) && ((uint32_t) std::abs(_minCoord(bamItNext->pos, bamItNext->mpos, svt) + bamItNext->alen - minCoord) <= varisize)) ; ++bamItNext, ++bamItIndexNext) {
 	  // Check that mate chr agree (only for translocations)
 	if (bamIt->mtid != bamItNext->mtid) continue;
 	

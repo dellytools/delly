@@ -31,6 +31,9 @@ Contact: Tobias Rausch (rausch@embl.de)
 #include <boost/program_options/options_description.hpp>
 #include <boost/program_options/parsers.hpp>
 #include <boost/program_options/variables_map.hpp>
+#include <boost/uuid/uuid.hpp>
+#include <boost/uuid/uuid_generators.hpp>
+#include <boost/uuid/uuid_io.hpp>
 #include <boost/date_time/posix_time/posix_time.hpp>
 #include <boost/date_time/gregorian/gregorian.hpp>
 #include <boost/iostreams/stream.hpp>
@@ -754,17 +757,18 @@ int merge(int argc, char **argv) {
   
   // Run merging
   boost::filesystem::path oldPath = c.outfile;
-  int32_t maxSvt = 15;
   std::vector<boost::filesystem::path> svtCollect(maxSvt);
-  for(int32_t svt = 0; svt < maxSvt; ++svt) {
-    svtCollect[svt] = boost::filesystem::unique_path();
+  for(int32_t svt = 0; svt < 9; ++svt) {
+    boost::uuids::uuid uuid = boost::uuids::random_generator()();
+    std::string filename = boost::lexical_cast<std::string>(uuid) + ".bcf";
+    svtCollect[svt] = filename;
     c.outfile = svtCollect[svt];
     mergeRun(c, svt);
   }
   // Merge temporary files
   c.outfile = oldPath;
   mergeBCFs(c, svtCollect);
-  for(int32_t svt = 0; svt < maxSvt; ++svt) {
+  for(int32_t svt = 0; svt < 9; ++svt) {
     boost::filesystem::remove(svtCollect[svt]);
     boost::filesystem::remove(boost::filesystem::path(svtCollect[svt].string() + ".csi"));
   }
