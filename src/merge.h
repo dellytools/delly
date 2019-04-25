@@ -177,7 +177,6 @@ void _fillIntervalMap(MergeConfig const& c, TGenomeIntervals& iScore, TContigMap
       int32_t srMapQuality = 0;
       if (bcf_get_info_int32(hdr, rec, "SRMAPQ", &srmapq, &nsrmapq) > 0) srMapQuality = *srmapq;
 
-      std::cout << peSupport << ',' << srSupport << ',' << peMapQuality << ',' << srMapQuality << std::endl;
       // Quality score for the SV
       int32_t score = srSupport * (uint32_t) srMapQuality + peSupport * (uint32_t) peMapQuality;
       if (_isKeyPresent(hdr, "SCORE")) {
