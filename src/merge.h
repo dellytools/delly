@@ -739,7 +739,7 @@ int merge(int argc, char **argv) {
   generic.add_options()
     ("help,?", "show help message")
     ("outfile,o", boost::program_options::value<boost::filesystem::path>(&c.outfile)->default_value("sv.bcf"), "Merged SV BCF output file")
-    ("vaf,a", boost::program_options::value<float>(&c.vaf)->default_value(0.2), "min. fractional ALT support")
+    ("vaf,a", boost::program_options::value<float>(&c.vaf)->default_value(0.15), "min. fractional ALT support")
     ("coverage,v", boost::program_options::value<uint32_t>(&c.coverage)->default_value(10), "min. coverage")
     ("minsize,m", boost::program_options::value<uint32_t>(&c.minsize)->default_value(0), "min. SV size")
     ("maxsize,n", boost::program_options::value<uint32_t>(&c.maxsize)->default_value(1000000), "max. SV size")
