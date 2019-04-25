@@ -66,7 +66,9 @@ struct MergeConfig {
   uint32_t bpoffset;
   uint32_t minsize;
   uint32_t maxsize;
+  uint32_t coverage;
   float recoverlap;
+  float vaf;
   boost::filesystem::path outfile;
   std::vector<boost::filesystem::path> files;
 };
@@ -167,6 +169,51 @@ void _fillIntervalMap(MergeConfig const& c, TGenomeIntervals& iScore, TContigMap
       if (bcf_get_info_flag(hdr, rec, "PRECISE", 0, 0) > 0) precise=true;
       if ((c.filterForPrecise) && (!precise)) continue;
 
+      // Variant allele frequency filter
+      if ((c.vaf > 0) || (c.coverage > 0)) {
+	float maxvaf = 0;
+	uint32_t maxcov = 0;
+	bcf_unpack(rec, BCF_UN_ALL);
+	int ndv = 0;
+	int32_t* dv = NULL;
+	int ndr = 0;
+	int32_t* dr = NULL;
+	int nrv = 0;
+	int32_t* rv = NULL;
+	int nrr = 0;
+	int32_t* rr = NULL;
+	int ngt = 0;
+	int32_t* gt = NULL;
+	bcf_get_format_int32(hdr, rec, "DV", &dv, &ndv);
+	bcf_get_format_int32(hdr, rec, "DR", &dr, &ndr);
+	bcf_get_format_int32(hdr, rec, "RV", &rv, &nrv);
+	bcf_get_format_int32(hdr, rec, "RR", &rr, &nrr);
+	bcf_get_format_int32(hdr, rec, "GT", &gt, &ngt);
+	for(int32_t i = 0; i < bcf_hdr_nsamples(hdr); ++i) {
+	  if ((bcf_gt_allele(gt[i*2]) != -1) && (bcf_gt_allele(gt[i*2 + 1]) != -1)) {
+	    uint32_t supportsum = 0;
+	    if (precise) supportsum = rr[i] + rv[i];
+	    else supportsum = dr[i] + dv[i];
+	    if (supportsum > 0) {
+	      double vaf = 0;
+	      if (precise) vaf = (double) rv[i] / (double) supportsum;
+	      else vaf = (double) dv[i] / (double) supportsum;
+	      if (vaf > maxvaf) maxvaf = vaf;
+	      if (supportsum > maxcov) maxcov = supportsum; 
+	    }
+	  }
+	}
+	// Debug
+	//std::cerr << maxcov << '\t' << maxvaf << std::endl;
+	if (dv != NULL) free(dv);
+	if (dr != NULL) free(dr);
+	if (rv != NULL) free(rv);
+	if (rr != NULL) free(rr);
+	if (gt != NULL) free(gt);
+	if ((maxvaf < c.vaf) || (maxcov < c.coverage)) continue;
+      }
+
+      // Get SV support
       int32_t peSupport = 0;
       if (bcf_get_info_int32(hdr, rec, "PE", &pe, &npe) > 0) peSupport = *pe;
       int32_t srSupport = 0;
@@ -178,7 +225,7 @@ void _fillIntervalMap(MergeConfig const& c, TGenomeIntervals& iScore, TContigMap
       if (bcf_get_info_int32(hdr, rec, "SRMAPQ", &srmapq, &nsrmapq) > 0) srMapQuality = *srmapq;
 
       // Quality score for the SV
-      int32_t score = srSupport * srMapQuality + peSupport * peMapQuality;
+      int32_t score = 3 * srSupport * srMapQuality + peSupport * peMapQuality;
       if (_isKeyPresent(hdr, "SCORE")) {
 	int32_t nvcfscore = 0;
 	if (_getInfoType(hdr, "SCORE") == BCF_HT_INT) {
@@ -421,7 +468,7 @@ void _outputSelectedIntervals(MergeConfig& c, TGenomeIntervals const& iSelected,
 	  }
 
 	  // Quality score for the SV
-	  int32_t score = srSupport * srMapQuality + peSupport * peMapQuality;
+	  int32_t score = 3 * srSupport * srMapQuality + peSupport * peMapQuality;
 	  if (_isKeyPresent(hdr[idx], "SCORE")) {
 	    int32_t nvcfscore = 0;
 	    if (_getInfoType(hdr[idx], "SCORE") == BCF_HT_INT) {
@@ -470,7 +517,7 @@ void _outputSelectedIntervals(MergeConfig& c, TGenomeIntervals const& iSelected,
 	    // Create new record
 	    rout->rid = bcf_hdr_name2id(hdr_out, chrName.c_str());
 	    rout->pos = rec[idx]->pos;
-	    rout->qual = 0;
+	    rout->qual = score;
 	    std::string id;
 	    if (c.files.size() == 1) id = std::string(rec[idx]->d.id); // Within one VCF file IDs are unique
 	    else {
@@ -692,6 +739,8 @@ int merge(int argc, char **argv) {
   generic.add_options()
     ("help,?", "show help message")
     ("outfile,o", boost::program_options::value<boost::filesystem::path>(&c.outfile)->default_value("sv.bcf"), "Merged SV BCF output file")
+    ("vaf,a", boost::program_options::value<float>(&c.vaf)->default_value(0.2), "min. fractional ALT support")
+    ("coverage,v", boost::program_options::value<uint32_t>(&c.coverage)->default_value(10), "min. coverage")
     ("minsize,m", boost::program_options::value<uint32_t>(&c.minsize)->default_value(0), "min. SV size")
     ("maxsize,n", boost::program_options::value<uint32_t>(&c.maxsize)->default_value(1000000), "max. SV size")
     ("precise,c", "Filter sites for PRECISE")
