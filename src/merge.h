@@ -754,13 +754,12 @@ int merge(int argc, char **argv) {
   
   // Run merging
   boost::filesystem::path oldPath = c.outfile;
-  int rVal = 0;
   int32_t maxSvt = 15;
   std::vector<boost::filesystem::path> svtCollect(maxSvt);
   for(int32_t svt = 0; svt < maxSvt; ++svt) {
     svtCollect[svt] = boost::filesystem::unique_path();
     c.outfile = svtCollect[svt];
-    rVal += mergeRun(c, svt);
+    mergeRun(c, svt);
   }
   // Merge temporary files
   c.outfile = oldPath;
@@ -769,7 +768,7 @@ int merge(int argc, char **argv) {
     boost::filesystem::remove(svtCollect[svt]);
     boost::filesystem::remove(boost::filesystem::path(svtCollect[svt].string() + ".csi"));
   }
-  return rVal;
+  return 0;
 }
 
 }
