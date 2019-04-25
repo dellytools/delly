@@ -74,9 +74,9 @@ struct MergeConfig {
 struct IntervalScore {
   uint32_t start;
   uint32_t end;
-  uint32_t score;
+  int32_t score;
   
-  IntervalScore(uint32_t s, uint32_t e, uint32_t c) : start(s), end(e), score(c) {}
+  IntervalScore(uint32_t s, uint32_t e, int32_t c) : start(s), end(e), score(c) {}
 };
 
 template<typename TRecord>
@@ -178,7 +178,7 @@ void _fillIntervalMap(MergeConfig const& c, TGenomeIntervals& iScore, TContigMap
       if (bcf_get_info_int32(hdr, rec, "SRMAPQ", &srmapq, &nsrmapq) > 0) srMapQuality = *srmapq;
 
       // Quality score for the SV
-      int32_t score = srSupport * (uint32_t) srMapQuality + peSupport * (uint32_t) peMapQuality;
+      int32_t score = srSupport * srMapQuality + peSupport * peMapQuality;
       if (_isKeyPresent(hdr, "SCORE")) {
 	int32_t nvcfscore = 0;
 	if (_getInfoType(hdr, "SCORE") == BCF_HT_INT) {
@@ -282,6 +282,7 @@ void _outputSelectedIntervals(MergeConfig& c, TGenomeIntervals const& iSelected,
   bcf_hdr_append(hdr_out, "##INFO=<ID=PE,Number=1,Type=Integer,Description=\"Paired-end support of the structural variant\">");
   bcf_hdr_append(hdr_out, "##INFO=<ID=MAPQ,Number=1,Type=Integer,Description=\"Median mapping quality of paired-ends\">");
   bcf_hdr_append(hdr_out, "##INFO=<ID=SR,Number=1,Type=Integer,Description=\"Split-read support\">");
+  bcf_hdr_append(hdr_out, "##INFO=<ID=SRMAPQ,Number=1,Type=Integer,Description=\"Median mapping quality of split-reads\">");
   bcf_hdr_append(hdr_out, "##INFO=<ID=SRQ,Number=1,Type=Float,Description=\"Split-read consensus alignment quality\">");
   bcf_hdr_append(hdr_out, "##INFO=<ID=CONSENSUS,Number=1,Type=String,Description=\"Split-read consensus sequence\">");
   bcf_hdr_append(hdr_out, "##INFO=<ID=CE,Number=1,Type=Float,Description=\"Consensus sequence entropy\">");
@@ -348,6 +349,8 @@ void _outputSelectedIntervals(MergeConfig& c, TGenomeIntervals const& iSelected,
   int32_t* homlen = NULL;
   int32_t nmapq = 0;
   int32_t* mapq = NULL;
+  int32_t nsrmapq = 0;
+  int32_t* srmapq = NULL;
   int32_t nsrq = 0;
   float* srq = NULL;
   int32_t nct = 0;
@@ -407,18 +410,18 @@ void _outputSelectedIntervals(MergeConfig& c, TGenomeIntervals const& iSelected,
 	  // Remove this line
 	  //if (srSupport > 0) precise = true;
 	  
-	  uint8_t peMapQuality = 0;
-	  if (bcf_get_info_int32(hdr[idx], rec[idx], "MAPQ", &mapq, &nmapq) > 0) peMapQuality = (uint8_t) *mapq;
-	  float srAlignQuality = 0;
-	  if (bcf_get_info_float(hdr[idx], rec[idx], "SRQ", &srq, &nsrq) > 0) srAlignQuality = *srq;
+	  int32_t peMapQuality = 0;
+	  if (bcf_get_info_int32(hdr[idx], rec[idx], "MAPQ", &mapq, &nmapq) > 0) peMapQuality = *mapq;
+	  int32_t srMapQuality = 0;
+	  if (bcf_get_info_int32(hdr[idx], rec[idx], "SRMAPQ", &srmapq, &nsrmapq) > 0) srMapQuality = *srmapq;
 	  std::string chr2Name = chrName;
 	  if (bcf_get_info_string(hdr[idx], rec[idx], "CHR2", &chr2, &nchr2) > 0) {
 	    chr2Name = std::string(chr2);
 	    //mtid = cMap[chr2Name];
 	  }
 
-	  // Proxy quality score for the SV
-	  uint32_t score = 0;
+	  // Quality score for the SV
+	  int32_t score = srSupport * srMapQuality + peSupport * peMapQuality;
 	  if (_isKeyPresent(hdr[idx], "SCORE")) {
 	    int32_t nvcfscore = 0;
 	    if (_getInfoType(hdr[idx], "SCORE") == BCF_HT_INT) {
@@ -432,9 +435,6 @@ void _outputSelectedIntervals(MergeConfig& c, TGenomeIntervals const& iSelected,
 	      score = (uint32_t) (*vcfscore * 10000); // for scores in [0,1] 
 	      free(vcfscore);
 	    }
-	  } else {
-	    if (precise) score = srSupport * (uint32_t) (100 * srAlignQuality);
-	    else score = peSupport * (uint32_t) peMapQuality;
 	  }
 	  
 	  // Is this a selected interval
@@ -456,6 +456,9 @@ void _outputSelectedIntervals(MergeConfig& c, TGenomeIntervals const& iSelected,
 	    if (bcf_get_info_int32(hdr[idx], rec[idx], "HOMLEN", &homlen, &nhomlen) > 0) homlenVal = *homlen;
 	    bcf_get_info_int32(hdr[idx], rec[idx], "CIPOS", &cipos, &ncipos);
 	    bcf_get_info_int32(hdr[idx], rec[idx], "CIEND", &ciend, &nciend);
+	    float srAlignQuality = 0;
+	    if (bcf_get_info_float(hdr[idx], rec[idx], "SRQ", &srq, &nsrq) > 0) srAlignQuality = *srq;
+
 	    std::string consensus;
 	    float ceVal = 0;
 	    if (precise) {
@@ -503,7 +506,9 @@ void _outputSelectedIntervals(MergeConfig& c, TGenomeIntervals const& iSelected,
 	      bcf_update_info_int32(hdr_out, rout, "INSLEN", &inslenVal, 1);
 	      bcf_update_info_int32(hdr_out, rout, "HOMLEN", &homlenVal, 1);
 	      bcf_update_info_int32(hdr_out, rout, "SR", &srSupport, 1);
-	      bcf_update_info_float(hdr_out, rout, "SRQ", &srAlignQuality, 1);	
+	      int32_t tmpi = srMapQuality;
+	      bcf_update_info_int32(hdr_out, rout, "SRMAPQ", &tmpi, 1);
+	      bcf_update_info_float(hdr_out, rout, "SRQ", &srAlignQuality, 1);
 	      bcf_update_info_string(hdr_out, rout, "CONSENSUS", consensus.c_str());
 	      bcf_update_info_float(hdr_out, rout, "CE", &ceVal, 1);
 	    }
@@ -530,6 +535,7 @@ void _outputSelectedIntervals(MergeConfig& c, TGenomeIntervals const& iSelected,
   if (homlen != NULL) free(homlen);
   if (inslen != NULL) free(inslen);
   if (mapq != NULL) free(mapq);
+  if (srmapq != NULL) free(srmapq);
   if (ct != NULL) free(ct);
   if (srq != NULL) free(srq);
   if (svt != NULL) free(svt);
