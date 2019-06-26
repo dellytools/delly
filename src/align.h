@@ -156,25 +156,43 @@ namespace torali
     }
   }
 
-  template<typename TChar, typename TProfile>
+  template<typename TProfile>
   inline void
-  _createProfile(boost::multi_array<TChar, 2> const& a, TProfile& p)
+  _createProfile(boost::multi_array<char, 2> const& a, TProfile& p)
   {
-    typedef typename boost::multi_array<TChar, 2>::index TAIndex;
+    typedef typename boost::multi_array<char, 2>::index TAIndex;
     typedef typename TProfile::index TPIndex;
     p.resize(boost::extents[6][a.shape()[1]]);   // 'A', 'C', 'G', 'T', 'N', '-'
+
+    // Ignore leading and trailing gaps
+    std::vector<int32_t> firstAlignedNuc(a.shape()[0], -1);
+    std::vector<int32_t> lastAlignedNuc(a.shape()[0], a.shape()[1]);
+    for(TAIndex i = 0; i < (TAIndex) a.shape()[0]; ++i) {
+      for (TAIndex j = 0; j < (TAIndex) a.shape()[1]; ++j) {
+	if (firstAlignedNuc[i] == -1) {
+	  if (a[i][j] != '-') firstAlignedNuc[i] = j;
+	}
+	if (firstAlignedNuc[i] != -1) {
+	  if (a[i][j] != '-') lastAlignedNuc[i] = j;
+	}
+      }
+    }
+	
+    // Compute alignment profile
     for (TAIndex j = 0; j < (TAIndex) a.shape()[1]; ++j) {
       for(TPIndex k = 0; k < 6; ++k) p[k][j] = 0;
       int sum = 0;
       for(TAIndex i = 0; i < (TAIndex) a.shape()[0]; ++i) {
-	++sum;
-	if ((a[i][j] == 'A') || (a[i][j] == 'a')) p[0][j] += 1;
-	else if ((a[i][j] == 'C') || (a[i][j] == 'c')) p[1][j] += 1;
-	else if ((a[i][j] == 'G') || (a[i][j] == 'g')) p[2][j] += 1;
-	else if ((a[i][j] == 'T') || (a[i][j] == 't')) p[3][j] += 1;
-	else if ((a[i][j] == 'N') || (a[i][j] == 'n')) p[4][j] += 1;
-	else if (a[i][j] == '-') p[5][j] += 1;
-	else --sum;
+	if ((firstAlignedNuc[i] <= j) && (j <= lastAlignedNuc[i])) {
+	  ++sum;
+	  if ((a[i][j] == 'A') || (a[i][j] == 'a')) p[0][j] += 1;
+	  else if ((a[i][j] == 'C') || (a[i][j] == 'c')) p[1][j] += 1;
+	  else if ((a[i][j] == 'G') || (a[i][j] == 'g')) p[2][j] += 1;
+	  else if ((a[i][j] == 'T') || (a[i][j] == 't')) p[3][j] += 1;
+	  else if ((a[i][j] == 'N') || (a[i][j] == 'n')) p[4][j] += 1;
+	  else if (a[i][j] == '-') p[5][j] += 1;
+	  else --sum;
+	}
       }
       for(TPIndex k = 0; k<6; ++k) p[k][j] /= sum;
     }
