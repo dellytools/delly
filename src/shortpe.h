@@ -107,10 +107,9 @@ namespace torali
       if (srStore[refIndex].empty()) continue;
 
       // Load sequence
-      char* seq = NULL;
       int32_t seqlen = -1;
       std::string tname(hdr->target_name[refIndex]);
-      seq = faidx_fetch_seq(fai, tname.c_str(), 0, hdr->target_len[refIndex], &seqlen);
+      char* seq = faidx_fetch_seq(fai, tname.c_str(), 0, hdr->target_len[refIndex], &seqlen);
       
       // Collect all split-read pos
       typedef boost::dynamic_bitset<> TBitSet;
@@ -578,7 +577,7 @@ namespace torali
 	    if ((sr[j].svStart + sr[j].ciposlow <= sr[i].svStart) && (sr[i].svStart <= sr[j].svStart + sr[j].ciposhigh)) {
 	      if ((sr[j].svEnd + sr[j].ciendlow <= sr[i].svEnd) && (sr[i].svEnd <= sr[j].svEnd + sr[j].ciendhigh)) {
 		// Duplicate, keep better call
-		if ((sr[i].srSupport < sr[j].srSupport) || ((sr[i].srSupport == sr[j].srSupport) && (i < j))) preciseDuplicate = true;
+		if ((sr[i].srSupport < sr[j].srSupport) || ((i < j) && (sr[i].srSupport == sr[j].srSupport))) preciseDuplicate = true;
 	      }
 	    }
 	  }
@@ -591,7 +590,7 @@ namespace torali
 	    if ((sr[j].svStart + sr[j].ciposlow < sr[i].svStart) && (sr[i].svStart < sr[j].svStart + sr[j].ciposhigh)) {
 	      if ((sr[j].svEnd + sr[j].ciendlow < sr[i].svEnd) && (sr[i].svEnd < sr[j].svEnd + sr[j].ciendhigh)) {
 		// Duplicate, keep better call
-		if ((sr[i].srSupport < sr[j].srSupport) || ((sr[i].srSupport == sr[j].srSupport) && (i < j))) preciseDuplicate = true;
+		if ((sr[i].srSupport < sr[j].srSupport) || ((i < j) && (sr[i].srSupport == sr[j].srSupport))) preciseDuplicate = true;
 	      }
 	    }
 	  }

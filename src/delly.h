@@ -124,8 +124,7 @@ _annotateCoverage(TConfig& c, bam_hdr_t* hdr, TSampleLib& sampleLib, TSVs& svs, 
     if (!validChr[refIndex]) continue;
     std::string tname(hdr->target_name[refIndex]);
     int32_t seqlen = -1;
-    char* seq = NULL;
-    seq = faidx_fetch_seq(fai, tname.c_str(), 0, hdr->target_len[refIndex], &seqlen);
+    char* seq = faidx_fetch_seq(fai, tname.c_str(), 0, hdr->target_len[refIndex], &seqlen);
     bool nrun = false;
     int nstart = seqlen;
     for(int i=0; i<seqlen; ++i) {

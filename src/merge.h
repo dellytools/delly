@@ -694,9 +694,8 @@ mergeRun(MergeConfig& c, int32_t const svt) {
   for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
     htsFile* ifile = bcf_open(c.files[file_c].string().c_str(), "r");
     bcf_hdr_t* hdr = bcf_hdr_read(ifile);
-    const char** seqnames = NULL;
     int nseq=0;
-    seqnames = bcf_hdr_seqnames(hdr, &nseq);
+    const char** seqnames = bcf_hdr_seqnames(hdr, &nseq);
     for(int32_t i = 0; i<nseq;++i) {
       std::string chrName(bcf_hdr_id2name(hdr, i));
       if (contigMap.find(chrName) == contigMap.end()) contigMap[chrName] = numseq++;

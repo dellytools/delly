@@ -386,15 +386,13 @@ namespace torali
 	std::sort(readSize.begin(), readSize.end());
 	sampleLib[file_c].rs = readSize[readSize.size() / 2];
       }
-      int32_t median = 0;
-      int32_t mad = 0;
       if (processedNumPairs >= minNumAlignments) {
 	std::sort(vecISize.begin(), vecISize.end());
-	median = vecISize[vecISize.size() / 2];
+	int32_t median = vecISize[vecISize.size() / 2];
 	std::vector<uint32_t> absDev;
 	for(uint32_t i = 0; i < vecISize.size(); ++i) absDev.push_back(std::abs((int32_t) vecISize[i] - median));
 	std::sort(absDev.begin(), absDev.end());
-	mad = absDev[absDev.size() / 2];
+	int32_t mad = absDev[absDev.size() / 2];
 
 	// Get default library orientation
 	if ((median >= 50) && (median<=100000)) {
