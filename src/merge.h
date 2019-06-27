@@ -775,7 +775,7 @@ int merge(int argc, char **argv) {
   // Check command line arguments
   if ((vm.count("help")) || (!vm.count("input-file"))) { 
     std::cout << std::endl;
-    std::cout << "Usage: delly " << argv[0] << " [OPTIONS] <sample1.bcf> <sample2.bcf> ..." << std::endl;
+    std::cout << "Usage: delly " << argv[0] << " [OPTIONS] [<sample1.bcf> <sample2.bcf> ... | <list_of_bcf_files.tsv>]" << std::endl;
     std::cout << visible_options << "\n"; 
     return 0; 
   }
@@ -796,6 +796,28 @@ int merge(int argc, char **argv) {
   std::cout << std::endl;
 
   // Check input BCF files
+  if (c.files.size() == 1) {
+    // Assume the input file is a list
+    if (!(boost::filesystem::exists(c.files[0]) && boost::filesystem::is_regular_file(c.files[0]) && boost::filesystem::file_size(c.files[0]))) {
+      std::cerr << "Input file list " << c.files[0].string() << " is missing!" << std::endl;
+      return 1;
+    }
+    std::string fname = c.files[0].string();
+    c.files.clear();
+    std::ifstream lf(fname.c_str());
+    if (lf.good()) {
+      std::string line;
+      while(std::getline(lf, line)) {
+	if (!line.empty()) {
+	  if (line.at(line.length() - 1) == '\r' ) {
+	    line = line.substr(0, line.length() - 1);
+	  }
+	  c.files.push_back(line);
+	}
+      }
+      lf.close();
+    }
+  }
   for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
     htsFile* ifile = bcf_open(c.files[file_c].string().c_str(), "r");
     if (!ifile) {
@@ -815,6 +837,7 @@ int merge(int argc, char **argv) {
     c.outfile = svtCollect[svt];
     mergeRun(c, svt);
   }
+  
   // Merge temporary files
   c.outfile = oldPath;
   mergeBCFs(c, svtCollect);
