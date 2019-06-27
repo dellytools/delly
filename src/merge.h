@@ -62,6 +62,7 @@ namespace torali
 struct MergeConfig {
   bool filterForPass;
   bool filterForPrecise;
+  uint32_t chunksize;
   uint32_t svcounter;
   uint32_t bpoffset;
   uint32_t minsize;
@@ -739,6 +740,7 @@ int merge(int argc, char **argv) {
   generic.add_options()
     ("help,?", "show help message")
     ("outfile,o", boost::program_options::value<boost::filesystem::path>(&c.outfile)->default_value("sv.bcf"), "Merged SV BCF output file")
+    ("chunks,u", boost::program_options::value<uint32_t>(&c.chunksize)->default_value(500), "max. chunk size to merge groups of BCF files")
     ("vaf,a", boost::program_options::value<float>(&c.vaf)->default_value(0.15), "min. fractional ALT support")
     ("coverage,v", boost::program_options::value<uint32_t>(&c.coverage)->default_value(10), "min. coverage")
     ("minsize,m", boost::program_options::value<uint32_t>(&c.minsize)->default_value(0), "min. SV size")
@@ -795,6 +797,9 @@ int merge(int argc, char **argv) {
   for(int i=0; i<argc; ++i) { std::cout << argv[i] << ' '; }
   std::cout << std::endl;
 
+  // Check chunksize
+  if (c.chunksize < 100) c.chunksize = 100;
+
   // Check input BCF files
   if (c.files.size() == 1) {
     // Assume the input file is a list
@@ -826,16 +831,65 @@ int merge(int argc, char **argv) {
     }
     bcf_close(ifile);
   }
+
+  // Determine optimal chunksize
+  if (c.files.size() > c.chunksize) {
+    int32_t bestChunkSize = c.chunksize;
+    int32_t bestBinSize = 0;
+    for(uint32_t i = 50; i < c.chunksize; ++i) {
+      int32_t chunks = ((c.files.size() - 1) / i);
+      int32_t lastBin = c.files.size() - chunks * i;
+      if (lastBin > bestBinSize) {
+	bestBinSize = lastBin;
+	bestChunkSize = i;
+      }
+    }
+    c.chunksize = bestChunkSize;
+  }
   
   // Run merging
   boost::filesystem::path oldPath = c.outfile;
   std::vector<boost::filesystem::path> svtCollect(9);
   for(int32_t svt = 0; svt < 9; ++svt) {
     boost::uuids::uuid uuid = boost::uuids::random_generator()();
-    std::string filename = boost::lexical_cast<std::string>(uuid) + ".bcf";
+    std::string filename = "svt" + boost::lexical_cast<std::string>(svt) + "_" + boost::lexical_cast<std::string>(uuid) + ".bcf";
     svtCollect[svt] = filename;
-    c.outfile = svtCollect[svt];
-    mergeRun(c, svt);
+    if (c.files.size() <= c.chunksize) {
+      // Merge in one go
+      c.outfile = svtCollect[svt];
+      mergeRun(c, svt);
+    } else {
+      // Merge in chunks
+      std::vector<boost::filesystem::path> fileRestore = c.files;
+      uint32_t chunks = ((c.files.size() - 1) / c.chunksize) + 1;
+      std::vector<boost::filesystem::path> chunkCollect(chunks);
+      for(uint32_t ic = 0; ic < chunks; ++ic) {
+	boost::uuids::uuid uuid = boost::uuids::random_generator()();
+	std::string chunkfile = "chunk" + boost::lexical_cast<std::string>(ic) + "_" + boost::lexical_cast<std::string>(uuid) + ".bcf";
+	chunkCollect[ic] = chunkfile;
+	c.files.clear();
+	for(uint32_t k = ic * c.chunksize; ((k < ((ic+1) * c.chunksize)) && (k < fileRestore.size())); ++k) c.files.push_back(fileRestore[k]);
+	c.outfile = chunkCollect[ic];
+	mergeRun(c, svt);
+      }
+      // Merge chunks
+      c.files = chunkCollect;
+      c.outfile = svtCollect[svt];
+      // Reset VAF and coverage because these are site lists!
+      float vafStore = c.vaf;
+      uint32_t coverageStore = c.coverage;
+      c.vaf = 0;
+      c.coverage = 0;
+      mergeRun(c, svt);
+      c.vaf = vafStore;
+      c.coverage = coverageStore;
+      // Clean-up
+      for(uint32_t ic = 0; ic < chunks; ++ic) {
+	boost::filesystem::remove(chunkCollect[ic]);
+	boost::filesystem::remove(boost::filesystem::path(chunkCollect[ic].string() + ".csi"));
+      }
+      c.files = fileRestore;
+    }
   }
   
   // Merge temporary files
