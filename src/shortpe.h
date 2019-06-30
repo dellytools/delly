@@ -100,17 +100,20 @@ namespace torali
     std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Split-read assembly" << std::endl;
     boost::progress_display show_progress( 2 * hdr->n_targets );
 
-    faidx_t* fai = fai_load(c.genome.string().c_str());
+    // Parallelize by chromosome
+    #pragma omp parallel for default(shared)
     for(int32_t refIndex = 0; refIndex < hdr->n_targets; ++refIndex) {
       ++show_progress;
       if (validRegions[refIndex].empty()) continue;
       if (srStore[refIndex].empty()) continue;
 
       // Load sequence
+      char* seq = NULL;
       int32_t seqlen = -1;
       std::string tname(hdr->target_name[refIndex]);
-      char* seq = faidx_fetch_seq(fai, tname.c_str(), 0, hdr->target_len[refIndex], &seqlen);
-      
+      faidx_t* fai = fai_load(c.genome.string().c_str());
+      seq = faidx_fetch_seq(fai, tname.c_str(), 0, hdr->target_len[refIndex], &seqlen);
+
       // Collect all split-read pos
       typedef boost::dynamic_bitset<> TBitSet;
       TBitSet hits(hdr->target_len[refIndex]);
@@ -122,11 +125,18 @@ namespace torali
       
       // Collect reads from all samples
       for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
+        // Open the bam again per chromosome
+        samFile* mysamfile;
+        hts_idx_t* myidx;
+        mysamfile = sam_open(c.files[file_c].string().c_str(), "r");
+        hts_set_fai_filename(mysamfile, c.genome.string().c_str());
+        myidx = sam_index_load(mysamfile, c.files[file_c].string().c_str());
+
 	// Read alignments
 	for(typename TChrIntervals::const_iterator vRIt = validRegions[refIndex].begin(); vRIt != validRegions[refIndex].end(); ++vRIt) {
-	  hts_itr_t* iter = sam_itr_queryi(idx[file_c], refIndex, vRIt->lower(), vRIt->upper());
+	  hts_itr_t* iter = sam_itr_queryi(myidx, refIndex, vRIt->lower(), vRIt->upper());
 	  bam1_t* rec = bam_init1();
-	  while (sam_itr_next(samfile[file_c], iter, rec) >= 0) {
+	  while (sam_itr_next(mysamfile, iter, rec) >= 0) {
 	    if (rec->core.flag & (BAM_FQCFAIL | BAM_FDUP | BAM_FUNMAP | BAM_FSECONDARY | BAM_FSUPPLEMENTARY)) continue;
 	    if ((rec->core.qual < c.minMapQual) || (rec->core.tid<0)) continue;
 	    if (!hits[rec->core.pos]) continue;
@@ -177,6 +187,8 @@ namespace torali
 	  bam_destroy1(rec);
           hts_itr_destroy(iter);
 	}
+        hts_idx_destroy(myidx);
+        sam_close(mysamfile);
       }
 
       // Process all SVs on this chromosome
@@ -203,12 +215,19 @@ namespace torali
       }
       // Clean-up
       if (seq != NULL) free(seq);
+      fai_destroy(fai);
     }
 
-    // Process translocations
+    // Process translocations in parallel per chromosome
+    #pragma omp parallel for default(shared)
     for(int32_t refIndex2 = 0; refIndex2 < hdr->n_targets; ++refIndex2) {
       ++show_progress;
+
       if (validRegions[refIndex2].empty()) continue;
+
+      // Load genome index per chromosome
+      faidx_t* fai = fai_load(c.genome.string().c_str());
+
       char* sndSeq = NULL;
       for(int32_t refIndex = refIndex2 + 1; refIndex < hdr->n_targets; ++refIndex) {
 	if (validRegions[refIndex].empty()) continue;
@@ -248,11 +267,11 @@ namespace torali
 	}
 	if (seq != NULL) free(seq);
       }
+      fai_destroy(fai);
       if (sndSeq != NULL) free(sndSeq);
     }
 
     // Clean-up
-    fai_destroy(fai);
     bam_hdr_destroy(hdr);
     for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
       hts_idx_destroy(idx[file_c]);
@@ -294,7 +313,6 @@ namespace torali
     std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Paired-end and split-read scanning" << std::endl;
     boost::progress_display show_progress( c.files.size() * hdr->n_targets );
     // Iterate all samples
-#pragma omp parallel for default(shared)
     for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
       // Inter-chromosomal mate map and alignment length
       typedef std::pair<uint8_t, int32_t> TQualLen;
@@ -307,6 +325,7 @@ namespace torali
       TReadBp readBp;
       
       // Iterate all chromosomes for that sample
+      #pragma omp parallel for default(shared)
       for(int32_t refIndex=0; refIndex < (int32_t) hdr->n_targets; ++refIndex) {
 	++show_progress;
 
@@ -318,20 +337,30 @@ namespace torali
 	if ((str.size() >= suffix.size()) && (str.compare(str.size() - suffix.size(), suffix.size(), suffix) == 0)) nodata = false;
 	uint64_t mapped = 0;
 	uint64_t unmapped = 0;
-	hts_idx_get_stat(idx[file_c], refIndex, &mapped, &unmapped);
+	#pragma omp critical
+	{
+	  hts_idx_get_stat(idx[file_c], refIndex, &mapped, &unmapped);
+	}
 	if (mapped) nodata = false;
 	if (nodata) continue;
+
+	// Open the bam again per chromosome
+	samFile* mysamfile;
+	hts_idx_t* myidx;
+	mysamfile = sam_open(c.files[file_c].string().c_str(), "r");
+	hts_set_fai_filename(mysamfile, c.genome.string().c_str());
+	myidx = sam_index_load(mysamfile, c.files[file_c].string().c_str());
 
 	// Intra-chromosomal mate map and alignment length
 	TMateMap mateMap;
 
 	// Read alignments
 	for(typename TChrIntervals::const_iterator vRIt = validRegions[refIndex].begin(); vRIt != validRegions[refIndex].end(); ++vRIt) {
-	  hts_itr_t* iter = sam_itr_queryi(idx[file_c], refIndex, vRIt->lower(), vRIt->upper());
+	  hts_itr_t* iter = sam_itr_queryi(myidx, refIndex, vRIt->lower(), vRIt->upper());
 	  bam1_t* rec = bam_init1();
 	  int32_t lastAlignedPos = 0;
 	  std::set<std::size_t> lastAlignedPosReads;
-	  while (sam_itr_next(samfile[file_c], iter, rec) >= 0) {
+	  while (sam_itr_next(mysamfile, iter, rec) >= 0) {
 	    if (rec->core.flag & (BAM_FQCFAIL | BAM_FDUP | BAM_FUNMAP)) continue;
 	    if ((rec->core.qual < c.minMapQual) || (rec->core.tid<0)) continue;
 
@@ -436,6 +465,8 @@ namespace torali
 	  bam_destroy1(rec);
 	  hts_itr_destroy(iter);
 	}
+        hts_idx_destroy(myidx);
+        sam_close(mysamfile);
       }
 
       // Process all junctions for this BAM file
@@ -444,7 +475,6 @@ namespace torali
       }
 	
       // Collect split-read SVs
-#pragma omp critical
       {
 	if ((!c.svtcmd) || (c.svtset.find(2) != c.svtset.end())) selectDeletions(c, readBp, srBR);
 	if ((!c.svtcmd) || (c.svtset.find(3) != c.svtset.end())) selectDuplications(c, readBp, srBR);
