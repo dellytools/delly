@@ -356,19 +356,19 @@ annotateCoverage(TConfig& c, TSampleLibrary& sampleLib, TCovRecord& ict, TCovera
     dumpOut << "#svid\tbam\tqname\tchr\tpos\tmatechr\tmatepos\tmapq\ttype" << std::endl;
   }
 
-#pragma omp parallel for default(shared)
-  for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
-    // Pair qualities and features
-    typedef boost::unordered_map<std::size_t, uint8_t> TQualities;
-    TQualities qualities;
-    TQualities qualitiestra;
-    typedef boost::unordered_map<std::size_t, bool> TClip;
-    TClip clip;
-    TClip cliptra;
-  
-    // Iterate chromosomes
+  for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) { 
+    // Parallelize by chromosome, go go go!
+    #pragma omp parallel for default(shared)
     for(int32_t refIndex=0; refIndex < (int32_t) hdr[file_c]->n_targets; ++refIndex) {
       ++show_progress;
+
+      // Pair qualities and features
+      typedef boost::unordered_map<std::size_t, uint8_t> TQualities;
+      TQualities qualities;
+      TQualities qualitiestra;
+      typedef boost::unordered_map<std::size_t, bool> TClip;
+      TClip clip;
+      TClip cliptra;
       
       // Any SVs on this chromosome?
       if (ict[refIndex].empty()) continue;
@@ -380,10 +380,22 @@ annotateCoverage(TConfig& c, TSampleLibrary& sampleLib, TCovRecord& ict, TCovera
       if ((str.size() >= suffix.size()) && (str.compare(str.size() - suffix.size(), suffix.size(), suffix) == 0)) nodata = false;
       uint64_t mapped = 0;
       uint64_t unmapped = 0;
-      hts_idx_get_stat(idx[file_c], refIndex, &mapped, &unmapped);
+      #pragma omp critical
+      {
+        hts_idx_get_stat(idx[file_c], refIndex, &mapped, &unmapped);
+      }
       if (mapped) nodata = false;
       if (nodata) continue;
-      
+
+      // Open bam file again per chromosome
+      samFile *mysamfile;
+      hts_idx_t *myidx;
+      #pragma omp critical
+      {
+        mysamfile = sam_open(c.files[file_c].string().c_str(), "r");
+        hts_set_fai_filename(mysamfile, c.genome.string().c_str());
+        myidx = sam_index_load(mysamfile, c.files[file_c].string().c_str());
+      }
       // Coverage track
       typedef uint16_t TCount;
       uint32_t maxCoverage = std::numeric_limits<TCount>::max();
@@ -407,27 +419,32 @@ annotateCoverage(TConfig& c, TSampleLibrary& sampleLib, TCovRecord& ict, TCovera
       TBitSet spanBp(hdr[file_c]->target_len[refIndex]);
       for(typename TSVs::iterator itSV = svs.begin(); itSV != svs.end(); ++itSV) {
 	if (itSV->peSupport == 0) continue;
-	if ((itSV->chr == refIndex) && (itSV->svStart < (int32_t) hdr[file_c]->target_len[refIndex])) {
-	  spanBp[itSV->svStart] = 1;
-	  spanPoint.push_back(SpanPoint(itSV->svStart, itSV->svt, itSV->id));
-	}
-	if ((itSV->chr2 == refIndex) && (itSV->svEnd < (int32_t) hdr[file_c]->target_len[refIndex])) {
-	  spanBp[itSV->svEnd] = 1;
-	  spanPoint.push_back(SpanPoint(itSV->svEnd, itSV->svt, itSV->id));
+	#pragma omp critical
+	{
+	  if ((itSV->chr == refIndex) && (itSV->svStart < (int32_t) hdr[file_c]->target_len[refIndex])) {
+	    spanBp[itSV->svStart] = 1;
+	    spanPoint.push_back(SpanPoint(itSV->svStart, itSV->svt, itSV->id));
+	  }
+	  if ((itSV->chr2 == refIndex) && (itSV->svEnd < (int32_t) hdr[file_c]->target_len[refIndex])) {
+	    spanBp[itSV->svEnd] = 1;
+	    spanPoint.push_back(SpanPoint(itSV->svEnd, itSV->svt, itSV->id));
+	  }
 	}
       }
       std::sort(spanPoint.begin(), spanPoint.end(), SortBp<SpanPoint>());
       
       // Count reads
-      hts_itr_t* iter = sam_itr_queryi(idx[file_c], refIndex, 0, hdr[file_c]->target_len[refIndex]);
-      bam1_t* rec = bam_init1();
       int32_t lastAlignedPos = 0;
       std::set<std::size_t> lastAlignedPosReads;
-      while (sam_itr_next(samfile[file_c], iter, rec) >= 0) {
+      hts_itr_t* iter = sam_itr_queryi(myidx, refIndex, 0, hdr[file_c]->target_len[refIndex]);
+      bam1_t* rec = bam_init1();
+
+      while (sam_itr_next(mysamfile, iter, rec) >= 0) {
 	if (rec->core.flag & (BAM_FSECONDARY | BAM_FQCFAIL | BAM_FDUP | BAM_FSUPPLEMENTARY | BAM_FUNMAP | BAM_FMUNMAP)) continue;
 	if (rec->core.qual < c.minGenoQual) continue;
 
 	// Count aligned basepair (small InDels)
+	#pragma omp critical
 	{
 	  uint32_t rp = 0; // reference pointer
 	  uint32_t* cigar = bam_get_cigar(rec);
@@ -578,33 +595,45 @@ annotateCoverage(TConfig& c, TSampleLibrary& sampleLib, TCovRecord& ict, TCovera
 
 	if (_firstPairObs(rec, lastAlignedPosReads)) {
 	  // First read
-	  lastAlignedPosReads.insert(hash_string(bam_get_qname(rec)));
-	  std::size_t hv = hash_pair(rec);
-	  if (rec->core.tid == rec->core.mtid) {
-	    qualities[hv] = rec->core.qual;
-	    clip[hv] = hasSoftClip;
-	  } else {
-	    qualitiestra[hv] = rec->core.qual;
-	    cliptra[hv] = hasSoftClip;
+	  std::size_t hv;
+	  #pragma omp critical
+	  {
+	    lastAlignedPosReads.insert(hash_string(bam_get_qname(rec)));
+	    hv = hash_pair(rec);
+	    if (rec->core.tid == rec->core.mtid) {
+	      qualities[hv] = rec->core.qual;
+	      clip[hv] = hasSoftClip;
+	    } else {
+	      qualitiestra[hv] = rec->core.qual;
+	      cliptra[hv] = hasSoftClip;
+	    }
 	  }
 	} else {
 	  // Second read
-	  std::size_t hv = hash_pair_mate(rec);
+	  std::size_t hv;
 	  uint8_t pairQuality = 0;
 	  bool pairClip = false;
-	  if (rec->core.tid == rec->core.mtid) {
-	    if (qualities.find(hv) == qualities.end()) continue; // Mate discarded
-	    pairQuality = std::min((uint8_t) qualities[hv], (uint8_t) rec->core.qual);
-	    if ((clip[hv]) || (hasSoftClip)) pairClip = true;
-	    qualities[hv] = 0;
-	    clip[hv] = false;
-	  } else {
-	    if (qualitiestra.find(hv) == qualitiestra.end()) continue; // Mate discarded
-	    pairQuality = std::min((uint8_t) qualitiestra[hv], (uint8_t) rec->core.qual);
-	    if ((cliptra[hv]) || (hasSoftClip)) pairClip = true;
-	    qualitiestra[hv] = 0;
-	    cliptra[hv] = false;
+	  bool skip = false;
+	  #pragma omp critical
+	  {
+	    hv = hash_pair_mate(rec);
+	    if (rec->core.tid == rec->core.mtid) {
+	      if (qualities.find(hv) == qualities.end()) { skip = true; goto discard; } // Mate discarded
+	      pairQuality = std::min((uint8_t) qualities[hv], (uint8_t) rec->core.qual);
+	      if ((clip[hv]) || (hasSoftClip)) pairClip = true;
+	      qualities[hv] = 0;
+	      clip[hv] = false;
+	    } else {
+	      if (qualitiestra.find(hv) == qualitiestra.end()) { skip = true; goto discard; } // Mate discarded
+	      pairQuality = std::min((uint8_t) qualitiestra[hv], (uint8_t) rec->core.qual);
+	      if ((cliptra[hv]) || (hasSoftClip)) pairClip = true;
+	      qualitiestra[hv] = 0;
+	      cliptra[hv] = false;
+	    }
+discard:
+	    ; // nop
 	  }
+          if (skip) continue;
 
 	  // Pair quality
 	  if (pairQuality < c.minGenoQual) continue; // Low quality pair
@@ -722,10 +751,16 @@ annotateCoverage(TConfig& c, TSampleLibrary& sampleLib, TCovRecord& ict, TCovera
 	  covfrag += covFragment[k]; 
 	  covbase += covBases[k];
 	}
-	// Store counts
-	covCount[file_c][ict[refIndex][i].id].first = covbase;
-	covCount[file_c][ict[refIndex][i].id].second = covfrag;
+	#pragma omp critical
+	{
+	  // Store counts
+	  covCount[file_c][ict[refIndex][i].id].first = covbase;
+	  covCount[file_c][ict[refIndex][i].id].second = covfrag;
+	}
       }
+
+      hts_idx_destroy(myidx);
+      sam_close(mysamfile);
     }
   }
   // Clean-up
