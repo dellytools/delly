@@ -450,6 +450,10 @@ int filter(int argc, char **argv) {
       std::cerr << "Fail to header for " << c.vcffile.string() << std::endl;
       return 1;
     }
+    if (!(bcf_hdr_nsamples(hdr)>0)) {
+      std::cerr << "BCF/VCF file has no sample genotypes!" << std::endl;
+      return 1;
+    }
     // Check sample names
     if (c.filter == "somatic") {
       for (int i = 0; i < bcf_hdr_nsamples(hdr); ++i) {
