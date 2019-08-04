@@ -317,7 +317,7 @@ inline int dellyRun(TConfigStruct& c) {
   typedef std::vector<TChrIntervals> TRegionsGenome;
   TRegionsGenome validRegions;
   if (!_parseExcludeIntervals(c, hdr, validRegions)) {
-    std::cerr << "Delly couldn't parse excluce intervals!" << std::endl;
+    std::cerr << "Delly couldn't parse exclude intervals!" << std::endl;
     bam_hdr_destroy(hdr);
     sam_close(samfile);
     return 1;
