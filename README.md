@@ -19,7 +19,7 @@ Delly is an integrated structural variant (SV) prediction method that can discov
 Installing Delly
 ----------------
 
-The easiest way to get Delly is to download a statically linked binary from the [Delly github release page](https://github.com/dellytools/delly/releases/) or to download Delly from [Bioconda](https://anaconda.org/bioconda/delly). You can also build Delly from source using a recursive clone and make. 
+The easiest way to get Delly is to download a statically linked binary or the singularity container (SIF file) from the [Delly github release page](https://github.com/dellytools/delly/releases/). Alternatively, you can download Delly from [Bioconda](https://anaconda.org/bioconda/delly). You can also build Delly from source using a recursive clone and make. 
 
 `git clone --recursive https://github.com/dellytools/delly.git`
 

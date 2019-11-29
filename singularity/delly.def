@@ -1,0 +1,44 @@
+# Build image
+BootStrap: library
+From: ubuntu:16.04
+Stage: build
+
+%post
+	apt-get -y update
+	apt-get install -y build-essential cmake g++ gfortran git hdf5-tools libboost-date-time-dev libboost-program-options-dev libboost-system-dev libboost-filesystem-dev libboost-iostreams-dev libbz2-dev libhdf5-dev libncurses-dev liblzma-dev zlib1g-dev
+	apt-get clean
+	rm -rf /var/lib/apt/lists/*
+	cd /opt
+	git clone --recursive https://github.com/dellytools/delly.git
+	cd /opt/delly/
+	make STATIC=1 all
+	make install
+
+
+# Final image
+BootStrap: library
+From: alpine:3.9
+Stage: final
+
+%files from build
+       /opt/delly/bin/delly /bin/delly
+
+%post
+	DELLYVERSION=`./bin/delly --version`
+	echo "export DELLYVERSION=\"${DELLYVERSION}\"" >> $SINGULARITY_ENVIRONMENT
+	CREATEDATE=`date`
+	echo "export CREATEDATE=\"${CREATEDATE}\"" >> $SINGULARITY_ENVIRONMENT
+
+%environment
+	export PATH=/bin:$PATH
+
+%runscript
+	delly
+
+%labels
+	Singularity definition file version v0.0.1
+
+%help
+	This is a container running delly.
+	You can run delly on files inside the directory where you start
+	the container, i.e.: singularity exec delly.sif delly call -g ref.fa input.bam
