@@ -1,9 +1,11 @@
 .htslib
 *.pyc
+*~
 
 # Binaries
 bin/
 src/delly
+src/dellyLR
 src/dpe
 
 # Compiled Object files

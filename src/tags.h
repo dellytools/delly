@@ -58,12 +58,13 @@ namespace torali {
     int32_t ciposhigh;
     int32_t ciendlow;
     int32_t ciendhigh;
-    int32_t peSupport;
     int32_t srSupport;
+    int32_t mapq;
     int32_t insLen;
-    int32_t homLen;
     int32_t svt;
-    uint32_t id;
+    int32_t id;
+    int32_t homLen;
+    int32_t peSupport;
     float srAlignQuality;
     uint8_t srMapQuality;
     uint8_t peMapQuality;
@@ -72,18 +73,18 @@ namespace torali {
     std::string consensus;
 
     
-    StructuralVariantRecord() : chr(0), svStart(0), chr2(0), svEnd(0), ciposlow(0), ciposhigh(0), ciendlow(0), ciendhigh(0), peSupport(0), srSupport(0), insLen(0), homLen(0), svt(-1), id(0), srAlignQuality(0), srMapQuality(0), peMapQuality(0), precise(false) {}
+    StructuralVariantRecord() : chr(0), svStart(0), chr2(0), svEnd(0), ciposlow(0), ciposhigh(0), ciendlow(0), ciendhigh(0), srSupport(0), mapq(0), insLen(0), svt(-1), id(0), homLen(0), peSupport(0), srAlignQuality(0), srMapQuality(0), peMapQuality(0), precise(false) {}
 
-    StructuralVariantRecord(int32_t const c, int32_t const s, int32_t const e) : chr(c), svStart(s), chr2(c), svEnd(e), ciposlow(0), ciposhigh(0), ciendlow(0), ciendhigh(0), peSupport(0), srSupport(0), insLen(0), homLen(0), svt(-1), id(0), srAlignQuality(0), srMapQuality(0), peMapQuality(0), precise(false) {}
+    StructuralVariantRecord(int32_t const c, int32_t const s, int32_t const e) : chr(c), svStart(s), chr2(c), svEnd(e), ciposlow(0), ciposhigh(0), ciendlow(0), ciendhigh(0), srSupport(0), mapq(0), insLen(0), svt(-1), id(0), homLen(0), peSupport(0), srAlignQuality(0), srMapQuality(0), peMapQuality(0), precise(false) {}
 
-    StructuralVariantRecord(int32_t const c1, int32_t const s, int32_t const c2, int32_t const e, int32_t const cipl, int32_t const ciph, int32_t const ciel, int32_t const cieh, int32_t const sup, int32_t const ilen, int32_t const svtype, int32_t const idval): chr(c1), svStart(s), chr2(c2), svEnd(e), ciposlow(cipl), ciposhigh(ciph), ciendlow(ciel), ciendhigh(cieh), peSupport(0), srSupport(sup), insLen(ilen), homLen(0), svt(svtype), id(idval), srAlignQuality(0), srMapQuality(0), peMapQuality(0), precise(true) {}
+    StructuralVariantRecord(int32_t const c1, int32_t const s, int32_t const c2, int32_t const e, int32_t const cipl, int32_t const ciph, int32_t const ciel, int32_t const cieh, int32_t const sup, int32_t const qval, int32_t const ilen, int32_t const svtype, int32_t const idval): chr(c1), svStart(s), chr2(c2), svEnd(e), ciposlow(cipl), ciposhigh(ciph), ciendlow(ciel), ciendhigh(cieh), srSupport(sup), mapq(qval), insLen(ilen), svt(svtype), id(idval), homLen(0), peSupport(0), srAlignQuality(0), srMapQuality(0), peMapQuality(0), precise(true) {}
   };
 
   template<typename TSV>
   struct SortSVs : public std::binary_function<TSV, TSV, bool>
   {
     inline bool operator()(TSV const& sv1, TSV const& sv2) {
-      return ((sv1.chr<sv2.chr) || ((sv1.chr==sv2.chr) && (sv1.svStart<sv2.svStart)) || ((sv1.chr==sv2.chr) && (sv1.svStart==sv2.svStart) && (sv1.svEnd<sv2.svEnd)) || ((sv1.chr==sv2.chr) && (sv1.svStart==sv2.svStart) && (sv1.svEnd==sv2.svEnd) && (sv1.peSupport > sv2.peSupport)));
+      return ((sv1.chr<sv2.chr) || ((sv1.chr==sv2.chr) && (sv1.svStart<sv2.svStart)) || ((sv1.chr==sv2.chr) && (sv1.svStart==sv2.svStart) && (sv1.chr2<sv2.chr2)) || ((sv1.chr==sv2.chr) && (sv1.svStart==sv2.svStart) && (sv1.chr2==sv2.chr2) && (sv1.svEnd<sv2.svEnd)) || ((sv1.chr==sv2.chr) && (sv1.svStart==sv2.svStart) && (sv1.chr2==sv2.chr2) && (sv1.svEnd==sv2.svEnd) && (sv1.peSupport > sv2.peSupport)));
     }
   };
 
@@ -211,24 +212,6 @@ namespace torali {
 	return 3;
       }
     } 
-  }
-
-  // Decode Orientation
-  inline int32_t
-  _decodeOrientation(std::string const& value, std::string const& svt) {
-    if (svt == "BND") {
-      if (value=="3to3") return DELLY_SVT_TRANS + 0;
-      else if (value=="5to5") return DELLY_SVT_TRANS + 1;
-      else if (value=="3to5") return DELLY_SVT_TRANS + 2;
-      else if (value=="5to3") return DELLY_SVT_TRANS + 3;
-      else return -1;
-    } else {
-      if (value=="3to3") return 0;
-      else if (value=="5to5") return 1;
-      else if (value=="3to5") return 2;
-      else if (value=="5to3") return 3;
-      else return 4;
-    }
   }
 
   inline unsigned hash_string(const char *s) {

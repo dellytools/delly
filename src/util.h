@@ -63,7 +63,7 @@ namespace torali
 
 
   // Decode Orientation
-  inline uint8_t
+  inline int32_t
     _decodeOrientation(std::string const& value) {
     if (value=="3to3") return 0;
     else if (value=="5to5") return 1;
@@ -71,7 +71,25 @@ namespace torali
     else if (value=="5to3") return 3;
     else return 4;
   }
-    
+  
+  // Decode Orientation
+  inline int32_t
+  _decodeOrientation(std::string const& value, std::string const& svt) {
+    if (svt == "BND") {
+      if (value=="3to3") return DELLY_SVT_TRANS + 0;
+      else if (value=="5to5") return DELLY_SVT_TRANS + 1;
+      else if (value=="3to5") return DELLY_SVT_TRANS + 2;
+      else if (value=="5to3") return DELLY_SVT_TRANS + 3;
+      else return -1;
+    } else {
+      if (value=="3to3") return 0;
+      else if (value=="5to5") return 1;
+      else if (value=="3to5") return 2;
+      else if (value=="5to3") return 3;
+      else return 4;
+    }
+  }
+  
   
   // Deletions
   inline std::string
