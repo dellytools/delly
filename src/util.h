@@ -140,7 +140,7 @@ namespace torali
     return slen;
   }
   
-  inline unsigned int alignmentLength(bam1_t* rec) {
+  inline uint32_t alignmentLength(bam1_t* rec) {
     uint32_t* cigar = bam_get_cigar(rec);
     uint32_t alen = 0;
     for (uint32_t i = 0; i < rec->core.n_cigar; ++i)
@@ -148,10 +148,19 @@ namespace torali
     return alen;
   }
 
-  inline unsigned int halfAlignmentLength(bam1_t* rec) {
+  inline uint32_t halfAlignmentLength(bam1_t* rec) {
     return (alignmentLength(rec) / 2);
   }
 
+  inline std::size_t hash_lr(bam1_t* rec) {
+    boost::hash<std::string> string_hash;
+    std::string qname = bam_get_qname(rec);
+    std::size_t seed = hash_string(qname.c_str());
+    boost::hash_combine(seed, string_hash(qname));
+    return seed;
+  }
+      
+  
   inline std::size_t hash_pair(bam1_t* rec) {
     std::size_t seed = hash_string(bam_get_qname(rec));
     boost::hash_combine(seed, rec->core.tid);

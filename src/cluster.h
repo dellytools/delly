@@ -252,11 +252,14 @@ namespace torali
       typename TEdgeList::const_iterator itWEdge = compIt->second.begin();
       typename TEdgeList::const_iterator itWEdgeEnd = compIt->second.end();
       typedef std::set<TVertex> TCliqueMembers;
+      typedef std::set<std::size_t> TSeeds;
       TCliqueMembers clique;
       TCliqueMembers incompatible;
+      TSeeds seeds;
       
       // Initialize clique
       clique.insert(itWEdge->source);
+      seeds.insert(br[itWEdge->source].id);
       int32_t chr = br[itWEdge->source].chr;
       int32_t chr2 = br[itWEdge->source].chr2;
       int32_t ciposlow = br[itWEdge->source].pos;
@@ -280,6 +283,7 @@ namespace torali
 	  else if ((clique.find(itWEdge->source) != clique.end()) && (clique.find(itWEdge->target) == clique.end())) v = itWEdge->target;
 	  else continue;
 	  if (incompatible.find(v) != incompatible.end()) continue;
+	  if (seeds.find(br[v].id) != seeds.end()) continue;
 	  // Try to update clique with this vertex
 	  int32_t newCiPosLow = std::min(br[v].pos, ciposlow);
 	  int32_t newCiPosHigh = std::max(br[v].pos, ciposhigh);
@@ -289,6 +293,7 @@ namespace torali
 	  if (cliqueGrow) {
 	    // Accept new vertex
 	    clique.insert(v);
+	    seeds.insert(br[v].id);
 	    ciposlow = newCiPosLow;
 	    pos += br[v].pos;
 	    ciposhigh = newCiPosHigh;
@@ -312,7 +317,10 @@ namespace torali
 	int32_t svid = sv.size();
 	sv.push_back(StructuralVariantRecord(chr, svStart, chr2, svEnd, (ciposlow - svStart), (ciposhigh - svStart), (ciendlow - svEnd), (ciendhigh - svEnd), clique.size(), mapq, svInsLen, svt, svid));
 	// Reads assigned
-	for(typename TCliqueMembers::iterator itC = clique.begin(); itC != clique.end(); ++itC) br[*itC].svid = svid;
+	for(typename TCliqueMembers::iterator itC = clique.begin(); itC != clique.end(); ++itC) {
+	  //std::cerr << svid << ',' << br[*itC].id << std::endl;
+	  br[*itC].svid = svid;
+	}
       }
     }
   }

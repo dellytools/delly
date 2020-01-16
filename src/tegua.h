@@ -44,6 +44,7 @@ Contact: Tobias Rausch (rausch@embl.de)
 #include "util.h"
 #include "junction.h"
 #include "cluster.h"
+#include "assemble.h"
 #include "modvcf.h"
 
 namespace torali {
@@ -58,9 +59,12 @@ namespace torali {
     uint32_t maxReadSep;
     uint32_t graphPruning;
     int32_t nchr;
+    int32_t minimumFlankSize;
     float indelExtension;
+    float flankQuality;
     std::vector<int32_t> chrlen;
     std::string svtype;
+    DnaScore<int> aliscore;
     boost::filesystem::path svinput;
     boost::filesystem::path inputfile;
     boost::filesystem::path dumpfile;
@@ -71,82 +75,15 @@ namespace torali {
 
  template<typename TConfig>
  inline int32_t
- loadSV(TConfig const& c, std::vector<std::vector<SRBamRecord> >& br) {
-   samFile* samfile = sam_open(c.inputfile.string().c_str(), "r");
-   hts_set_fai_filename(samfile, c.genome.string().c_str());
-   bam_hdr_t* hdr = sam_hdr_read(samfile);
-   
-   // Annotate intervals
-   std::ifstream svFile(c.svinput.string().c_str(), std::ifstream::in);
-   if (svFile.is_open()) {
-     uint32_t svcount = 0;
-     while (svFile.good()) {
-       std::string svFromFile;
-       getline(svFile, svFromFile);
-       typedef boost::tokenizer< boost::char_separator<char> > Tokenizer;
-       boost::char_separator<char> sep(" \t,;");
-       Tokenizer tokens(svFromFile, sep);
-       Tokenizer::iterator tokIter = tokens.begin();
-       if (tokIter!=tokens.end()) {
-	 std::string chr = *tokIter++;
-	 int32_t tid = bam_name2id(hdr, chr.c_str());
-	 if ((tid < 0) || (tid >= (int32_t) hdr->n_targets)) continue;
-	 int32_t pos = boost::lexical_cast<int32_t>(*tokIter++);
-	 if (tokIter!=tokens.end()) {
-	   std::string chr2 = *tokIter++;
-	   int32_t mid = bam_name2id(hdr, chr2.c_str());
-	   if ((mid < 0) || (mid >= (int32_t) hdr->n_targets)) continue;
-	   int32_t pos2 = boost::lexical_cast<int32_t>(*tokIter++);
-	   // Parse ID
-	   if (tokIter!=tokens.end()) {
-	     std::string idname = *tokIter++;
-	     if (idname.size() >= 3) {
-	       if (idname.substr(0,3) == "DEL") br[2].push_back(SRBamRecord(tid, pos, mid, pos2, 2, 0, 0, svcount++));
-	       else if (idname.substr(0,3) == "DUP") br[3].push_back(SRBamRecord(tid, pos, mid, pos2, 3, 0, 0, svcount++));
-	       else if (idname.substr(0,3) == "INS") br[4].push_back(SRBamRecord(tid, pos, mid, pos2, 4, 0, 0, svcount++));
-	       else if (idname.substr(0,3) == "INV") {
-		 // Both inversion types
-		 br[0].push_back(SRBamRecord(tid, pos, mid, pos2, 0, 0, 0, svcount++));
-		 br[1].push_back(SRBamRecord(tid, pos, mid, pos2, 1, 0, 0, svcount++));
-	       }
-	     }
-	   }
-	 }
-       }
-     }
-     svFile.close();
-   }
-   
-   // Clean-up
-   bam_hdr_destroy(hdr);
-   sam_close(samfile);
-   
-   return br.size();
- }
-
- template<typename TConfig>
- inline int32_t
  runTegua(TConfig const& c) {
-   // Load SVs
    typedef std::vector<SRBamRecord> TSRBamRecord;
    typedef std::vector<TSRBamRecord> TSvtSRBamRecord;
-   TSvtSRBamRecord insv;
-   if (c.hasSvInput) {
-     int32_t insvlen = loadSV(c, insv);
-     if (!insvlen) {
-       std::cerr << "Error in loading SVs!" << std::endl;
-       return -1;
-     } else {
-       std::cout << "Loaded " << insvlen << " SVs" << std::endl;
-     }
-   }
 
    // SR Store
-   typedef std::pair<int32_t, std::size_t> TPosRead;
-   typedef boost::unordered_map<TPosRead, int32_t> TPosReadSV;
-   typedef std::vector<TPosReadSV> TGenomicPosReadSV;
-   TGenomicPosReadSV srStore(c.chrlen.size(), TPosReadSV());
-
+   typedef std::vector<SeqSlice> TSvPosVector;
+   typedef boost::unordered_map<std::size_t, TSvPosVector> TReadSV;
+   TReadSV srStore;
+   
    // Structural Variants
    std::vector<StructuralVariantRecord> srSVs;
 
@@ -172,16 +109,16 @@ namespace torali {
        // Track split-reads
        for(uint32_t i = 0; i < srBR[svt].size(); ++i) {
 	 // Read assigned?
-	 if ((srBR[svt][i].svid != -1) && (srBR[svt][i].rstart != -1)) {
-	   if (srBR[svt][i].rstart < (int32_t) c.chrlen[srBR[svt][i].chr]) srStore[srBR[svt][i].chr].insert(std::make_pair(std::make_pair(srBR[svt][i].rstart, srBR[svt][i].id), srBR[svt][i].svid));
-	   if (srBR[svt][i].chr != srBR[svt][i].chr2) {
-	     // Unclear which chr was primary alignment so insert both if and only if rstart < reference length
-	     if (srBR[svt][i].rstart < (int32_t) c.chrlen[srBR[svt][i].chr2]) srStore[srBR[svt][i].chr2].insert(std::make_pair(std::make_pair(srBR[svt][i].rstart, srBR[svt][i].id), srBR[svt][i].svid));
-	   }
+	 if (srBR[svt][i].svid != -1) {
+	   if (srStore.find(srBR[svt][i].id) == srStore.end()) srStore.insert(std::make_pair(srBR[svt][i].id, TSvPosVector()));
+	   srStore[srBR[svt][i].id].push_back(SeqSlice(srBR[svt][i].svid, srBR[svt][i].sstart, srBR[svt][i].inslen));
 	 }
        }
      }
    }
+
+   // Assemble
+   //assemble(c, srStore, srSVs);
 
    // Sort SVs
    std::sort(srSVs.begin(), srSVs.end(), SortSVs<StructuralVariantRecord>());
@@ -277,6 +214,9 @@ namespace torali {
    c.nchr = c.chrlen.size();
    
    // Run Tegua
+   c.aliscore = DnaScore<int>(3, -2, -3, -1);
+   c.minimumFlankSize = 50;
+   c.flankQuality = 0.9;
    return runTegua(c);
  }
 

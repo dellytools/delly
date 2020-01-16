@@ -23,6 +23,7 @@ Contact: Tobias Rausch (rausch@embl.de)
 #define NEEDLE_H
 
 #define BOOST_DISABLE_ASSERTS
+#include <boost/dynamic_bitset.hpp>
 #include <boost/multi_array.hpp>
 #include <iostream>
 #include "align.h"

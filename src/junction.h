@@ -30,7 +30,7 @@ Contact: Tobias Rausch (rausch@embl.de)
 #include <boost/iostreams/copy.hpp>
 #include <boost/iostreams/filter/gzip.hpp>
 #include <boost/iostreams/device/file.hpp>
-#include <boost/math/distributions/binomial.hpp>
+#include <boost/progress.hpp>
 
 #include <htslib/sam.h>
 
@@ -45,12 +45,13 @@ namespace torali
     int32_t chr2;
     int32_t pos2;
     int32_t rstart;
+    int32_t sstart;
     int32_t qual;
     int32_t inslen;
     int32_t svid;
     std::size_t id;
         
-    SRBamRecord(int32_t const c, int32_t const p, int32_t const c2, int32_t const p2, int32_t const rst, int32_t const qval, int32_t const il, std::size_t const idval) : chr(c), pos(p), chr2(c2), pos2(p2), rstart(rst), qual(qval), inslen(il), svid(-1), id(idval) {}
+    SRBamRecord(int32_t const c, int32_t const p, int32_t const c2, int32_t const p2, int32_t const rst, int32_t const sst, int32_t const qval, int32_t const il, std::size_t const idval) : chr(c), pos(p), chr2(c2), pos2(p2), rstart(rst), sstart(sst), qual(qval), inslen(il), svid(-1), id(idval) {}
   };
 
   template<typename TSRBamRecord>
@@ -77,7 +78,7 @@ namespace torali
 
   template<typename TReadBp>
   inline void
-  _insertJunction(TReadBp& readBp, unsigned const seed, bam1_t* rec, int32_t const rp, int32_t const sp, bool const scleft) {
+    _insertJunction(TReadBp& readBp, std::size_t const seed, bam1_t* rec, int32_t const rp, int32_t const sp, bool const scleft) {
     bool fw = true;
     if (rec->core.flag & BAM_FREVERSE) fw = false;
     int32_t readStart = rec->core.pos;
@@ -124,11 +125,11 @@ namespace torali
 		// Correct clipping architecture, note: soft-clipping of error-prone reads can lead to switching left/right breakpoints
 		if (it->second[i].refpos <= it->second[j].refpos) {
 		  if ((!it->second[i].scleft) && (it->second[j].scleft)) {
-		    br[2].push_back(SRBamRecord(it->second[i].refidx, it->second[i].refpos, it->second[j].refidx, it->second[j].refpos, rst, qval, std::abs(it->second[j].seqpos - it->second[i].seqpos), it->first));
+		    br[2].push_back(SRBamRecord(it->second[i].refidx, it->second[i].refpos, it->second[j].refidx, it->second[j].refpos, rst, std::min(it->second[j].seqpos, it->second[i].seqpos), qval, std::abs(it->second[j].seqpos - it->second[i].seqpos), it->first));
 		  }
 		} else {
 		  if ((it->second[i].scleft) && (!it->second[j].scleft)) {
-		    br[2].push_back(SRBamRecord(it->second[j].refidx, it->second[j].refpos, it->second[i].refidx, it->second[i].refpos, rst, qval, std::abs(it->second[j].seqpos - it->second[i].seqpos), it->first));
+		    br[2].push_back(SRBamRecord(it->second[j].refidx, it->second[j].refpos, it->second[i].refidx, it->second[i].refpos, rst, std::min(it->second[j].seqpos, it->second[i].seqpos), qval, std::abs(it->second[j].seqpos - it->second[i].seqpos), it->first));
 		  }
 		}
 	      }
@@ -160,11 +161,11 @@ namespace torali
 		// Correct clipping architecture, note: soft-clipping of error-prone reads can lead to switching left/right breakpoints
 		if (it->second[i].refpos <= it->second[j].refpos) {
 		  if ((it->second[i].scleft) && (!it->second[j].scleft)) {
-		    br[3].push_back(SRBamRecord(it->second[i].refidx, it->second[i].refpos, it->second[j].refidx, it->second[j].refpos, rst, qval, std::abs(it->second[j].seqpos - it->second[i].seqpos), it->first));
+		    br[3].push_back(SRBamRecord(it->second[i].refidx, it->second[i].refpos, it->second[j].refidx, it->second[j].refpos, rst, std::min(it->second[j].seqpos, it->second[i].seqpos), qval, std::abs(it->second[j].seqpos - it->second[i].seqpos), it->first));
 		  }
 		} else {
 		  if ((!it->second[i].scleft) && (it->second[j].scleft)) {
-		    br[3].push_back(SRBamRecord(it->second[j].refidx, it->second[j].refpos, it->second[i].refidx, it->second[i].refpos, rst, qval, std::abs(it->second[j].seqpos - it->second[i].seqpos), it->first));
+		    br[3].push_back(SRBamRecord(it->second[j].refidx, it->second[j].refpos, it->second[i].refidx, it->second[i].refpos, rst, std::min(it->second[j].seqpos, it->second[i].seqpos), qval, std::abs(it->second[j].seqpos - it->second[i].seqpos), it->first));
 		  }
 		}
 	      }
@@ -194,12 +195,12 @@ namespace torali
 		int32_t qval = (int32_t) (((int32_t) it->second[i].qual + (int32_t) it->second[j].qual) / 2);
 		if (it->second[i].refpos <= it->second[j].refpos) {
 		  // Need to differentiate 3to3 and 5to5
-		  if (it->second[i].scleft) br[1].push_back(SRBamRecord(it->second[i].refidx, it->second[i].refpos, it->second[j].refidx, it->second[j].refpos, rst, qval, std::abs(it->second[j].seqpos - it->second[i].seqpos), it->first));
-		  else br[0].push_back(SRBamRecord(it->second[i].refidx, it->second[i].refpos, it->second[j].refidx, it->second[j].refpos, rst, qval, std::abs(it->second[j].seqpos - it->second[i].seqpos), it->first));
+		  if (it->second[i].scleft) br[1].push_back(SRBamRecord(it->second[i].refidx, it->second[i].refpos, it->second[j].refidx, it->second[j].refpos, rst, std::min(it->second[j].seqpos, it->second[i].seqpos), qval, std::abs(it->second[j].seqpos - it->second[i].seqpos), it->first));
+		  else br[0].push_back(SRBamRecord(it->second[i].refidx, it->second[i].refpos, it->second[j].refidx, it->second[j].refpos, rst, std::min(it->second[j].seqpos, it->second[i].seqpos), qval, std::abs(it->second[j].seqpos - it->second[i].seqpos), it->first));
 		} else {
 		  // Need to differentiate 3to3 and 5to5
-		  if (it->second[i].scleft) br[1].push_back(SRBamRecord(it->second[j].refidx, it->second[j].refpos, it->second[i].refidx, it->second[i].refpos, rst, qval, std::abs(it->second[j].seqpos - it->second[i].seqpos), it->first));
-		  else br[0].push_back(SRBamRecord(it->second[j].refidx, it->second[j].refpos, it->second[i].refidx, it->second[i].refpos, rst, qval, std::abs(it->second[j].seqpos - it->second[i].seqpos), it->first));
+		  if (it->second[i].scleft) br[1].push_back(SRBamRecord(it->second[j].refidx, it->second[j].refpos, it->second[i].refidx, it->second[i].refpos, rst, std::min(it->second[j].seqpos, it->second[i].seqpos), qval, std::abs(it->second[j].seqpos - it->second[i].seqpos), it->first));
+		  else br[0].push_back(SRBamRecord(it->second[j].refidx, it->second[j].refpos, it->second[i].refidx, it->second[i].refpos, rst, std::min(it->second[j].seqpos, it->second[i].seqpos), qval, std::abs(it->second[j].seqpos - it->second[i].seqpos), it->first));
 		}
 	      }
 	    }
@@ -228,9 +229,9 @@ namespace torali
 		  // Avg. qval
 		  int32_t qval = (int32_t) (((int32_t) it->second[i].qual + (int32_t) it->second[j].qual) / 2);
 		  if (it->second[i].refpos <= it->second[j].refpos) {
-		    br[4].push_back(SRBamRecord(it->second[i].refidx, it->second[i].refpos, it->second[j].refidx, it->second[j].refpos, rst, qval, std::abs(it->second[j].seqpos - it->second[i].seqpos), it->first));
+		    br[4].push_back(SRBamRecord(it->second[i].refidx, it->second[i].refpos, it->second[j].refidx, it->second[j].refpos, rst, std::min(it->second[j].seqpos, it->second[i].seqpos), qval, std::abs(it->second[j].seqpos - it->second[i].seqpos), it->first));
 		  } else {
-		    br[4].push_back(SRBamRecord(it->second[j].refidx, it->second[j].refpos, it->second[i].refidx, it->second[i].refpos, rst, qval, std::abs(it->second[j].seqpos - it->second[i].seqpos), it->first));
+		    br[4].push_back(SRBamRecord(it->second[j].refidx, it->second[j].refpos, it->second[i].refidx, it->second[i].refpos, rst, std::min(it->second[j].seqpos, it->second[i].seqpos), qval, std::abs(it->second[j].seqpos - it->second[i].seqpos), it->first));
 		  }
 		}
 	      }
@@ -268,10 +269,10 @@ namespace torali
 		if (it->second[chr1ev].scleft != it->second[chr2ev].scleft) {
 		  if (it->second[chr1ev].scleft) {
 		    // 5to3
-		    br[DELLY_SVT_TRANS + 2].push_back(SRBamRecord(it->second[chr2ev].refidx, it->second[chr2ev].refpos, it->second[chr1ev].refidx, it->second[chr1ev].refpos, rst, qval, std::abs(it->second[j].seqpos - it->second[i].seqpos), it->first));
+		    br[DELLY_SVT_TRANS + 2].push_back(SRBamRecord(it->second[chr2ev].refidx, it->second[chr2ev].refpos, it->second[chr1ev].refidx, it->second[chr1ev].refpos, rst, std::min(it->second[j].seqpos, it->second[i].seqpos), qval, std::abs(it->second[j].seqpos - it->second[i].seqpos), it->first));
 		  } else {
 		    // 3to5
-		    br[DELLY_SVT_TRANS + 3].push_back(SRBamRecord(it->second[chr2ev].refidx, it->second[chr2ev].refpos, it->second[chr1ev].refidx, it->second[chr1ev].refpos, rst, qval, std::abs(it->second[j].seqpos - it->second[i].seqpos), it->first));
+		    br[DELLY_SVT_TRANS + 3].push_back(SRBamRecord(it->second[chr2ev].refidx, it->second[chr2ev].refpos, it->second[chr1ev].refidx, it->second[chr1ev].refpos, rst, std::min(it->second[j].seqpos, it->second[i].seqpos), qval, std::abs(it->second[j].seqpos - it->second[i].seqpos), it->first));
 		  }
 		}
 	      } else {
@@ -279,10 +280,10 @@ namespace torali
 		if (it->second[chr1ev].scleft == it->second[chr2ev].scleft) {
 		  if (it->second[chr1ev].scleft) {
 		    // 3to3
-		    br[DELLY_SVT_TRANS + 1].push_back(SRBamRecord(it->second[chr2ev].refidx, it->second[chr2ev].refpos, it->second[chr1ev].refidx, it->second[chr1ev].refpos, rst, qval, std::abs(it->second[j].seqpos - it->second[i].seqpos), it->first));
+		    br[DELLY_SVT_TRANS + 1].push_back(SRBamRecord(it->second[chr2ev].refidx, it->second[chr2ev].refpos, it->second[chr1ev].refidx, it->second[chr1ev].refpos, rst, std::min(it->second[j].seqpos, it->second[i].seqpos), qval, std::abs(it->second[j].seqpos - it->second[i].seqpos), it->first));
 		  } else {
 		    // 5to5
-		    br[DELLY_SVT_TRANS + 0].push_back(SRBamRecord(it->second[chr2ev].refidx, it->second[chr2ev].refpos, it->second[chr1ev].refidx, it->second[chr1ev].refpos, rst, qval, std::abs(it->second[j].seqpos - it->second[i].seqpos), it->first));
+		    br[DELLY_SVT_TRANS + 0].push_back(SRBamRecord(it->second[chr2ev].refidx, it->second[chr2ev].refpos, it->second[chr1ev].refidx, it->second[chr1ev].refpos, rst, std::min(it->second[j].seqpos, it->second[i].seqpos), qval, std::abs(it->second[j].seqpos - it->second[i].seqpos), it->first));
 		  }
 		}
 	      }
@@ -302,112 +303,116 @@ namespace torali
     hts_idx_t* idx = sam_index_load(samfile, c.inputfile.string().c_str());
     bam_hdr_t* hdr = sam_hdr_read(samfile);
     
-    // Parse BAM
+    // Breakpoints
     typedef std::vector<Junction> TJunctionVector;
-    typedef std::map<unsigned, TJunctionVector> TReadBp;
+    typedef std::map<std::size_t, TJunctionVector> TReadBp;
     TReadBp readBp;
-    bam1_t* rec = bam_init1();
-    uint64_t readCount = 0;
-    while (sam_read1(samfile, hdr, rec) >= 0) {
-      // Keep secondary alignments
-      if (rec->core.flag & (BAM_FQCFAIL | BAM_FDUP | BAM_FUNMAP)) continue;
-      if ((rec->core.qual < c.minMapQual) || (rec->core.tid<0)) continue;
 
-      unsigned seed = hash_string(bam_get_qname(rec));
+    // Parse genome chr-by-chr
+    boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
+    std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Split-read scanning" << std::endl;
+    boost::progress_display show_progress( hdr->n_targets );
 
-      // Debug
-      //std::string sequence; sequence.resize(rec->core.l_qseq); uint8_t* seqptr = bam_get_seq(rec);
-      //for (int32_t i = 0; i < rec->core.l_qseq; ++i) sequence[i] = "=ACMGRSVTWYHKDBN"[bam_seqi(seqptr, i)];
-      //std::cerr << seed << ',' << bam_get_qname(rec) << ',' << sequence << std::endl;
+    // Iterate chromosomes
+    for(int32_t refIndex=0; refIndex < (int32_t) hdr->n_targets; ++refIndex) {
+      ++show_progress;
+
+      // Parse BAM
+      hts_itr_t* iter = sam_itr_queryi(idx, refIndex, 0, c.chrlen[refIndex]);
+      bam1_t* rec = bam_init1();
+      while (sam_itr_next(samfile, iter, rec) >= 0) {
+	// Keep secondary alignments
+	if (rec->core.flag & (BAM_FQCFAIL | BAM_FDUP | BAM_FUNMAP)) continue;
+	if ((rec->core.qual < c.minMapQual) || (rec->core.tid<0)) continue;
+
+	std::size_t seed = hash_lr(rec);
+	uint32_t rp = rec->core.pos; // reference pointer
+	uint32_t sp = 0; // sequence pointer
       
-      uint32_t rp = rec->core.pos; // reference pointer
-      uint32_t sp = 0; // sequence pointer
-      
-      // Parse the CIGAR
-      uint32_t* cigar = bam_get_cigar(rec);
-      for (std::size_t i = 0; i < rec->core.n_cigar; ++i) {
-	if ((bam_cigar_op(cigar[i]) == BAM_CMATCH) || (bam_cigar_op(cigar[i]) == BAM_CEQUAL) || (bam_cigar_op(cigar[i]) == BAM_CDIFF)) {
-	  sp += bam_cigar_oplen(cigar[i]);
-	  rp += bam_cigar_oplen(cigar[i]);
-	} else if (bam_cigar_op(cigar[i]) == BAM_CDEL) {
-	  if (bam_cigar_oplen(cigar[i]) > c.minRefSep) _insertJunction(readBp, seed, rec, rp, sp, false);
-	  rp += bam_cigar_oplen(cigar[i]);
-	  if (bam_cigar_oplen(cigar[i]) > c.minRefSep) { // Try look-ahead
-	    uint32_t spOrig = sp;
-	    uint32_t rpTmp = rp;
-	    uint32_t spTmp = sp;
-	    uint32_t dlen = bam_cigar_oplen(cigar[i]);
-	    for (std::size_t j = i + 1; j < rec->core.n_cigar; ++j) {
-	      if ((bam_cigar_op(cigar[j]) == BAM_CMATCH) || (bam_cigar_op(cigar[j]) == BAM_CEQUAL) || (bam_cigar_op(cigar[j]) == BAM_CDIFF)) {
-		spTmp += bam_cigar_oplen(cigar[j]);
-		rpTmp += bam_cigar_oplen(cigar[j]);
-		if ((double) (spTmp - sp) / (double) (dlen + (rpTmp - rp)) > c.indelExtension) break;
-	      } else if (bam_cigar_op(cigar[j]) == BAM_CDEL) {
-		rpTmp += bam_cigar_oplen(cigar[j]);
-		if (bam_cigar_oplen(cigar[j]) > c.minRefSep) {
-		  // Extend deletion
-		  dlen += (rpTmp - rp);
-		  rp = rpTmp;
-		  sp = spTmp;
-		  i = j;
-		}
-	      } else if (bam_cigar_op(cigar[j]) == BAM_CINS) {
-		if (bam_cigar_oplen(cigar[j]) > c.minRefSep) break; // No extension
-		spTmp += bam_cigar_oplen(cigar[j]);
-	      } else break; // No extension
-	    }
-	    _insertJunction(readBp, seed, rec, rp, spOrig, true);
-	  }
-	} else if (bam_cigar_op(cigar[i]) == BAM_CINS) {
-	  if (bam_cigar_oplen(cigar[i]) > c.minRefSep) _insertJunction(readBp, seed, rec, rp, sp, false);
-	  sp += bam_cigar_oplen(cigar[i]);
-	  if (bam_cigar_oplen(cigar[i]) > c.minRefSep) { // Try look-ahead
-	    uint32_t rpOrig = rp;
-	    uint32_t rpTmp = rp;
-	    uint32_t spTmp = sp;
-	    uint32_t ilen = bam_cigar_oplen(cigar[i]);
-	    for (std::size_t j = i + 1; j < rec->core.n_cigar; ++j) {
-	      if ((bam_cigar_op(cigar[j]) == BAM_CMATCH) || (bam_cigar_op(cigar[j]) == BAM_CEQUAL) || (bam_cigar_op(cigar[j]) == BAM_CDIFF)) {
-		spTmp += bam_cigar_oplen(cigar[j]);
-		rpTmp += bam_cigar_oplen(cigar[j]);
-		if ((double) (rpTmp - rp) / (double) (ilen + (spTmp - sp)) > c.indelExtension) break;
-	      } else if (bam_cigar_op(cigar[j]) == BAM_CDEL) {
-		if (bam_cigar_oplen(cigar[j]) > c.minRefSep) break; // No extension
-		rpTmp += bam_cigar_oplen(cigar[j]);
-	      } else if (bam_cigar_op(cigar[j]) == BAM_CINS) {
-		spTmp += bam_cigar_oplen(cigar[j]);
-		if (bam_cigar_oplen(cigar[j]) > c.minRefSep) {
-		  // Extend insertion
-		  ilen += (spTmp - sp);
-		  rp = rpTmp;
-		  sp = spTmp;
-		  i = j;
-		}
-	      } else {
-		break; // No extension
+	// Parse the CIGAR
+	uint32_t* cigar = bam_get_cigar(rec);
+	for (std::size_t i = 0; i < rec->core.n_cigar; ++i) {
+	  if ((bam_cigar_op(cigar[i]) == BAM_CMATCH) || (bam_cigar_op(cigar[i]) == BAM_CEQUAL) || (bam_cigar_op(cigar[i]) == BAM_CDIFF)) {
+	    sp += bam_cigar_oplen(cigar[i]);
+	    rp += bam_cigar_oplen(cigar[i]);
+	  } else if (bam_cigar_op(cigar[i]) == BAM_CDEL) {
+	    if (bam_cigar_oplen(cigar[i]) > c.minRefSep) _insertJunction(readBp, seed, rec, rp, sp, false);
+	    rp += bam_cigar_oplen(cigar[i]);
+	    if (bam_cigar_oplen(cigar[i]) > c.minRefSep) { // Try look-ahead
+	      uint32_t spOrig = sp;
+	      uint32_t rpTmp = rp;
+	      uint32_t spTmp = sp;
+	      uint32_t dlen = bam_cigar_oplen(cigar[i]);
+	      for (std::size_t j = i + 1; j < rec->core.n_cigar; ++j) {
+		if ((bam_cigar_op(cigar[j]) == BAM_CMATCH) || (bam_cigar_op(cigar[j]) == BAM_CEQUAL) || (bam_cigar_op(cigar[j]) == BAM_CDIFF)) {
+		  spTmp += bam_cigar_oplen(cigar[j]);
+		  rpTmp += bam_cigar_oplen(cigar[j]);
+		  if ((double) (spTmp - sp) / (double) (dlen + (rpTmp - rp)) > c.indelExtension) break;
+		} else if (bam_cigar_op(cigar[j]) == BAM_CDEL) {
+		  rpTmp += bam_cigar_oplen(cigar[j]);
+		  if (bam_cigar_oplen(cigar[j]) > c.minRefSep) {
+		    // Extend deletion
+		    dlen += (rpTmp - rp);
+		    rp = rpTmp;
+		    sp = spTmp;
+		    i = j;
+		  }
+		} else if (bam_cigar_op(cigar[j]) == BAM_CINS) {
+		  if (bam_cigar_oplen(cigar[j]) > c.minRefSep) break; // No extension
+		  spTmp += bam_cigar_oplen(cigar[j]);
+		} else break; // No extension
 	      }
+	      _insertJunction(readBp, seed, rec, rp, spOrig, true);
 	    }
-	    _insertJunction(readBp, seed, rec, rpOrig, sp, true);
+	  } else if (bam_cigar_op(cigar[i]) == BAM_CINS) {
+	    if (bam_cigar_oplen(cigar[i]) > c.minRefSep) _insertJunction(readBp, seed, rec, rp, sp, false);
+	    sp += bam_cigar_oplen(cigar[i]);
+	    if (bam_cigar_oplen(cigar[i]) > c.minRefSep) { // Try look-ahead
+	      uint32_t rpOrig = rp;
+	      uint32_t rpTmp = rp;
+	      uint32_t spTmp = sp;
+	      uint32_t ilen = bam_cigar_oplen(cigar[i]);
+	      for (std::size_t j = i + 1; j < rec->core.n_cigar; ++j) {
+		if ((bam_cigar_op(cigar[j]) == BAM_CMATCH) || (bam_cigar_op(cigar[j]) == BAM_CEQUAL) || (bam_cigar_op(cigar[j]) == BAM_CDIFF)) {
+		  spTmp += bam_cigar_oplen(cigar[j]);
+		  rpTmp += bam_cigar_oplen(cigar[j]);
+		  if ((double) (rpTmp - rp) / (double) (ilen + (spTmp - sp)) > c.indelExtension) break;
+		} else if (bam_cigar_op(cigar[j]) == BAM_CDEL) {
+		  if (bam_cigar_oplen(cigar[j]) > c.minRefSep) break; // No extension
+		  rpTmp += bam_cigar_oplen(cigar[j]);
+		} else if (bam_cigar_op(cigar[j]) == BAM_CINS) {
+		  spTmp += bam_cigar_oplen(cigar[j]);
+		  if (bam_cigar_oplen(cigar[j]) > c.minRefSep) {
+		  // Extend insertion
+		    ilen += (spTmp - sp);
+		    rp = rpTmp;
+		    sp = spTmp;
+		    i = j;
+		  }
+		} else {
+		  break; // No extension
+		}
+	      }
+	      _insertJunction(readBp, seed, rec, rpOrig, sp, true);
+	    }
+	  } else if ((bam_cigar_op(cigar[i]) == BAM_CSOFT_CLIP) || (bam_cigar_op(cigar[i]) == BAM_CHARD_CLIP)) {
+	    int32_t finalsp = sp;
+	    bool scleft = false;
+	    if (sp == 0) {
+	      finalsp += bam_cigar_oplen(cigar[i]); // Leading soft-clip / hard-clip
+	      scleft = true;
+	    }
+	    sp += bam_cigar_oplen(cigar[i]);
+	    if (bam_cigar_oplen(cigar[i]) > c.minClip) _insertJunction(readBp, seed, rec, rp, finalsp, scleft);
+	  } else if (bam_cigar_op(cigar[i]) == BAM_CREF_SKIP) {
+	    rp += bam_cigar_oplen(cigar[i]);
+	  } else {
+	    std::cerr << "Unknown Cigar options" << std::endl;
 	  }
-	} else if ((bam_cigar_op(cigar[i]) == BAM_CSOFT_CLIP) || (bam_cigar_op(cigar[i]) == BAM_CHARD_CLIP)) {
-	  int32_t finalsp = sp;
-	  bool scleft = false;
-	  if (sp == 0) {
-	    finalsp += bam_cigar_oplen(cigar[i]); // Leading soft-clip / hard-clip
-	    scleft = true;
-	  }
-	  sp += bam_cigar_oplen(cigar[i]);
-	  if (bam_cigar_oplen(cigar[i]) > c.minClip) _insertJunction(readBp, seed, rec, rp, finalsp, scleft);
-	} else if (bam_cigar_op(cigar[i]) == BAM_CREF_SKIP) {
-	  rp += bam_cigar_oplen(cigar[i]);
-	} else {
-	  std::cerr << "Unknown Cigar options" << std::endl;
 	}
       }
-
-      // Read processed
-      ++readCount;
-      if (readCount % 100000 == 0) std::cout << "Processed " << readCount << " reads" << std::endl;
+      bam_destroy1(rec);
+      hts_itr_destroy(iter);
     }
 
     // Sort junctions
@@ -423,13 +428,9 @@ namespace torali
     if ((c.svtype == "ALL") || (c.svtype == "BND")) selectTranslocations(c, readBp, br);
 
     // Clean-up
-    bam_destroy1(rec);
     bam_hdr_destroy(hdr);
     hts_idx_destroy(idx);
     sam_close(samfile);
-
-    // Final count
-    std::cout << "Processed " << readCount << " reads" << std::endl;
   }
 
 
