@@ -118,7 +118,7 @@ namespace torali {
    }
 
    // Assemble
-   //assemble(c, srStore, srSVs);
+   assemble(c, srStore, srSVs);
 
    // Sort SVs
    std::sort(srSVs.begin(), srSVs.end(), SortSVs<StructuralVariantRecord>());

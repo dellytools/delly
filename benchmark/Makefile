@@ -22,7 +22,7 @@ all:   	$(TARGETS)
 	cd ../ && make all && make install && cd benchmark && touch .delly
 
 test: .conda .channels .envs .truvari .delly
-	export PATH=${PBASE}/bin/bin:${PATH} && source activate sv && ../bin/dellyLR --version && svim --version && sniffles --help && truvari --help && source deactivate
+	export PATH=${PBASE}/bin/bin:${PATH} && source activate sv && ../bin/dellyLR --version && svim --version && source deactivate
 
 clean:
 	rm -rf $(TARGETS) $(TARGETS:=.o) bin/

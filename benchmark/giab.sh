@@ -44,7 +44,10 @@ source activate sv
 ../bin/dellyLR call -g hs37d5.fa.gz ultra-long-ont_hs37d5_phased.bam
 
 # Dummy genotypes for the time being
-bcftools view sv.bcf | sed 's/^##fileDate.*/##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">/' | sed 's/INFO$/INFO\tFORMAT\tHG002/' | sed 's/;INSLEN=[0-9]*$/\tGT\t0\/1/' | grep -v 'INV\|BND\|DUP' | bcftools view -O z -o delly.vcf.gz -
+rm -f delly.vcf*
+bcftools view sv.bcf | grep "^#" | sed 's/^##fileDate.*/##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">/' | sed 's/INFO$/INFO\tFORMAT\tHG002/' > delly.vcf
+bcftools view sv.bcf | grep -v "^#" | sed 's/$/\tGT\t0\/1/' | grep -v 'INV\|BND\|DUP' >> delly.vcf
+bgzip delly.vcf
 tabix delly.vcf.gz
 
 # truvari

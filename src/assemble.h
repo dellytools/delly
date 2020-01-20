@@ -95,7 +95,8 @@ namespace torali
 	      if (sPos < 0) sPos = 0;
 	      int32_t ePos = srStore[seed][ri].sstart + srStore[seed][ri].inslen + window;
 	      if (ePos > (int32_t) sequence.size()) ePos = sequence.size();
-	      if ((ePos - sPos) > window) {
+	      // Min. seq length and max insertion size, 10kbp?
+	      if (((ePos - sPos) > window) && ((ePos - sPos) < 10000)) {
 		std::string seqalign = sequence.substr(sPos, (ePos - sPos));
 		if (rec->core.flag & BAM_FREVERSE) reverseComplement(seqalign);
 		seqStore[svid].insert(seqalign);
@@ -105,8 +106,10 @@ namespace torali
 		  if ((seqStore[svid].size() == maxReadPerSV) || ((int32_t) seqStore[svid].size() == svs[svid].srSupport)) {
 		    bool msaSuccess = false;
 		    if (seqStore[svid].size() > 1) {
+		      //std::cerr << svs[svid].svStart << ',' << svs[svid].svEnd << ',' << svid << " SV" << std::endl;
 		      msa(c, seqStore[svid], svs[svid].consensus);
 		      if (alignConsensus(c, hdr, seq, NULL, svs[svid])) msaSuccess = true;
+		      
 		    }
 		    if (!msaSuccess) {
 		      svs[svid].consensus = "";

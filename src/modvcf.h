@@ -428,6 +428,7 @@ outputVcf(TConfig const& c, std::vector<StructuralVariantRecord> const& sv)
   bcf_hdr_append(hdr, "##INFO=<ID=END,Number=1,Type=Integer,Description=\"End position of the structural variant\">");
   bcf_hdr_append(hdr, "##INFO=<ID=SVLEN,Number=1,Type=Integer,Description=\"SV length\">");
   bcf_hdr_append(hdr, "##INFO=<ID=SR,Number=1,Type=Integer,Description=\"Long read support\">");
+  bcf_hdr_append(hdr, "##INFO=<ID=SRQ,Number=1,Type=Float,Description=\"Split-read consensus alignment quality\">");
   bcf_hdr_append(hdr, "##INFO=<ID=MAPQ,Number=1,Type=Integer,Description=\"Mean mapping quality of long reads\">");
   bcf_hdr_append(hdr, "##INFO=<ID=CT,Number=1,Type=String,Description=\"Connection type\">");
   bcf_hdr_append(hdr, "##INFO=<ID=SVTYPE,Number=1,Type=String,Description=\"Type of structural variant\">");
@@ -450,23 +451,24 @@ outputVcf(TConfig const& c, std::vector<StructuralVariantRecord> const& sv)
   bcf_hdr_write(fp, hdr);
 
   if (!sv.empty()) {
-    // Estimate QUAL threshold
-    std::vector<uint32_t> srVecAll;
+    // Quality threshold estimation
+    std::vector<float> qcf;
     for(typename TSVs::const_iterator svIter = sv.begin(); svIter!=sv.end(); ++svIter) {
-      if (svIter->srSupport > 2) srVecAll.push_back(svIter->srSupport);
+      if (svIter->srSupport == 0) continue;
+      qcf.push_back((float) svIter->srSupport * (float) svIter->srAlignQuality);
     }
-    std::sort(srVecAll.begin(), srVecAll.end());
-    int32_t qualThreshold = srVecAll[srVecAll.size()/2];
-    qualThreshold *= 60;
-
+    std::sort(qcf.begin(), qcf.end());
+    float qualThreshold = qcf[qcf.size() * 0.05];
+    
     // Iterate SVs
     bcf1_t *rec = bcf_init();
     for(typename TSVs::const_iterator svIter = sv.begin(); svIter!=sv.end(); ++svIter) {
       if (svIter->srSupport == 0) continue;
 
       // Output main vcf fields
+      float qcv = (float) svIter->srSupport * svIter->srAlignQuality;
       int32_t tmpi = bcf_hdr_id2int(hdr, BCF_DT_ID, "PASS");
-      if ((svIter->srSupport < 3) || (svIter->mapq < qualThreshold)) tmpi = bcf_hdr_id2int(hdr, BCF_DT_ID, "LowQual");
+      if (qcv < qualThreshold) tmpi = bcf_hdr_id2int(hdr, BCF_DT_ID, "LowQual");
       rec->rid = bcf_hdr_name2id(hdr, bamhd->target_name[svIter->chr]);
       rec->pos = svIter->svStart;
       std::string id(_addID(svIter->svt));
@@ -509,8 +511,10 @@ outputVcf(TConfig const& c, std::vector<StructuralVariantRecord> const& sv)
       bcf_update_info_int32(hdr, rec, "MAPQ", &tmpi, 1);
       tmpi = svIter->insLen;
       bcf_update_info_int32(hdr, rec, "INSLEN", &tmpi, 1);
+      float tmpf = svIter->srAlignQuality;
+      bcf_update_info_float(hdr, rec, "SRQ", &tmpf, 1);
       bcf_update_info_string(hdr, rec, "CONSENSUS", svIter->consensus.c_str());
-      float tmpf = entropy(svIter->consensus);
+      tmpf = entropy(svIter->consensus);
       bcf_update_info_float(hdr, rec, "CE", &tmpf, 1);
       
       rec->qual = svIter->mapq;
