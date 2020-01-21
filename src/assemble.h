@@ -49,9 +49,9 @@ namespace torali
     std::vector<bool> svcons(svs.size(), false);
     uint32_t maxReadPerSV = 20;
     
-    samFile* samfile = sam_open(c.inputfile.string().c_str(), "r");
+    samFile* samfile = sam_open(c.files[0].string().c_str(), "r");
     hts_set_fai_filename(samfile, c.genome.string().c_str());
-    hts_idx_t* idx = sam_index_load(samfile, c.inputfile.string().c_str());
+    hts_idx_t* idx = sam_index_load(samfile, c.files[0].string().c_str());
     bam_hdr_t* hdr = sam_hdr_read(samfile);
 
     // Parse BAM
@@ -90,7 +90,7 @@ namespace torali
 	      if (rec->core.flag & BAM_FREVERSE) reverseComplement(sequence);
 
 	      // Extract subsequence
-	      int32_t window = 500;
+	      int32_t window = 500; 
 	      int32_t sPos = srStore[seed][ri].sstart - window;
 	      if (sPos < 0) sPos = 0;
 	      int32_t ePos = srStore[seed][ri].sstart + srStore[seed][ri].inslen + window;
@@ -132,7 +132,7 @@ namespace torali
     // Clean-up unfinished SVs
     for(uint32_t svid = 0; svid < svcons.size(); ++svid) {
       if (!svcons[svid]) {
-	std::cerr << "Missing: " << svid << ',' << svs[svid].svt << std::endl;
+	//std::cerr << "Missing: " << svid << ',' << svs[svid].svt << std::endl;
 	svs[svid].consensus = "";
 	svs[svid].srSupport = 0;
 	svs[svid].srAlignQuality = 0;

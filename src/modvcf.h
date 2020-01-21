@@ -402,7 +402,7 @@ outputVcf(TConfig const& c, std::vector<StructuralVariantRecord> const& sv)
   typedef std::vector<StructuralVariantRecord> TSVs;
   
   // Open one bam file header
-  samFile* samfile = sam_open(c.inputfile.string().c_str(), "r");  
+  samFile* samfile = sam_open(c.files[0].string().c_str(), "r");  
   hts_set_fai_filename(samfile, c.genome.string().c_str());
   bam_hdr_t* bamhd = sam_hdr_read(samfile);
 

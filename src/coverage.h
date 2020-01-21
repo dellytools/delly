@@ -30,6 +30,7 @@ Contact: Tobias Rausch (rausch@embl.de)
 #include <boost/iostreams/filtering_stream.hpp>
 #include <boost/iostreams/filter/zlib.hpp>
 #include <boost/iostreams/filter/gzip.hpp>
+#include <boost/progress.hpp>
 
 #include <htslib/sam.h>
 
@@ -350,9 +351,9 @@ annotateCoverage(TConfig& c, TSampleLibrary& sampleLib, TCovRecord& ict, TCovera
 
   // Dump file
   boost::iostreams::filtering_ostream dumpOut;
-  if (c.dumpflag) {
+  if (c.hasDumpFile) {
     dumpOut.push(boost::iostreams::gzip_compressor());
-    dumpOut.push(boost::iostreams::file_sink(c.srpedump.string().c_str(), std::ios_base::out | std::ios_base::binary));
+    dumpOut.push(boost::iostreams::file_sink(c.dumpfile.string().c_str(), std::ios_base::out | std::ios_base::binary));
     dumpOut << "#svid\tbam\tqname\tchr\tpos\tmatechr\tmatepos\tmapq\ttype" << std::endl;
   }
 
@@ -544,7 +545,7 @@ annotateCoverage(TConfig& c, TSampleLibrary& sampleLib, TCovRecord& ict, TCovera
 		      uint8_t* hpptr = bam_aux_get(rec, "HP");
 #pragma omp critical
 		      {
-			if (c.dumpflag) {
+			if (c.hasDumpFile) {
 			  std::string svid(_addID(itBp->svt));
 			  std::string padNumber = boost::lexical_cast<std::string>(itBp->id);
 			  padNumber.insert(padNumber.begin(), 8 - padNumber.length(), '0');
@@ -687,7 +688,7 @@ annotateCoverage(TConfig& c, TSampleLibrary& sampleLib, TCovRecord& ict, TCovera
 		  uint8_t* hpptr = bam_aux_get(rec, "HP");
 #pragma omp critical
 		  {
-		    if (c.dumpflag) {
+		    if (c.hasDumpFile) {
 		      std::string svid(_addID(itSpan->svt));
 		      std::string padNumber = boost::lexical_cast<std::string>(itSpan->id);
 		      padNumber.insert(padNumber.begin(), 8 - padNumber.length(), '0');

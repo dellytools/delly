@@ -39,8 +39,11 @@ Contact: Tobias Rausch (rausch@embl.de)
 #include <stdio.h>
 
 #include <htslib/sam.h>
+#include <htslib/vcf.h>
 #include <htslib/faidx.h>
 
+#include "delly.h"
+#include "coverage.h"
 #include "util.h"
 #include "junction.h"
 #include "cluster.h"
@@ -51,39 +54,48 @@ namespace torali {
 
 
   struct TeguaConfig {
-    bool hasSvInput;
     bool hasDumpFile;
+    bool hasVcfFile;
+    bool isHaplotagged;
     uint16_t minMapQual;
+    uint16_t minGenoQual;
     uint32_t minClip;
     uint32_t minRefSep;
     uint32_t maxReadSep;
     uint32_t graphPruning;
     int32_t nchr;
     int32_t minimumFlankSize;
+    int32_t indelsize;
     float indelExtension;
     float flankQuality;
-    bool hasVcfFile;
     std::vector<int32_t> chrlen;
     std::string svtype;
     DnaScore<int> aliscore;
-    boost::filesystem::path svinput;
-    boost::filesystem::path inputfile;
     boost::filesystem::path dumpfile;
     boost::filesystem::path outfile;
     boost::filesystem::path vcffile;
+    std::vector<boost::filesystem::path> files;
     boost::filesystem::path genome;
   };
   
 
  template<typename TConfig>
  inline int32_t
- runTegua(TConfig const& c) {
+ runTegua(TConfig& c) {
    typedef std::vector<SRBamRecord> TSRBamRecord;
    typedef std::vector<TSRBamRecord> TSvtSRBamRecord;
 
+   // Dummy library objects
+   typedef std::vector<LibraryInfo> TSampleLibrary;
+   TSampleLibrary sampleLib;
+   
    // Structural Variants
    typedef std::vector<StructuralVariantRecord> TVariants;
    TVariants svs;
+
+   // Open header
+   samFile* samfile = sam_open(c.files[0].string().c_str(), "r");
+   bam_hdr_t* hdr = sam_hdr_read(samfile);
 
    // SV Discovery
    if (!c.hasVcfFile) {
@@ -123,24 +135,44 @@ namespace torali {
      
      // Assemble
      assemble(c, srStore, svs);
-   } else {
-     // Parse VCF file
-   }
+   } else vcfParse(c, hdr, svs);
 
    // ReSort SVs
    std::sort(svs.begin(), svs.end(), SortSVs<StructuralVariantRecord>());
    uint32_t cliqueCount = 0;
    for(typename TVariants::iterator svIt = svs.begin(); svIt != svs.end(); ++svIt, ++cliqueCount) svIt->id = cliqueCount;
+
+   // Annotate junction reads
+   typedef std::vector<JunctionCount> TSVJunctionMap;
+   typedef std::vector<TSVJunctionMap> TSampleSVJunctionMap;
+   TSampleSVJunctionMap junctionCountMap;
    
+   // Annotate spanning coverage
+   typedef std::vector<SpanningCount> TSVSpanningMap;
+   typedef std::vector<TSVSpanningMap> TSampleSVSpanningMap;
+   TSampleSVSpanningMap spanCountMap;
+   
+   // Annotate coverage
+   typedef std::vector<ReadCount> TSVReadCount;
+   typedef std::vector<TSVReadCount> TSampleSVReadCount;
+   TSampleSVReadCount rcMap;
+   
+   // SV Genotyping
+   //if (!svs.empty()) _annotateCoverage(c, hdr, sampleLib, svs, rcMap, junctionCountMap, spanCountMap);
    
    // VCF Output
    outputVcf(c, svs);
+
+   // Clean-up
+   bam_hdr_destroy(hdr);
+   sam_close(samfile);
    
    return 0;
  }
 
  int teguaMain(int argc, char **argv) {
    TeguaConfig c;
+   c.isHaplotagged = false;
    
    // Parameter
    boost::program_options::options_description generic("Generic options");
@@ -163,15 +195,15 @@ namespace torali {
    boost::program_options::options_description geno("Genotyping options");
    geno.add_options()
      ("vcffile,v", boost::program_options::value<boost::filesystem::path>(&c.vcffile), "input VCF/BCF file for genotyping")
+     ("geno-qual,u", boost::program_options::value<uint16_t>(&c.minGenoQual)->default_value(5), "min. mapping quality for genotyping")
+     ("dump,d", boost::program_options::value<boost::filesystem::path>(&c.dumpfile), "gzipped output file for SV-reads (optional)")
      ;
 
    
    
    boost::program_options::options_description hidden("Hidden options");
    hidden.add_options()
-     ("input-file", boost::program_options::value<boost::filesystem::path>(&c.inputfile), "input bam file")
-     ("sv,s", boost::program_options::value<boost::filesystem::path>(&c.svinput), "input SV file, format: chr, pos, chr2, pos2 (optional)")
-     ("dump,d", boost::program_options::value<boost::filesystem::path>(&c.dumpfile), "gzipped read output file")
+     ("input-file", boost::program_options::value< std::vector<boost::filesystem::path> >(&c.files), "input file")
      ("pruning,j", boost::program_options::value<uint32_t>(&c.graphPruning)->default_value(1000), "graph pruning cutoff")
      ;
    
@@ -193,33 +225,29 @@ namespace torali {
     return 1;
    }
 
-   // SV input
-   if (vm.count("svinput")) c.hasSvInput = true;
-   else c.hasSvInput = false;
-
    // Dump reads
    if (vm.count("dump")) c.hasDumpFile = true;
    else c.hasDumpFile = false;
    
    // Check input BAM
    {
-     if (!(boost::filesystem::exists(c.inputfile) && boost::filesystem::is_regular_file(c.inputfile) && boost::filesystem::file_size(c.inputfile))) {
-       std::cerr << "Alignment file is missing: " << c.inputfile.string() << std::endl;
+     if (!(boost::filesystem::exists(c.files[0]) && boost::filesystem::is_regular_file(c.files[0]) && boost::filesystem::file_size(c.files[0]))) {
+       std::cerr << "Alignment file is missing: " << c.files[0].string() << std::endl;
        return 1;
      }
-     samFile* samfile = sam_open(c.inputfile.string().c_str(), "r");
+     samFile* samfile = sam_open(c.files[0].string().c_str(), "r");
      if (samfile == NULL) {
-       std::cerr << "Fail to open file " << c.inputfile.string() << std::endl;
+       std::cerr << "Fail to open file " << c.files[0].string() << std::endl;
        return 1;
      }
-     hts_idx_t* idx = sam_index_load(samfile, c.inputfile.string().c_str());
+     hts_idx_t* idx = sam_index_load(samfile, c.files[0].string().c_str());
      if (idx == NULL) {
-       std::cerr << "Fail to open index for " << c.inputfile.string() << std::endl;
+       std::cerr << "Fail to open index for " << c.files[0].string() << std::endl;
        return 1;
      }
      bam_hdr_t* hdr = sam_hdr_read(samfile);
      if (hdr == NULL) {
-       std::cerr << "Fail to open header for " << c.inputfile.string() << std::endl;
+       std::cerr << "Fail to open header for " << c.files[0].string() << std::endl;
        return 1;
      }
      c.chrlen.resize(hdr->n_targets);
@@ -253,8 +281,9 @@ namespace torali {
    
    // Run Tegua
    c.aliscore = DnaScore<int>(3, -2, -3, -1);
-   c.minimumFlankSize = 50;
    c.flankQuality = 0.9;
+   c.minimumFlankSize = 50;
+   c.indelsize = 10000;
    return runTegua(c);
  }
 

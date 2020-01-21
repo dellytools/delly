@@ -298,9 +298,9 @@ namespace torali
   template<typename TConfig>
   inline void
   findJunctions(TConfig const& c, std::vector<std::vector<SRBamRecord> >& br) {
-    samFile* samfile = sam_open(c.inputfile.string().c_str(), "r");
+    samFile* samfile = sam_open(c.files[0].string().c_str(), "r");
     hts_set_fai_filename(samfile, c.genome.string().c_str());
-    hts_idx_t* idx = sam_index_load(samfile, c.inputfile.string().c_str());
+    hts_idx_t* idx = sam_index_load(samfile, c.files[0].string().c_str());
     bam_hdr_t* hdr = sam_hdr_read(samfile);
     
     // Breakpoints
@@ -437,7 +437,7 @@ namespace torali
   template<typename TConfig>
   inline void
   outputSRBamRecords(TConfig const& c, std::vector<std::vector<SRBamRecord> > const& br) {
-    samFile* samfile = sam_open(c.inputfile.string().c_str(), "r");
+    samFile* samfile = sam_open(c.files[0].string().c_str(), "r");
     hts_set_fai_filename(samfile, c.genome.string().c_str());
     bam_hdr_t* hdr = sam_hdr_read(samfile);
 

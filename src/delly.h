@@ -86,7 +86,7 @@ struct Config {
   bool hasExcludeFile;
   bool hasVcfFile;
   bool isHaplotagged;
-  bool dumpflag;
+  bool hasDumpFile;
   bool svtcmd;
   std::set<int32_t> svtset;
   DnaScore<int> aliscore;
@@ -94,7 +94,7 @@ struct Config {
   boost::filesystem::path vcffile;
   boost::filesystem::path genome;
   boost::filesystem::path exclude;
-  boost::filesystem::path srpedump;
+  boost::filesystem::path dumpfile;
   std::vector<boost::filesystem::path> files;
   std::vector<std::string> sampleName;
 };
@@ -442,7 +442,7 @@ int delly(int argc, char **argv) {
   geno.add_options()
     ("vcffile,v", boost::program_options::value<boost::filesystem::path>(&c.vcffile), "input VCF/BCF file for genotyping")
     ("geno-qual,u", boost::program_options::value<uint16_t>(&c.minGenoQual)->default_value(5), "min. mapping quality for genotyping")
-    ("dump,d", boost::program_options::value<boost::filesystem::path>(&c.srpedump), "gzipped output file for SV-reads (optional)")
+    ("dump,d", boost::program_options::value<boost::filesystem::path>(&c.dumpfile), "gzipped output file for SV-reads (optional)")
     ;
 
   // Define hidden options
@@ -509,8 +509,8 @@ int delly(int argc, char **argv) {
   }
   
   // Dump PE and SR support?
-  if (vm.count("dump")) c.dumpflag = true;
-  else c.dumpflag = false;
+  if (vm.count("dump")) c.hasDumpFile = true;
+  else c.hasDumpFile = false;
 
   // Check quality cuts
   if (c.minMapQual > c.minTraQual) c.minTraQual = c.minMapQual;
