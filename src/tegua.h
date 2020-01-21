@@ -171,7 +171,7 @@ namespace torali {
    
    // Check command line arguments
    if ((vm.count("help")) || (!vm.count("input-file")) || (!vm.count("genome"))) {
-     std::cout << "Usage: tegua " << argv[0] << " [OPTIONS] -g <ref.fa> <input.bam>" << std::endl;
+     std::cout << "Usage: dellyLR " << argv[0] << " [OPTIONS] -g <ref.fa> <input.bam>" << std::endl;
      std::cout << visible_options << "\n";
     return 1;
    }
