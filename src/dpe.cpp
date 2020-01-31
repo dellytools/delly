@@ -325,7 +325,7 @@ int main(int argc, char **argv) {
     if (vm.count("warranty")) {
       displayWarranty();
     } else if (vm.count("license")) {
-      gplV3();
+      bsd();
     } else {
       std::cout << "Usage: " << argv[0] << " [OPTIONS] <deldup.bcf>" << std::endl;
       std::cout << visible_options << "\n"; 

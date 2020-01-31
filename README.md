@@ -9,7 +9,7 @@
 [![Anaconda-Server Badge](https://anaconda.org/bioconda/delly/badges/downloads.svg)](https://anaconda.org/bioconda/delly)
 [![Build Status](https://travis-ci.org/dellytools/delly.svg?branch=master)](https://travis-ci.org/dellytools/delly)
 [![Docker Build](https://img.shields.io/docker/build/dellytools/delly.svg)](https://hub.docker.com/r/dellytools/delly/)
-[![GitHub license](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://github.com/dellytools/delly/blob/master/LICENSE)
+[![GitHub license](https://img.shields.io/badge/License-BSD%203--Clause-blue.svg)](https://github.com/dellytools/delly/blob/master/LICENSE)
 [![GitHub Releases](https://img.shields.io/github/release/dellytools/delly.svg)](https://github.com/dellytools/delly/releases)
 [![GitHub Issues](https://img.shields.io/github/issues/dellytools/delly.svg)](https://github.com/dellytools/delly/issues)
 
@@ -147,4 +147,4 @@ Bioinformatics 2012 28: i333-i339.
 
 License
 -------
-Delly is distributed under the GPLv3. Consult the accompanying [LICENSE](https://github.com/dellytools/delly/blob/master/LICENSE) file for more details.
+Delly is distributed under the BSD 3-Clause license. Consult the accompanying [LICENSE](https://github.com/dellytools/delly/blob/master/LICENSE) file for more details.

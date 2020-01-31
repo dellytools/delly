@@ -49,7 +49,7 @@ int main(int argc, char **argv) {
       return 0;
     }
     else if ((std::string(argv[1]) == "license") || (std::string(argv[1]) == "--license") || (std::string(argv[1]) == "-l")) {
-      gplV3();
+      bsd();
       return 0;
     }
     else if ((std::string(argv[1]) == "call")) {
