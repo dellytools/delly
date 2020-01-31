@@ -1,24 +1,3 @@
-/*
-============================================================================
-DELLY: Structural variant discovery by integrated PE mapping and SR analysis
-============================================================================
-This program is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License
-along with this program.  If not, see <http://www.gnu.org/licenses/>.
-============================================================================
-Contact: Tobias Rausch (rausch@embl.de)
-============================================================================
-*/
-
 #ifndef JUNCTION_H
 #define JUNCTION_H
 
@@ -295,27 +274,45 @@ namespace torali
   }
 
 
-  template<typename TConfig>
+  template<typename TConfig, typename TReadBp>
   inline void
-  findJunctions(TConfig const& c, std::vector<std::vector<SRBamRecord> >& br) {
+  findJunctions(TConfig const& c, TReadBp& readBp, std::vector<StructuralVariantRecord>& svs) {
     samFile* samfile = sam_open(c.files[0].string().c_str(), "r");
     hts_set_fai_filename(samfile, c.genome.string().c_str());
     hts_idx_t* idx = sam_index_load(samfile, c.files[0].string().c_str());
     bam_hdr_t* hdr = sam_hdr_read(samfile);
     
-    // Breakpoints
-    typedef std::vector<Junction> TJunctionVector;
-    typedef std::map<std::size_t, TJunctionVector> TReadBp;
-    TReadBp readBp;
-
     // Parse genome chr-by-chr
     boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
     std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Split-read scanning" << std::endl;
     boost::progress_display show_progress( hdr->n_targets );
 
+    // Track reference reads
+    bool trackRef = false;
+    if (!svs.empty()) trackRef = true;
+    typedef boost::dynamic_bitset<> TBitSet;
+    TBitSet bpOccupied;
+    char* seq = NULL;
+    faidx_t* fai = fai_load(c.genome.string().c_str());
+    
     // Iterate chromosomes
     for(int32_t refIndex=0; refIndex < (int32_t) hdr->n_targets; ++refIndex) {
       ++show_progress;
+
+      // Flag breakpoints
+      if (trackRef) {
+	bpOccupied.resize(hdr->target_len[refIndex]);
+	for(uint32_t i = 0; i < hdr->target_len[refIndex]; ++i) bpOccupied[i] = 0;
+	for(uint32_t i = 0; i < svs.size(); ++i) {
+	  if (svs[i].chr == refIndex) bpOccupied[svs[i].svStart] = 1;
+	  if (svs[i].chr2 == refIndex) bpOccupied[svs[i].svEnd] = 1;
+	}
+	std::string tname(hdr->target_name[refIndex]);
+	int32_t seqlen = -1;
+	seq = faidx_fetch_seq(fai, tname.c_str(), 0, hdr->target_len[refIndex], &seqlen);
+      }	else {
+	seq = NULL;
+      }
 
       // Parse BAM
       hts_itr_t* iter = sam_itr_queryi(idx, refIndex, 0, c.chrlen[refIndex]);
@@ -333,8 +330,69 @@ namespace torali
 	uint32_t* cigar = bam_get_cigar(rec);
 	for (std::size_t i = 0; i < rec->core.n_cigar; ++i) {
 	  if ((bam_cigar_op(cigar[i]) == BAM_CMATCH) || (bam_cigar_op(cigar[i]) == BAM_CEQUAL) || (bam_cigar_op(cigar[i]) == BAM_CDIFF)) {
-	    sp += bam_cigar_oplen(cigar[i]);
-	    rp += bam_cigar_oplen(cigar[i]);
+	    // Fetch reference alignments
+	    if (trackRef) {
+	      int32_t bpHit = 0;
+	      for(uint32_t k = 0; k < bam_cigar_oplen(cigar[i]); ++k) {
+		if (bpOccupied[rp]) bpHit = rp;
+		++sp;
+		++rp;
+	      }
+	      if (bpHit) {
+		int32_t bg = std::max((int32_t) 0, bpHit - c.minimumFlankSize);
+		int32_t ed = std::min((int32_t) hdr->target_len[refIndex], bpHit + c.minimumFlankSize);
+		if ((bg < rec->core.pos) || ((uint32_t) ed > rec->core.pos + alignmentLength(rec))) continue;
+
+		// Get sequence
+		std::string sequence;
+		sequence.resize(rec->core.l_qseq);
+		uint8_t* seqptr = bam_get_seq(rec);
+		for (int i = 0; i < rec->core.l_qseq; ++i) sequence[i] = "=ACMGRSVTWYHKDBN"[bam_seqi(seqptr, i)];
+		
+		// Re-iterate cigar to track alignment		
+		int32_t rit = rec->core.pos; // reference pointer
+		int32_t sit = 0; // sequence pointer
+		std::string refAlign;
+		std::string altAlign;
+		for (std::size_t ij = 0; ij < rec->core.n_cigar; ++ij) {
+		  if (rit >= ed) break;
+		  if ((bam_cigar_op(cigar[ij]) == BAM_CMATCH) || (bam_cigar_op(cigar[ij]) == BAM_CEQUAL) || (bam_cigar_op(cigar[ij]) == BAM_CDIFF)) {
+		    for(uint32_t k = 0; k < bam_cigar_oplen(cigar[ij]); ++k) {
+		      if ((rit >= bg) && (rit < ed)) {
+			refAlign.push_back(seq[rit]);
+			altAlign.push_back(sequence[sit]);
+		      }
+		      ++rit;
+		      ++sit;
+		    }
+		  } else if ((bam_cigar_op(cigar[ij]) == BAM_CDEL) || (bam_cigar_op(cigar[ij]) == BAM_CREF_SKIP)) {
+		    for(uint32_t k = 0; k < bam_cigar_oplen(cigar[ij]); ++k) {
+		      if ((rit >= bg) && (rit < ed)) {
+			refAlign.push_back(seq[rit]);
+			altAlign.push_back('-');
+		      }
+		      ++rit;
+		    }
+		  } else if (bam_cigar_op(cigar[ij]) == BAM_CINS) {
+		    for(uint32_t k = 0; k < bam_cigar_oplen(cigar[ij]); ++k) {
+		      if ((rit >= bg) && (rit < ed)) {
+			refAlign.push_back('-');
+			altAlign.push_back(sequence[sit]);
+		      }
+		      ++sit;
+		    }
+		  } else if ((bam_cigar_op(cigar[ij]) == BAM_CSOFT_CLIP) || (bam_cigar_op(cigar[ij]) == BAM_CHARD_CLIP)) {
+		    sit += bam_cigar_oplen(cigar[ij]);
+		  }
+		}
+		std::cerr << refAlign << std::endl;
+		std::cerr << altAlign << std::endl;
+		std::cerr << std::endl;
+	      }
+	    } else {
+	      sp += bam_cigar_oplen(cigar[i]);
+	      rp += bam_cigar_oplen(cigar[i]);
+	    }
 	  } else if (bam_cigar_op(cigar[i]) == BAM_CDEL) {
 	    if (bam_cigar_oplen(cigar[i]) > c.minRefSep) _insertJunction(readBp, seed, rec, rp, sp, false);
 	    rp += bam_cigar_oplen(cigar[i]);
@@ -411,26 +469,32 @@ namespace torali
 	  }
 	}
       }
+      if (seq != NULL) free(seq);
       bam_destroy1(rec);
       hts_itr_destroy(iter);
     }
+    fai_destroy(fai);
 
     // Sort junctions
     for(typename TReadBp::iterator it = readBp.begin(); it != readBp.end(); ++it) {
       std::sort(it->second.begin(), it->second.end(), SortJunction<Junction>());
     }
 
+    // Clean-up
+    bam_hdr_destroy(hdr);
+    hts_idx_destroy(idx);
+    sam_close(samfile);
+  }
+
+  template<typename TConfig, typename TReadBp>
+  inline void
+  fetchSVs(TConfig const& c, TReadBp& readBp, std::vector<std::vector<SRBamRecord> >& br) {
     // Extract BAM records
     if ((c.svtype == "ALL") || (c.svtype == "DEL")) selectDeletions(c, readBp, br);
     if ((c.svtype == "ALL") || (c.svtype == "DUP")) selectDuplications(c, readBp, br);
     if ((c.svtype == "ALL") || (c.svtype == "INV")) selectInversions(c, readBp, br);
     if ((c.svtype == "ALL") || (c.svtype == "INS")) selectInsertions(c, readBp, br);
     if ((c.svtype == "ALL") || (c.svtype == "BND")) selectTranslocations(c, readBp, br);
-
-    // Clean-up
-    bam_hdr_destroy(hdr);
-    hts_idx_destroy(idx);
-    sam_close(samfile);
   }
 
 

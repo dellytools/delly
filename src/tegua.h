@@ -1,24 +1,3 @@
-/*
-============================================================================
-DELLY: Structural variant discovery by integrated PE mapping and SR analysis
-============================================================================
-This program is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License
-along with this program.  If not, see <http://www.gnu.org/licenses/>.
-============================================================================
-Contact: Tobias Rausch (rausch@embl.de)
-============================================================================
-*/
-
 #ifndef TEGUA_H
 #define TEGUA_H
 
@@ -56,7 +35,6 @@ namespace torali {
   struct TeguaConfig {
     bool hasDumpFile;
     bool hasVcfFile;
-    bool isHaplotagged;
     uint16_t minMapQual;
     uint16_t minGenoQual;
     uint32_t minClip;
@@ -65,7 +43,6 @@ namespace torali {
     uint32_t graphPruning;
     int32_t nchr;
     int32_t minimumFlankSize;
-    int32_t indelsize;
     float indelExtension;
     float flankQuality;
     std::vector<int32_t> chrlen;
@@ -81,14 +58,15 @@ namespace torali {
 
  template<typename TConfig>
  inline int32_t
- runTegua(TConfig& c) {
+ runTegua(TConfig const& c) {
+   // Split-reads
    typedef std::vector<SRBamRecord> TSRBamRecord;
    typedef std::vector<TSRBamRecord> TSvtSRBamRecord;
 
-   // Dummy library objects
-   typedef std::vector<LibraryInfo> TSampleLibrary;
-   TSampleLibrary sampleLib;
-   
+   // Breakpoints
+   typedef std::vector<Junction> TJunctionVector;
+   typedef std::map<std::size_t, TJunctionVector> TReadBp;
+
    // Structural Variants
    typedef std::vector<StructuralVariantRecord> TVariants;
    TVariants svs;
@@ -107,7 +85,12 @@ namespace torali {
      // Find junctions
      {
        TSvtSRBamRecord srBR(2 * DELLY_SVT_TRANS, TSRBamRecord());
-       findJunctions(c, srBR);
+       {
+	 // Breakpoints
+	 TReadBp readBp;
+	 findJunctions(c, readBp, svs);
+	 fetchSVs(c, readBp, srBR);
+       }
    
        // Debug
        if (c.hasDumpFile) outputSRBamRecords(c, srBR);
@@ -134,7 +117,7 @@ namespace torali {
      }
      
      // Assemble
-     assemble(c, srStore, svs);
+     //assemble(c, srStore, svs);
    } else vcfParse(c, hdr, svs);
 
    // ReSort SVs
@@ -147,18 +130,11 @@ namespace torali {
    typedef std::vector<TSVJunctionMap> TSampleSVJunctionMap;
    TSampleSVJunctionMap junctionCountMap;
    
-   // Annotate spanning coverage
-   typedef std::vector<SpanningCount> TSVSpanningMap;
-   typedef std::vector<TSVSpanningMap> TSampleSVSpanningMap;
-   TSampleSVSpanningMap spanCountMap;
-   
-   // Annotate coverage
-   typedef std::vector<ReadCount> TSVReadCount;
-   typedef std::vector<TSVReadCount> TSampleSVReadCount;
-   TSampleSVReadCount rcMap;
-   
    // SV Genotyping
-   //if (!svs.empty()) _annotateCoverage(c, hdr, sampleLib, svs, rcMap, junctionCountMap, spanCountMap);
+   {
+     TReadBp readBp;
+     findJunctions(c, readBp, svs);
+   }
    
    // VCF Output
    outputVcf(c, svs);
@@ -172,7 +148,6 @@ namespace torali {
 
  int teguaMain(int argc, char **argv) {
    TeguaConfig c;
-   c.isHaplotagged = false;
    
    // Parameter
    boost::program_options::options_description generic("Generic options");
@@ -283,7 +258,6 @@ namespace torali {
    c.aliscore = DnaScore<int>(3, -2, -3, -1);
    c.flankQuality = 0.9;
    c.minimumFlankSize = 50;
-   c.indelsize = 10000;
    return runTegua(c);
  }
 
