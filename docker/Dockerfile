@@ -40,7 +40,6 @@ FROM alpine:latest
 RUN mkdir -p /opt/delly/bin
 WORKDIR /opt/delly/bin
 COPY --from=0 /opt/delly/bin/delly .
-COPY --from=0 /opt/delly/bin/dellyLR .
 
 # Workdir
 WORKDIR /root/
