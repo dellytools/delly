@@ -274,6 +274,43 @@ namespace torali
   }
 
 
+  template<typename TConfig>
+  inline int32_t
+  scoreThreshold(std::string const& s1, std::string const& s2, TConfig const& c) {
+    int32_t l1 = 0;
+    int32_t l2 = 0;
+    for(uint32_t i = 0; i < s1.size(); ++i) {
+      if (s1[i] != '-') ++l1;
+    }
+    for(uint32_t i = 0; i < s2.size(); ++i) {
+      if (s2[i] != '-') ++l2;
+    }
+    int32_t minSize = std::min(l1, l2);
+    return (int32_t) ((c.flankQuality * minSize * c.aliscore.match) + ((1.0 - c.flankQuality) * minSize * c.aliscore.mismatch));
+  }
+  
+  template<typename TScore>
+  inline int32_t
+  scoreAlign(std::string const& s1, std::string const& s2, TScore const& sc) {
+    int32_t score = 0;
+    bool inGap = false;
+    for(uint32_t i = 0; i < s1.size(); ++i) {
+      if ((s1[i] == '-') || (s2[i] == '-')) {
+	if (inGap) score += sc.ge;
+	else {
+	  inGap = true;
+	  score += (sc.go + sc.ge);
+	}
+      } else {
+	inGap = false;
+	if (s1[i] == s2[i]) score += sc.match;
+	else score += sc.mismatch;
+      }
+    }
+    return score;
+  }
+  
+  
   template<typename TConfig, typename TReadBp>
   inline void
   findJunctions(TConfig const& c, TReadBp& readBp, std::vector<StructuralVariantRecord>& svs) {
@@ -292,6 +329,8 @@ namespace torali
     if (!svs.empty()) trackRef = true;
     typedef boost::dynamic_bitset<> TBitSet;
     TBitSet bpOccupied;
+    typedef std::map<uint32_t, int32_t> TBpToIdMap;
+    TBpToIdMap bpid;
     char* seq = NULL;
     faidx_t* fai = fai_load(c.genome.string().c_str());
     
@@ -304,8 +343,16 @@ namespace torali
 	bpOccupied.resize(hdr->target_len[refIndex]);
 	for(uint32_t i = 0; i < hdr->target_len[refIndex]; ++i) bpOccupied[i] = 0;
 	for(uint32_t i = 0; i < svs.size(); ++i) {
-	  if (svs[i].chr == refIndex) bpOccupied[svs[i].svStart] = 1;
-	  if (svs[i].chr2 == refIndex) bpOccupied[svs[i].svEnd] = 1;
+	  if (svs[i].chr == refIndex) {
+	    if (bpOccupied[svs[i].svStart]) std::cerr << "Warning: Duplicated SV coordinate." << std::endl;
+	    bpOccupied[svs[i].svStart] = 1;
+	    bpid.insert(std::make_pair(svs[i].svStart, svs[i].id));
+	  }
+	  if (svs[i].chr2 == refIndex) {
+	    if (bpOccupied[svs[i].svEnd]) std::cerr << "Warning: Duplicated SV coordinate." << std::endl;
+	    bpOccupied[svs[i].svEnd] = 1;
+	    bpid.insert(std::make_pair(svs[i].svEnd, svs[i].id));
+	  }
 	}
 	std::string tname(hdr->target_name[refIndex]);
 	int32_t seqlen = -1;
@@ -388,9 +435,18 @@ namespace torali
 		    // Do nothing
 		  }
 		}
-		std::cerr << refAlign << std::endl;
-		std::cerr << altAlign << std::endl;
-		std::cerr << std::endl;
+		int32_t score = scoreAlign(boost::to_upper_copy<std::string>(refAlign), boost::to_upper_copy<std::string>(altAlign), c.aliscore);
+		int32_t scth = scoreThreshold(refAlign, altAlign, c);
+		if ((score > 0) && (scth > 0)) {
+		  int32_t qual = (int32_t) ((((float) score / (float) (scth)) - 1.0) * 100.0);
+		  if ((qual > 0) && (qual > c.minGenoQual)) {
+		    //std::cerr << "Qual: " << qual << std::endl;
+		    //std::cerr << "SV:" << bpid[bpHit] << std::endl;
+		    //std::cerr << refAlign << std::endl;
+		    //std::cerr << altAlign << std::endl;
+		    //std::cerr << std::endl;
+		  }
+		}
 	      }
 	    } else {
 	      sp += bam_cigar_oplen(cigar[i]);

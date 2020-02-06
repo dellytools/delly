@@ -256,7 +256,7 @@ namespace torali {
    
    // Run Tegua
    c.aliscore = DnaScore<int>(3, -2, -3, -1);
-   c.flankQuality = 0.9;
+   c.flankQuality = 0.8;
    c.minimumFlankSize = 50;
    return runTegua(c);
  }
