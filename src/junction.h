@@ -339,6 +339,7 @@ namespace torali
 		++rp;
 	      }
 	      if (bpHit) {
+		// Only spanning alignments
 		int32_t bg = std::max((int32_t) 0, bpHit - c.minimumFlankSize);
 		int32_t ed = std::min((int32_t) hdr->target_len[refIndex], bpHit + c.minimumFlankSize);
 		if ((bg < rec->core.pos) || ((uint32_t) ed > rec->core.pos + alignmentLength(rec))) continue;
@@ -381,8 +382,10 @@ namespace torali
 		      }
 		      ++sit;
 		    }
-		  } else if ((bam_cigar_op(cigar[ij]) == BAM_CSOFT_CLIP) || (bam_cigar_op(cigar[ij]) == BAM_CHARD_CLIP)) {
+		  } else if (bam_cigar_op(cigar[ij]) == BAM_CSOFT_CLIP) {
 		    sit += bam_cigar_oplen(cigar[ij]);
+		  } else if (bam_cigar_op(cigar[ij]) == BAM_CHARD_CLIP) {
+		    // Do nothing
 		  }
 		}
 		std::cerr << refAlign << std::endl;
