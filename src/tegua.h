@@ -167,7 +167,7 @@ namespace torali {
    }
    
    // Reference SV Genotyping
-   trackRef(c, svs, junctionCountMap);
+   trackRef(c, svs, junctionCountMap, rcMap);
 
    // VCF Output
    //outputVcf(c, svs);

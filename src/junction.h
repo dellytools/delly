@@ -311,9 +311,9 @@ namespace torali
   }
   
 
-  template<typename TConfig, typename TJunctionMap>
+  template<typename TConfig, typename TJunctionMap, typename TReadCountMap>
   inline void
-  trackRef(TConfig const& c, std::vector<StructuralVariantRecord>& svs, TJunctionMap& countMap) {
+  trackRef(TConfig const& c, std::vector<StructuralVariantRecord>& svs, TJunctionMap& jctMap, TReadCountMap& covMap) {
     if (svs.empty()) return;
 	
     samFile* samfile = sam_open(c.files[0].string().c_str(), "r");
@@ -340,6 +340,12 @@ namespace torali
     // Iterate chromosomes
     for(int32_t refIndex=0; refIndex < (int32_t) hdr->n_targets; ++refIndex) {
       ++show_progress;
+
+      // Coverage track
+      typedef uint16_t TMaxCoverage;
+      typedef std::vector<TMaxCoverage> TBpCoverage;
+      TBpCoverage covBases(hdr->target_len[refIndex], 0);
+      uint32_t maxCoverage = std::numeric_limits<TMaxCoverage>::max();
 
       // Load sequence
       std::string tname(hdr->target_name[refIndex]);
@@ -387,6 +393,7 @@ namespace torali
 	    // Fetch reference alignments
 	    int32_t bpHit = 0;
 	    for(uint32_t k = 0; k < bam_cigar_oplen(cigar[i]); ++k) {
+	      if ((rp < hdr->target_len[refIndex]) && (covBases[rp] < maxCoverage - 1)) ++covBases[rp];
 	      if (bpOccupied[rp]) bpHit = rp;
 	      ++sp;
 	      ++rp;
@@ -478,13 +485,22 @@ namespace torali
       if (seq != NULL) free(seq);
       bam_destroy1(rec);
       hts_itr_destroy(iter);
+
+      // Assign SV support
+      for(uint32_t i = 0; i < svs.size(); ++i) {
+	if ((svs[i].svt < 4) && (svs[i].chr == refIndex)) {
+	  int32_t covbase = 0;
+	  for(uint32_t k = svs[i].svStart; ((k < (uint32_t) svs[i].svEnd) && (k < hdr->target_len[refIndex])); ++k) covbase += covBases[k];
+	  covMap[0][svs[i].id].rc = covbase;
+	}
+      }
     }
     fai_destroy(fai);
 
     // Assign SV support
     for(uint32_t i = 0; i < svs.size(); ++i) {
       for (typename TQualMap::const_iterator it = svSup[svs[i].id].begin(); it != svSup[svs[i].id].end(); ++it) {
-	countMap[0][svs[i].id].ref.push_back(it->second);
+	jctMap[0][svs[i].id].ref.push_back(it->second);
       }
     }
     
