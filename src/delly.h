@@ -167,6 +167,10 @@ _annotateCoverage(TConfig& c, bam_hdr_t* hdr, TSampleLib& sampleLib, TSVs& svs, 
     sRight.id = 2 * lastId + itSV->id;
     sRight.svStart = itSV->svEnd;
     sRight.svEnd = itSV->svEnd + halfSize;
+    if ((_translocation(itSV->svt)) || (itSV->svt == 4)) {
+      sRight.svStart = itSV->svStart;
+      sRight.svEnd = itSV->svStart + halfSize;      
+    }
     itO = ni[itSV->chr2].find(boost::icl::discrete_interval<int>::right_open(sRight.svStart, sRight.svEnd));
     while (itO != ni[itSV->chr2].end()) {
       sRight.svStart = itO->upper();

@@ -488,10 +488,38 @@ namespace torali
 
       // Assign SV support
       for(uint32_t i = 0; i < svs.size(); ++i) {
-	if ((svs[i].svt < 4) && (svs[i].chr == refIndex)) {
+	if (svs[i].chr == refIndex) {
+	  int32_t halfSize = (svs[i].svEnd - svs[i].svStart)/2;
+	  if ((_translocation(svs[i].svt)) || (svs[i].svt == 4)) halfSize = 500;
+
+	  // Left region
+	  int32_t lstart = std::max(svs[i].svStart - halfSize, 0);
+	  int32_t lend = svs[i].svStart;
 	  int32_t covbase = 0;
-	  for(uint32_t k = svs[i].svStart; ((k < (uint32_t) svs[i].svEnd) && (k < hdr->target_len[refIndex])); ++k) covbase += covBases[k];
+	  for(uint32_t k = lstart; ((k < (uint32_t) lend) && (k < hdr->target_len[refIndex])); ++k) covbase += covBases[k];
+	  covMap[0][svs[i].id].leftRC = covbase;
+
+	  // Actual SV
+	  covbase = 0;
+	  int32_t mstart = svs[i].svStart;
+	  int32_t mend = svs[i].svEnd;
+	  if ((_translocation(svs[i].svt)) || (svs[i].svt == 4)) {
+	    mstart = std::max(svs[i].svStart - halfSize, 0);
+	    mend = std::min(svs[i].svStart + halfSize, (int32_t) hdr->target_len[refIndex]);
+	  }
+	  for(uint32_t k = mstart; ((k < (uint32_t) mend) && (k < hdr->target_len[refIndex])); ++k) covbase += covBases[k];
 	  covMap[0][svs[i].id].rc = covbase;
+
+	  // Right region
+	  covbase = 0;
+	  int32_t rstart = svs[i].svEnd;
+	  int32_t rend = std::min(svs[i].svEnd + halfSize, (int32_t) hdr->target_len[refIndex]);
+	  if ((_translocation(svs[i].svt)) || (svs[i].svt == 4)) {
+	    rstart = svs[i].svStart;
+	    rend = std::min(svs[i].svStart + halfSize, (int32_t) hdr->target_len[refIndex]);
+	  }
+	  for(uint32_t k = rstart; ((k < (uint32_t) rend) && (k < hdr->target_len[refIndex])); ++k) covbase += covBases[k];
+	  covMap[0][svs[i].id].rightRC = covbase;
 	}
       }
     }
