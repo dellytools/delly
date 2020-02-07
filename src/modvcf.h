@@ -699,9 +699,11 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
 	bcf_update_info_int32(hdr, rec, "SR", &tmpi, 1);
 	float tmpf = svIter->srAlignQuality;
 	bcf_update_info_float(hdr, rec, "SRQ", &tmpf, 1);
-	bcf_update_info_string(hdr, rec, "CONSENSUS", svIter->consensus.c_str());
-	tmpf = entropy(svIter->consensus);
-	bcf_update_info_float(hdr, rec, "CE", &tmpf, 1);
+	if (svIter->consensus.size()) {
+	  bcf_update_info_string(hdr, rec, "CONSENSUS", svIter->consensus.c_str());
+	  tmpf = entropy(svIter->consensus);
+	  bcf_update_info_float(hdr, rec, "CE", &tmpf, 1);
+	}
       }
       
       // Add genotype columns

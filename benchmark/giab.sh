@@ -41,12 +41,9 @@ export PATH=/opt/dev/giab/bin/bin/:${PATH}
 source activate sv
 
 # Delly for long reads
-../bin/dellyLR call -g hs37d5.fa.gz ultra-long-ont_hs37d5_phased.bam
-
-# Dummy genotypes for the time being
 rm -f delly.vcf*
-bcftools view sv.bcf | grep "^#" | sed 's/^##fileDate.*/##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">/' | sed 's/INFO$/INFO\tFORMAT\tHG002/' > delly.vcf
-bcftools view sv.bcf | grep -v "^#" | sed 's/$/\tGT\t0\/1/' | grep -v 'INV\|BND\|DUP' >> delly.vcf
+../bin/dellyLR call -g hs37d5.fa.gz ultra-long-ont_hs37d5_phased.bam
+bcftools view -i '%QUAL>400' sv.bcf | grep -v 'INV\|BND\|DUP' > delly.vcf
 bgzip delly.vcf
 tabix delly.vcf.gz
 

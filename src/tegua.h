@@ -70,6 +70,21 @@ namespace torali {
    typedef std::vector<StructuralVariantRecord> TVariants;
    TVariants svs;
 
+   // Annotate junction reads
+   typedef std::vector<JunctionCount> TSVJunctionMap;
+   typedef std::vector<TSVJunctionMap> TSampleSVJunctionMap;
+   TSampleSVJunctionMap junctionCountMap(c.files.size());
+
+   // Annotate spanning coverage
+   typedef std::vector<SpanningCount> TSVSpanningMap;
+   typedef std::vector<TSVSpanningMap> TSampleSVSpanningMap;
+   TSampleSVSpanningMap spanCountMap(c.files.size());
+   
+   // Annotate coverage
+   typedef std::vector<ReadCount> TSVReadCount;
+   typedef std::vector<TSVReadCount> TSampleSVReadCount;
+   TSampleSVReadCount rcMap(c.files.size());
+   
    // Open header
    samFile* samfile = sam_open(c.files[0].string().c_str(), "r");
    bam_hdr_t* hdr = sam_hdr_read(samfile);
@@ -114,51 +129,46 @@ namespace torali {
 	   // Read assigned?
 	   if (srBR[svt][i].svid != -1) {
 	     if (srStore.find(srBR[svt][i].id) == srStore.end()) srStore.insert(std::make_pair(srBR[svt][i].id, TSvPosVector()));
-	     srStore[srBR[svt][i].id].push_back(SeqSlice(srBR[svt][i].svid, srBR[svt][i].sstart, srBR[svt][i].inslen));
+	     srStore[srBR[svt][i].id].push_back(SeqSlice(srBR[svt][i].svid, srBR[svt][i].sstart, srBR[svt][i].inslen, srBR[svt][i].qual));
 	   }
 	 }
        }
      }
      
      // Assemble
-     assemble(c, srStore, svs);
+     //assemble(c, srStore, svs);
+
+     // Re-sort SVs
+     typedef std::map<int32_t, int32_t> TIdMap;
+     TIdMap idMap;
+     std::sort(svs.begin(), svs.end(), SortSVs<StructuralVariantRecord>());
+     uint32_t cliqueCount = 0;
+     for(typename TVariants::iterator svIt = svs.begin(); svIt != svs.end(); ++svIt, ++cliqueCount) {
+       idMap[svIt->id] = cliqueCount;
+       svIt->id = cliqueCount;       
+     }
+
+     // Initialize count maps
+     for(uint32_t file_c = 0; file_c < c.files.size(); ++file_c) {
+       junctionCountMap[file_c].resize(svs.size(), JunctionCount());
+       spanCountMap[file_c].resize(svs.size(), SpanningCount());
+       rcMap[file_c].resize(svs.size(), ReadCount());
+     }
+      
+     // Annotate ALT support
+     for(typename TReadSV::const_iterator it = srStore.begin(); it != srStore.end(); ++it) {
+       for(uint32_t i = 0; i < it->second.size(); ++i) {
+	 junctionCountMap[0][idMap[it->second[i].svid]].alt.push_back(it->second[i].qual);
+       }
+     }
    } else {
      std::cerr << "Only de novo discovery is supported for long-reads!" << std::endl;
      return 1;
    }
-
-   // ReSort SVs
-   std::sort(svs.begin(), svs.end(), SortSVs<StructuralVariantRecord>());
-   uint32_t cliqueCount = 0;
-   for(typename TVariants::iterator svIt = svs.begin(); svIt != svs.end(); ++svIt, ++cliqueCount) svIt->id = cliqueCount;
-
-   // Annotate junction reads
-   typedef std::vector<JunctionCount> TSVJunctionMap;
-   typedef std::vector<TSVJunctionMap> TSampleSVJunctionMap;
-   TSampleSVJunctionMap junctionCountMap(c.files.size());
-
-   // Annotate spanning coverage
-   typedef std::vector<SpanningCount> TSVSpanningMap;
-   typedef std::vector<TSVSpanningMap> TSampleSVSpanningMap;
-   TSampleSVSpanningMap spanCountMap(c.files.size());
    
-   // Annotate coverage
-   typedef std::vector<ReadCount> TSVReadCount;
-   typedef std::vector<TSVReadCount> TSampleSVReadCount;
-   TSampleSVReadCount rcMap(c.files.size());
-
-   // Initialize
-   for(uint32_t file_c = 0; file_c < c.files.size(); ++file_c) {
-     junctionCountMap[file_c].resize(svs.size(), JunctionCount());
-     spanCountMap[file_c].resize(svs.size(), SpanningCount());
-     rcMap[file_c].resize(svs.size(), ReadCount());
-   }
-   
-   // SV Genotyping
+   // Reference SV Genotyping
    trackRef(c, svs, junctionCountMap);
 
-   // Annotate spanning coverage
-   
    // VCF Output
    //outputVcf(c, svs);
    vcfOutput(c, svs, junctionCountMap, rcMap, spanCountMap);

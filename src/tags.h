@@ -140,10 +140,23 @@ namespace torali {
   template<typename TSize>
   inline bool
   _svSizeCheck(TSize const s, TSize const e, int32_t const svt) {
+    // Short reads
     if (svt == 0) return (( e - s ) >= 100);
     else if (svt == 1) return (( e - s ) >= 100);
     else if (svt == 2) return (( e - s ) >= 300);
     else if (svt == 3) return (( e - s ) >= 100);
+    else return true;
+  }
+
+  template<typename TSize>
+  inline bool
+  _svSizeCheck(TSize const s, TSize const e, int32_t const svt, int32_t const inslen) {
+    // Long reads
+    if (svt == 0) return (( e - s ) >= 15);
+    else if (svt == 1) return (( e - s ) >= 15);
+    else if (svt == 2) return (( e - s ) >= 15);
+    else if (svt == 3) return (( e - s ) >= 15);
+    else if (svt == 4) return (inslen >= 15);
     else return true;
   }
 

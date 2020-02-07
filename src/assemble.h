@@ -15,8 +15,9 @@ namespace torali
     int32_t svid;
     int32_t sstart;
     int32_t inslen;
+    int32_t qual;  // Only required for junction count map
 
-    SeqSlice(int32_t const sv, int32_t const sst, int32_t const il) : svid(sv), sstart(sst), inslen(il) {}
+    SeqSlice(int32_t const sv, int32_t const sst, int32_t const il, int32_t q) : svid(sv), sstart(sst), inslen(il), qual(q) {}
   };
 
   template<typename TConfig, typename TSRStore>
