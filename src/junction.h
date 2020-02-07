@@ -310,10 +310,12 @@ namespace torali
     return score;
   }
   
-  
-  template<typename TConfig, typename TReadBp>
+
+  template<typename TConfig, typename TJunctionMap>
   inline void
-  findJunctions(TConfig const& c, TReadBp& readBp, std::vector<StructuralVariantRecord>& svs) {
+  trackRef(TConfig const& c, std::vector<StructuralVariantRecord> const& svs, TJunctionMap& countMap) {
+    if (svs.empty()) return;
+	
     samFile* samfile = sam_open(c.files[0].string().c_str(), "r");
     hts_set_fai_filename(samfile, c.genome.string().c_str());
     hts_idx_t* idx = sam_index_load(samfile, c.files[0].string().c_str());
@@ -321,16 +323,17 @@ namespace torali
     
     // Parse genome chr-by-chr
     boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
-    std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Split-read scanning" << std::endl;
+    std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "SV annotation" << std::endl;
     boost::progress_display show_progress( hdr->n_targets );
 
+    // Collect ref. supporting reads
+    typedef std::map<uint32_t, uint32_t> TQualMap;
+    typedef std::vector<TQualMap> TSvSupport;
+    TSvSupport svSup(svs.size(), TQualMap());
+    
     // Track reference reads
-    bool trackRef = false;
-    if (!svs.empty()) trackRef = true;
     typedef boost::dynamic_bitset<> TBitSet;
     TBitSet bpOccupied;
-    typedef std::map<uint32_t, int32_t> TBpToIdMap;
-    TBpToIdMap bpid;
     char* seq = NULL;
     faidx_t* fai = fai_load(c.genome.string().c_str());
     
@@ -339,27 +342,28 @@ namespace torali
       ++show_progress;
 
       // Flag breakpoints
-      if (trackRef) {
-	bpOccupied.resize(hdr->target_len[refIndex]);
-	for(uint32_t i = 0; i < hdr->target_len[refIndex]; ++i) bpOccupied[i] = 0;
-	for(uint32_t i = 0; i < svs.size(); ++i) {
+      typedef std::set<int32_t> TIdSet;
+      typedef std::map<uint32_t, TIdSet> TBpToIdMap;
+      TBpToIdMap bpid;
+      bpOccupied.resize(hdr->target_len[refIndex]);
+      for(uint32_t i = 0; i < hdr->target_len[refIndex]; ++i) bpOccupied[i] = 0;
+      for(uint32_t i = 0; i < svs.size(); ++i) {
+	if ((svs[i].chr == refIndex) || (svs[i].chr2 == refIndex)) {
 	  if (svs[i].chr == refIndex) {
-	    if (bpOccupied[svs[i].svStart]) std::cerr << "Warning: Duplicated SV coordinate." << std::endl;
 	    bpOccupied[svs[i].svStart] = 1;
-	    bpid.insert(std::make_pair(svs[i].svStart, svs[i].id));
+	    if (bpid.find(svs[i].svStart) == bpid.end()) bpid.insert(std::make_pair(svs[i].svStart, TIdSet()));
+	    bpid[svs[i].svStart].insert(svs[i].id);
 	  }
 	  if (svs[i].chr2 == refIndex) {
-	    if (bpOccupied[svs[i].svEnd]) std::cerr << "Warning: Duplicated SV coordinate." << std::endl;
 	    bpOccupied[svs[i].svEnd] = 1;
-	    bpid.insert(std::make_pair(svs[i].svEnd, svs[i].id));
+	    if (bpid.find(svs[i].svEnd) == bpid.end()) bpid.insert(std::make_pair(svs[i].svEnd, TIdSet()));
+	    bpid[svs[i].svEnd].insert(svs[i].id);
 	  }
 	}
-	std::string tname(hdr->target_name[refIndex]);
-	int32_t seqlen = -1;
-	seq = faidx_fetch_seq(fai, tname.c_str(), 0, hdr->target_len[refIndex], &seqlen);
-      }	else {
-	seq = NULL;
       }
+      std::string tname(hdr->target_name[refIndex]);
+      int32_t seqlen = -1;
+      seq = faidx_fetch_seq(fai, tname.c_str(), 0, hdr->target_len[refIndex], &seqlen);
 
       // Parse BAM
       hts_itr_t* iter = sam_itr_queryi(idx, refIndex, 0, c.chrlen[refIndex]);
@@ -378,80 +382,151 @@ namespace torali
 	for (std::size_t i = 0; i < rec->core.n_cigar; ++i) {
 	  if ((bam_cigar_op(cigar[i]) == BAM_CMATCH) || (bam_cigar_op(cigar[i]) == BAM_CEQUAL) || (bam_cigar_op(cigar[i]) == BAM_CDIFF)) {
 	    // Fetch reference alignments
-	    if (trackRef) {
-	      int32_t bpHit = 0;
-	      for(uint32_t k = 0; k < bam_cigar_oplen(cigar[i]); ++k) {
-		if (bpOccupied[rp]) bpHit = rp;
-		++sp;
-		++rp;
-	      }
-	      if (bpHit) {
-		// Only spanning alignments
-		int32_t bg = std::max((int32_t) 0, bpHit - c.minimumFlankSize);
-		int32_t ed = std::min((int32_t) hdr->target_len[refIndex], bpHit + c.minimumFlankSize);
-		if ((bg < rec->core.pos) || ((uint32_t) ed > rec->core.pos + alignmentLength(rec))) continue;
-
-		// Get sequence
-		std::string sequence;
-		sequence.resize(rec->core.l_qseq);
-		uint8_t* seqptr = bam_get_seq(rec);
-		for (int i = 0; i < rec->core.l_qseq; ++i) sequence[i] = "=ACMGRSVTWYHKDBN"[bam_seqi(seqptr, i)];
-		
-		// Re-iterate cigar to track alignment		
-		int32_t rit = rec->core.pos; // reference pointer
-		int32_t sit = 0; // sequence pointer
-		std::string refAlign;
-		std::string altAlign;
-		for (std::size_t ij = 0; ij < rec->core.n_cigar; ++ij) {
-		  if (rit >= ed) break;
-		  if ((bam_cigar_op(cigar[ij]) == BAM_CMATCH) || (bam_cigar_op(cigar[ij]) == BAM_CEQUAL) || (bam_cigar_op(cigar[ij]) == BAM_CDIFF)) {
-		    for(uint32_t k = 0; k < bam_cigar_oplen(cigar[ij]); ++k) {
-		      if ((rit >= bg) && (rit < ed)) {
-			refAlign.push_back(seq[rit]);
-			altAlign.push_back(sequence[sit]);
-		      }
-		      ++rit;
-		      ++sit;
-		    }
-		  } else if ((bam_cigar_op(cigar[ij]) == BAM_CDEL) || (bam_cigar_op(cigar[ij]) == BAM_CREF_SKIP)) {
-		    for(uint32_t k = 0; k < bam_cigar_oplen(cigar[ij]); ++k) {
-		      if ((rit >= bg) && (rit < ed)) {
-			refAlign.push_back(seq[rit]);
-			altAlign.push_back('-');
-		      }
-		      ++rit;
-		    }
-		  } else if (bam_cigar_op(cigar[ij]) == BAM_CINS) {
-		    for(uint32_t k = 0; k < bam_cigar_oplen(cigar[ij]); ++k) {
-		      if ((rit >= bg) && (rit < ed)) {
-			refAlign.push_back('-');
-			altAlign.push_back(sequence[sit]);
-		      }
-		      ++sit;
-		    }
-		  } else if (bam_cigar_op(cigar[ij]) == BAM_CSOFT_CLIP) {
-		    sit += bam_cigar_oplen(cigar[ij]);
-		  } else if (bam_cigar_op(cigar[ij]) == BAM_CHARD_CLIP) {
-		    // Do nothing
-		  }
-		}
-		int32_t score = scoreAlign(boost::to_upper_copy<std::string>(refAlign), boost::to_upper_copy<std::string>(altAlign), c.aliscore);
-		int32_t scth = scoreThreshold(refAlign, altAlign, c);
-		if ((score > 0) && (scth > 0)) {
-		  int32_t qual = (int32_t) ((((float) score / (float) (scth)) - 1.0) * 100.0);
-		  if ((qual > 0) && (qual > c.minGenoQual)) {
-		    //std::cerr << "Qual: " << qual << std::endl;
-		    //std::cerr << "SV:" << bpid[bpHit] << std::endl;
-		    //std::cerr << refAlign << std::endl;
-		    //std::cerr << altAlign << std::endl;
-		    //std::cerr << std::endl;
-		  }
-		}
-	      }
-	    } else {
-	      sp += bam_cigar_oplen(cigar[i]);
-	      rp += bam_cigar_oplen(cigar[i]);
+	    int32_t bpHit = 0;
+	    for(uint32_t k = 0; k < bam_cigar_oplen(cigar[i]); ++k) {
+	      if (bpOccupied[rp]) bpHit = rp;
+	      ++sp;
+	      ++rp;
 	    }
+	    if (bpHit) {
+	      // Only spanning alignments
+	      int32_t bg = std::max((int32_t) 0, bpHit - c.minimumFlankSize);
+	      int32_t ed = std::min((int32_t) hdr->target_len[refIndex], bpHit + c.minimumFlankSize);
+	      if ((bg < rec->core.pos) || ((uint32_t) ed > rec->core.pos + alignmentLength(rec))) continue;
+	      
+	      // Get sequence
+	      std::string sequence;
+	      sequence.resize(rec->core.l_qseq);
+	      uint8_t* seqptr = bam_get_seq(rec);
+	      for (int i = 0; i < rec->core.l_qseq; ++i) sequence[i] = "=ACMGRSVTWYHKDBN"[bam_seqi(seqptr, i)];
+	      
+	      // Re-iterate cigar to track alignment		
+	      int32_t rit = rec->core.pos; // reference pointer
+	      int32_t sit = 0; // sequence pointer
+	      std::string refAlign;
+	      std::string altAlign;
+	      for (std::size_t ij = 0; ij < rec->core.n_cigar; ++ij) {
+		if (rit >= ed) break;
+		if ((bam_cigar_op(cigar[ij]) == BAM_CMATCH) || (bam_cigar_op(cigar[ij]) == BAM_CEQUAL) || (bam_cigar_op(cigar[ij]) == BAM_CDIFF)) {
+		  for(uint32_t k = 0; k < bam_cigar_oplen(cigar[ij]); ++k) {
+		    if ((rit >= bg) && (rit < ed)) {
+		      refAlign.push_back(seq[rit]);
+		      altAlign.push_back(sequence[sit]);
+		    }
+		    ++rit;
+		    ++sit;
+		  }
+		} else if ((bam_cigar_op(cigar[ij]) == BAM_CDEL) || (bam_cigar_op(cigar[ij]) == BAM_CREF_SKIP)) {
+		  for(uint32_t k = 0; k < bam_cigar_oplen(cigar[ij]); ++k) {
+		    if ((rit >= bg) && (rit < ed)) {
+		      refAlign.push_back(seq[rit]);
+		      altAlign.push_back('-');
+		    }
+		    ++rit;
+		  }
+		} else if (bam_cigar_op(cigar[ij]) == BAM_CINS) {
+		  for(uint32_t k = 0; k < bam_cigar_oplen(cigar[ij]); ++k) {
+		    if ((rit >= bg) && (rit < ed)) {
+		      refAlign.push_back('-');
+		      altAlign.push_back(sequence[sit]);
+		    }
+		    ++sit;
+		  }
+		} else if (bam_cigar_op(cigar[ij]) == BAM_CSOFT_CLIP) {
+		  sit += bam_cigar_oplen(cigar[ij]);
+		} else if (bam_cigar_op(cigar[ij]) == BAM_CHARD_CLIP) {
+		  // Do nothing
+		}
+	      }
+	      int32_t score = scoreAlign(boost::to_upper_copy<std::string>(refAlign), boost::to_upper_copy<std::string>(altAlign), c.aliscore);
+	      int32_t scth = scoreThreshold(refAlign, altAlign, c);
+	      if ((score > 0) && (scth > 0)) {
+		int32_t qual = (int32_t) ((((float) score / (float) (scth)) - 1.0) * 100.0);
+		if ((qual > 0) && (qual > c.minGenoQual)) {
+		  // Debug
+		  //std::cerr << "Qual: " << qual << std::endl;
+		  //std::cerr << refAlign << std::endl;
+		  //std::cerr << altAlign << std::endl;
+		  //std::cerr << std::endl;
+		  
+		  // Assign read to all SVs at this position
+		  for(typename TIdSet::const_iterator it = bpid[bpHit].begin(); it != bpid[bpHit].end(); ++it) {
+		    if (svSup[*it].find(seed) == svSup[*it].end()) svSup[*it].insert(std::make_pair(seed, qual));
+		    else {
+		      if (svSup[*it][seed] < (uint32_t) qual) svSup[*it][seed] = (uint32_t) qual;
+		    }
+		  }
+		}
+	      }
+	    }
+	  } else if ((bam_cigar_op(cigar[i]) == BAM_CDEL) || (bam_cigar_op(cigar[i]) == BAM_CREF_SKIP)) {
+	    rp += bam_cigar_oplen(cigar[i]);
+	  } else if (bam_cigar_op(cigar[i]) == BAM_CINS) {
+	    sp += bam_cigar_oplen(cigar[i]);
+	  } else if (bam_cigar_op(cigar[i]) == BAM_CSOFT_CLIP) {
+	    sp += bam_cigar_oplen(cigar[i]);
+	  } else if (bam_cigar_op(cigar[i]) == BAM_CHARD_CLIP) {
+	    // Do nothing
+	  } else {
+	    std::cerr << "Unknown Cigar options" << std::endl;
+	  }
+	}
+      }
+      if (seq != NULL) free(seq);
+      bam_destroy1(rec);
+      hts_itr_destroy(iter);
+    }
+    fai_destroy(fai);
+
+    // Assign SV support
+    for(uint32_t i = 0; i < svs.size(); ++i) {
+      for (typename TQualMap::const_iterator it = svSup[svs[i].id].begin(); it != svSup[svs[i].id].end(); ++it) {
+	countMap[0][svs[i].id].ref.push_back(it->second);
+      }
+    }
+    
+    // Clean-up
+    bam_hdr_destroy(hdr);
+    hts_idx_destroy(idx);
+    sam_close(samfile);
+  }
+     
+  
+  template<typename TConfig, typename TReadBp>
+  inline void
+  findJunctions(TConfig const& c, TReadBp& readBp) {
+    samFile* samfile = sam_open(c.files[0].string().c_str(), "r");
+    hts_set_fai_filename(samfile, c.genome.string().c_str());
+    hts_idx_t* idx = sam_index_load(samfile, c.files[0].string().c_str());
+    bam_hdr_t* hdr = sam_hdr_read(samfile);
+    
+    // Parse genome chr-by-chr
+    boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
+    std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Split-read scanning" << std::endl;
+    boost::progress_display show_progress( hdr->n_targets );
+
+    // Iterate chromosomes
+    for(int32_t refIndex=0; refIndex < (int32_t) hdr->n_targets; ++refIndex) {
+      ++show_progress;
+
+      // Parse BAM
+      hts_itr_t* iter = sam_itr_queryi(idx, refIndex, 0, c.chrlen[refIndex]);
+      bam1_t* rec = bam_init1();
+      while (sam_itr_next(samfile, iter, rec) >= 0) {
+	// Keep secondary alignments
+	if (rec->core.flag & (BAM_FQCFAIL | BAM_FDUP | BAM_FUNMAP)) continue;
+	if ((rec->core.qual < c.minMapQual) || (rec->core.tid<0)) continue;
+
+	std::size_t seed = hash_lr(rec);
+	uint32_t rp = rec->core.pos; // reference pointer
+	uint32_t sp = 0; // sequence pointer
+      
+	// Parse the CIGAR
+	uint32_t* cigar = bam_get_cigar(rec);
+	for (std::size_t i = 0; i < rec->core.n_cigar; ++i) {
+	  if ((bam_cigar_op(cigar[i]) == BAM_CMATCH) || (bam_cigar_op(cigar[i]) == BAM_CEQUAL) || (bam_cigar_op(cigar[i]) == BAM_CDIFF)) {
+	    sp += bam_cigar_oplen(cigar[i]);
+	    rp += bam_cigar_oplen(cigar[i]);
 	  } else if (bam_cigar_op(cigar[i]) == BAM_CDEL) {
 	    if (bam_cigar_oplen(cigar[i]) > c.minRefSep) _insertJunction(readBp, seed, rec, rp, sp, false);
 	    rp += bam_cigar_oplen(cigar[i]);
@@ -512,7 +587,7 @@ namespace torali
 	      }
 	      _insertJunction(readBp, seed, rec, rpOrig, sp, true);
 	    }
-	  } else if ((bam_cigar_op(cigar[i]) == BAM_CSOFT_CLIP) || (bam_cigar_op(cigar[i]) == BAM_CHARD_CLIP)) {
+	  } else if (bam_cigar_op(cigar[i]) == BAM_CSOFT_CLIP) {
 	    int32_t finalsp = sp;
 	    bool scleft = false;
 	    if (sp == 0) {
@@ -523,16 +598,23 @@ namespace torali
 	    if (bam_cigar_oplen(cigar[i]) > c.minClip) _insertJunction(readBp, seed, rec, rp, finalsp, scleft);
 	  } else if (bam_cigar_op(cigar[i]) == BAM_CREF_SKIP) {
 	    rp += bam_cigar_oplen(cigar[i]);
+	  } else if ((bam_cigar_op(cigar[i]) == BAM_CSOFT_CLIP) || (bam_cigar_op(cigar[i]) == BAM_CHARD_CLIP)) {
+	    int32_t finalsp = sp;
+	    bool scleft = false;
+	    if (sp == 0) {
+	      finalsp += bam_cigar_oplen(cigar[i]); // Leading soft-clip / hard-clip
+	      scleft = true;
+	    }
+	    sp += bam_cigar_oplen(cigar[i]);
+	    if (bam_cigar_oplen(cigar[i]) > c.minClip) _insertJunction(readBp, seed, rec, rp, finalsp, scleft);
 	  } else {
 	    std::cerr << "Unknown Cigar options" << std::endl;
 	  }
 	}
       }
-      if (seq != NULL) free(seq);
       bam_destroy1(rec);
       hts_itr_destroy(iter);
     }
-    fai_destroy(fai);
 
     // Sort junctions
     for(typename TReadBp::iterator it = readBp.begin(); it != readBp.end(); ++it) {
@@ -544,6 +626,7 @@ namespace torali
     hts_idx_destroy(idx);
     sam_close(samfile);
   }
+
 
   template<typename TConfig, typename TReadBp>
   inline void

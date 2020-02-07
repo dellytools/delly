@@ -35,6 +35,7 @@ namespace torali {
   struct TeguaConfig {
     bool hasDumpFile;
     bool hasVcfFile;
+    bool isHaplotagged;
     uint16_t minMapQual;
     uint16_t minGenoQual;
     uint32_t minClip;
@@ -53,20 +54,18 @@ namespace torali {
     boost::filesystem::path vcffile;
     std::vector<boost::filesystem::path> files;
     boost::filesystem::path genome;
+    std::vector<std::string> sampleName;
   };
   
 
  template<typename TConfig>
  inline int32_t
  runTegua(TConfig const& c) {
-   // Split-reads
-   typedef std::vector<SRBamRecord> TSRBamRecord;
-   typedef std::vector<TSRBamRecord> TSvtSRBamRecord;
 
-   // Breakpoints
-   typedef std::vector<Junction> TJunctionVector;
-   typedef std::map<std::size_t, TJunctionVector> TReadBp;
-
+#ifdef PROFILE
+   ProfilerStart("delly.prof");
+#endif
+   
    // Structural Variants
    typedef std::vector<StructuralVariantRecord> TVariants;
    TVariants svs;
@@ -84,11 +83,16 @@ namespace torali {
 
      // Find junctions
      {
+       // Split-reads
+       typedef std::vector<SRBamRecord> TSRBamRecord;
+       typedef std::vector<TSRBamRecord> TSvtSRBamRecord;
        TSvtSRBamRecord srBR(2 * DELLY_SVT_TRANS, TSRBamRecord());
        {
 	 // Breakpoints
+	 typedef std::vector<Junction> TJunctionVector;
+	 typedef std::map<std::size_t, TJunctionVector> TReadBp;
 	 TReadBp readBp;
-	 findJunctions(c, readBp, svs);
+	 findJunctions(c, readBp);
 	 fetchSVs(c, readBp, srBR);
        }
    
@@ -118,7 +122,10 @@ namespace torali {
      
      // Assemble
      //assemble(c, srStore, svs);
-   } else vcfParse(c, hdr, svs);
+   } else {
+     std::cerr << "Only de novo discovery is supported for long-reads!" << std::endl;
+     return 1;
+   }
 
    // ReSort SVs
    std::sort(svs.begin(), svs.end(), SortSVs<StructuralVariantRecord>());
@@ -128,26 +135,53 @@ namespace torali {
    // Annotate junction reads
    typedef std::vector<JunctionCount> TSVJunctionMap;
    typedef std::vector<TSVJunctionMap> TSampleSVJunctionMap;
-   TSampleSVJunctionMap junctionCountMap;
+   TSampleSVJunctionMap junctionCountMap(c.files.size());
+
+   // Annotate spanning coverage
+   typedef std::vector<SpanningCount> TSVSpanningMap;
+   typedef std::vector<TSVSpanningMap> TSampleSVSpanningMap;
+   TSampleSVSpanningMap spanCountMap(c.files.size());
    
-   // SV Genotyping
-   {
-     TReadBp readBp;
-     findJunctions(c, readBp, svs);
+   // Annotate coverage
+   typedef std::vector<ReadCount> TSVReadCount;
+   typedef std::vector<TSVReadCount> TSampleSVReadCount;
+   TSampleSVReadCount rcMap(c.files.size());
+
+   // Initialize
+   for(uint32_t file_c = 0; file_c < c.files.size(); ++file_c) {
+     junctionCountMap[file_c].resize(svs.size(), JunctionCount());
+     spanCountMap[file_c].resize(svs.size(), SpanningCount());
+     rcMap[file_c].resize(svs.size(), ReadCount());
    }
    
+   // SV Genotyping
+   trackRef(c, svs, junctionCountMap);
+
+   // Annotate spanning coverage
+   
    // VCF Output
-   outputVcf(c, svs);
+   //outputVcf(c, svs);
+   vcfOutput(c, svs, junctionCountMap, rcMap, spanCountMap);
 
    // Clean-up
    bam_hdr_destroy(hdr);
    sam_close(samfile);
-   
+
+
+#ifdef PROFILE
+   ProfilerStop();
+#endif
+
+   // End
+   boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
+   std::cout << '[' << boost::posix_time::to_simple_string(now) << "] Done." << std::endl;;
+  
    return 0;
  }
 
  int teguaMain(int argc, char **argv) {
    TeguaConfig c;
+   c.isHaplotagged = false;
    
    // Parameter
    boost::program_options::options_description generic("Generic options");
@@ -203,36 +237,72 @@ namespace torali {
    // Dump reads
    if (vm.count("dump")) c.hasDumpFile = true;
    else c.hasDumpFile = false;
+
+   // Check reference
+   if (!(boost::filesystem::exists(c.genome) && boost::filesystem::is_regular_file(c.genome) && boost::filesystem::file_size(c.genome))) {
+     std::cerr << "Reference file is missing: " << c.genome.string() << std::endl;
+     return 1;
+   } else {
+     faidx_t* fai = fai_load(c.genome.string().c_str());
+     if (fai == NULL) {
+       if (fai_build(c.genome.string().c_str()) == -1) {
+	 std::cerr << "Fail to open genome fai index for " << c.genome.string() << std::endl;
+	 return 1;
+       } else fai = fai_load(c.genome.string().c_str());
+     }
+     fai_destroy(fai);
+   }
    
-   // Check input BAM
-   {
-     if (!(boost::filesystem::exists(c.files[0]) && boost::filesystem::is_regular_file(c.files[0]) && boost::filesystem::file_size(c.files[0]))) {
-       std::cerr << "Alignment file is missing: " << c.files[0].string() << std::endl;
+   // Check input files
+   c.sampleName.resize(c.files.size());
+   c.nchr = 0;
+   for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
+     if (!(boost::filesystem::exists(c.files[file_c]) && boost::filesystem::is_regular_file(c.files[file_c]) && boost::filesystem::file_size(c.files[file_c]))) {
+       std::cerr << "Alignment file is missing: " << c.files[file_c].string() << std::endl;
        return 1;
      }
-     samFile* samfile = sam_open(c.files[0].string().c_str(), "r");
+     samFile* samfile = sam_open(c.files[file_c].string().c_str(), "r");
      if (samfile == NULL) {
-       std::cerr << "Fail to open file " << c.files[0].string() << std::endl;
+       std::cerr << "Fail to open file " << c.files[file_c].string() << std::endl;
        return 1;
      }
-     hts_idx_t* idx = sam_index_load(samfile, c.files[0].string().c_str());
+     hts_idx_t* idx = sam_index_load(samfile, c.files[file_c].string().c_str());
      if (idx == NULL) {
-       std::cerr << "Fail to open index for " << c.files[0].string() << std::endl;
+       std::cerr << "Fail to open index for " << c.files[file_c].string() << std::endl;
        return 1;
      }
      bam_hdr_t* hdr = sam_hdr_read(samfile);
      if (hdr == NULL) {
-       std::cerr << "Fail to open header for " << c.files[0].string() << std::endl;
+       std::cerr << "Fail to open header for " << c.files[file_c].string() << std::endl;
        return 1;
      }
-     c.chrlen.resize(hdr->n_targets);
-     for(int32_t refIndex = 0; refIndex < hdr->n_targets; ++refIndex) c.chrlen[refIndex] = hdr->target_len[refIndex];
+     if (!c.nchr) {
+       c.nchr = hdr->n_targets;
+       c.chrlen.resize(hdr->n_targets);
+       for(int32_t refIndex = 0; refIndex < hdr->n_targets; ++refIndex) c.chrlen[refIndex] = hdr->target_len[refIndex];
+     } else {
+       if (c.nchr != hdr->n_targets) {
+	 std::cerr << "BAM files have different number of chromosomes!" << std::endl;
+	 return 1;
+       }
+     }
+     faidx_t* fai = fai_load(c.genome.string().c_str());
+     for(int32_t refIndex=0; refIndex < hdr->n_targets; ++refIndex) {
+       std::string tname(hdr->target_name[refIndex]);
+       if (!faidx_has_seq(fai, tname.c_str())) {
+	 std::cerr << "BAM file chromosome " << hdr->target_name[refIndex] << " is NOT present in your reference file " << c.genome.string() << std::endl;
+	 return 1;
+       }
+     }
+     fai_destroy(fai);
+     std::string sampleName = "unknown";
+     getSMTag(std::string(hdr->text), c.files[file_c].stem().string(), sampleName);
+     c.sampleName[file_c] = sampleName;
      bam_hdr_destroy(hdr);
      hts_idx_destroy(idx);
      sam_close(samfile);
    }
-   c.nchr = c.chrlen.size();
-
+   
    // Check input VCF file
    if (vm.count("vcffile")) {
      if (!(boost::filesystem::exists(c.vcffile) && boost::filesystem::is_regular_file(c.vcffile) && boost::filesystem::file_size(c.vcffile))) {

@@ -290,15 +290,17 @@ namespace torali
 	int32_t svStart = (int32_t) (pos / (uint64_t) clique.size());
 	int32_t svEnd = (int32_t) (pos2 / (uint64_t) clique.size());
 	int32_t svInsLen = (int32_t) (inslen / (int32_t) clique.size());
-	if ((ciposlow > svStart) || (ciposhigh < svStart) || (ciendlow > svEnd) || (ciendhigh < svEnd)) {
-	  std::cerr << "Warning: Confidence intervals out of bounds: " << ciposlow << ',' << svStart << ',' << ciposhigh << ':' << ciendlow << ',' << svEnd << ',' << ciendhigh << std::endl;
-	}
-	int32_t svid = sv.size();
-	sv.push_back(StructuralVariantRecord(chr, svStart, chr2, svEnd, (ciposlow - svStart), (ciposhigh - svStart), (ciendlow - svEnd), (ciendhigh - svEnd), clique.size(), mapq, svInsLen, svt, svid));
-	// Reads assigned
-	for(typename TCliqueMembers::iterator itC = clique.begin(); itC != clique.end(); ++itC) {
-	  //std::cerr << svid << ',' << br[*itC].id << std::endl;
-	  br[*itC].svid = svid;
+	if (_svSizeCheck(svStart, svEnd, svt)) {
+	  if ((ciposlow > svStart) || (ciposhigh < svStart) || (ciendlow > svEnd) || (ciendhigh < svEnd)) {
+	    std::cerr << "Warning: Confidence intervals out of bounds: " << ciposlow << ',' << svStart << ',' << ciposhigh << ':' << ciendlow << ',' << svEnd << ',' << ciendhigh << std::endl;
+	  }
+	  int32_t svid = sv.size();
+	  sv.push_back(StructuralVariantRecord(chr, svStart, chr2, svEnd, (ciposlow - svStart), (ciposhigh - svStart), (ciendlow - svEnd), (ciendhigh - svEnd), clique.size(), mapq, svInsLen, svt, svid));
+	  // Reads assigned
+	  for(typename TCliqueMembers::iterator itC = clique.begin(); itC != clique.end(); ++itC) {
+	    //std::cerr << svid << ',' << br[*itC].id << std::endl;
+	    br[*itC].svid = svid;
+	  }
 	}
       }
     }
