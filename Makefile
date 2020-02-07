@@ -49,7 +49,7 @@ HTSLIBSOURCES = $(wildcard src/htslib/*.c) $(wildcard src/htslib/*.h)
 SOURCES = $(wildcard src/*.h) $(wildcard src/*.cpp)
 
 # Targets
-BUILT_PROGRAMS = src/delly
+BUILT_PROGRAMS = src/delly src/dellyLR
 TARGETS = ${SUBMODULES} ${BUILT_PROGRAMS}
 
 all:   	$(TARGETS)
