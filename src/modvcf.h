@@ -555,6 +555,7 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
   bcf_hdr_append(hdr, "##INFO=<ID=CONSENSUS,Number=1,Type=String,Description=\"Split-read consensus sequence\">");
   bcf_hdr_append(hdr, "##INFO=<ID=CE,Number=1,Type=Float,Description=\"Consensus sequence entropy\">");
   bcf_hdr_append(hdr, "##INFO=<ID=CT,Number=1,Type=String,Description=\"Paired-end signature induced connection type\">");
+  bcf_hdr_append(hdr, "##INFO=<ID=SVLEN,Number=1,Type=Integer,Description=\"SV length\">");
   bcf_hdr_append(hdr, "##INFO=<ID=IMPRECISE,Number=0,Type=Flag,Description=\"Imprecise structural variation\">");
   bcf_hdr_append(hdr, "##INFO=<ID=PRECISE,Number=0,Type=Flag,Description=\"Precise structural variation\">");
   bcf_hdr_append(hdr, "##INFO=<ID=SVTYPE,Number=1,Type=String,Description=\"Type of structural variant\">");
@@ -668,6 +669,11 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
       bcf_update_info_string(hdr,rec, "CHR2", bamhd->target_name[svIter->chr2]);
       tmpi = svEndPos;
       bcf_update_info_int32(hdr, rec, "END", &tmpi, 1);
+      if (svIter->svt < DELLY_SVT_TRANS) {
+	if (svIter->svt != 4) tmpi = svIter->svEnd - svIter->svStart;
+	else tmpi = svIter->insLen;
+      } else tmpi = 0;
+      bcf_update_info_int32(hdr, rec, "SVLEN", &tmpi, 1);
       tmpi = svIter->peSupport;
       bcf_update_info_int32(hdr, rec, "PE", &tmpi, 1);
       tmpi = svIter->peMapQuality;
