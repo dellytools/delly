@@ -631,6 +631,8 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
     bcf1_t *rec = bcf_init();
     for(typename TSVs::const_iterator svIter = svs.begin(); svIter!=svs.end(); ++svIter) {
       ++show_progress;
+      if ((svIter->srSupport == 0) && (svIter->peSupport == 0)) continue;
+      
       // Output main vcf fields
       int32_t tmpi = bcf_hdr_id2int(hdr, BCF_DT_ID, "PASS");
       if (svIter->chr == svIter->chr2) {

@@ -313,7 +313,7 @@ namespace torali
 
   template<typename TConfig, typename TJunctionMap>
   inline void
-  trackRef(TConfig const& c, std::vector<StructuralVariantRecord> const& svs, TJunctionMap& countMap) {
+  trackRef(TConfig const& c, std::vector<StructuralVariantRecord>& svs, TJunctionMap& countMap) {
     if (svs.empty()) return;
 	
     samFile* samfile = sam_open(c.files[0].string().c_str(), "r");
@@ -341,6 +341,11 @@ namespace torali
     for(int32_t refIndex=0; refIndex < (int32_t) hdr->n_targets; ++refIndex) {
       ++show_progress;
 
+      // Load sequence
+      std::string tname(hdr->target_name[refIndex]);
+      int32_t seqlen = -1;
+      seq = faidx_fetch_seq(fai, tname.c_str(), 0, hdr->target_len[refIndex], &seqlen);
+      
       // Flag breakpoints
       typedef std::set<int32_t> TIdSet;
       typedef std::map<uint32_t, TIdSet> TBpToIdMap;
@@ -350,6 +355,7 @@ namespace torali
       for(uint32_t i = 0; i < svs.size(); ++i) {
 	if ((svs[i].chr == refIndex) || (svs[i].chr2 == refIndex)) {
 	  if (svs[i].chr == refIndex) {
+	    svs[i].alleles = _addAlleles(boost::to_upper_copy(std::string(seq + svs[i].svStart - 1, seq + svs[i].svStart)), std::string(hdr->target_name[svs[i].chr2]), svs[i], svs[i].svt);
 	    bpOccupied[svs[i].svStart] = 1;
 	    if (bpid.find(svs[i].svStart) == bpid.end()) bpid.insert(std::make_pair(svs[i].svStart, TIdSet()));
 	    bpid[svs[i].svStart].insert(svs[i].id);
@@ -361,9 +367,6 @@ namespace torali
 	  }
 	}
       }
-      std::string tname(hdr->target_name[refIndex]);
-      int32_t seqlen = -1;
-      seq = faidx_fetch_seq(fai, tname.c_str(), 0, hdr->target_len[refIndex], &seqlen);
 
       // Parse BAM
       hts_itr_t* iter = sam_itr_queryi(idx, refIndex, 0, c.chrlen[refIndex]);

@@ -121,7 +121,7 @@ namespace torali {
      }
      
      // Assemble
-     //assemble(c, srStore, svs);
+     assemble(c, srStore, svs);
    } else {
      std::cerr << "Only de novo discovery is supported for long-reads!" << std::endl;
      return 1;
