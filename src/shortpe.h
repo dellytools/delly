@@ -176,6 +176,8 @@ namespace torali
 	} else {
 	  // SR support and qualities
 	  std::sort(qualStore[svid].begin(), qualStore[svid].end());
+	  svs[svid].mapq = 0;
+	  for(uint32_t i = 0; i < qualStore[svid].size(); ++i) svs[svid].mapq += qualStore[svid][i];
 	  svs[svid].srSupport = seqStore[svid].size();
 	  svs[svid].srMapQuality = qualStore[svid][qualStore[svid].size()/2];
 	}
@@ -221,6 +223,8 @@ namespace torali
 	  } else {
 	    // SR support and qualities
 	    std::sort(traQualStore[svid].begin(), traQualStore[svid].end());
+	    svs[svid].mapq = 0;
+	    for(uint32_t i = 0; i < traQualStore[svid].size(); ++i) svs[svid].mapq += traQualStore[svid][i];
 	    svs[svid].srSupport = traStore[svid].size();
 	    svs[svid].srMapQuality = traQualStore[svid][traQualStore[svid].size()/2];
 	  }
@@ -538,6 +542,7 @@ namespace torali
 	      itOther->srAlignQuality = sr[i].srAlignQuality;
 	      itOther->precise = true;
 	      itOther->consensus = sr[i].consensus;
+	      itOther->mapq += sr[i].mapq;
 	    }
 	  }
 	}

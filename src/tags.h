@@ -38,25 +38,25 @@ namespace torali {
     int32_t ciendlow;
     int32_t ciendhigh;
     int32_t srSupport;
+    int32_t srMapQuality;
     int32_t mapq;
     int32_t insLen;
     int32_t svt;
     int32_t id;
     int32_t homLen;
     int32_t peSupport;
+    int32_t peMapQuality;
     float srAlignQuality;
-    uint8_t srMapQuality;
-    uint8_t peMapQuality;
     bool precise;
     std::string alleles;
     std::string consensus;
 
     
-    StructuralVariantRecord() : chr(0), svStart(0), chr2(0), svEnd(0), ciposlow(0), ciposhigh(0), ciendlow(0), ciendhigh(0), srSupport(0), mapq(0), insLen(0), svt(-1), id(0), homLen(0), peSupport(0), srAlignQuality(0), srMapQuality(0), peMapQuality(0), precise(false) {}
+    StructuralVariantRecord() : chr(0), svStart(0), chr2(0), svEnd(0), ciposlow(0), ciposhigh(0), ciendlow(0), ciendhigh(0), srSupport(0), srMapQuality(0), mapq(0), insLen(0), svt(-1), id(0), homLen(0), peSupport(0), peMapQuality(0), srAlignQuality(0), precise(false) {}
 
-    StructuralVariantRecord(int32_t const c, int32_t const s, int32_t const e) : chr(c), svStart(s), chr2(c), svEnd(e), ciposlow(0), ciposhigh(0), ciendlow(0), ciendhigh(0), srSupport(0), mapq(0), insLen(0), svt(-1), id(0), homLen(0), peSupport(0), srAlignQuality(0), srMapQuality(0), peMapQuality(0), precise(false) {}
+    StructuralVariantRecord(int32_t const c, int32_t const s, int32_t const e) : chr(c), svStart(s), chr2(c), svEnd(e), ciposlow(0), ciposhigh(0), ciendlow(0), ciendhigh(0), srSupport(0), srMapQuality(0), mapq(0), insLen(0), svt(-1), id(0), homLen(0), peSupport(0), peMapQuality(0), srAlignQuality(0), precise(false) {}
 
-    StructuralVariantRecord(int32_t const c1, int32_t const s, int32_t const c2, int32_t const e, int32_t const cipl, int32_t const ciph, int32_t const ciel, int32_t const cieh, int32_t const sup, int32_t const qval, int32_t const ilen, int32_t const svtype, int32_t const idval): chr(c1), svStart(s), chr2(c2), svEnd(e), ciposlow(cipl), ciposhigh(ciph), ciendlow(ciel), ciendhigh(cieh), srSupport(sup), mapq(qval), insLen(ilen), svt(svtype), id(idval), homLen(0), peSupport(0), srAlignQuality(0), srMapQuality(0), peMapQuality(0), precise(true) {}
+    StructuralVariantRecord(int32_t const c1, int32_t const s, int32_t const c2, int32_t const e, int32_t const cipl, int32_t const ciph, int32_t const ciel, int32_t const cieh, int32_t const sup, int32_t const srmapq, int32_t const qval, int32_t const ilen, int32_t const svtype, int32_t const idval): chr(c1), svStart(s), chr2(c2), svEnd(e), ciposlow(cipl), ciposhigh(ciph), ciendlow(ciel), ciendhigh(cieh), srSupport(sup), srMapQuality(srmapq), mapq(qval), insLen(ilen), svt(svtype), id(idval), homLen(0), peSupport(0), peMapQuality(0), srAlignQuality(0), precise(true) {}
   };
 
   template<typename TSV>

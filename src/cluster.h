@@ -295,7 +295,7 @@ namespace torali
 	    std::cerr << "Warning: Confidence intervals out of bounds: " << ciposlow << ',' << svStart << ',' << ciposhigh << ':' << ciendlow << ',' << svEnd << ',' << ciendhigh << std::endl;
 	  }
 	  int32_t svid = sv.size();
-	  sv.push_back(StructuralVariantRecord(chr, svStart, chr2, svEnd, (ciposlow - svStart), (ciposhigh - svStart), (ciendlow - svEnd), (ciendhigh - svEnd), clique.size(), mapq, svInsLen, svt, svid));
+	  sv.push_back(StructuralVariantRecord(chr, svStart, chr2, svEnd, (ciposlow - svStart), (ciposhigh - svStart), (ciendlow - svEnd), (ciendhigh - svEnd), clique.size(), mapq / clique.size(), mapq, svInsLen, svt, svid));
 	  // Reads assigned
 	  for(typename TCliqueMembers::iterator itC = clique.begin(); itC != clique.end(); ++itC) {
 	    //std::cerr << svid << ',' << br[*itC].id << std::endl;
@@ -472,8 +472,12 @@ namespace torali
 	svRec.ciposhigh = ci_wiggle;
 	svRec.ciendlow = -ci_wiggle;
 	svRec.ciendhigh = ci_wiggle;
+	svRec.mapq = 0;
 	std::vector<uint8_t> mapQV;
-	for(typename TCliqueMembers::const_iterator itC = clique.begin(); itC!=clique.end(); ++itC) mapQV.push_back(bamRecord[*itC].MapQuality);
+	for(typename TCliqueMembers::const_iterator itC = clique.begin(); itC!=clique.end(); ++itC) {
+	  mapQV.push_back(bamRecord[*itC].MapQuality);
+	  svRec.mapq += bamRecord[*itC].MapQuality;
+	}
 	std::sort(mapQV.begin(), mapQV.end());
 	svRec.peMapQuality = mapQV[mapQV.size()/2];
 	svRec.srSupport=0;
