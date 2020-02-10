@@ -23,7 +23,7 @@ void _remove_format_tag(bcf_hdr_t* hdr, bcf1_t* rec, std::string const& tag) {
 }
 
 void _remove_info(bcf_hdr_t* hdr, bcf1_t* rec) {
-  std::string tmp[] = {"CT", "PRECISE", "IMPRECISE", "SVTYPE", "SVMETHOD", "CIEND", "CIPOS", "CHR2", "END", "PE", "MAPQ", "SRMAPQ", "SR", "SRQ", "CONSENSUS"};
+  std::string tmp[] = {"CT", "PRECISE", "IMPRECISE", "SVTYPE", "SVMETHOD", "CIEND", "CIPOS", "CHR2", "POS2", "END", "PE", "MAPQ", "SRMAPQ", "SR", "SRQ", "CONSENSUS"};
   std::set<std::string> keepInfo(tmp, tmp + sizeof(tmp)/sizeof(tmp[0]));
 
   if (!(rec->unpacked & BCF_UN_INFO)) bcf_unpack(rec, BCF_UN_INFO);
@@ -403,7 +403,8 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
   bcf_hdr_append(hdr, "##FILTER=<ID=LowQual,Description=\"Poor quality and insufficient number of PEs and SRs.\">");
   bcf_hdr_append(hdr, "##INFO=<ID=CIEND,Number=2,Type=Integer,Description=\"PE confidence interval around END\">");
   bcf_hdr_append(hdr, "##INFO=<ID=CIPOS,Number=2,Type=Integer,Description=\"PE confidence interval around POS\">");
-  bcf_hdr_append(hdr, "##INFO=<ID=CHR2,Number=1,Type=String,Description=\"Chromosome for END coordinate in case of a translocation\">");
+  bcf_hdr_append(hdr, "##INFO=<ID=CHR2,Number=1,Type=String,Description=\"Chromosome for POS2 coordinate in case of an inter-chromosomal translocation\">");
+  bcf_hdr_append(hdr, "##INFO=<ID=POS2,Number=1,Type=Integer,Description=\"Genomic position for CHR2 in case of an inter-chromosomal translocation\">");
   bcf_hdr_append(hdr, "##INFO=<ID=END,Number=1,Type=Integer,Description=\"End position of the structural variant\">");
   bcf_hdr_append(hdr, "##INFO=<ID=PE,Number=1,Type=Integer,Description=\"Paired-end support of the structural variant\">");
   bcf_hdr_append(hdr, "##INFO=<ID=MAPQ,Number=1,Type=Integer,Description=\"Median mapping quality of paired-ends\">");
@@ -524,9 +525,16 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
       std::string dellyVersion("EMBL.DELLYv");
       dellyVersion += dellyVersionNumber;
       bcf_update_info_string(hdr,rec, "SVMETHOD", dellyVersion.c_str());
-      bcf_update_info_string(hdr,rec, "CHR2", bamhd->target_name[svIter->chr2]);
-      tmpi = svEndPos;
-      bcf_update_info_int32(hdr, rec, "END", &tmpi, 1);
+      if (svIter->svt < DELLY_SVT_TRANS) {
+	tmpi = svEndPos;
+	bcf_update_info_int32(hdr, rec, "END", &tmpi, 1);
+      } else {
+	tmpi = svStartPos + 1;
+	bcf_update_info_int32(hdr, rec, "END", &tmpi, 1);
+	bcf_update_info_string(hdr,rec, "CHR2", bamhd->target_name[svIter->chr2]);
+	tmpi = svEndPos;
+	bcf_update_info_int32(hdr, rec, "POS2", &tmpi, 1);
+      }
       if (svIter->svt < DELLY_SVT_TRANS) {
 	if (svIter->svt != 4) tmpi = svIter->svEnd - svIter->svStart;
 	else tmpi = svIter->insLen;
