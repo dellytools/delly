@@ -165,6 +165,10 @@ vcfParse(TConfig const& c, bam_hdr_t* hd, std::vector<TStructuralVariantRecord>&
   // Parse bcf
   int32_t nsvend = 0;
   int32_t* svend = NULL;
+  int32_t npos2 = 0;
+  int32_t* pos2 = NULL;
+  int32_t nsvlen = 0;
+  int32_t* svlen = NULL;
   int32_t npe = 0;
   int32_t* pe = NULL;
   int32_t ninslen = 0;
@@ -215,6 +219,10 @@ vcfParse(TConfig const& c, bam_hdr_t* hd, std::vector<TStructuralVariantRecord>&
       std::string altAllele = rec->d.allele[1];
       svRec.alleles = refAllele + "," + altAllele;
 
+      // Parse SV type
+      if ((bcf_get_info_string(hdr, rec, "SVTYPE", &svt, &nsvt) > 0) && (bcf_get_info_string(hdr, rec, "CT", &ct, &nct) > 0)) svRec.svt = _decodeOrientation(std::string(ct), std::string(svt));
+      else continue;
+      
       // Parse INFO
       if (bcf_get_info_flag(hdr, rec, "PRECISE", 0, 0) > 0) svRec.precise=true;
       else svRec.precise = false;
@@ -223,14 +231,31 @@ vcfParse(TConfig const& c, bam_hdr_t* hd, std::vector<TStructuralVariantRecord>&
 	if (svRec.precise) svRec.peSupport = 0;
 	else svRec.peSupport = 2;
       }
-      if (bcf_get_info_int32(hdr, rec, "INSLEN", &inslen, &ninslen) > 0) svRec.insLen = *inslen;
-      else svRec.insLen = 0;
+      if (svRec.svt != 4) {
+	if (bcf_get_info_int32(hdr, rec, "INSLEN", &inslen, &ninslen) > 0) svRec.insLen = *inslen;
+	else svRec.insLen = 0;
+      } else {
+	// Insertions must have INFO/SVLEN
+	if (bcf_get_info_int32(hdr, rec, "SVLEN", &svlen, &nsvlen) > 0) svRec.insLen = *svlen;
+	else continue;
+      }
       if (bcf_get_info_int32(hdr, rec, "HOMLEN", &homlen, &nhomlen) > 0) svRec.homLen = *homlen;
       else svRec.homLen = 0;
       if (bcf_get_info_int32(hdr, rec, "SR", &sr, &nsr) > 0) svRec.srSupport = *sr;
       else svRec.srSupport = 0;
-      if (bcf_get_info_int32(hdr, rec, "END", &svend, &nsvend) > 0) svRec.svEnd = *svend;
-      else svRec.svEnd = rec->pos + 2;
+
+      if (svRec.svt < DELLY_SVT_TRANS) {
+	if (bcf_get_info_int32(hdr, rec, "END", &svend, &nsvend) > 0) svRec.svEnd = *svend;
+	else svRec.svEnd = rec->pos + 2;
+      } else {
+	// Translocation
+	if (bcf_get_info_string(hdr, rec, "CHR2", &chr2, &nchr2) > 0) {
+	  std::string chr2Name = std::string(chr2);
+	  svRec.chr2 = bam_name2id(hd, chr2Name.c_str());
+	} else svRec.chr2 = tid;
+	if (bcf_get_info_int32(hdr, rec, "POS2", &pos2, &npos2) > 0) svRec.svEnd = *pos2;
+	else svRec.svEnd = rec->pos + 2;
+      }
       if (bcf_get_info_string(hdr, rec, "CONSENSUS", &cons, &ncons) > 0) svRec.consensus = std::string(cons);
       else svRec.precise = false;
       if (bcf_get_info_int32(hdr, rec, "CIPOS", &cipos, &ncipos) > 0) {
@@ -253,12 +278,7 @@ vcfParse(TConfig const& c, bam_hdr_t* hd, std::vector<TStructuralVariantRecord>&
       else svRec.srMapQuality = 0;
       if (bcf_get_info_float(hdr, rec, "SRQ", &srq, &nsrq) > 0) svRec.srAlignQuality = (double) *srq;
       else svRec.srAlignQuality = 0;
-      if ((bcf_get_info_string(hdr, rec, "SVTYPE", &svt, &nsvt) > 0) && (bcf_get_info_string(hdr, rec, "CT", &ct, &nct) > 0)) svRec.svt = _decodeOrientation(std::string(ct), std::string(svt));
-      else continue;
-      if (bcf_get_info_string(hdr, rec, "CHR2", &chr2, &nchr2) > 0) {
-	std::string chr2Name = std::string(chr2);
-	svRec.chr2 = bam_name2id(hd, chr2Name.c_str());
-      } else svRec.chr2 = tid;
+
       svs.push_back(svRec);
     } else if (wimethod == 2) {
       // Assume precise SV, only deletions supported and INFO:END is required!!!
@@ -349,6 +369,8 @@ vcfParse(TConfig const& c, bam_hdr_t* hd, std::vector<TStructuralVariantRecord>&
   }
   // Clean-up
   free(svend);
+  free(pos2);
+  free(svlen);
   free(svt);
   free(method);
   free(pe);
@@ -414,7 +436,7 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
   bcf_hdr_append(hdr, "##INFO=<ID=CONSENSUS,Number=1,Type=String,Description=\"Split-read consensus sequence\">");
   bcf_hdr_append(hdr, "##INFO=<ID=CE,Number=1,Type=Float,Description=\"Consensus sequence entropy\">");
   bcf_hdr_append(hdr, "##INFO=<ID=CT,Number=1,Type=String,Description=\"Paired-end signature induced connection type\">");
-  bcf_hdr_append(hdr, "##INFO=<ID=SVLEN,Number=1,Type=Integer,Description=\"SV length\">");
+  bcf_hdr_append(hdr, "##INFO=<ID=SVLEN,Number=1,Type=Integer,Description=\"Insertion length for SVTYPE=INS.\">");
   bcf_hdr_append(hdr, "##INFO=<ID=IMPRECISE,Number=0,Type=Flag,Description=\"Imprecise structural variation\">");
   bcf_hdr_append(hdr, "##INFO=<ID=PRECISE,Number=0,Type=Flag,Description=\"Precise structural variation\">");
   bcf_hdr_append(hdr, "##INFO=<ID=SVTYPE,Number=1,Type=String,Description=\"Type of structural variant\">");
@@ -529,17 +551,16 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
 	tmpi = svEndPos;
 	bcf_update_info_int32(hdr, rec, "END", &tmpi, 1);
       } else {
-	tmpi = svStartPos + 1;
+	tmpi = svStartPos + 2;
 	bcf_update_info_int32(hdr, rec, "END", &tmpi, 1);
 	bcf_update_info_string(hdr,rec, "CHR2", bamhd->target_name[svIter->chr2]);
 	tmpi = svEndPos;
 	bcf_update_info_int32(hdr, rec, "POS2", &tmpi, 1);
       }
-      if (svIter->svt < DELLY_SVT_TRANS) {
-	if (svIter->svt != 4) tmpi = svIter->svEnd - svIter->svStart;
-	else tmpi = svIter->insLen;
-      } else tmpi = 0;
-      bcf_update_info_int32(hdr, rec, "SVLEN", &tmpi, 1);
+      if (svIter->svt == 4) {
+	tmpi = svIter->insLen;
+	bcf_update_info_int32(hdr, rec, "SVLEN", &tmpi, 1);
+      }
       tmpi = svIter->peSupport;
       bcf_update_info_int32(hdr, rec, "PE", &tmpi, 1);
       tmpi = svIter->peMapQuality;

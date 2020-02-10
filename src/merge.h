@@ -104,6 +104,8 @@ void _fillIntervalMap(MergeConfig const& c, TGenomeIntervals& iScore, TContigMap
     int32_t* svend = NULL;
     int32_t ninslen = 0;
     int32_t* inslen = NULL;
+    int32_t npos2 = 0;
+    int32_t* pos2 = NULL;
     int32_t npe = 0;
     int32_t* pe = NULL;
     int32_t nsr = 0;
@@ -128,23 +130,28 @@ void _fillIntervalMap(MergeConfig const& c, TGenomeIntervals& iScore, TContigMap
       if ((bcf_get_info_string(hdr, rec, "SVTYPE", &svt, &nsvt) > 0) && (bcf_get_info_string(hdr, rec, "CT", &ct, &nct) > 0)) recsvt = _decodeOrientation(std::string(ct), std::string(svt));
       if (recsvt != svtin) continue;
 
-      // Correct size
+      // Correct size?
       std::string chrName(bcf_hdr_id2name(hdr, rec->rid));
       uint32_t tid = cMap[chrName];
       uint32_t svStart = rec->pos;
-      uint32_t svEnd = svStart + 1;
-      if (bcf_get_info_int32(hdr, rec, "END", &svend, &nsvend) > 0) svEnd = *svend;
-
-      // SV size check 
-      if (std::string(svt) != "BND") {
-	if (std::string(svt) == "INS") {
-	  unsigned int inslenVal = 0;
+      uint32_t svEnd = rec->pos + 2;
+      if (recsvt < DELLY_SVT_TRANS) {
+	if (bcf_get_info_int32(hdr, rec, "END", &svend, &nsvend) > 0) svEnd = *svend;
+	if (recsvt == 4) {
+	  // Insertion
+	  uint32_t inslenVal = 0;
 	  if (bcf_get_info_int32(hdr, rec, "INSLEN", &inslen, &ninslen) > 0) inslenVal = *inslen;
 	  if ((inslenVal < c.minsize) || (inslenVal > c.maxsize)) continue;
 	} else {
+	  // Other intra-chr SV
 	  if ((svEnd - svStart < c.minsize) || (svEnd - svStart > c.maxsize)) continue;
 	}
+      } else {
+	// Translocation
+	if (bcf_get_info_int32(hdr, rec, "POS2", &pos2, &npos2) > 0) svEnd = *pos2;
       }
+
+      // Precise?
       bool precise = false;
       if (bcf_get_info_flag(hdr, rec, "PRECISE", 0, 0) > 0) precise=true;
       if ((c.filterForPrecise) && (!precise)) continue;
@@ -226,6 +233,7 @@ void _fillIntervalMap(MergeConfig const& c, TGenomeIntervals& iScore, TContigMap
     }
     if (svend != NULL) free(svend);
     if (inslen != NULL) free(inslen);
+    if (pos2 != NULL) free(pos2);
     if (pe != NULL) free(pe);
     if (sr != NULL) free(sr);
     if (mapq != NULL) free(mapq);
@@ -301,25 +309,28 @@ void _outputSelectedIntervals(MergeConfig& c, TGenomeIntervals const& iSelected,
   bcf_hdr_append(hdr_out, "##ALT=<ID=INV,Description=\"Inversion\">");
   bcf_hdr_append(hdr_out, "##ALT=<ID=BND,Description=\"Translocation\">");
   bcf_hdr_append(hdr_out, "##ALT=<ID=INS,Description=\"Insertion\">");
-  bcf_hdr_append(hdr_out, "##FILTER=<ID=LowQual,Description=\"PE/SR support below 3 or mapping quality below 20.\">");
+  bcf_hdr_append(hdr_out, "##FILTER=<ID=LowQual,Description=\"Poor quality and insufficient number of PEs and SRs.\">");
   bcf_hdr_append(hdr_out, "##INFO=<ID=CIEND,Number=2,Type=Integer,Description=\"PE confidence interval around END\">");
   bcf_hdr_append(hdr_out, "##INFO=<ID=CIPOS,Number=2,Type=Integer,Description=\"PE confidence interval around POS\">");
-  bcf_hdr_append(hdr_out, "##INFO=<ID=CHR2,Number=1,Type=String,Description=\"Chromosome for END coordinate in case of a translocation\">");
+  bcf_hdr_append(hdr_out, "##INFO=<ID=CHR2,Number=1,Type=String,Description=\"Chromosome for POS2 coordinate in case of an inter-chromosomal translocation\">");
+  bcf_hdr_append(hdr_out, "##INFO=<ID=POS2,Number=1,Type=Integer,Description=\"Genomic position for CHR2 in case of an inter-chromosomal translocation\">");
   bcf_hdr_append(hdr_out, "##INFO=<ID=END,Number=1,Type=Integer,Description=\"End position of the structural variant\">");
   bcf_hdr_append(hdr_out, "##INFO=<ID=PE,Number=1,Type=Integer,Description=\"Paired-end support of the structural variant\">");
   bcf_hdr_append(hdr_out, "##INFO=<ID=MAPQ,Number=1,Type=Integer,Description=\"Median mapping quality of paired-ends\">");
-  bcf_hdr_append(hdr_out, "##INFO=<ID=SR,Number=1,Type=Integer,Description=\"Split-read support\">");
   bcf_hdr_append(hdr_out, "##INFO=<ID=SRMAPQ,Number=1,Type=Integer,Description=\"Median mapping quality of split-reads\">");
+  bcf_hdr_append(hdr_out, "##INFO=<ID=SR,Number=1,Type=Integer,Description=\"Split-read support\">");
   bcf_hdr_append(hdr_out, "##INFO=<ID=SRQ,Number=1,Type=Float,Description=\"Split-read consensus alignment quality\">");
   bcf_hdr_append(hdr_out, "##INFO=<ID=CONSENSUS,Number=1,Type=String,Description=\"Split-read consensus sequence\">");
   bcf_hdr_append(hdr_out, "##INFO=<ID=CE,Number=1,Type=Float,Description=\"Consensus sequence entropy\">");
   bcf_hdr_append(hdr_out, "##INFO=<ID=CT,Number=1,Type=String,Description=\"Paired-end signature induced connection type\">");
+  bcf_hdr_append(hdr_out, "##INFO=<ID=SVLEN,Number=1,Type=Integer,Description=\"Insertion length for SVTYPE=INS.\">");
   bcf_hdr_append(hdr_out, "##INFO=<ID=IMPRECISE,Number=0,Type=Flag,Description=\"Imprecise structural variation\">");
   bcf_hdr_append(hdr_out, "##INFO=<ID=PRECISE,Number=0,Type=Flag,Description=\"Precise structural variation\">");
   bcf_hdr_append(hdr_out, "##INFO=<ID=SVTYPE,Number=1,Type=String,Description=\"Type of structural variant\">");
   bcf_hdr_append(hdr_out, "##INFO=<ID=SVMETHOD,Number=1,Type=String,Description=\"Type of approach used to detect SV\">");
   bcf_hdr_append(hdr_out, "##INFO=<ID=INSLEN,Number=1,Type=Integer,Description=\"Predicted length of the insertion\">");
   bcf_hdr_append(hdr_out, "##INFO=<ID=HOMLEN,Number=1,Type=Integer,Description=\"Predicted microhomology length using a max. edit distance of 2\">");
+  
   // Add reference contigs
   uint32_t numseq = 0;
   typedef std::map<uint32_t, std::string> TReverseMap;
