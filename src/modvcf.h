@@ -215,6 +215,7 @@ vcfParse(TConfig const& c, bam_hdr_t* hd, std::vector<TStructuralVariantRecord>&
       svRec.chr = tid;
       svRec.svStart = rec->pos + 1;
       svRec.id = svs.size();
+      svRec.mapq = rec->qual;
       std::string refAllele = rec->d.allele[0];
       std::string altAllele = rec->d.allele[1];
       svRec.alleles = refAllele + "," + altAllele;

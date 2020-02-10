@@ -501,14 +501,13 @@ void _outputSelectedIntervals(MergeConfig& c, TGenomeIntervals const& iSelected,
 	    float ceVal = 0;
 	    if (precise) {
 	      if (bcf_get_info_float(hdr[idx], rec[idx], "CE", &ce, &nce) > 0) ceVal = *ce;
-	      bcf_get_info_string(hdr[idx], rec[idx], "CONSENSUS", &cons, &ncons);
-	      consensus = boost::to_upper_copy(std::string(cons));
+	      if (bcf_get_info_string(hdr[idx], rec[idx], "CONSENSUS", &cons, &ncons) > 0) consensus = boost::to_upper_copy(std::string(cons));
 	    }
 	    
 	    // Create new record
 	    rout->rid = bcf_hdr_name2id(hdr_out, chrName.c_str());
 	    rout->pos = rec[idx]->pos;
-	    rout->qual = score;
+	    rout->qual = rec[idx]->qual;
 	    std::string id;
 	    if (c.files.size() == 1) id = std::string(rec[idx]->d.id); // Within one VCF file IDs are unique
 	    else {
@@ -532,8 +531,17 @@ void _outputSelectedIntervals(MergeConfig& c, TGenomeIntervals const& iSelected,
 	    std::string dellyVersion("EMBL.DELLYv");
 	    dellyVersion += dellyVersionNumber;
 	    bcf_update_info_string(hdr_out,rout, "SVMETHOD", dellyVersion.c_str());
-	    bcf_update_info_string(hdr_out,rout, "CHR2", chr2Name.c_str());
-	    bcf_update_info_int32(hdr_out, rout, "END", &svEnd, 1);
+	    if (svtin < DELLY_SVT_TRANS) {
+	      bcf_update_info_int32(hdr_out, rout, "END", &svEnd, 1);
+	    } else {
+	      int32_t tmpi = svStart + 2;
+	      bcf_update_info_int32(hdr_out, rout, "END", &tmpi, 1);
+	      bcf_update_info_string(hdr_out,rout, "CHR2", chr2Name.c_str());
+	      bcf_update_info_int32(hdr_out, rout, "POS2", &svEnd, 1);
+	    }
+	    if (svtin == 4) {
+	      bcf_update_info_int32(hdr_out, rout, "SVLEN", &inslenVal, 1);
+	    }
 	    bcf_update_info_int32(hdr_out, rout, "PE", &peSupport, 1);
 	    int32_t tmpi = peMapQuality;
 	    bcf_update_info_int32(hdr_out, rout, "MAPQ", &tmpi, 1);
@@ -541,14 +549,16 @@ void _outputSelectedIntervals(MergeConfig& c, TGenomeIntervals const& iSelected,
 	    bcf_update_info_int32(hdr_out, rout, "CIPOS", cipos, 2);
 	    bcf_update_info_int32(hdr_out, rout, "CIEND", ciend, 2);
 	    if (precise) {
+	      int32_t tmpi = srMapQuality;
+	      bcf_update_info_int32(hdr_out, rout, "SRMAPQ", &tmpi, 1);
 	      bcf_update_info_int32(hdr_out, rout, "INSLEN", &inslenVal, 1);
 	      bcf_update_info_int32(hdr_out, rout, "HOMLEN", &homlenVal, 1);
 	      bcf_update_info_int32(hdr_out, rout, "SR", &srSupport, 1);
-	      int32_t tmpi = srMapQuality;
-	      bcf_update_info_int32(hdr_out, rout, "SRMAPQ", &tmpi, 1);
 	      bcf_update_info_float(hdr_out, rout, "SRQ", &srAlignQuality, 1);
-	      bcf_update_info_string(hdr_out, rout, "CONSENSUS", consensus.c_str());
-	      bcf_update_info_float(hdr_out, rout, "CE", &ceVal, 1);
+	      if (consensus.size()) {
+		bcf_update_info_string(hdr_out, rout, "CONSENSUS", consensus.c_str());
+		bcf_update_info_float(hdr_out, rout, "CE", &ceVal, 1);
+	      }
 	    }
 	
 	    // Write record
@@ -766,7 +776,7 @@ int merge(int argc, char **argv) {
   // Check command line arguments
   if ((vm.count("help")) || (!vm.count("input-file"))) { 
     std::cout << std::endl;
-    std::cout << "Usage: delly " << argv[0] << " [OPTIONS] [<sample1.bcf> <sample2.bcf> ... | <list_of_bcf_files.tsv>]" << std::endl;
+    std::cout << "Usage: delly " << argv[0] << " [OPTIONS] [<sample1.bcf> <sample2.bcf> ... | <list_of_bcf_files.txt>]" << std::endl;
     std::cout << visible_options << "\n"; 
     return 0; 
   }
@@ -791,26 +801,37 @@ int merge(int argc, char **argv) {
 
   // Check input BCF files
   if (c.files.size() == 1) {
-    // Assume the input file is a list
+    // Single file: VCF/BCF or list of files?
     if (!(boost::filesystem::exists(c.files[0]) && boost::filesystem::is_regular_file(c.files[0]) && boost::filesystem::file_size(c.files[0]))) {
       std::cerr << "Input file list " << c.files[0].string() << " is missing!" << std::endl;
       return 1;
     }
-    std::string fname = c.files[0].string();
-    c.files.clear();
-    std::ifstream lf(fname.c_str());
-    if (lf.good()) {
-      std::string line;
-      while(std::getline(lf, line)) {
-	if (!line.empty()) {
-	  if (line.at(line.length() - 1) == '\r' ) {
-	    line = line.substr(0, line.length() - 1);
+    htsFile* inf = bcf_open(c.files[0].string().c_str(), "r");
+    if (inf != NULL) {
+      bcf_hdr_t* header = NULL;
+      header = bcf_hdr_read(inf);
+      if (header == NULL) {
+	std::cout << "Assuming input is a list of BCF files" << std::endl;
+	std::string fname = c.files[0].string();
+	c.files.clear();
+	std::ifstream lf(fname.c_str());
+	if (lf.good()) {
+	  std::string line;
+	  while(std::getline(lf, line)) {
+	    if (!line.empty()) {
+	      if (line.at(line.length() - 1) == '\r' ) {
+		line = line.substr(0, line.length() - 1);
+	      }
+	      c.files.push_back(line);
+	    }
 	  }
-	  c.files.push_back(line);
+	  lf.close();
 	}
+      } else {
+	bcf_hdr_destroy(header);
       }
-      lf.close();
     }
+    bcf_close(inf);
   }
   for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
     htsFile* ifile = bcf_open(c.files[file_c].string().c_str(), "r");
