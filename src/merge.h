@@ -104,8 +104,6 @@ void _fillIntervalMap(MergeConfig const& c, TGenomeIntervals& iScore, TContigMap
     int32_t* svend = NULL;
     int32_t ninslen = 0;
     int32_t* inslen = NULL;
-    int32_t npos2 = 0;
-    int32_t* pos2 = NULL;
     int32_t npe = 0;
     int32_t* pe = NULL;
     int32_t nsr = 0;
@@ -135,20 +133,15 @@ void _fillIntervalMap(MergeConfig const& c, TGenomeIntervals& iScore, TContigMap
       uint32_t tid = cMap[chrName];
       uint32_t svStart = rec->pos;
       uint32_t svEnd = rec->pos + 2;
-      if (recsvt < DELLY_SVT_TRANS) {
-	if (bcf_get_info_int32(hdr, rec, "END", &svend, &nsvend) > 0) svEnd = *svend;
-	if (recsvt == 4) {
-	  // Insertion
-	  uint32_t inslenVal = 0;
-	  if (bcf_get_info_int32(hdr, rec, "INSLEN", &inslen, &ninslen) > 0) inslenVal = *inslen;
-	  if ((inslenVal < c.minsize) || (inslenVal > c.maxsize)) continue;
-	} else {
-	  // Other intra-chr SV
-	  if ((svEnd - svStart < c.minsize) || (svEnd - svStart > c.maxsize)) continue;
-	}
+      if (bcf_get_info_int32(hdr, rec, "END", &svend, &nsvend) > 0) svEnd = *svend;
+      if (recsvt == 4) {
+	// Insertion
+	uint32_t inslenVal = 0;
+	if (bcf_get_info_int32(hdr, rec, "INSLEN", &inslen, &ninslen) > 0) inslenVal = *inslen;
+	if ((inslenVal < c.minsize) || (inslenVal > c.maxsize)) continue;
       } else {
-	// Translocation
-	if (bcf_get_info_int32(hdr, rec, "POS2", &pos2, &npos2) > 0) svEnd = *pos2;
+	// Other intra-chr SV
+	if ((svEnd - svStart < c.minsize) || (svEnd - svStart > c.maxsize)) continue;
       }
 
       // Precise?
@@ -233,7 +226,6 @@ void _fillIntervalMap(MergeConfig const& c, TGenomeIntervals& iScore, TContigMap
     }
     if (svend != NULL) free(svend);
     if (inslen != NULL) free(inslen);
-    if (pos2 != NULL) free(pos2);
     if (pe != NULL) free(pe);
     if (sr != NULL) free(sr);
     if (mapq != NULL) free(mapq);
@@ -383,6 +375,8 @@ void _outputSelectedIntervals(MergeConfig& c, TGenomeIntervals const& iSelected,
   int32_t* sr = NULL;
   int32_t ninslen = 0;
   int32_t* inslen = NULL;
+  int32_t npos2 = 0;
+  int32_t* pos2 = NULL;
   int32_t nhomlen = 0;
   int32_t* homlen = NULL;
   int32_t nmapq = 0;
@@ -453,8 +447,10 @@ void _outputSelectedIntervals(MergeConfig& c, TGenomeIntervals const& iSelected,
 	  int32_t srMapQuality = 0;
 	  if (bcf_get_info_int32(hdr[idx], rec[idx], "SRMAPQ", &srmapq, &nsrmapq) > 0) srMapQuality = *srmapq;
 	  std::string chr2Name = chrName;
+	  int32_t pos2val = 0;
 	  if (bcf_get_info_string(hdr[idx], rec[idx], "CHR2", &chr2, &nchr2) > 0) {
 	    chr2Name = std::string(chr2);
+	    if (bcf_get_info_int32(hdr[idx], rec[idx], "POS2", &pos2, &npos2) > 0) pos2val = *pos2;
 	    //mtid = cMap[chr2Name];
 	  }
 
@@ -531,13 +527,10 @@ void _outputSelectedIntervals(MergeConfig& c, TGenomeIntervals const& iSelected,
 	    std::string dellyVersion("EMBL.DELLYv");
 	    dellyVersion += dellyVersionNumber;
 	    bcf_update_info_string(hdr_out,rout, "SVMETHOD", dellyVersion.c_str());
-	    if (svtin < DELLY_SVT_TRANS) {
-	      bcf_update_info_int32(hdr_out, rout, "END", &svEnd, 1);
-	    } else {
-	      int32_t tmpi = svStart + 2;
-	      bcf_update_info_int32(hdr_out, rout, "END", &tmpi, 1);
+	    bcf_update_info_int32(hdr_out, rout, "END", &svEnd, 1);
+	    if (svtin >= DELLY_SVT_TRANS) {
 	      bcf_update_info_string(hdr_out,rout, "CHR2", chr2Name.c_str());
-	      bcf_update_info_int32(hdr_out, rout, "POS2", &svEnd, 1);
+	      bcf_update_info_int32(hdr_out, rout, "POS2", &pos2val, 1);
 	    }
 	    if (svtin == 4) {
 	      bcf_update_info_int32(hdr_out, rout, "SVLEN", &inslenVal, 1);
@@ -582,6 +575,7 @@ void _outputSelectedIntervals(MergeConfig& c, TGenomeIntervals const& iSelected,
   if (sr != NULL) free(sr);
   if (homlen != NULL) free(homlen);
   if (inslen != NULL) free(inslen);
+  if (pos2 != NULL) free(pos2);
   if (mapq != NULL) free(mapq);
   if (srmapq != NULL) free(srmapq);
   if (ct != NULL) free(ct);
