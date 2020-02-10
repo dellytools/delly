@@ -30,6 +30,22 @@ matrix:
             - ubuntu-toolchain-r-test
           packages:
             - g++-6
+    - env: MYCC="gcc-7" MYCXX="g++-7"
+      os: linux
+      addons: &gcc7
+        apt:
+          sources:
+            - ubuntu-toolchain-r-test
+          packages:
+            - g++-7
+    - env: MYCC="gcc-8" MYCXX="g++-8"
+      os: linux
+      addons: &gcc8
+        apt:
+          sources:
+            - ubuntu-toolchain-r-test
+          packages:
+            - g++-8
     - env: MYCC="gcc-9" MYCXX="g++-9"
       os: linux
       addons: &gcc9
