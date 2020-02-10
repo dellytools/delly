@@ -331,7 +331,7 @@ void _outputSelectedIntervals(MergeConfig& c, TGenomeIntervals const& iSelected,
     bcf_hdr_append(hdr_out, refname.c_str());
   }
   bcf_hdr_add_sample(hdr_out, NULL);
-  bcf_hdr_write(fp, hdr_out);
+  if (!bcf_hdr_write(fp, hdr_out)) std::cerr << "Error: Failed to write BCF header!" << std::endl;
 
   // Duplicate filter (identical start, end, score values)
   typedef std::pair<uint32_t, uint32_t> TStartEnd;
@@ -353,7 +353,7 @@ void _outputSelectedIntervals(MergeConfig& c, TGenomeIntervals const& iSelected,
   for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
     ifile[file_c] = bcf_open(c.files[file_c].string().c_str(), "r");
     hdr[file_c] = bcf_hdr_read(ifile[file_c]);
-    bcf_hdr_set_samples(hdr[file_c], NULL, false); // Do not read the sample information
+    if (!bcf_hdr_set_samples(hdr[file_c], NULL, false)) std::cerr << "Error: Failed to set sample information!" << std::endl;
     rec[file_c] = bcf_init();
     if (bcf_read(ifile[file_c], hdr[file_c], rec[file_c]) == 0) {
       bcf_unpack(rec[file_c], BCF_UN_INFO);
@@ -620,7 +620,7 @@ mergeBCFs(MergeConfig& c, std::vector<boost::filesystem::path> const& cts) {
   // Open output VCF file
   htsFile *fp = hts_open(c.outfile.string().c_str(), "wb");
   bcf_hdr_t *hdr_out = bcf_hdr_dup(hdr[0]);
-  bcf_hdr_write(fp, hdr_out);
+  if (!bcf_hdr_write(fp, hdr_out)) std::cerr << "Error: Failed to write BCF header!" << std::endl;
 
   // Merge files
   while (allEOF < cts.size()) {

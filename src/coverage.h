@@ -441,7 +441,7 @@ annotateCoverage(TConfig& c, TSampleLibrary& sampleLib, TCovRecord& ict, TCovera
 	// Check read length for junction annotation
 	if (rec->core.l_qseq >= (2 * c.minimumFlankSize)) {
 	  bool bpvalid = false;
-	  int32_t rbegin = std::max(0, rec->core.pos - leadingSC);
+	  int32_t rbegin = std::max(0, (int32_t) rec->core.pos - leadingSC);
 	  for(int32_t k = rbegin; ((k < (rec->core.pos + rec->core.l_qseq)) && (k < (int32_t) hdr[file_c]->target_len[refIndex])); ++k) {
 	    if (bpOccupied[k]) {
 	      bpvalid = true;
@@ -608,7 +608,7 @@ annotateCoverage(TConfig& c, TSampleLibrary& sampleLib, TCovRecord& ict, TCovera
 	  if ((!pairClip) && (getSVType(rec->core) == 2) && (outerISize >= sampleLib[file_c].minNormalISize) && (outerISize <= sampleLib[file_c].maxNormalISize) && (rec->core.tid==rec->core.mtid)) {
 	    // Take X% of the outerisize as the spanned interval
 	    int32_t spanlen = 0.8 * outerISize;
-	    int32_t pbegin = std::min(rec->core.pos, rec->core.mpos);
+	    int32_t pbegin = std::min((int32_t) rec->core.pos, (int32_t) rec->core.mpos);
 	    int32_t st = pbegin + (outerISize - spanlen) / 2;
 	    bool spanvalid = false;
 	    for(int32_t i = st; ((i < (st + spanlen)) &&  (i < (int32_t) hdr[file_c]->target_len[refIndex])); ++i) {
@@ -648,10 +648,10 @@ annotateCoverage(TConfig& c, TSampleLibrary& sampleLib, TCovRecord& ict, TCovera
 	    // Spanning a breakpoint?
 	    bool spanvalid = false;
 	    int32_t pbegin = rec->core.pos;
-	    int32_t pend = std::min(rec->core.pos + sampleLib[file_c].maxNormalISize, (int32_t) hdr[file_c]->target_len[refIndex]);
+	    int32_t pend = std::min((int32_t) rec->core.pos + sampleLib[file_c].maxNormalISize, (int32_t) hdr[file_c]->target_len[refIndex]);
 	    if (rec->core.flag & BAM_FREVERSE) {
-	      pbegin = std::max(0, rec->core.pos + rec->core.l_qseq - sampleLib[file_c].maxNormalISize);
-	      pend = std::min(rec->core.pos + rec->core.l_qseq, (int32_t) hdr[file_c]->target_len[refIndex]);
+	      pbegin = std::max(0, (int32_t) rec->core.pos + rec->core.l_qseq - sampleLib[file_c].maxNormalISize);
+	      pend = std::min((int32_t) rec->core.pos + rec->core.l_qseq, (int32_t) hdr[file_c]->target_len[refIndex]);
 	    }
 	    for(int32_t i = pbegin; i < pend; ++i) {
 	      if (spanBp[i]) {

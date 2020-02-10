@@ -456,7 +456,7 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
   // Add samples
   for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) bcf_hdr_add_sample(hdr, c.sampleName[file_c].c_str());
   bcf_hdr_add_sample(hdr, NULL);
-  bcf_hdr_write(fp, hdr);
+  if (!bcf_hdr_write(fp, hdr)) std::cerr << "Error: Failed to write BCF header!" << std::endl;
 
   if (!svs.empty()) {
     // Genotype arrays
