@@ -113,7 +113,7 @@ dpeRun(DoublePEConfig const& c)
   bcf_hdr_append(hdr_out, "##INFO=<ID=REGION3,Number=3,Type=String,Description=\"Sub-Region3 of the complex SV as chr, start, end.\">");
   bcf_hdr_remove(hdr_out, BCF_HL_INFO, "CARCONC");
   bcf_hdr_append(hdr_out, "##INFO=<ID=CARCONC,Number=1,Type=Float,Description=\"Carrier concordance of the linked paired-end calls.\">");
-  bcf_hdr_write(ofile, hdr_out);
+  if (bcf_hdr_write(ofile, hdr_out) != 0) std::cerr << "Error: Failed to write BCF header!" << std::endl;
   
   // Parse BCF
   for(int32_t refIndex = 0; refIndex < nseq; ++refIndex) {

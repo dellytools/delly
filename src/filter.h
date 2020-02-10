@@ -84,7 +84,7 @@ filterRun(TFilterConfig const& c) {
     bcf_hdr_remove(hdr_out, BCF_HL_INFO, "RDRATIO");
     bcf_hdr_append(hdr_out, "##INFO=<ID=RDRATIO,Number=1,Type=Float,Description=\"Read-depth ratio of SV carrier vs. non-carrier.\">");
   }
-  if (!bcf_hdr_write(ofile, hdr_out)) std::cerr << "Error: Failed to write BCF header!" << std::endl;
+  if (bcf_hdr_write(ofile, hdr_out) != 0) std::cerr << "Error: Failed to write BCF header!" << std::endl;
 
   // VCF fields
   int32_t nsvend = 0;
