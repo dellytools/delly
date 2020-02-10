@@ -104,14 +104,6 @@ void _fillIntervalMap(MergeConfig const& c, TGenomeIntervals& iScore, TContigMap
     int32_t* svend = NULL;
     int32_t ninslen = 0;
     int32_t* inslen = NULL;
-    int32_t npe = 0;
-    int32_t* pe = NULL;
-    int32_t nsr = 0;
-    int32_t* sr = NULL;
-    int32_t nmapq = 0;
-    int32_t* mapq = NULL;
-    int32_t nsrmapq = 0;
-    int32_t* srmapq = NULL;
     int32_t nct = 0;
     char* ct = NULL;
     int32_t nsvt = 0;
@@ -192,45 +184,12 @@ void _fillIntervalMap(MergeConfig const& c, TGenomeIntervals& iScore, TContigMap
 	if (gt != NULL) free(gt);
 	if ((maxvaf < c.vaf) || (maxcov < c.coverage)) continue;
       }
-
-      // Get SV support
-      int32_t peSupport = 0;
-      if (bcf_get_info_int32(hdr, rec, "PE", &pe, &npe) > 0) peSupport = *pe;
-      int32_t srSupport = 0;
-      if (bcf_get_info_int32(hdr, rec, "SR", &sr, &nsr) > 0) srSupport = *sr;
-
-      int32_t peMapQuality = 0;
-      if (bcf_get_info_int32(hdr, rec, "MAPQ", &mapq, &nmapq) > 0) peMapQuality = *mapq;
-      int32_t srMapQuality = 0;
-      if (bcf_get_info_int32(hdr, rec, "SRMAPQ", &srmapq, &nsrmapq) > 0) srMapQuality = *srmapq;
-
-      // Quality score for the SV
-      int32_t score = 3 * srSupport * srMapQuality + peSupport * peMapQuality;
-      if (_isKeyPresent(hdr, "SCORE")) {
-	int32_t nvcfscore = 0;
-	if (_getInfoType(hdr, "SCORE") == BCF_HT_INT) {
-	  int32_t* vcfscore = NULL;
-	  bcf_get_info_int32(hdr, rec, "SCORE", &vcfscore, &nvcfscore);
-	  score = *vcfscore;
-	  free(vcfscore);
-	} else if (_getInfoType(hdr, "SCORE") == BCF_HT_REAL) {
-	  float* vcfscore = NULL;
-	  bcf_get_info_float(hdr, rec, "SCORE", &vcfscore, &nvcfscore);
-	  score = (uint32_t) (*vcfscore * 10000); // for scores in [0,1] 
-	  free(vcfscore);
-	}
-      }
-
       // Store the interval
-      iScore[tid].push_back(IntervalScore(svStart, svEnd, score));
+      iScore[tid].push_back(IntervalScore(svStart, svEnd, rec->qual));
     }
     if (svend != NULL) free(svend);
     if (inslen != NULL) free(inslen);
-    if (pe != NULL) free(pe);
-    if (sr != NULL) free(sr);
-    if (mapq != NULL) free(mapq);
     if (ct != NULL) free(ct);
-    if (srmapq != NULL) free(srmapq);
     if (svt != NULL) free(svt);
     bcf_hdr_destroy(hdr);
     bcf_close(ifile);
@@ -453,23 +412,7 @@ void _outputSelectedIntervals(MergeConfig& c, TGenomeIntervals const& iSelected,
 	    if (bcf_get_info_int32(hdr[idx], rec[idx], "POS2", &pos2, &npos2) > 0) pos2val = *pos2;
 	    //mtid = cMap[chr2Name];
 	  }
-
-	  // Quality score for the SV
-	  int32_t score = 3 * srSupport * srMapQuality + peSupport * peMapQuality;
-	  if (_isKeyPresent(hdr[idx], "SCORE")) {
-	    int32_t nvcfscore = 0;
-	    if (_getInfoType(hdr[idx], "SCORE") == BCF_HT_INT) {
-	      int32_t* vcfscore = NULL;
-	      bcf_get_info_int32(hdr[idx], rec[idx], "SCORE", &vcfscore, &nvcfscore);
-	      score = *vcfscore;
-	      free(vcfscore);
-	    } else if (_getInfoType(hdr[idx], "SCORE") == BCF_HT_REAL) {
-	      float* vcfscore = NULL;
-	      bcf_get_info_float(hdr[idx], rec[idx], "SCORE", &vcfscore, &nvcfscore);
-	      score = (uint32_t) (*vcfscore * 10000); // for scores in [0,1] 
-	      free(vcfscore);
-	    }
-	  }
+	  int32_t score = rec[idx]->qual;
 	  
 	  // Is this a selected interval
 	  typename TIntervalScores::const_iterator iter = std::lower_bound(iSelected[tid].begin(), iSelected[tid].end(), IntervalScore(svStart, svEnd, score), SortIScores<IntervalScore>());
