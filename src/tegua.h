@@ -36,8 +36,8 @@ namespace torali {
     bool hasDumpFile;
     bool hasVcfFile;
     bool isHaplotagged;
+    bool svtcmd;
     uint16_t minMapQual;
-    uint16_t minGenoQual;
     uint32_t minClip;
     uint32_t minRefSep;
     uint32_t maxReadSep;
@@ -46,6 +46,7 @@ namespace torali {
     int32_t minimumFlankSize;
     float indelExtension;
     float flankQuality;
+    std::set<int32_t> svtset;
     std::vector<int32_t> chrlen;
     std::string svtype;
     DnaScore<int> aliscore;
@@ -136,7 +137,7 @@ namespace torali {
      }
      
      // Assemble
-     //assemble(c, srStore, svs);
+     assemble(c, srStore, svs);
 
      // Re-sort SVs
      typedef std::map<int32_t, int32_t> TIdMap;
@@ -214,7 +215,6 @@ namespace torali {
    boost::program_options::options_description geno("Genotyping options");
    geno.add_options()
      ("vcffile,v", boost::program_options::value<boost::filesystem::path>(&c.vcffile), "input VCF/BCF file for genotyping")
-     ("geno-qual,u", boost::program_options::value<uint16_t>(&c.minGenoQual)->default_value(5), "min. mapping quality for genotyping")
      ("dump,d", boost::program_options::value<boost::filesystem::path>(&c.dumpfile), "gzipped output file for SV-reads (optional)")
      ;
 
@@ -239,10 +239,14 @@ namespace torali {
    
    // Check command line arguments
    if ((vm.count("help")) || (!vm.count("input-file")) || (!vm.count("genome"))) {
-     std::cout << "Usage: dellyLR " << argv[0] << " [OPTIONS] -g <ref.fa> <input.bam>" << std::endl;
+     std::cout << std::endl;
+     std::cout << "Usage: dellyLR " << argv[0] << " [OPTIONS] -g <ref.fa> <sample1.sort.bam> <sample2.sort.bam> ..." << std::endl;
      std::cout << visible_options << "\n";
-    return 1;
+     return 0;
    }
+
+   // SV types to compute?
+   _svTypesToCompute(c);
 
    // Dump reads
    if (vm.count("dump")) c.hasDumpFile = true;
@@ -333,6 +337,17 @@ namespace torali {
      bcf_close(ifile);
      c.hasVcfFile = true;
    } else c.hasVcfFile = false;
+
+
+   // Check output directory
+   if (!_outfileValid(c.outfile)) return 1;
+
+   // Show cmd
+   boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
+   std::cout << '[' << boost::posix_time::to_simple_string(now) << "] ";
+   std::cout << "dellyLR ";
+   for(int i=0; i<argc; ++i) { std::cout << argv[i] << ' '; }
+   std::cout << std::endl;
    
    // Run Tegua
    c.aliscore = DnaScore<int>(3, -2, -3, -1);

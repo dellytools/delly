@@ -330,40 +330,8 @@ namespace torali
       return 0;
     }
     
-    // Only one SV type to compute?
-    c.svtcmd = false;
-    if (vm.count("svtype")) {
-      c.svtcmd = true;
-      if (svtype == "DEL") {
-	c.svtset.insert(2);
-      } else if (svtype == "INS") {
-	c.svtset.insert(4);
-      } else if (svtype == "DUP") {
-	c.svtset.insert(3);
-      } else if (svtype == "INV") {
-	c.svtset.insert(0);
-	c.svtset.insert(1);
-      } else if (svtype == "INV_3to3") {
-	c.svtset.insert(0);
-      } else if (svtype == "INV_5to5") {
-	c.svtset.insert(1);
-      } else if (svtype == "BND") {
-	c.svtset.insert(DELLY_SVT_TRANS + 0);
-	c.svtset.insert(DELLY_SVT_TRANS + 1);
-	c.svtset.insert(DELLY_SVT_TRANS + 2);
-	c.svtset.insert(DELLY_SVT_TRANS + 3);
-      } else if (svtype == "BND_3to3") {
-	c.svtset.insert(DELLY_SVT_TRANS + 0);
-      } else if (svtype == "BND_5to5") {
-	c.svtset.insert(DELLY_SVT_TRANS + 1);
-      } else if (svtype == "BND_3to5") {
-	c.svtset.insert(DELLY_SVT_TRANS + 2);
-      } else if (svtype == "BND_5to3") {
-	c.svtset.insert(DELLY_SVT_TRANS + 3);
-      } else {
-	c.svtcmd = false;
-      }
-    }
+    // SV types to compute?
+    _svTypesToCompute(c, svtype, vm.count("svtype"));
     
     // Dump PE and SR support?
     if (vm.count("dump")) c.hasDumpFile = true;
@@ -465,30 +433,8 @@ namespace torali
     } else c.hasVcfFile = false;
     
     // Check output directory
-    try {
-      boost::filesystem::path outdir;
-      if (c.outfile.has_parent_path()) outdir = c.outfile.parent_path();
-      else outdir = boost::filesystem::current_path();
-      if (!boost::filesystem::exists(outdir)) {
-	std::cerr << "Output directory does not exist: " << outdir << std::endl;
-	return 1;
-      } else {
-	boost::filesystem::file_status s = boost::filesystem::status(outdir);
-	boost::filesystem::ofstream file(c.outfile.string());
-	file.close();
-	if (!(boost::filesystem::exists(c.outfile) && boost::filesystem::is_regular_file(c.outfile))) {
-	  std::cerr << "Fail to open output file " << c.outfile.string() << std::endl;
-	  std::cerr << "Output directory permissions: " << s.permissions() << std::endl;
-	  return 1;
-	} else {
-	  boost::filesystem::remove(c.outfile.string());
-	}
-      }
-    } catch (boost::filesystem::filesystem_error const& e) {
-      std::cerr << e.what() << std::endl;
-      return 1;
-    }
-  
+    if (!_outfileValid(c.outfile)) return 1;
+    
     // Show cmd
     boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
     std::cout << '[' << boost::posix_time::to_simple_string(now) << "] ";

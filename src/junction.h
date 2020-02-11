@@ -452,7 +452,7 @@ namespace torali
 	      int32_t scth = scoreThreshold(refAlign, altAlign, c);
 	      if ((score > 0) && (scth > 0)) {
 		int32_t qual = (int32_t) ((((float) score / (float) (scth)) - 1.0) * 100.0);
-		if ((qual > 0) && (qual > c.minGenoQual)) {
+		if ((qual > 0) && (qual > c.minMapQual)) {
 		  // Debug
 		  //std::cerr << "Qual: " << qual << std::endl;
 		  //std::cerr << refAlign << std::endl;
@@ -679,11 +679,11 @@ namespace torali
   inline void
   fetchSVs(TConfig const& c, TReadBp& readBp, std::vector<std::vector<SRBamRecord> >& br) {
     // Extract BAM records
-    if ((c.svtype == "ALL") || (c.svtype == "DEL")) selectDeletions(c, readBp, br);
-    if ((c.svtype == "ALL") || (c.svtype == "DUP")) selectDuplications(c, readBp, br);
-    if ((c.svtype == "ALL") || (c.svtype == "INV")) selectInversions(c, readBp, br);
-    if ((c.svtype == "ALL") || (c.svtype == "INS")) selectInsertions(c, readBp, br);
-    if ((c.svtype == "ALL") || (c.svtype == "BND")) selectTranslocations(c, readBp, br);
+    if ((!c.svtcmd) || (c.svtset.find(2) != c.svtset.end())) selectDeletions(c, readBp, br);
+    if ((!c.svtcmd) || (c.svtset.find(3) != c.svtset.end())) selectDuplications(c, readBp, br);
+    if ((!c.svtcmd) || (c.svtset.find(0) != c.svtset.end()) || (c.svtset.find(1) != c.svtset.end())) selectInversions(c, readBp, br);
+    if ((!c.svtcmd) || (c.svtset.find(4) != c.svtset.end())) selectInsertions(c, readBp, br);
+    if ((!c.svtcmd) || (c.svtset.find(5) != c.svtset.end()) || (c.svtset.find(6) != c.svtset.end()) || (c.svtset.find(7) != c.svtset.end()) || (c.svtset.find(8) != c.svtset.end())) selectTranslocations(c, readBp, br);
   }
 
 

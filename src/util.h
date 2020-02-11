@@ -111,6 +111,73 @@ namespace torali
     else return "NtoN";
   }
 
+  // Output directory/file checks
+  inline bool
+  _outfileValid(boost::filesystem::path& outfile) {
+    try {
+      boost::filesystem::path outdir;
+      if (outfile.has_parent_path()) outdir = outfile.parent_path();
+      else outdir = boost::filesystem::current_path();
+      if (!boost::filesystem::exists(outdir)) {
+	std::cerr << "Output directory does not exist: " << outdir << std::endl;
+	return false;
+      } else {
+	boost::filesystem::file_status s = boost::filesystem::status(outdir);
+	boost::filesystem::ofstream file(outfile.string());
+	file.close();
+	if (!(boost::filesystem::exists(outfile) && boost::filesystem::is_regular_file(outfile))) {
+	  std::cerr << "Fail to open output file " << outfile.string() << std::endl;
+	  std::cerr << "Output directory permissions: " << s.permissions() << std::endl;
+	  return false;
+	} else {
+	  boost::filesystem::remove(outfile.string());
+	}
+      }
+    } catch (boost::filesystem::filesystem_error const& e) {
+      std::cerr << e.what() << std::endl;
+      return false;
+    }
+    return true;
+  }
+
+  template<typename TConfig>
+  inline void
+    _svTypesToCompute(TConfig& c, std::string const& svtype, bool const specified) {
+    c.svtcmd = false;
+    if (specified) {
+      c.svtcmd = true;
+      if (svtype == "DEL") {
+	c.svtset.insert(2);
+      } else if (svtype == "INS") {
+	c.svtset.insert(4);
+      } else if (svtype == "DUP") {
+	c.svtset.insert(3);
+      } else if (svtype == "INV") {
+	c.svtset.insert(0);
+	c.svtset.insert(1);
+      } else if (svtype == "INV_3to3") {
+	c.svtset.insert(0);
+      } else if (svtype == "INV_5to5") {
+	c.svtset.insert(1);
+      } else if (svtype == "BND") {
+	c.svtset.insert(DELLY_SVT_TRANS + 0);
+	c.svtset.insert(DELLY_SVT_TRANS + 1);
+	c.svtset.insert(DELLY_SVT_TRANS + 2);
+	c.svtset.insert(DELLY_SVT_TRANS + 3);
+      } else if (svtype == "BND_3to3") {
+	c.svtset.insert(DELLY_SVT_TRANS + 0);
+      } else if (svtype == "BND_5to5") {
+	c.svtset.insert(DELLY_SVT_TRANS + 1);
+      } else if (svtype == "BND_3to5") {
+	c.svtset.insert(DELLY_SVT_TRANS + 2);
+      } else if (svtype == "BND_5to3") {
+	c.svtset.insert(DELLY_SVT_TRANS + 3);
+      } else {
+	c.svtcmd = false;
+      }
+    }
+  }
+
   inline uint32_t sequenceLength(bam1_t const* rec) {
     uint32_t* cigar = bam_get_cigar(rec);
     uint32_t slen = 0;
