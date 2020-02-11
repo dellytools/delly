@@ -48,7 +48,6 @@ namespace torali {
     float flankQuality;
     std::set<int32_t> svtset;
     std::vector<int32_t> chrlen;
-    std::string svtype;
     DnaScore<int> aliscore;
     boost::filesystem::path dumpfile;
     boost::filesystem::path outfile;
@@ -195,10 +194,11 @@ namespace torali {
    c.isHaplotagged = false;
    
    // Parameter
+   std::string svtype;
    boost::program_options::options_description generic("Generic options");
    generic.add_options()
      ("help,?", "show help message")
-     ("svtype,t", boost::program_options::value<std::string>(&c.svtype)->default_value("ALL"), "SV type to compute [DEL, INS, DUP, INV, BND, ALL]")
+     ("svtype,t", boost::program_options::value<std::string>(&svtype)->default_value("ALL"), "SV type to compute [DEL, INS, DUP, INV, BND, ALL]")
      ("genome,g", boost::program_options::value<boost::filesystem::path>(&c.genome), "genome fasta file")
      ("outfile,o", boost::program_options::value<boost::filesystem::path>(&c.outfile)->default_value("sv.bcf"), "SV BCF output file")
      ;
