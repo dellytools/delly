@@ -246,7 +246,7 @@ namespace torali {
    }
 
    // SV types to compute?
-   _svTypesToCompute(c);
+   _svTypesToCompute(c, svtype, vm.count("svtype"));
 
    // Dump reads
    if (vm.count("dump")) c.hasDumpFile = true;
