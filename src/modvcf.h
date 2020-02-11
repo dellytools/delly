@@ -245,17 +245,19 @@ vcfParse(TConfig const& c, bam_hdr_t* hd, std::vector<TStructuralVariantRecord>&
       if (bcf_get_info_int32(hdr, rec, "SR", &sr, &nsr) > 0) svRec.srSupport = *sr;
       else svRec.srSupport = 0;
 
+      // SV end assignment
+      svRec.chr2 = tid;
+      svRec.svEnd = rec->pos + 2;
       if (svRec.svt < DELLY_SVT_TRANS) {
+	// Intra-chromosomal SV
 	if (bcf_get_info_int32(hdr, rec, "END", &svend, &nsvend) > 0) svRec.svEnd = *svend;
-	else svRec.svEnd = rec->pos + 2;
       } else {
-	// Translocation
+	// Inter-chromosomal SV
 	if (bcf_get_info_string(hdr, rec, "CHR2", &chr2, &nchr2) > 0) {
 	  std::string chr2Name = std::string(chr2);
 	  svRec.chr2 = bam_name2id(hd, chr2Name.c_str());
-	} else svRec.chr2 = tid;
+	}
 	if (bcf_get_info_int32(hdr, rec, "POS2", &pos2, &npos2) > 0) svRec.svEnd = *pos2;
-	else svRec.svEnd = rec->pos + 2;
       }
       if (bcf_get_info_string(hdr, rec, "CONSENSUS", &cons, &ncons) > 0) svRec.consensus = std::string(cons);
       else svRec.precise = false;

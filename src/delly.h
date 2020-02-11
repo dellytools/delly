@@ -79,131 +79,6 @@ struct Config {
 };
 
 
-
-template<typename TConfig, typename TSampleLib, typename TSVs, typename TCountMap, typename TSampleSVJunctionMap, typename TSpanningCoverage>
-inline void
-_annotateCoverage(TConfig& c, bam_hdr_t* hdr, TSampleLib& sampleLib, TSVs& svs, TCountMap& countMap, TSampleSVJunctionMap& juncMap, TSpanningCoverage& spanMap) 
-{
-  // Find Ns in the reference genome
-  typedef boost::icl::interval_set<int> TNIntervals;
-  typedef std::vector<TNIntervals> TNGenome;
-  TNGenome ni( hdr->n_targets );
-
-  // Find valid chromosomes
-  typedef std::vector<bool> TValidChr;
-  TValidChr validChr(hdr->n_targets, false);
-  for (typename TSVs::const_iterator itSV = svs.begin(); itSV != svs.end(); ++itSV) {
-    validChr[itSV->chr] = true;
-    validChr[itSV->chr2] = true;
-  }
-
-  // Parse Ns
-  faidx_t* fai = fai_load(c.genome.string().c_str());
-  for(int32_t refIndex=0; refIndex < hdr->n_targets; ++refIndex) {
-    if (!validChr[refIndex]) continue;
-    std::string tname(hdr->target_name[refIndex]);
-    int32_t seqlen = -1;
-    char* seq = faidx_fetch_seq(fai, tname.c_str(), 0, hdr->target_len[refIndex], &seqlen);
-    bool nrun = false;
-    int nstart = seqlen;
-    for(int i=0; i<seqlen; ++i) {
-      if ((seq[i] != 'n') && (seq[i] != 'N')) {
-	if (nrun) {
-	  ni[refIndex].add(boost::icl::discrete_interval<int>::right_open(nstart,i));
-	  nrun = false;
-	}
-      } else {
-	if (!nrun) {
-	  nrun = true;
-	  nstart = i;
-	}
-      }
-    }
-    if (nrun) ni[refIndex].add(boost::icl::discrete_interval<int>::right_open(nstart,seqlen));
-    if (seq != NULL) free(seq);
-  }
-  fai_destroy(fai);
-  
-  // Add control regions
-  typedef std::vector<CovRecord> TCovRecord;
-  typedef std::vector<TCovRecord> TGenomicCovRecord;
-  TGenomicCovRecord svc(hdr->n_targets, TCovRecord());
-  uint32_t lastId = svs.size();
-  typedef std::vector<int32_t> TSVSize;
-  TSVSize svSize(lastId);
-  for (typename TSVs::const_iterator itSV = svs.begin(); itSV != svs.end(); ++itSV) {
-    int halfSize = (itSV->svEnd - itSV->svStart)/2;
-    if ((_translocation(itSV->svt)) || (itSV->svt == 4)) halfSize = 500;
-
-    // Left control region
-    CovRecord sLeft;
-    sLeft.id = lastId + itSV->id;
-    sLeft.svStart = std::max(itSV->svStart - halfSize, 0);
-    sLeft.svEnd = itSV->svStart;
-    typename TNIntervals::const_iterator itO = ni[itSV->chr].find(boost::icl::discrete_interval<int>::right_open(sLeft.svStart, sLeft.svEnd));
-    while (itO != ni[itSV->chr].end()) {
-      sLeft.svStart = std::max(itO->lower() - halfSize, 0);
-      sLeft.svEnd = itO->lower();
-      itO = ni[itSV->chr].find(boost::icl::discrete_interval<int>::right_open(sLeft.svStart, sLeft.svEnd));
-    }
-    svc[itSV->chr].push_back(sLeft);
-
-    // Actual SV
-    CovRecord sMiddle;
-    sMiddle.id = itSV->id;
-    sMiddle.svStart = itSV->svStart;
-    sMiddle.svEnd = itSV->svEnd;
-    if ((_translocation(itSV->svt)) || (itSV->svt == 4)) {
-      sMiddle.svStart = std::max(itSV->svStart - halfSize, 0);
-      sMiddle.svEnd = itSV->svStart + halfSize;      
-    }
-    svSize[itSV->id] = (itSV->svEnd - itSV->svStart);
-    if (_translocation(itSV->svt)) svSize[itSV->id] = 50000000;
-    svc[itSV->chr].push_back(sMiddle);
-    
-
-    // Right control region
-    CovRecord sRight;
-    sRight.id = 2 * lastId + itSV->id;
-    sRight.svStart = itSV->svEnd;
-    sRight.svEnd = itSV->svEnd + halfSize;
-    if ((_translocation(itSV->svt)) || (itSV->svt == 4)) {
-      sRight.svStart = itSV->svStart;
-      sRight.svEnd = itSV->svStart + halfSize;      
-    }
-    itO = ni[itSV->chr2].find(boost::icl::discrete_interval<int>::right_open(sRight.svStart, sRight.svEnd));
-    while (itO != ni[itSV->chr2].end()) {
-      sRight.svStart = itO->upper();
-      sRight.svEnd = itO->upper() + halfSize;
-      itO = ni[itSV->chr2].find(boost::icl::discrete_interval<int>::right_open(sRight.svStart, sRight.svEnd));
-    }
-    svc[itSV->chr2].push_back(sRight);
-    //std::cerr << itSV->id << ':' << sLeft.svStart << '-' << sLeft.svEnd << ',' << itSV->svStart << '-' << itSV->svEnd << ',' << sRight.svStart << '-' << sRight.svEnd << std::endl;
-  }
-  
-  typedef std::pair<int32_t, int32_t> TBpRead;
-  typedef std::vector<TBpRead> TSVReadCount;
-  typedef std::vector<TSVReadCount> TSampleSVReadCount;
-  TSampleSVReadCount readCountMap;
-  annotateCoverage(c, sampleLib, svc, readCountMap, svs, juncMap, spanMap);
-  countMap.resize(c.files.size());
-  for(uint32_t file_c = 0; file_c < c.files.size(); ++file_c) {
-    countMap[file_c].resize(svs.size());
-    for (uint32_t id = 0; id < svs.size(); ++id) {
-      if (svSize[id] <= c.indelsize) {
-	countMap[file_c][id].rc = readCountMap[file_c][id].first;
-	countMap[file_c][id].leftRC = readCountMap[file_c][id + lastId].first;
-	countMap[file_c][id].rightRC = readCountMap[file_c][id + 2*lastId].first;
-      } else {
-	countMap[file_c][id].rc = readCountMap[file_c][id].second;
-	countMap[file_c][id].leftRC = readCountMap[file_c][id + lastId].second;
-	countMap[file_c][id].rightRC = readCountMap[file_c][id + 2*lastId].second;
-      }
-    }
-  }
-}
-
-
  template<typename TConfig, typename TRegionsGenome>
  inline int32_t
  _parseExcludeIntervals(TConfig const& c, bam_hdr_t* hdr, TRegionsGenome& validRegions) {
@@ -347,6 +222,9 @@ inline int dellyRun(TConfigStruct& c) {
     // Sort and merge PE and SR calls
     mergeSort(svs, srSVs);
   } else vcfParse(c, hdr, svs);
+  // Clean-up
+  bam_hdr_destroy(hdr);
+  sam_close(samfile);
 
   // Re-number SVs
   sort(svs.begin(), svs.end(), SortSVs<StructuralVariantRecord>());    
@@ -356,12 +234,12 @@ inline int dellyRun(TConfigStruct& c) {
   // Annotate junction reads
   typedef std::vector<JunctionCount> TSVJunctionMap;
   typedef std::vector<TSVJunctionMap> TSampleSVJunctionMap;
-  TSampleSVJunctionMap junctionCountMap;
+  TSampleSVJunctionMap jctMap;
 
   // Annotate spanning coverage
   typedef std::vector<SpanningCount> TSVSpanningMap;
   typedef std::vector<TSVSpanningMap> TSampleSVSpanningMap;
-  TSampleSVSpanningMap spanCountMap;
+  TSampleSVSpanningMap spanMap;
 
   // Annotate coverage
   typedef std::vector<ReadCount> TSVReadCount;
@@ -369,14 +247,10 @@ inline int dellyRun(TConfigStruct& c) {
   TSampleSVReadCount rcMap;
 
   // SV Genotyping
-  if (!svs.empty()) _annotateCoverage(c, hdr, sampleLib, svs, rcMap, junctionCountMap, spanCountMap);
-  
-  // VCF output
-  vcfOutput(c, svs, junctionCountMap, rcMap, spanCountMap);
+  if (!svs.empty()) annotateCoverage(c, sampleLib, svs, rcMap, jctMap, spanMap);
 
-  // Clean-up
-  bam_hdr_destroy(hdr);
-  sam_close(samfile);
+  // VCF output
+  vcfOutput(c, svs, jctMap, rcMap, spanMap);
 
   // Output library statistics
   boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
