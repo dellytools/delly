@@ -389,12 +389,11 @@ namespace torali
 
     // Check percent identity
     _percentIdentity(align, gS, gE, ad.percId);
-
     if (ad.percId < c.flankQuality) return false;
 
     // Find homology
     _findHomology(consensus, svRefStr, ad, svt);
-
+    
     // Check flanking alignment length
     if ((ad.homLeft + c.minimumFlankSize > ad.cStart) || ( varIndex < ad.cEnd + ad.homRight + c.minimumFlankSize)) return false;
     if ((ad.homLeft + c.minimumFlankSize > ad.rStart) || ( refIndex < ad.rEnd + ad.homRight + c.minimumFlankSize)) return false;
@@ -406,33 +405,33 @@ namespace torali
   template<typename TAlign>
   inline bool
   _consRefAlignment(std::string const& cons, std::string const& svRefStr, TAlign& aln, int32_t const svt) {
+    AlignConfig<true, false> semiglobal;
+    DnaScore<int> lnsc(5, -4, -4, -4);
+    bool reNeedle = false;
     if (svt == 4) {
-      typedef typename TAlign::index TAIndex;
-      AlignConfig<false, true> semiglobal;
-      DnaScore<int> lnsc(5, -4, -4, -4);
-      bool reNeedle = longNeedle(svRefStr, cons, aln, semiglobal, lnsc);
-      for(TAIndex j = 0; j < (TAIndex) aln.shape()[1]; ++j) {
+      reNeedle = longNeedle(svRefStr, cons, aln, semiglobal, lnsc);
+      for(uint32_t j = 0; j < aln.shape()[1]; ++j) {
 	char tmp = aln[0][j];
 	aln[0][j] = aln[1][j];
 	aln[1][j] = tmp;
       }	
-      return reNeedle;
     } else {
-      AlignConfig<true, false> semiglobal;
-      DnaScore<int> lnsc(5, -4, -4, -4);
-      bool reNeedle = longNeedle(cons, svRefStr, aln, semiglobal, lnsc);
-      return reNeedle;
+      reNeedle = longNeedle(cons, svRefStr, aln, semiglobal, lnsc);
     }
+    return reNeedle;
   }
 
   template<typename TConfig>
   inline bool
   alignConsensus(TConfig const& c, bam_hdr_t* hdr, char const* seq, char const* sndSeq, StructuralVariantRecord& sv) {
-    if ( (int32_t) sv.consensus.size() < (2 * c.minimumFlankSize)) return false;
+    if ( (int32_t) sv.consensus.size() < (2 * c.minimumFlankSize + sv.insLen)) return false;
     
     // Get reference slice
     Breakpoint bp(sv);
-    _initBreakpoint(hdr, bp, sv.consensus.size(), sv.svt);
+    if (sv.svt ==4) {
+      int32_t bufferSpace = std::max((int32_t) ((sv.consensus.size() - sv.insLen) / 3), c.minimumFlankSize);
+      _initBreakpoint(hdr, bp, bufferSpace, sv.svt);
+    } else _initBreakpoint(hdr, bp, sv.consensus.size(), sv.svt);
     if (bp.chr != bp.chr2) bp.part1 = _getSVRef(sndSeq, bp, bp.chr2, sv.svt);
     std::string svRefStr = _getSVRef(seq, bp, bp.chr, sv.svt);
 
@@ -442,6 +441,7 @@ namespace torali
     if (!_consRefAlignment(sv.consensus, svRefStr, align, sv.svt)) return false;
 
     // Debug consensus to reference alignment
+    //std::cerr << "Consensus-to-Reference alignment" << std::endl;
     //typedef typename TAlign::index TAIndex;
     //for(TAIndex i = 0; i < (TAIndex) align.shape()[0]; ++i) {
     //for(TAIndex j = 0; j< (TAIndex) align.shape()[1]; ++j) {

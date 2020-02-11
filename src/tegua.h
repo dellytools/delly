@@ -44,6 +44,7 @@ namespace torali {
     uint32_t graphPruning;
     int32_t nchr;
     int32_t minimumFlankSize;
+    int32_t indelsize;
     float indelExtension;
     float flankQuality;
     std::set<int32_t> svtset;
@@ -353,6 +354,7 @@ namespace torali {
    c.aliscore = DnaScore<int>(3, -2, -3, -1);
    c.flankQuality = 0.8;
    c.minimumFlankSize = 50;
+   c.indelsize = 10000;
    return runTegua(c);
  }
 
