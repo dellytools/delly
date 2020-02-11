@@ -21,74 +21,6 @@ namespace torali
   };
 
 
-  // Insertions & deletions only
-  template<typename TConfig>
-  inline bool
-  teguaAlignConsensus(TConfig const& c, bam_hdr_t* hdr, char const* seq, StructuralVariantRecord& sv) {
-
-    // Consensus long enough?
-    int32_t seqstart = 0;
-    int32_t seqend = 0;
-    if (sv.svt == 2) {
-      if ((int32_t) sv.consensus.size() < (2 * c.minimumFlankSize)) return false;
-      seqstart = std::max(sv.svStart - (int32_t) (sv.consensus.size() - c.minimumFlankSize), 0);
-      seqend =  std::min(sv.svEnd + (int32_t) (sv.consensus.size() - c.minimumFlankSize), (int32_t) hdr->target_len[sv.chr]);
-    } else if (sv.svt == 4) {
-      if ((int32_t) sv.consensus.size() < (2 * c.minimumFlankSize + sv.insLen)) return false;
-      int32_t bufferSpace = std::max((int32_t) ((sv.consensus.size() - sv.insLen) / 3), c.minimumFlankSize);
-      seqstart = std::max(sv.svStart - bufferSpace, 0);
-      seqend =  std::min(sv.svEnd + bufferSpace, (int32_t) hdr->target_len[sv.chr]);
-    }
-    std::string svRefStr = boost::to_upper_copy(std::string(seq + seqstart, seq + seqend));
-
-    // Consensus to reference alignment
-    typedef boost::multi_array<char, 2> TAlign;
-    TAlign align;
-    AlignConfig<true, false> global;
-    DnaScore<int> lnsc(5, -4, -4, -4);
-    bool reNeedle = false;
-    if (sv.svt == 2) {
-      reNeedle = longNeedle(sv.consensus, svRefStr, align, global, lnsc);
-    } else if (sv.svt == 4) {
-      reNeedle = longNeedle(svRefStr, sv.consensus, align, global, lnsc);
-      for(uint32_t j = 0; j < align.shape()[1]; ++j) {
-	char tmp = align[0][j];
-	align[0][j] = align[1][j];
-	align[1][j] = tmp;
-      }	
-    }
-    if (!reNeedle) return false;
-
-    // Debug consensus to reference alignment
-    std::cerr << "Consensus-to-Reference alignment (full-length reference)" << std::endl;
-    for(uint32_t i = 0; i < align.shape()[0]; ++i) {
-      for(uint32_t j = 0; j< align.shape()[1]; ++j) {
-	std::cerr << align[i][j];
-      }
-      std::cerr << std::endl;
-    }
-    
-    // Check breakpoint
-    AlignDescriptor ad;
-    if (!_findSplit(c, sv.consensus, svRefStr, align, ad, sv.svt)) return false;
-
-    // Get the start and end of the structural variant
-    uint32_t finalGapStart = seqstart + ad.rStart;
-    uint32_t finalGapEnd = seqstart + ad.rEnd;    
-    sv.precise=true;
-    sv.svStart=finalGapStart;
-    sv.svEnd=finalGapEnd;
-    sv.srAlignQuality = ad.percId;
-    sv.insLen=ad.cEnd - ad.cStart - 1;
-    sv.homLen=std::max(0, ad.homLeft + ad.homRight - 2);
-    int32_t ci_wiggle = std::max(ad.homLeft, ad.homRight);
-    sv.ciposlow = -ci_wiggle;
-    sv.ciposhigh = ci_wiggle;
-    sv.ciendlow = -ci_wiggle;
-    sv.ciendhigh = ci_wiggle;
-    return true;
-  }
-  
   template<typename TConfig, typename TSRStore>
   inline void
   assemble(TConfig const& c, TSRStore& srStore, std::vector<StructuralVariantRecord>& svs) {
@@ -145,7 +77,7 @@ namespace torali
 	      int32_t ePos = srStore[seed][ri].sstart + srStore[seed][ri].inslen + window;
 	      if (ePos > (int32_t) sequence.size()) ePos = sequence.size();
 	      // Min. seq length and max insertion size, 10kbp?
-	      if (((ePos - sPos) > window) && ((ePos - sPos) <= c.indelsize)) {
+	      if (((ePos - sPos) > window) && ((ePos - sPos) <= 10000)) {
 		std::string seqalign = sequence.substr(sPos, (ePos - sPos));
 		if (rec->core.flag & BAM_FREVERSE) reverseComplement(seqalign);
 		seqStore[svid].insert(seqalign);
@@ -157,12 +89,7 @@ namespace torali
 		    if (seqStore[svid].size() > 1) {
 		      //std::cerr << svs[svid].svStart << ',' << svs[svid].svEnd << ',' << svs[svid].svt << ',' << svid << " SV" << std::endl;
 		      msa(c, seqStore[svid], svs[svid].consensus);
-		      if (((svs[svid].svt == 2) || (svs[svid].svt == 4)) && ((svs[svid].svEnd - svs[svid].svStart) <= c.indelsize)) {
-			//if (teguaAlignConsensus(c, hdr, seq, svs[svid])) msaSuccess = true;
-			if (alignConsensus(c, hdr, seq, NULL, svs[svid])) msaSuccess = true;
-		      } else {
-			if (alignConsensus(c, hdr, seq, NULL, svs[svid])) msaSuccess = true;
-		      }
+		      if (alignConsensus(c, hdr, seq, NULL, svs[svid])) msaSuccess = true;
 		    }
 		    if (!msaSuccess) {
 		      svs[svid].consensus = "";

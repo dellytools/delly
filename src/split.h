@@ -168,7 +168,8 @@ namespace torali
       }
     } else {
       if (svt == 2) {
-	return boost::to_upper_copy(std::string(ref + svRec.svStartBeg, ref + svRec.svStartEnd)) + boost::to_upper_copy(std::string(ref + svRec.svEndBeg, ref + svRec.svEndEnd));
+	if (svRec.svEnd - svRec.svStart <= DELLY_CHOP_REFSIZE) return boost::to_upper_copy(std::string(ref + svRec.svStartBeg, ref + svRec.svEndEnd));
+	else return boost::to_upper_copy(std::string(ref + svRec.svStartBeg, ref + svRec.svStartEnd)) + boost::to_upper_copy(std::string(ref + svRec.svEndBeg, ref + svRec.svEndEnd));
       } else if (svt == 4) {
 	return boost::to_upper_copy(std::string(ref + svRec.svStartBeg, ref + svRec.svEndEnd));
       } else if (svt == 3) {
@@ -240,10 +241,15 @@ namespace torali
       return true;
     } else {
       if (svt == 2) {
-	int32_t annealed = sv.svStartEnd - sv.svStartBeg;
-	if ((ad.rStart >= annealed) || (ad.rEnd < annealed)) return false;
-	finalGapStart = sv.svStartBeg + ad.rStart;
-	finalGapEnd = sv.svEndBeg + (ad.rEnd - annealed);
+	if (sv.svEnd - sv.svStart > DELLY_CHOP_REFSIZE) {
+	  int32_t annealed = sv.svStartEnd - sv.svStartBeg;
+	  if ((ad.rStart >= annealed) || (ad.rEnd < annealed)) return false;
+	  finalGapStart = sv.svStartBeg + ad.rStart;
+	  finalGapEnd = sv.svEndBeg + (ad.rEnd - annealed);
+	} else {
+	  finalGapStart = sv.svStartBeg + ad.rStart;
+	  finalGapEnd = sv.svStartBeg + ad.rEnd;
+	}
 	return true;
       } else if (svt == 3) {
 	int32_t annealed = sv.svEndEnd - sv.svEndBeg;
