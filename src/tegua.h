@@ -25,6 +25,7 @@
 
 #include "delly.h"
 #include "coverage.h"
+#include "genotype.h"
 #include "util.h"
 #include "junction.h"
 #include "cluster.h"
