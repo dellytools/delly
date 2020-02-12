@@ -24,6 +24,11 @@ then
     wget ftp://ftp-trace.ncbi.nlm.nih.gov/giab/ftp/data/AshkenazimTrio/HG002_NA24385_son/PacBio_SequelII_CCS_11kb/HG002.SequelII.pbmm2.hs37d5.whatshap.haplotag.RTG.10x.trio.bam
     samtools index HG002.SequelII.pbmm2.hs37d5.whatshap.haplotag.RTG.10x.trio.bam
 fi
+if [ ! -f HG002_PacBio_GRCh37.bam ]
+then
+    wget ftp://ftp-trace.ncbi.nlm.nih.gov/giab/ftp/data/AshkenazimTrio/HG002_NA24385_son/PacBio_MtSinai_NIST/PacBio_minimap2_bam/HG002_PacBio_GRCh37.bam
+    samtools index HG002_PacBio_GRCh37.bam
+fi
 
 # Install tools
 make all

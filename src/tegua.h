@@ -35,6 +35,7 @@ namespace torali {
   struct TeguaConfig {
     bool hasDumpFile;
     bool hasVcfFile;
+    bool hasExcludeFile;
     bool isHaplotagged;
     bool svtcmd;
     uint16_t minMapQual;
@@ -54,6 +55,7 @@ namespace torali {
     boost::filesystem::path vcffile;
     std::vector<boost::filesystem::path> files;
     boost::filesystem::path genome;
+    boost::filesystem::path exclude;
     std::vector<std::string> sampleName;
   };
   
@@ -89,6 +91,17 @@ namespace torali {
    samFile* samfile = sam_open(c.files[0].string().c_str(), "r");
    bam_hdr_t* hdr = sam_hdr_read(samfile);
 
+   // Exclude intervals
+   typedef boost::icl::interval_set<uint32_t> TChrIntervals;
+   typedef std::vector<TChrIntervals> TRegionsGenome;
+   TRegionsGenome validRegions;
+   if (!_parseExcludeIntervals(c, hdr, validRegions)) {
+     std::cerr << "Delly couldn't parse exclude intervals!" << std::endl;
+     bam_hdr_destroy(hdr);
+     sam_close(samfile);
+     return 1;
+   }
+   
    // SV Discovery
    if (!c.hasVcfFile) {
      // SR Store
@@ -107,7 +120,7 @@ namespace torali {
 	 typedef std::vector<Junction> TJunctionVector;
 	 typedef std::map<std::size_t, TJunctionVector> TReadBp;
 	 TReadBp readBp;
-	 findJunctions(c, readBp);
+	 findJunctions(c, validRegions, readBp);
 	 fetchSVs(c, readBp, srBR);
        }
    
@@ -136,7 +149,7 @@ namespace torali {
      }
      
      // Assemble
-     assemble(c, srStore, svs);
+     assemble(c, validRegions, srStore, svs);
 
      // Re-sort SVs
      typedef std::map<int32_t, int32_t> TIdMap;
@@ -167,10 +180,9 @@ namespace torali {
    }
    
    // Reference SV Genotyping
-   trackRef(c, svs, junctionCountMap, rcMap);
+   trackRef(c, validRegions, svs, junctionCountMap, rcMap);
 
    // VCF Output
-   //outputVcf(c, svs);
    vcfOutput(c, svs, junctionCountMap, rcMap, spanCountMap);
 
    // Clean-up
@@ -200,6 +212,7 @@ namespace torali {
      ("help,?", "show help message")
      ("svtype,t", boost::program_options::value<std::string>(&svtype)->default_value("ALL"), "SV type to compute [DEL, INS, DUP, INV, BND, ALL]")
      ("genome,g", boost::program_options::value<boost::filesystem::path>(&c.genome), "genome fasta file")
+     ("exclude,x", boost::program_options::value<boost::filesystem::path>(&c.exclude), "file with regions to exclude")
      ("outfile,o", boost::program_options::value<boost::filesystem::path>(&c.outfile)->default_value("sv.bcf"), "SV BCF output file")
      ;
    
@@ -316,6 +329,15 @@ namespace torali {
      hts_idx_destroy(idx);
      sam_close(samfile);
    }
+
+   // Check exclude file
+   if (vm.count("exclude")) {
+     if (!(boost::filesystem::exists(c.exclude) && boost::filesystem::is_regular_file(c.exclude) && boost::filesystem::file_size(c.exclude))) {
+       std::cerr << "Exclude file is missing: " << c.exclude.string() << std::endl;
+       return 1;
+     }
+     c.hasExcludeFile = true;
+   } else c.hasExcludeFile = false;
    
    // Check input VCF file
    if (vm.count("vcffile")) {
