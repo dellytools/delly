@@ -600,11 +600,11 @@ namespace torali
       if (frac < 0.95) covPercentiles[4] = i + 1;
     }
     std::cout << "Coverage distribution (^COV)" << std::endl;
-    std::cout << "COV\t95% of bases are >=" << covPercentiles[0] << "x" << std::endl;
-    std::cout << "COV\t75% of bases are >=" << covPercentiles[1] << "x" << std::endl;
-    std::cout << "COV\t50% of bases are >=" << covPercentiles[2] << "x" << std::endl;
-    std::cout << "COV\t25% of bases are >=" << covPercentiles[3] << "x" << std::endl;
-    std::cout << "COV\t5% of bases are >=" << covPercentiles[4] << "x" << std::endl;
+    std::cout << "COV\t95% of bases are >= " << covPercentiles[0] << "x" << std::endl;
+    std::cout << "COV\t75% of bases are >= " << covPercentiles[1] << "x" << std::endl;
+    std::cout << "COV\t50% of bases are >= " << covPercentiles[2] << "x" << std::endl;
+    std::cout << "COV\t25% of bases are >= " << covPercentiles[3] << "x" << std::endl;
+    std::cout << "COV\t5% of bases are >= " << covPercentiles[4] << "x" << std::endl;
 
     
     // Output read length info
@@ -622,11 +622,11 @@ namespace torali
       if (frac < 0.95) rlPercentiles[4] = (i + 1) * rlBinSize;
     }
     std::cout << "Read-length distribution (^RL)" << std::endl;
-    std::cout << "RL\t95% of reads are >=" << rlPercentiles[0] << "bp" << std::endl;
-    std::cout << "RL\t75% of reads are >=" << rlPercentiles[1] << "bp" << std::endl;
-    std::cout << "RL\t50% of reads are >=" << rlPercentiles[2] << "bp" << std::endl;
-    std::cout << "RL\t25% of reads are >=" << rlPercentiles[3] << "bp" << std::endl;
-    std::cout << "RL\t5% of reads are >=" << rlPercentiles[4] << "bp" << std::endl;
+    std::cout << "RL\t95% of reads are >= " << rlPercentiles[0] << "bp" << std::endl;
+    std::cout << "RL\t75% of reads are >= " << rlPercentiles[1] << "bp" << std::endl;
+    std::cout << "RL\t50% of reads are >= " << rlPercentiles[2] << "bp" << std::endl;
+    std::cout << "RL\t25% of reads are >= " << rlPercentiles[3] << "bp" << std::endl;
+    std::cout << "RL\t5% of reads are >= " << rlPercentiles[4] << "bp" << std::endl;
 
     // Output sequencing error rates
     uint64_t alignedbases = matchCount + mismatchCount + delCount + insCount;

@@ -1,3 +1,5 @@
+
+
 #ifndef TEGUA_H
 #define TEGUA_H
 
@@ -48,7 +50,6 @@ namespace torali {
     float indelExtension;
     float flankQuality;
     std::set<int32_t> svtset;
-    std::vector<int32_t> chrlen;
     DnaScore<int> aliscore;
     boost::filesystem::path dumpfile;
     boost::filesystem::path outfile;
@@ -67,25 +68,10 @@ namespace torali {
 #ifdef PROFILE
    ProfilerStart("delly.prof");
 #endif
-   
+
    // Structural Variants
    typedef std::vector<StructuralVariantRecord> TVariants;
    TVariants svs;
-
-   // Annotate junction reads
-   typedef std::vector<JunctionCount> TSVJunctionMap;
-   typedef std::vector<TSVJunctionMap> TSampleSVJunctionMap;
-   TSampleSVJunctionMap junctionCountMap(c.files.size());
-
-   // Annotate spanning coverage
-   typedef std::vector<SpanningCount> TSVSpanningMap;
-   typedef std::vector<TSVSpanningMap> TSampleSVSpanningMap;
-   TSampleSVSpanningMap spanCountMap(c.files.size());
-   
-   // Annotate coverage
-   typedef std::vector<ReadCount> TSVReadCount;
-   typedef std::vector<TSVReadCount> TSampleSVReadCount;
-   TSampleSVReadCount rcMap(c.files.size());
    
    // Open header
    samFile* samfile = sam_open(c.files[0].string().c_str(), "r");
@@ -104,6 +90,11 @@ namespace torali {
    
    // SV Discovery
    if (!c.hasVcfFile) {
+
+     // Structural Variant Candidates
+     typedef std::vector<StructuralVariantRecord> TVariants;
+     TVariants svc;
+
      // SR Store
      typedef std::vector<SeqSlice> TSvPosVector;
      typedef boost::unordered_map<std::size_t, TSvPosVector> TReadSV;
@@ -123,10 +114,10 @@ namespace torali {
 	 findJunctions(c, validRegions, readBp);
 	 fetchSVs(c, readBp, srBR);
        }
-   
+       
        // Debug
        if (c.hasDumpFile) outputSRBamRecords(c, srBR);
-
+       
        // Cluster BAM records
        for(uint32_t svt = 0; svt < srBR.size(); ++svt) {
 	 if (srBR[svt].empty()) continue;
@@ -135,7 +126,7 @@ namespace torali {
 	 std::sort(srBR[svt].begin(), srBR[svt].end(), SortSRBamRecord<SRBamRecord>());
 	 
 	 // Cluster
-	 cluster(c, srBR[svt], svs, c.maxReadSep, svt);
+	 cluster(c, srBR[svt], svc, c.maxReadSep, svt);
 	 
 	 // Track split-reads
 	 for(uint32_t i = 0; i < srBR[svt].size(); ++i) {
@@ -147,48 +138,58 @@ namespace torali {
 	 }
        }
      }
-     
      // Assemble
-     assemble(c, validRegions, srStore, svs);
+     assemble(c, validRegions, srStore, svc);
 
-     // Re-sort SVs
-     typedef std::map<int32_t, int32_t> TIdMap;
-     TIdMap idMap;
-     std::sort(svs.begin(), svs.end(), SortSVs<StructuralVariantRecord>());
-     uint32_t cliqueCount = 0;
-     for(typename TVariants::iterator svIt = svs.begin(); svIt != svs.end(); ++svIt, ++cliqueCount) {
-       idMap[svIt->id] = cliqueCount;
-       svIt->id = cliqueCount;       
-     }
-
-     // Initialize count maps
-     for(uint32_t file_c = 0; file_c < c.files.size(); ++file_c) {
-       junctionCountMap[file_c].resize(svs.size(), JunctionCount());
-       spanCountMap[file_c].resize(svs.size(), SpanningCount());
-       rcMap[file_c].resize(svs.size(), ReadCount());
-     }
-      
-     // Annotate ALT support
-     for(typename TReadSV::const_iterator it = srStore.begin(); it != srStore.end(); ++it) {
-       for(uint32_t i = 0; i < it->second.size(); ++i) {
-	 junctionCountMap[0][idMap[it->second[i].svid]].alt.push_back(it->second[i].qual);
+     // Keep assembled SVs only
+     sort(svc.begin(), svc.end(), SortSVs<StructuralVariantRecord>());
+     StructuralVariantRecord lastSV;
+     for(typename TVariants::iterator svIter = svc.begin(); svIter != svc.end(); ++svIter) {
+       if ((svIter->srSupport == 0) && (svIter->peSupport == 0)) continue;
+       // Duplicate?
+       if (!svs.empty()) {
+	 if ((lastSV.chr == svIter->chr) && (lastSV.chr2 == svIter->chr2) && (std::abs(svIter->svStart - lastSV.svStart) < c.minRefSep) && (std::abs(svIter->svEnd - lastSV.svEnd) < c.minRefSep)) continue;
        }
+       lastSV = *svIter;
+       svs.push_back(*svIter);
      }
-   } else {
-     std::cerr << "Only de novo discovery is supported for long-reads!" << std::endl;
-     return 1;
-   }
-   
-   // Reference SV Genotyping
-   trackRef(c, validRegions, svs, junctionCountMap, rcMap);
-
-   // VCF Output
-   vcfOutput(c, svs, junctionCountMap, rcMap, spanCountMap);
-
+   } else vcfParse(c, hdr, svs);
    // Clean-up
    bam_hdr_destroy(hdr);
    sam_close(samfile);
 
+   // Re-number SVs and remove duplicates
+   sort(svs.begin(), svs.end(), SortSVs<StructuralVariantRecord>());
+   uint32_t cliqueCount = 0;
+   for(typename TVariants::iterator svIt = svs.begin(); svIt != svs.end(); ++svIt, ++cliqueCount) svIt->id = cliqueCount;
+   
+   // Annotate junction reads
+   typedef std::vector<JunctionCount> TSVJunctionMap;
+   typedef std::vector<TSVJunctionMap> TSampleSVJunctionMap;
+   TSampleSVJunctionMap jctMap(c.files.size());
+
+   // Annotate spanning coverage
+   typedef std::vector<SpanningCount> TSVSpanningMap;
+   typedef std::vector<TSVSpanningMap> TSampleSVSpanningMap;
+   TSampleSVSpanningMap spanMap(c.files.size());
+   
+   // Annotate coverage
+   typedef std::vector<ReadCount> TSVReadCount;
+   typedef std::vector<TSVReadCount> TSampleSVReadCount;
+   TSampleSVReadCount rcMap(c.files.size());
+
+   // Initialize count maps
+   for(uint32_t file_c = 0; file_c < c.files.size(); ++file_c) {
+     jctMap[file_c].resize(svs.size(), JunctionCount());
+     spanMap[file_c].resize(svs.size(), SpanningCount());
+     rcMap[file_c].resize(svs.size(), ReadCount());
+   }
+      
+   // Reference SV Genotyping
+   trackRef(c, validRegions, svs, jctMap, rcMap);
+
+   // VCF Output
+   vcfOutput(c, svs, jctMap, rcMap, spanMap);
 
 #ifdef PROFILE
    ProfilerStop();
@@ -303,11 +304,8 @@ namespace torali {
        std::cerr << "Fail to open header for " << c.files[file_c].string() << std::endl;
        return 1;
      }
-     if (!c.nchr) {
-       c.nchr = hdr->n_targets;
-       c.chrlen.resize(hdr->n_targets);
-       for(int32_t refIndex = 0; refIndex < hdr->n_targets; ++refIndex) c.chrlen[refIndex] = hdr->target_len[refIndex];
-     } else {
+     if (!c.nchr) c.nchr = hdr->n_targets;
+     else {
        if (c.nchr != hdr->n_targets) {
 	 std::cerr << "BAM files have different number of chromosomes!" << std::endl;
 	 return 1;
