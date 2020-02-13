@@ -1,5 +1,3 @@
-
-
 #ifndef TEGUA_H
 #define TEGUA_H
 
@@ -42,6 +40,7 @@ namespace torali {
     bool isHaplotagged;
     bool svtcmd;
     uint16_t minMapQual;
+    uint16_t minGenoQual;
     uint32_t minClip;
     uint32_t minRefSep;
     uint32_t maxReadSep;
@@ -64,7 +63,7 @@ namespace torali {
 
  template<typename TConfig>
  inline int32_t
- runTegua(TConfig const& c) {
+ runTegua(TConfig& c) {
 
 #ifdef PROFILE
    ProfilerStart("delly.prof");
@@ -78,20 +77,20 @@ namespace torali {
    samFile* samfile = sam_open(c.files[0].string().c_str(), "r");
    bam_hdr_t* hdr = sam_hdr_read(samfile);
 
-   // Exclude intervals
-   typedef boost::icl::interval_set<uint32_t> TChrIntervals;
-   typedef std::vector<TChrIntervals> TRegionsGenome;
-   TRegionsGenome validRegions;
-   if (!_parseExcludeIntervals(c, hdr, validRegions)) {
-     std::cerr << "Delly couldn't parse exclude intervals!" << std::endl;
-     bam_hdr_destroy(hdr);
-     sam_close(samfile);
-     return 1;
-   }
-   
    // SV Discovery
    if (!c.hasVcfFile) {
 
+     // Exclude intervals
+     typedef boost::icl::interval_set<uint32_t> TChrIntervals;
+     typedef std::vector<TChrIntervals> TRegionsGenome;
+     TRegionsGenome validRegions;
+     if (!_parseExcludeIntervals(c, hdr, validRegions)) {
+       std::cerr << "Delly couldn't parse exclude intervals!" << std::endl;
+       bam_hdr_destroy(hdr);
+       sam_close(samfile);
+       return 1;
+     }
+     
      // Structural Variant Candidates
      typedef std::vector<StructuralVariantRecord> TVariants;
      TVariants svc;
@@ -158,7 +157,7 @@ namespace torali {
    // Clean-up
    bam_hdr_destroy(hdr);
    sam_close(samfile);
-
+   
    // Re-number SVs and remove duplicates
    sort(svs.begin(), svs.end(), SortSVs<StructuralVariantRecord>());
    uint32_t cliqueCount = 0;
@@ -187,7 +186,7 @@ namespace torali {
    }
       
    // Reference SV Genotyping
-   trackRef(c, validRegions, svs, jctMap, rcMap);
+   trackRef(c, svs, jctMap, rcMap);
 
    // VCF Output
    vcfOutput(c, svs, jctMap, rcMap, spanMap);
@@ -230,6 +229,7 @@ namespace torali {
    boost::program_options::options_description geno("Genotyping options");
    geno.add_options()
      ("vcffile,v", boost::program_options::value<boost::filesystem::path>(&c.vcffile), "input VCF/BCF file for genotyping")
+     ("geno-qual,u", boost::program_options::value<uint16_t>(&c.minGenoQual)->default_value(5), "min. mapping quality for genotyping")
      ("dump,d", boost::program_options::value<boost::filesystem::path>(&c.dumpfile), "gzipped output file for SV-reads (optional)")
      ;
 

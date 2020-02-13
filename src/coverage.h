@@ -142,6 +142,107 @@ namespace torali {
   }
 
   
+  template<typename TConfig, typename TSVs, typename TBreakProbes, typename TGenomicBpRegion>
+  inline void
+  _generateProbes(TConfig const& c, bam_hdr_t* hdr, TSVs& svs, TBreakProbes& refProbeArr, TBreakProbes& consProbeArr, TGenomicBpRegion& bpRegion) {
+    typedef typename TBreakProbes::value_type TProbes;
+
+    // Preprocess REF and ALT
+    boost::posix_time::ptime noww = boost::posix_time::second_clock::local_time();
+    std::cout << '[' << boost::posix_time::to_simple_string(noww) << "] " << "Generate REF and ALT probes" << std::endl;
+    boost::progress_display show_progresss( hdr->n_targets );
+
+    TProbes refProbes(svs.size());
+    faidx_t* fai = fai_load(c.genome.string().c_str());
+    for(int32_t refIndex=0; refIndex < (int32_t) hdr->n_targets; ++refIndex) {
+      ++show_progresss;
+      char* seq = NULL;
+
+      // Iterate all structural variants
+      for(typename TSVs::iterator itSV = svs.begin(); itSV != svs.end(); ++itSV) {
+	if ((itSV->chr != refIndex) && (itSV->chr2 != refIndex)) continue;
+
+	// Lazy loading of reference sequence
+	if (seq == NULL) {
+	  int32_t seqlen = -1;
+	  std::string tname(hdr->target_name[refIndex]);
+	  seq = faidx_fetch_seq(fai, tname.c_str(), 0, hdr->target_len[refIndex], &seqlen);
+	}
+
+	// Set tag alleles
+	if (itSV->chr == refIndex) {
+	  itSV->alleles = _addAlleles(boost::to_upper_copy(std::string(seq + itSV->svStart - 1, seq + itSV->svStart)), std::string(hdr->target_name[itSV->chr2]), *itSV, itSV->svt);
+	}
+	if (!itSV->precise) continue;
+
+	// Get the reference sequence
+	if ((itSV->chr != itSV->chr2) && (itSV->chr2 == refIndex)) {
+	  Breakpoint bp(*itSV);
+	  _initBreakpoint(hdr, bp, (int32_t) itSV->consensus.size(), itSV->svt);
+	  refProbes[itSV->id] = _getSVRef(seq, bp, refIndex, itSV->svt);
+	}
+	if (itSV->chr == refIndex) {
+	  Breakpoint bp(*itSV);
+	  if (_translocation(itSV->svt)) bp.part1 = refProbes[itSV->id];
+	  if (itSV->svt ==4) {
+	    int32_t bufferSpace = std::max((int32_t) ((itSV->consensus.size() - itSV->insLen) / 3), c.minimumFlankSize);
+	    _initBreakpoint(hdr, bp, bufferSpace, itSV->svt);
+	  } else _initBreakpoint(hdr, bp, (int32_t) itSV->consensus.size(), itSV->svt);
+	  std::string svRefStr = _getSVRef(seq, bp, refIndex, itSV->svt);
+	  
+	  // Find breakpoint to reference
+	  typedef boost::multi_array<char, 2> TAlign;
+	  TAlign align;
+	  if (!_consRefAlignment(itSV->consensus, svRefStr, align, itSV->svt)) continue;
+
+	  AlignDescriptor ad;
+	  if (!_findSplit(c, itSV->consensus, svRefStr, align, ad, itSV->svt)) continue;
+	  
+	  // Debug consensus to reference alignment
+	  //std::cerr << itSV->id << std::endl;
+	  //for(uint32_t i = 0; i<align.shape()[0]; ++i) {
+	  //for(uint32_t j = 0; j<align.shape()[1]; ++j) std::cerr << align[i][j];
+	  //std::cerr << std::endl;
+	  //}
+	  //std::cerr << std::endl;
+
+	  // Iterate all samples
+	  for (unsigned int bpPoint = 0; bpPoint<2; ++bpPoint) {
+	    int32_t regionChr, regionStart, regionEnd, cutConsStart, cutConsEnd, cutRefStart, cutRefEnd, bppos;
+	    if (bpPoint) {
+	      regionChr = itSV->chr2;
+	      regionStart = std::max(0, itSV->svEnd - c.minimumFlankSize);
+	      regionEnd = std::min((uint32_t) (itSV->svEnd + c.minimumFlankSize), hdr->target_len[itSV->chr2]);
+	      cutConsStart = ad.cEnd - ad.homLeft - c.minimumFlankSize;
+	      cutConsEnd = ad.cEnd + ad.homRight + c.minimumFlankSize;
+	      cutRefStart = _cutRefStart(ad.rStart, ad.rEnd, ad.homLeft + c.minimumFlankSize, bpPoint, itSV->svt);
+	      cutRefEnd = _cutRefEnd(ad.rStart, ad.rEnd, ad.homRight + c.minimumFlankSize, bpPoint, itSV->svt);
+	      bppos = itSV->svEnd;
+	    } else {
+	      regionChr = itSV->chr;
+	      regionStart = std::max(0, itSV->svStart - c.minimumFlankSize);
+	      regionEnd = std::min((uint32_t) (itSV->svStart + c.minimumFlankSize), hdr->target_len[itSV->chr]);
+	      cutConsStart = ad.cStart - ad.homLeft - c.minimumFlankSize;
+	      cutConsEnd = ad.cStart + ad.homRight + c.minimumFlankSize;
+	      cutRefStart = _cutRefStart(ad.rStart, ad.rEnd, ad.homLeft + c.minimumFlankSize, bpPoint, itSV->svt);
+	      cutRefEnd = _cutRefEnd(ad.rStart, ad.rEnd, ad.homRight + c.minimumFlankSize, bpPoint, itSV->svt);
+	      bppos = itSV->svStart;
+	    }
+	    consProbeArr[bpPoint][itSV->id] = itSV->consensus.substr(cutConsStart, (cutConsEnd - cutConsStart));
+	    refProbeArr[bpPoint][itSV->id] = svRefStr.substr(cutRefStart, (cutRefEnd - cutRefStart));
+	    bpRegion[regionChr].push_back(BpRegion(regionStart, regionEnd, bppos, ad.homLeft, ad.homRight, itSV->svt, itSV->id, bpPoint));
+	  }
+	}
+      }
+      if (seq != NULL) free(seq);
+    }
+    // Clean-up
+    fai_destroy(fai);
+    for(int32_t refIndex=0; refIndex < (int32_t) hdr->n_targets; ++refIndex) {
+      // Sort breakpoint regions
+      std::sort(bpRegion[refIndex].begin(), bpRegion[refIndex].end(), SortBp<BpRegion>());
+    }
+  }
 
   template<typename TConfig, typename TSampleLibrary, typename TSVs, typename TCoverageCount, typename TCountMap, typename TSpanMap>
   inline void
@@ -178,11 +279,6 @@ namespace torali {
       spanMap[file_c].resize(svs.size(), TSpanPair());
     }
 
-    // Preprocess REF and ALT
-    boost::posix_time::ptime noww = boost::posix_time::second_clock::local_time();
-    std::cout << '[' << boost::posix_time::to_simple_string(noww) << "] " << "Generate REF and ALT probes" << std::endl;
-    boost::progress_display show_progresss( hdr[0]->n_targets );
-  
     // Reference and consensus probes
     typedef std::vector<std::string> TProbes;
     typedef std::vector<TProbes> TBreakProbes;
@@ -195,104 +291,10 @@ namespace torali {
     typedef std::vector<BpRegion> TBpRegion;
     typedef std::vector<TBpRegion> TGenomicBpRegion;
     TGenomicBpRegion bpRegion(hdr[0]->n_targets, TBpRegion());
-    typedef std::vector<uint32_t> TRefAlignCount;
-    typedef std::vector<TRefAlignCount> TFileRefAlignCount;
-    TFileRefAlignCount refAlignedReadCount(c.files.size(), TRefAlignCount());
-    TFileRefAlignCount refAlignedSpanCount(c.files.size(), TRefAlignCount());
-    for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
-      refAlignedReadCount[file_c].resize(svs.size(), 0);
-      refAlignedSpanCount[file_c].resize(svs.size(), 0);
-    }
+
+    // Generate probes
+    _generateProbes(c, hdr[0], svs, refProbeArr, consProbeArr, bpRegion);
   
-    // Iterate all structural variants
-    {
-      TProbes refProbes(svs.size());
-      faidx_t* fai = fai_load(c.genome.string().c_str());
-      for(int32_t refIndex=0; refIndex < (int32_t) hdr[0]->n_targets; ++refIndex) {
-	++show_progresss;
-	char* seq = NULL;
-
-	// Iterate all structural variants
-	for(typename TSVs::iterator itSV = svs.begin(); itSV != svs.end(); ++itSV) {
-	  if ((itSV->chr != refIndex) && (itSV->chr2 != refIndex)) continue;
-
-	  // Lazy loading of reference sequence
-	  if (seq == NULL) {
-	    int32_t seqlen = -1;
-	    std::string tname(hdr[0]->target_name[refIndex]);
-	    seq = faidx_fetch_seq(fai, tname.c_str(), 0, hdr[0]->target_len[refIndex], &seqlen);
-	  }
-
-	  // Set tag alleles
-	  if (itSV->chr == refIndex) {
-	    itSV->alleles = _addAlleles(boost::to_upper_copy(std::string(seq + itSV->svStart - 1, seq + itSV->svStart)), std::string(hdr[0]->target_name[itSV->chr2]), *itSV, itSV->svt);
-	  }
-	  if (!itSV->precise) continue;
-
-	  // Get the reference sequence
-	  if ((itSV->chr != itSV->chr2) && (itSV->chr2 == refIndex)) {
-	    Breakpoint bp(*itSV);
-	    _initBreakpoint(hdr[0], bp, (int32_t) itSV->consensus.size(), itSV->svt);
-	    refProbes[itSV->id] = _getSVRef(seq, bp, refIndex, itSV->svt);
-	  }
-	  if (itSV->chr == refIndex) {
-	    Breakpoint bp(*itSV);
-	    bp.part1 = refProbes[itSV->id];
-	    _initBreakpoint(hdr[0], bp, (int32_t) itSV->consensus.size(), itSV->svt);
-	    std::string svRefStr = _getSVRef(seq, bp, refIndex, itSV->svt);
-	    
-	    // Find breakpoint to reference
-	    typedef boost::multi_array<char, 2> TAlign;
-	    TAlign align;
-	    if (!_consRefAlignment(itSV->consensus, svRefStr, align, itSV->svt)) continue;
-	    AlignDescriptor ad;
-	    if (!_findSplit(c, itSV->consensus, svRefStr, align, ad, itSV->svt)) continue;
-	    
-	    // Debug consensus to reference alignment
-	    //for(TAIndex i = 0; i<align.shape()[0]; ++i) {
-	    //for(TAIndex j = 0; j<align.shape()[1]; ++j) std::cerr << align[i][j];
-	    //std::cerr << std::endl;
-	    //}
-	    //std::cerr << std::endl;
-	  
-	  
-	    // Iterate all samples
-	    for (unsigned int bpPoint = 0; bpPoint<2; ++bpPoint) {
-	      int32_t regionChr, regionStart, regionEnd, cutConsStart, cutConsEnd, cutRefStart, cutRefEnd, bppos;
-	      if (bpPoint) {
-		regionChr = itSV->chr2;
-		regionStart = std::max(0, itSV->svEnd - c.minimumFlankSize);
-		regionEnd = std::min((uint32_t) (itSV->svEnd + c.minimumFlankSize), hdr[0]->target_len[itSV->chr2]);
-		cutConsStart = ad.cEnd - ad.homLeft - c.minimumFlankSize;
-		cutConsEnd = ad.cEnd + ad.homRight + c.minimumFlankSize;
-		cutRefStart = _cutRefStart(ad.rStart, ad.rEnd, ad.homLeft + c.minimumFlankSize, bpPoint, itSV->svt);
-		cutRefEnd = _cutRefEnd(ad.rStart, ad.rEnd, ad.homRight + c.minimumFlankSize, bpPoint, itSV->svt);
-		bppos = itSV->svEnd;
-	      } else {
-		regionChr = itSV->chr;
-		regionStart = std::max(0, itSV->svStart - c.minimumFlankSize);
-		regionEnd = std::min((uint32_t) (itSV->svStart + c.minimumFlankSize), hdr[0]->target_len[itSV->chr]);
-		cutConsStart = ad.cStart - ad.homLeft - c.minimumFlankSize;
-		cutConsEnd = ad.cStart + ad.homRight + c.minimumFlankSize;
-		cutRefStart = _cutRefStart(ad.rStart, ad.rEnd, ad.homLeft + c.minimumFlankSize, bpPoint, itSV->svt);
-		cutRefEnd = _cutRefEnd(ad.rStart, ad.rEnd, ad.homRight + c.minimumFlankSize, bpPoint, itSV->svt);
-		bppos = itSV->svStart;
-	      }
-	      consProbeArr[bpPoint][itSV->id] = itSV->consensus.substr(cutConsStart, (cutConsEnd - cutConsStart));
-	      refProbeArr[bpPoint][itSV->id] = svRefStr.substr(cutRefStart, (cutRefEnd - cutRefStart));
-	      bpRegion[regionChr].push_back(BpRegion(regionStart, regionEnd, bppos, ad.homLeft, ad.homRight, itSV->svt, itSV->id, bpPoint));
-	    }
-	  }
-	}
-	if (seq != NULL) free(seq);
-      }
-      // Clean-up
-      fai_destroy(fai);
-      for(int32_t refIndex=0; refIndex < (int32_t) hdr[0]->n_targets; ++refIndex) {
-	// Sort breakpoint regions
-	std::sort(bpRegion[refIndex].begin(), bpRegion[refIndex].end(), SortBp<BpRegion>());
-      }
-    }
     // Debug
     //for(uint32_t k = 0; k < 2; ++k) {
     //for(uint32_t i = 0; i < svs.size(); ++i) {
@@ -304,6 +306,16 @@ namespace torali {
     boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
     std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "SV annotation" << std::endl;
     boost::progress_display show_progress( totalTarget );
+
+    
+    typedef std::vector<uint32_t> TRefAlignCount;
+    typedef std::vector<TRefAlignCount> TFileRefAlignCount;
+    TFileRefAlignCount refAlignedReadCount(c.files.size(), TRefAlignCount());
+    TFileRefAlignCount refAlignedSpanCount(c.files.size(), TRefAlignCount());
+    for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
+      refAlignedReadCount[file_c].resize(svs.size(), 0);
+      refAlignedSpanCount[file_c].resize(svs.size(), 0);
+    }
     
     // Dump file
     boost::iostreams::filtering_ostream dumpOut;
