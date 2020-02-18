@@ -13,7 +13,7 @@ all:   	$(TARGETS)
 	export PATH=${PBASE}/bin/bin:${PATH} && conda config --add channels defaults && conda config --add channels conda-forge && conda config --add channels bioconda && touch .channels
 
 .envs: .conda .channels
-	export PATH=${PBASE}/bin/bin:${PATH} && conda create -y --prefix=${PBASE}/bin/envs/sv svim sniffles samtools bcftools htslib wgsim pbsim bwa minimap2 && touch .envs
+	export PATH=${PBASE}/bin/bin:${PATH} && conda create -y --prefix=${PBASE}/bin/envs/sv svim sniffles samtools bcftools htslib wgsim pbsim bwa minimap2 alfred && touch .envs
 
 .truvari: .conda .channels .envs
 	export PATH=${PBASE}/bin/bin:${PATH} && source activate ${PBASE}/bin/envs/sv && pip install truvari && conda deactivate && touch .truvari
@@ -28,4 +28,4 @@ test: .conda .channels .envs .truvari .delly
 	export PATH=${PBASE}/bin/bin:${PATH} && source activate sv && VISOR -h && ../bin/dellyLR --version && svim --version && conda deactivate
 
 clean:
-	rm -rf $(TARGETS) $(TARGETS:=.o) bin/ VISOR/
+	rm -rf $(TARGETS) $(TARGETS:=.o) bin/ VISOR/ sim/
