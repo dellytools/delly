@@ -1,5 +1,9 @@
 #!/bin/bash
 
+# Base directory
+SCRIPT=$(readlink -f "$0")
+BASEDIR=$(dirname "$SCRIPT")
+
 # Download GIAB ground truth
 if [ ! -f chr18.fa ]
 then
@@ -17,7 +21,6 @@ then
 fi
 
 # Install tools
-make all
 make test
 if [ $? -ne 0 ]
 then
@@ -27,14 +30,14 @@ then
 fi
 
 # Activate environment
-export PATH=/opt/dev/giab/bin/bin/:${PATH}
+export PATH=${BASEDIR}/bin/bin/:${PATH}
 source activate sv
 
 # Output directory
 rm -rf sim/ && mkdir -p sim
 
 # Deletions
-bcftools query -f "%CHROM\t%POS\t%INFO/END\t%INFO/SVTYPE\n" HG002_SVs_Tier1_v0.6.vcf.gz | grep "DEL" | grep "^18" > sim/dels.bed
+bcftools query -f "%CHROM\t%POS\t%INFO/END\t%INFO/SVTYPE\n" HG002_SVs_Tier1_v0.6.vcf.gz | grep "DEL" | grep "^18" | awk '$3-$2>=30' > sim/dels.bed
 bedtools cluster -i sim/dels.bed  | sed 's/DEL\t/DEL\tCluster/' | cut -f 5 | sort | uniq -u > sim/fetchDels
 bedtools cluster -i sim/dels.bed  | sed 's/DEL\t/DEL\tCluster/' | grep --color -w -Ff sim/fetchDels | sed 's/DEL\tCluster[0-9]*/deletion/' | awk '{print $0"\tNone\t0\t"int(rand()+1.5);}' > sim/deletions.bed
 cat sim/deletions.bed  | awk '{print $1"\t"$2"\t"$3"\t"$4"_"$7;}' > sim/dels.igv.bed

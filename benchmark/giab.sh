@@ -1,5 +1,9 @@
 #!/bin/bash
 
+# Base directory
+SCRIPT=$(readlink -f "$0")
+BASEDIR=$(dirname "$SCRIPT")
+
 # Download GIAB data set
 if [ ! -f hs37d5.fa.gz ]
 then
@@ -31,7 +35,6 @@ then
 fi
 
 # Install tools
-make all
 make test
 if [ $? -ne 0 ]
 then
@@ -41,7 +44,7 @@ then
 fi
 
 # Activate environment
-export PATH=/opt/dev/giab/bin/bin/:${PATH}
+export PATH=${BASEDIR}/bin/bin/:${PATH}
 source activate sv
 
 # Delly for long reads
