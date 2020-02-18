@@ -102,7 +102,9 @@ namespace torali
 		      if (seqStore[svid].size() > 1) {
 			//std::cerr << svs[svid].svStart << ',' << svs[svid].svEnd << ',' << svs[svid].svt << ',' << svid << " SV" << std::endl;
 			msa(c, seqStore[svid], svs[svid].consensus);
+			//std::cerr << svs[svid].consensus << std::endl;
 			if (alignConsensus(c, hdr, seq, NULL, svs[svid])) msaSuccess = true;
+			//std::cerr << msaSuccess << std::endl;
 		      }
 		      if (!msaSuccess) {
 			svs[svid].consensus = "";

@@ -72,25 +72,24 @@ namespace torali {
    // Structural Variants
    typedef std::vector<StructuralVariantRecord> TVariants;
    TVariants svs;
-   
+
    // Open header
    samFile* samfile = sam_open(c.files[0].string().c_str(), "r");
    bam_hdr_t* hdr = sam_hdr_read(samfile);
 
-   // SV Discovery
-   if (!c.hasVcfFile) {
-
-     // Exclude intervals
-     typedef boost::icl::interval_set<uint32_t> TChrIntervals;
-     typedef std::vector<TChrIntervals> TRegionsGenome;
-     TRegionsGenome validRegions;
-     if (!_parseExcludeIntervals(c, hdr, validRegions)) {
-       std::cerr << "Delly couldn't parse exclude intervals!" << std::endl;
-       bam_hdr_destroy(hdr);
-       sam_close(samfile);
-       return 1;
-     }
+   // Exclude intervals
+   typedef boost::icl::interval_set<uint32_t> TChrIntervals;
+   typedef std::vector<TChrIntervals> TRegionsGenome;
+   TRegionsGenome validRegions;
+   if (!_parseExcludeIntervals(c, hdr, validRegions)) {
+     std::cerr << "Delly couldn't parse exclude intervals!" << std::endl;
+     bam_hdr_destroy(hdr);
+     sam_close(samfile);
+     return 1;
+   }
      
+   // Split-read assembly?
+   if (!c.hasVcfFile) {
      // Structural Variant Candidates
      typedef std::vector<StructuralVariantRecord> TVariants;
      TVariants svc;
@@ -98,51 +97,18 @@ namespace torali {
      // SR Store
      typedef std::vector<SeqSlice> TSvPosVector;
      typedef boost::unordered_map<std::size_t, TSvPosVector> TReadSV;
-     TReadSV srStore;
+     TReadSV tmpStore;
 
-     // Find junctions
-     {
-       // Split-reads
-       typedef std::vector<SRBamRecord> TSRBamRecord;
-       typedef std::vector<TSRBamRecord> TSvtSRBamRecord;
-       TSvtSRBamRecord srBR(2 * DELLY_SVT_TRANS, TSRBamRecord());
-       {
-	 // Breakpoints
-	 typedef std::vector<Junction> TJunctionVector;
-	 typedef std::map<std::size_t, TJunctionVector> TReadBp;
-	 TReadBp readBp;
-	 findJunctions(c, validRegions, readBp);
-	 fetchSVs(c, readBp, srBR);
-       }
-       
-       // Debug
-       if (c.hasDumpFile) outputSRBamRecords(c, srBR);
-       
-       // Cluster BAM records
-       for(uint32_t svt = 0; svt < srBR.size(); ++svt) {
-	 if (srBR[svt].empty()) continue;
-	 
-	 // Sort
-	 std::sort(srBR[svt].begin(), srBR[svt].end(), SortSRBamRecord<SRBamRecord>());
-	 
-	 // Cluster
-	 cluster(c, srBR[svt], svc, c.maxReadSep, svt);
-	 
-	 // Track split-reads
-	 for(uint32_t i = 0; i < srBR[svt].size(); ++i) {
-	   // Read assigned?
-	   if (srBR[svt][i].svid != -1) {
-	     if (srStore.find(srBR[svt][i].id) == srStore.end()) srStore.insert(std::make_pair(srBR[svt][i].id, TSvPosVector()));
-	     srStore[srBR[svt][i].id].push_back(SeqSlice(srBR[svt][i].svid, srBR[svt][i].sstart, srBR[svt][i].inslen, srBR[svt][i].qual));
-	   }
-	 }
-       }
-     }
+     // SV Discovery
+     _clusterSRReads(c, validRegions, svc, tmpStore);
+
      // Assemble
-     assemble(c, validRegions, srStore, svc);
+     assemble(c, validRegions, tmpStore, svc);
 
-     // Keep assembled SVs only
+     // Sort SVs
      sort(svc.begin(), svc.end(), SortSVs<StructuralVariantRecord>());
+      
+     // Keep assembled SVs only
      StructuralVariantRecord lastSV;
      for(typename TVariants::iterator svIter = svc.begin(); svIter != svc.end(); ++svIter) {
        if ((svIter->srSupport == 0) && (svIter->peSupport == 0)) continue;
@@ -153,15 +119,49 @@ namespace torali {
        lastSV = *svIter;
        svs.push_back(*svIter);
      }
-   } else vcfParse(c, hdr, svs);
+   } else vcfParse(c, hdr, svs);   // Re-genotyping
    // Clean-up
    bam_hdr_destroy(hdr);
    sam_close(samfile);
-   
-   // Re-number SVs and remove duplicates
+
+   // Re-number SVs
    sort(svs.begin(), svs.end(), SortSVs<StructuralVariantRecord>());
    uint32_t cliqueCount = 0;
    for(typename TVariants::iterator svIt = svs.begin(); svIt != svs.end(); ++svIt, ++cliqueCount) svIt->id = cliqueCount;
+
+   // Genotyping
+   typedef std::vector<SeqSlice> TSvPosVector;
+   typedef boost::unordered_map<std::size_t, TSvPosVector> TReadSV;
+   TReadSV srStore;
+   if (srStore.empty()) {
+     // Structural Variant Candidates
+     typedef std::vector<StructuralVariantRecord> TVariants;
+     TVariants svc;
+
+     // Tmp SR Store
+     TReadSV tmpStore;
+     _clusterSRReads(c, validRegions, svc, tmpStore);
+
+     // Update srStore
+     typedef std::vector<SeqSlice> TSvPosVector;
+     typedef boost::unordered_map<std::size_t, TSvPosVector> TReadSV;
+     for(typename TReadSV::iterator readit = tmpStore.begin(); readit != tmpStore.end(); ++readit) {
+       for(uint32_t i = 0; i < readit->second.size(); ++i) {
+	 int32_t svid = readit->second[i].svid;
+	 typename TVariants::iterator itGeno = std::lower_bound(svs.begin(), svs.end(), StructuralVariantRecord(svc[svid].chr, std::max(0, svc[svid].svStart - (int32_t) c.minRefSep), svc[svid].svEnd), SortSVs<StructuralVariantRecord>());
+	 for(;((itGeno != svs.end()) && (std::abs(svc[svid].svStart - itGeno->svStart) <= c.minRefSep));++itGeno) {
+	   if ((svc[svid].chr != itGeno->chr) || (svc[svid].chr2 != itGeno->chr2) || (svc[svid].svt != itGeno->svt)) continue;
+	   if (std::abs(svc[svid].svEnd - itGeno->svEnd) > c.minRefSep) continue;
+	   
+	   // Match
+	   //std::cerr << readit->first << ':' << svc[svid].chr << ',' << svc[svid].svStart << ',' << svc[svid].chr2 << ',' << svc[svid].svEnd << ',' << svc[svid].svt << ';' << itGeno->chr << ',' << itGeno->svStart << ',' << itGeno->chr2 << ',' << itGeno->svEnd << ',' << itGeno->svt << std::endl;
+	   if (srStore.find(readit->first) == srStore.end()) srStore.insert(std::make_pair(readit->first, TSvPosVector()));
+	   readit->second[i].svid = itGeno->id;
+	   srStore[readit->first].push_back(readit->second[i]);
+	 }
+       }
+     }
+   }
    
    // Annotate junction reads
    typedef std::vector<JunctionCount> TSVJunctionMap;
@@ -186,7 +186,7 @@ namespace torali {
    }
       
    // Reference SV Genotyping
-   trackRef(c, svs, jctMap, rcMap);
+   trackRef(c, svs, srStore, jctMap, rcMap);
 
    // VCF Output
    vcfOutput(c, svs, jctMap, rcMap, spanMap);
@@ -372,7 +372,7 @@ namespace torali {
    
    // Run Tegua
    c.aliscore = DnaScore<int>(3, -2, -3, -1);
-   c.flankQuality = 0.8;
+   c.flankQuality = 0.9;
    c.minimumFlankSize = 50;
    return runTegua(c);
  }

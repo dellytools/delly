@@ -14,6 +14,7 @@
 #include <htslib/sam.h>
 
 #include "util.h"
+#include "assemble.h"
 
 namespace torali
 {
@@ -437,6 +438,52 @@ namespace torali
     //if ((!c.svtcmd) || (c.svtset.find(0) != c.svtset.end()) || (c.svtset.find(1) != c.svtset.end())) selectInversions(c, readBp, br);
     if ((!c.svtcmd) || (c.svtset.find(4) != c.svtset.end())) selectInsertions(c, readBp, br);
     //if ((!c.svtcmd) || (c.svtset.find(5) != c.svtset.end()) || (c.svtset.find(6) != c.svtset.end()) || (c.svtset.find(7) != c.svtset.end()) || (c.svtset.find(8) != c.svtset.end())) selectTranslocations(c, readBp, br);
+  }
+
+  template<typename TConfig, typename TValidRegions, typename TSvtSRBamRecord>
+  inline void
+    _findSRBreakpoints(TConfig const& c, TValidRegions const& validRegions, TSvtSRBamRecord& srBR) {
+    // Breakpoints
+    typedef std::vector<Junction> TJunctionVector;
+    typedef std::map<std::size_t, TJunctionVector> TReadBp;
+    TReadBp readBp;
+    findJunctions(c, validRegions, readBp);
+    fetchSVs(c, readBp, srBR);
+  }
+
+
+  template<typename TConfig, typename TValidRegions, typename TSVs, typename TSRStore>
+  inline void
+  _clusterSRReads(TConfig const& c, TValidRegions const& validRegions, TSVs& svc, TSRStore& srStore) {
+    typedef typename TSRStore::mapped_type TSvPosVector;
+    // Split-reads
+    typedef std::vector<SRBamRecord> TSRBamRecord;
+    typedef std::vector<TSRBamRecord> TSvtSRBamRecord;
+    TSvtSRBamRecord srBR(2 * DELLY_SVT_TRANS, TSRBamRecord());
+    _findSRBreakpoints(c, validRegions, srBR);
+	 	 
+    // Debug
+    if (c.hasDumpFile) outputSRBamRecords(c, srBR);
+    
+    // Cluster BAM records
+    for(uint32_t svt = 0; svt < srBR.size(); ++svt) {
+      if (srBR[svt].empty()) continue;
+      
+      // Sort
+      std::sort(srBR[svt].begin(), srBR[svt].end(), SortSRBamRecord<SRBamRecord>());
+      
+      // Cluster
+      cluster(c, srBR[svt], svc, c.maxReadSep, svt);
+      
+      // Track split-reads
+      for(uint32_t i = 0; i < srBR[svt].size(); ++i) {
+	// Read assigned?
+	if (srBR[svt][i].svid != -1) {
+	  if (srStore.find(srBR[svt][i].id) == srStore.end()) srStore.insert(std::make_pair(srBR[svt][i].id, TSvPosVector()));
+	  srStore[srBR[svt][i].id].push_back(SeqSlice(srBR[svt][i].svid, srBR[svt][i].sstart, srBR[svt][i].inslen, srBR[svt][i].qual));
+	}
+      }
+    }
   }
 
 
