@@ -81,18 +81,21 @@ namespace torali
 		sequence.resize(rec->core.l_qseq);
 		uint8_t* seqptr = bam_get_seq(rec);
 		for (int i = 0; i < rec->core.l_qseq; ++i) sequence[i] = "=ACMGRSVTWYHKDBN"[bam_seqi(seqptr, i)];
-		if (rec->core.flag & BAM_FREVERSE) reverseComplement(sequence);
+		int32_t readlen = sequence.size();
 
 		// Extract subsequence
 		int32_t window = 500; 
 		int32_t sPos = srStore[seed][ri].sstart - window;
-		if (sPos < 0) sPos = 0;
 		int32_t ePos = srStore[seed][ri].sstart + srStore[seed][ri].inslen + window;
-		if (ePos > (int32_t) sequence.size()) ePos = sequence.size();
+		if (rec->core.flag & BAM_FREVERSE) {
+		  sPos = (readlen - (srStore[seed][ri].sstart + srStore[seed][ri].inslen)) - window;
+		  ePos = (readlen - srStore[seed][ri].sstart) + window;
+		}
+		if (sPos < 0) sPos = 0;
+		if (ePos > (int32_t) readlen) ePos = readlen;
 		// Min. seq length and max insertion size, 10kbp?
 		if (((ePos - sPos) > window) && ((ePos - sPos) <= 10000)) {
 		  std::string seqalign = sequence.substr(sPos, (ePos - sPos));
-		  if (rec->core.flag & BAM_FREVERSE) reverseComplement(seqalign);
 		  seqStore[svid].insert(seqalign);
 	      
 		  // Enough split-reads?
@@ -101,6 +104,7 @@ namespace torali
 		      bool msaSuccess = false;
 		      if (seqStore[svid].size() > 1) {
 			//std::cerr << svs[svid].svStart << ',' << svs[svid].svEnd << ',' << svs[svid].svt << ',' << svid << " SV" << std::endl;
+			//for(typename TSequences::iterator it = seqStore[svid].begin(); it != seqStore[svid].end(); ++it) std::cerr << *it << std::endl;
 			msa(c, seqStore[svid], svs[svid].consensus);
 			//std::cerr << svs[svid].consensus << std::endl;
 			if (alignConsensus(c, hdr, seq, NULL, svs[svid])) msaSuccess = true;

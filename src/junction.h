@@ -65,7 +65,7 @@ namespace torali
     if (rec->core.flag & (BAM_FQCFAIL | BAM_FDUP | BAM_FUNMAP | BAM_FSECONDARY | BAM_FSUPPLEMENTARY)) readStart = -1;
     typedef typename TReadBp::mapped_type TJunctionVector;
     typename TReadBp::iterator it = readBp.find(seed);
-    int32_t seqlen = sequenceLength(rec);
+    int32_t seqlen = readLength(rec);
     if (sp <= seqlen) {
       if (rec->core.flag & BAM_FREVERSE) {
 	if (it != readBp.end()) it->second.push_back(Junction(fw, scleft, rec->core.tid, readStart, rp, seqlen - sp, rec->core.qual));

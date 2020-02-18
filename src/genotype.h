@@ -25,48 +25,13 @@ namespace torali
     int32_t bppos;
     int32_t svt;
     double score;
+    bool left;
     std::string ref;
     std::string alt;
 
-    Geno() : chr(-1), regionStart(0), regionEnd(0), bppos(0), svt(-1), score(1) {}
+    Geno() : chr(-1), regionStart(0), regionEnd(0), bppos(0), svt(-1), score(1), left(false) {}
   };
   
-
-  template<typename TConfig>
-  inline int32_t
-  scoreThreshold(std::string const& s1, std::string const& s2, TConfig const& c) {
-    int32_t l1 = 0;
-    int32_t l2 = 0;
-    for(uint32_t i = 0; i < s1.size(); ++i) {
-      if (s1[i] != '-') ++l1;
-    }
-    for(uint32_t i = 0; i < s2.size(); ++i) {
-      if (s2[i] != '-') ++l2;
-    }
-    int32_t minSize = std::min(l1, l2);
-    return (int32_t) ((c.flankQuality * minSize * c.aliscore.match) + ((1.0 - c.flankQuality) * minSize * c.aliscore.mismatch));
-  }
-  
-  template<typename TScore>
-  inline int32_t
-  scoreAlign(std::string const& s1, std::string const& s2, TScore const& sc) {
-    int32_t score = 0;
-    bool inGap = false;
-    for(uint32_t i = 0; i < s1.size(); ++i) {
-      if ((s1[i] == '-') || (s2[i] == '-')) {
-	if (inGap) score += sc.ge;
-	else {
-	  inGap = true;
-	  score += (sc.go + sc.ge);
-	}
-      } else {
-	inGap = false;
-	if (s1[i] == s2[i]) score += sc.match;
-	else score += sc.mismatch;
-      }
-    }
-    return score;
-  }
 
   template<typename TConfig, typename TSRStore, typename TJunctionMap, typename TReadCountMap>
   inline void
@@ -148,7 +113,7 @@ namespace torali
 	  if (!_findSplit(c, itSV->consensus, svRefStr, align, ad, itSV->svt)) continue;
 	  
 	  // Debug consensus to reference alignment
-	  //std::cerr << itSV->id << std::endl;
+	  //std::cerr << "svid:" << itSV->id << ",consensus-to-reference-alignment" << std::endl;
 	  //for(uint32_t i = 0; i<align.shape()[0]; ++i) {
 	  //for(uint32_t j = 0; j<align.shape()[1]; ++j) std::cerr << align[i][j];
 	  //std::cerr << std::endl;
@@ -194,7 +159,7 @@ namespace torali
 	      }
 	    }
 	    // Debug probe finding
-	    //std::cerr << "SV:" << itSV->id << ",SVT:" << itSV->svt << ",Left:" << scoreLeft << ",Right:" << scoreRight << std::endl;
+	    //std::cerr << "svid:" << itSV->id << "," << itSV->svStart << '-' << itSV->svEnd << ",SVT:" << itSV->svt << ",Left:" << scoreLeft << ",Right:" << scoreRight << std::endl;
 	    //for(uint32_t i = 0; i < alignLeft.shape()[0]; ++i) {
 	    //for(uint32_t j = 0; j < alignLeft.shape()[1]; ++j) std::cerr << alignLeft[i][j];
 	    //std::cerr << std::endl;
@@ -213,6 +178,7 @@ namespace torali
 		gbp[itSV->id].ref = refLeft;
 		gbp[itSV->id].alt = consLeft;
 		gbp[itSV->id].svt = itSV->svt;
+		gbp[itSV->id].left = true;
 	      }
 	    } else {
 	      if (scoreRight < gbp[itSV->id].score) {
@@ -224,6 +190,7 @@ namespace torali
 		gbp[itSV->id].ref = refRight;
 		gbp[itSV->id].alt = consRight;
 		gbp[itSV->id].svt = itSV->svt;
+		gbp[itSV->id].left = false;
 	      }
 	    }
 	    if (gbp[itSV->id].score < 0.8) break;
@@ -317,67 +284,66 @@ namespace torali
 	while (sam_itr_next(samfile[file_c], iter, rec) >= 0) {
 	  // Genotyping only primary alignments
 	  if (rec->core.flag & (BAM_FSECONDARY | BAM_FQCFAIL | BAM_FDUP | BAM_FSUPPLEMENTARY | BAM_FUNMAP)) continue;
-
 	  
-	  // ToDo FixMe
-	  //if (rec->core.flag & BAM_FREVERSE) reverseComplement(sequence);
-	  if (rec->core.flag & BAM_FREVERSE) continue;
-
-	  
-	  // Get sequence
-	  std::string sequence;
-	  sequence.resize(rec->core.l_qseq);
-	  uint8_t* seqptr = bam_get_seq(rec);
-	  for (int i = 0; i < rec->core.l_qseq; ++i) sequence[i] = "=ACMGRSVTWYHKDBN"[bam_seqi(seqptr, i)];
-
 	  // Read length
-	  uint32_t slen = rec->core.l_qseq;
-	  if (!slen) slen = sequenceLength(rec);
-	  if (slen < maxReadLength * rlBinSize) ++rlDist[file_c][(int32_t) (slen / rlBinSize)];
+	  int32_t readlen = readLength(rec);
+	  if (readlen < (int32_t) (maxReadLength * rlBinSize)) ++rlDist[file_c][(int32_t) (readlen / rlBinSize)];
 
 	  // Reference and sequence pointer
 	  uint32_t rp = rec->core.pos; // reference pointer
 	  uint32_t sp = 0; // sequence pointer
 
 	  // All SV hits
-	  typedef std::pair<int32_t, int32_t> TSVSeqHit;
-	  typedef std::set<TSVSeqHit> TSVSeqHitSet;
-	  TSVSeqHitSet genoSet;
+	  typedef std::map<int32_t, int32_t> TSVSeqHit;
+	  TSVSeqHit genoMap;
 
 	  // Any direct SV support
+	  /*
 	  std::size_t seed = hash_lr(rec);
 	  if (srStore.find(seed) != srStore.end()) {
 	    for(uint32_t ri = 0; ri < srStore[seed].size(); ++ri) {
-	      genoSet.insert(std::make_pair(srStore[seed][ri].svid, srStore[seed][ri].sstart));
+	      int32_t svid = srStore[seed][ri].svid;
+	      if (gbp[svid].left) genoMap.insert(std::make_pair(srStore[seed][ri].svid, srStore[seed][ri].sstart));
+	      else genoMap.insert(std::make_pair(srStore[seed][ri].svid, srStore[seed][ri].sstart + srStore[seed][ri].inslen));
 	    }
-	  }	      
+	  }
+	  */
 	  
 	  // Parse the CIGAR
 	  uint32_t* cigar = bam_get_cigar(rec);
 	  for (std::size_t i = 0; i < rec->core.n_cigar; ++i) {
 	    if ((bam_cigar_op(cigar[i]) == BAM_CMATCH) || (bam_cigar_op(cigar[i]) == BAM_CEQUAL) || (bam_cigar_op(cigar[i]) == BAM_CDIFF)) {
 	      // Fetch reference alignments
-	      int32_t bpHit = 0;
-	      int32_t spHit = 0;
 	      for(uint32_t k = 0; k < bam_cigar_oplen(cigar[i]); ++k) {
 		if ((rp < hdr[file_c]->target_len[refIndex]) && (covBases[rp] < maxCoverage - 1)) ++covBases[rp];
 		if (bpOccupied[rp]) {
-		  bpHit = rp;
-		  spHit = sp;
+		  for(typename TIdSet::const_iterator it = bpid[rp].begin(); it != bpid[rp].end(); ++it) {
+		    // Ensure fwd alignment and each SV only once
+		    if (genoMap.find(*it) == genoMap.end()) {
+		      if (rec->core.flag & BAM_FREVERSE) genoMap.insert(std::make_pair(*it, readlen - sp));
+		      else genoMap.insert(std::make_pair(*it, sp));
+		    }
+		  }
 		}
 		if ((bam_cigar_op(cigar[i]) == BAM_CMATCH) || (bam_cigar_op(cigar[i]) == BAM_CEQUAL)) ++matchCount[file_c];
 		else if (bam_cigar_op(cigar[i]) == BAM_CDIFF) ++mismatchCount[file_c];
 		++sp;
 		++rp;
 	      }
-	      if (bpHit) {
-		for(typename TIdSet::const_iterator it = bpid[bpHit].begin(); it != bpid[bpHit].end(); ++it) {
-		  genoSet.insert(std::make_pair(*it, spHit));
-		}
-	      }
 	    } else if ((bam_cigar_op(cigar[i]) == BAM_CDEL) || (bam_cigar_op(cigar[i]) == BAM_CREF_SKIP)) {
 	      ++delCount[file_c];
-	      rp += bam_cigar_oplen(cigar[i]);
+	      for(uint32_t k = 0; k < bam_cigar_oplen(cigar[i]); ++k) {
+		if (bpOccupied[rp]) {
+		  for(typename TIdSet::const_iterator it = bpid[rp].begin(); it != bpid[rp].end(); ++it) {
+		    // Ensure fwd alignment and each SV only once
+		    if (genoMap.find(*it) == genoMap.end()) {
+		      if (rec->core.flag & BAM_FREVERSE) genoMap.insert(std::make_pair(*it, readlen - sp));
+		      else genoMap.insert(std::make_pair(*it, sp));
+		    }
+		  }
+		}
+		++rp;
+	      }
 	    } else if (bam_cigar_op(cigar[i]) == BAM_CINS) {
 	      ++insCount[file_c];
 	      sp += bam_cigar_oplen(cigar[i]);
@@ -390,88 +356,99 @@ namespace torali
 	    }
 	  }
 
-	  // Genotype all SVs covered by this read
-	  for(typename TSVSeqHitSet::iterator git = genoSet.begin(); git != genoSet.end(); ++git) {
-	    int32_t svid = git->first;
-	    int32_t spHit = git->second;
+	  // Read for genotyping?
+	  if (!genoMap.empty()) {
+	    // Get sequence
+	    std::string sequence;
+	    sequence.resize(rec->core.l_qseq);
+	    uint8_t* seqptr = bam_get_seq(rec);
+	    for (int i = 0; i < rec->core.l_qseq; ++i) sequence[i] = "=ACMGRSVTWYHKDBN"[bam_seqi(seqptr, i)];
 
-	    //std::cerr << "GBP:" << gbp[svid].regionStart << ',' << gbp[svid].bppos << ',' << gbp[svid].regionEnd << std::endl;
-	    //std::cerr << spHit << ':' << sequence.size() << std::endl;
+	    // Genotype all SVs covered by this read
+	    for(typename TSVSeqHit::iterator git = genoMap.begin(); git != genoMap.end(); ++git) {
+	      int32_t svid = git->first;
+	      int32_t spHit = git->second;
 
-	    // Require spanning reads
-	    int32_t leftOffset = gbp[svid].bppos - gbp[svid].regionStart;
-	    if (spHit < leftOffset) continue;
-	    int32_t rightOffset = gbp[svid].regionEnd - gbp[svid].bppos;
-	    if ((int32_t) sequence.size() < rightOffset + spHit) continue;
-	    std::string subseq = sequence.substr(spHit - leftOffset, leftOffset + rightOffset);
+	      // Require spanning reads
+	      int32_t leftOffset = gbp[svid].bppos - gbp[svid].regionStart;
+	      int32_t rightOffset = gbp[svid].regionEnd - gbp[svid].bppos;
+	      std::string subseq;
+	      if (rec->core.flag & BAM_FREVERSE) {
+		if (spHit < rightOffset) continue;
+		if (readlen < leftOffset + spHit) continue;
+		subseq = sequence.substr((readlen - spHit) - leftOffset, leftOffset + rightOffset);
+	      } else {
+		if (spHit < leftOffset) continue;
+		if (readlen < rightOffset + spHit) continue;
+		subseq = sequence.substr(spHit - leftOffset, leftOffset + rightOffset);
+	      }
 	    
-	    // Compute alignment to alternative haplotype
-	    TAlign alignAlt;
-	    int32_t scoreA = gotoh(gbp[svid].alt, subseq, alignAlt, global, c.aliscore);
-	    int32_t scoreAltThreshold = (int32_t) (c.flankQuality * gbp[svid].alt.size() * c.aliscore.match + (1.0 - c.flankQuality) * gbp[svid].ref.size() * c.aliscore.mismatch);
-	    double scoreAlt = (double) scoreA / (double) scoreAltThreshold;
+	      // Compute alignment to alternative haplotype
+	      TAlign alignAlt;
+	      int32_t scoreA = gotoh(gbp[svid].alt, subseq, alignAlt, global, c.aliscore);
+	      int32_t scoreAltThreshold = (int32_t) (c.flankQuality * gbp[svid].alt.size() * c.aliscore.match + (1.0 - c.flankQuality) * gbp[svid].ref.size() * c.aliscore.mismatch);
+	      double scoreAlt = (double) scoreA / (double) scoreAltThreshold;
 	    
-	    // Compute alignment to reference haplotype
-	    TAlign alignRef;
-	    int32_t scoreR = gotoh(gbp[svid].ref, subseq, alignRef, global, c.aliscore);
-	    int32_t scoreRefThreshold = (int32_t) (c.flankQuality * gbp[svid].ref.size() * c.aliscore.match + (1.0 - c.flankQuality) * gbp[svid].ref.size() * c.aliscore.mismatch);
-	    double scoreRef = (double) scoreR / (double) scoreRefThreshold;
-	    
-	    // Any confident alignment?
-	    if ((scoreRef > 1) || (scoreAlt > 1)) {
+	      // Compute alignment to reference haplotype
+	      TAlign alignRef;
+	      int32_t scoreR = gotoh(gbp[svid].ref, subseq, alignRef, global, c.aliscore);
+	      int32_t scoreRefThreshold = (int32_t) (c.flankQuality * gbp[svid].ref.size() * c.aliscore.match + (1.0 - c.flankQuality) * gbp[svid].ref.size() * c.aliscore.mismatch);
+	      double scoreRef = (double) scoreR / (double) scoreRefThreshold;
+
 	      // Debug alignment to REF and ALT
-	      /*
-		std::cerr << "Alt:\t" << scoreAlt << "\tRef:\t" << scoreRef << std::endl;
-		for(uint32_t i = 0; i< alignAlt.shape()[0]; ++i) {
-		for(uint32_t j = 0; j< alignAlt.shape()[1]; ++j) std::cerr << alignAlt[i][j];
-		std::cerr << std::endl;
-		}
-		for(uint32_t i = 0; i< alignRef.shape()[0]; ++i) {
-		for(uint32_t j = 0; j< alignRef.shape()[1]; ++j) std::cerr << alignRef[i][j];
-		std::cerr << std::endl;
-		}
-	      */
+	      //std::cerr << "svid:" << svid << ",gbp:" << gbp[svid].regionStart << ',' << gbp[svid].bppos << ',' << gbp[svid].regionEnd << ',' << gbp[svid].left << ",seqbp:" << spHit << ",readlen:" << readlen << ",reverse:" << (int32_t) (rec->core.flag & BAM_FREVERSE) << ",alt:" << scoreAlt << ",ref:" << scoreRef << std::endl;
+	      //for(uint32_t i = 0; i< alignAlt.shape()[0]; ++i) {
+	      //for(uint32_t j = 0; j< alignAlt.shape()[1]; ++j) std::cerr << alignAlt[i][j];
+	      //std::cerr << std::endl;
+	      //}
+	      //for(uint32_t i = 0; i< alignRef.shape()[0]; ++i) {
+	      //for(uint32_t j = 0; j< alignRef.shape()[1]; ++j) std::cerr << alignRef[i][j];
+	      //std::cerr << std::endl;
+	      //}
 	      
-	      if (scoreRef > scoreAlt) {
-		// Account for reference bias
-		if (++refAlignedReadCount[file_c][svid] % 2) {
+	      // Any confident alignment?
+	      if ((scoreRef > 1) || (scoreAlt > 1)) {
+		if (scoreRef > scoreAlt) {
+		  // Account for reference bias
+		  if (++refAlignedReadCount[file_c][svid] % 2) {
+		    TQuality quality;
+		    quality.resize(rec->core.l_qseq);
+		    uint8_t* qualptr = bam_get_qual(rec);
+		    for (int i = 0; i < rec->core.l_qseq; ++i) quality[i] = qualptr[i];
+		    uint32_t rq = _getAlignmentQual(alignRef, quality);
+		    if (rq >= c.minGenoQual) {
+		      uint8_t* hpptr = bam_aux_get(rec, "HP");
+		      jctMap[file_c][svid].ref.push_back((uint8_t) std::min(rq, (uint32_t) rec->core.qual));
+		      if (hpptr) {
+			c.isHaplotagged = true;
+			int hap = bam_aux2i(hpptr);
+			if (hap == 1) ++jctMap[file_c][svid].refh1;
+			else ++jctMap[file_c][svid].refh2;
+		      }
+		    }
+		  }
+		} else {
 		  TQuality quality;
 		  quality.resize(rec->core.l_qseq);
 		  uint8_t* qualptr = bam_get_qual(rec);
 		  for (int i = 0; i < rec->core.l_qseq; ++i) quality[i] = qualptr[i];
-		  uint32_t rq = _getAlignmentQual(alignRef, quality);
-		  if (rq >= c.minGenoQual) {
+		  uint32_t aq = _getAlignmentQual(alignAlt, quality);
+		  if (aq >= c.minGenoQual) {
 		    uint8_t* hpptr = bam_aux_get(rec, "HP");
-		    jctMap[file_c][svid].ref.push_back((uint8_t) std::min(rq, (uint32_t) rec->core.qual));
+		    if (c.hasDumpFile) {
+		      std::string svidStr(_addID(gbp[svid].svt));
+		      std::string padNumber = boost::lexical_cast<std::string>(svid);
+		      padNumber.insert(padNumber.begin(), 8 - padNumber.length(), '0');
+		      svidStr += padNumber;
+		      dumpOut << svidStr << "\t" << c.files[file_c].string() << "\t" << bam_get_qname(rec) << "\t" << hdr[file_c]->target_name[rec->core.tid] << "\t" << rec->core.pos << "\t" << hdr[file_c]->target_name[rec->core.mtid] << "\t" << rec->core.mpos << "\t" << (int32_t) rec->core.qual << "\tSR" << std::endl;
+		    }
+		    jctMap[file_c][svid].alt.push_back((uint8_t) std::min(aq, (uint32_t) rec->core.qual));
 		    if (hpptr) {
 		      c.isHaplotagged = true;
 		      int hap = bam_aux2i(hpptr);
-		      if (hap == 1) ++jctMap[file_c][svid].refh1;
-		      else ++jctMap[file_c][svid].refh2;
+		      if (hap == 1) ++jctMap[file_c][svid].alth1;
+		      else ++jctMap[file_c][svid].alth2;
 		    }
-		  }
-		}
-	      } else {
-		TQuality quality;
-		quality.resize(rec->core.l_qseq);
-		uint8_t* qualptr = bam_get_qual(rec);
-		for (int i = 0; i < rec->core.l_qseq; ++i) quality[i] = qualptr[i];
-		uint32_t aq = _getAlignmentQual(alignAlt, quality);
-		if (aq >= c.minGenoQual) {
-		  uint8_t* hpptr = bam_aux_get(rec, "HP");
-		  if (c.hasDumpFile) {
-		    std::string svidStr(_addID(gbp[svid].svt));
-		    std::string padNumber = boost::lexical_cast<std::string>(svid);
-		    padNumber.insert(padNumber.begin(), 8 - padNumber.length(), '0');
-		    svidStr += padNumber;
-		    dumpOut << svidStr << "\t" << c.files[file_c].string() << "\t" << bam_get_qname(rec) << "\t" << hdr[file_c]->target_name[rec->core.tid] << "\t" << rec->core.pos << "\t" << hdr[file_c]->target_name[rec->core.mtid] << "\t" << rec->core.mpos << "\t" << (int32_t) rec->core.qual << "\tSR" << std::endl;
-		  }
-		  jctMap[file_c][svid].alt.push_back((uint8_t) std::min(aq, (uint32_t) rec->core.qual));
-		  if (hpptr) {
-		    c.isHaplotagged = true;
-		    int hap = bam_aux2i(hpptr);
-		    if (hap == 1) ++jctMap[file_c][svid].alth1;
-		    else ++jctMap[file_c][svid].alth2;
 		  }
 		}
 	      }

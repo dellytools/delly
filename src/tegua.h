@@ -140,24 +140,29 @@ namespace torali {
 
      // Tmp SR Store
      TReadSV tmpStore;
-     _clusterSRReads(c, validRegions, svc, tmpStore);
+     //_clusterSRReads(c, validRegions, svc, tmpStore);
 
      // Update srStore
      typedef std::vector<SeqSlice> TSvPosVector;
      typedef boost::unordered_map<std::size_t, TSvPosVector> TReadSV;
      for(typename TReadSV::iterator readit = tmpStore.begin(); readit != tmpStore.end(); ++readit) {
+       std::set<int32_t> svIdSet;
        for(uint32_t i = 0; i < readit->second.size(); ++i) {
 	 int32_t svid = readit->second[i].svid;
 	 typename TVariants::iterator itGeno = std::lower_bound(svs.begin(), svs.end(), StructuralVariantRecord(svc[svid].chr, std::max(0, svc[svid].svStart - (int32_t) c.minRefSep), svc[svid].svEnd), SortSVs<StructuralVariantRecord>());
 	 for(;((itGeno != svs.end()) && (std::abs(svc[svid].svStart - itGeno->svStart) <= c.minRefSep));++itGeno) {
 	   if ((svc[svid].chr != itGeno->chr) || (svc[svid].chr2 != itGeno->chr2) || (svc[svid].svt != itGeno->svt)) continue;
 	   if (std::abs(svc[svid].svEnd - itGeno->svEnd) > c.minRefSep) continue;
-	   
-	   // Match
-	   //std::cerr << readit->first << ':' << svc[svid].chr << ',' << svc[svid].svStart << ',' << svc[svid].chr2 << ',' << svc[svid].svEnd << ',' << svc[svid].svt << ';' << itGeno->chr << ',' << itGeno->svStart << ',' << itGeno->chr2 << ',' << itGeno->svEnd << ',' << itGeno->svt << std::endl;
 	   if (srStore.find(readit->first) == srStore.end()) srStore.insert(std::make_pair(readit->first, TSvPosVector()));
-	   readit->second[i].svid = itGeno->id;
-	   srStore[readit->first].push_back(readit->second[i]);
+	   // Assign read only once to a given SV
+	   if (svIdSet.find(itGeno->id) == svIdSet.end()) {
+	     // Debug
+	     //std::cerr << readit->first << ':' << svc[svid].chr << ',' << svc[svid].svStart << ',' << svc[svid].chr2 << ',' << svc[svid].svEnd << ',' << svc[svid].svt << ';' << itGeno->chr << ',' << itGeno->svStart << ',' << itGeno->chr2 << ',' << itGeno->svEnd << ',' << itGeno->svt << std::endl;
+
+	     svIdSet.insert(itGeno->id);
+	     readit->second[i].svid = itGeno->id;
+	     srStore[readit->first].push_back(readit->second[i]);
+	   }
 	 }
        }
      }
@@ -372,7 +377,7 @@ namespace torali {
    
    // Run Tegua
    c.aliscore = DnaScore<int>(3, -2, -3, -1);
-   c.flankQuality = 0.9;
+   c.flankQuality = 0.8;
    c.minimumFlankSize = 50;
    return runTegua(c);
  }
