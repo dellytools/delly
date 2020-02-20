@@ -13,7 +13,7 @@ all:   	$(TARGETS)
 	export PATH=${PBASE}/bin/bin:${PATH} && conda config --add channels defaults && conda config --add channels conda-forge && conda config --add channels bioconda && touch .channels
 
 .envs: .conda .channels
-	export PATH=${PBASE}/bin/bin:${PATH} && conda create -y --prefix=${PBASE}/bin/envs/sv svim sniffles samtools bcftools htslib wgsim pbsim bwa minimap2 alfred && touch .envs
+	export PATH=${PBASE}/bin/bin:${PATH} && conda create -y --prefix=${PBASE}/bin/envs/sv svim sniffles samtools bcftools bedtools htslib wgsim pbsim bwa minimap2 alfred && touch .envs
 
 .truvari: .conda .channels .envs
 	export PATH=${PBASE}/bin/bin:${PATH} && source activate ${PBASE}/bin/envs/sv && pip install truvari && conda deactivate && touch .truvari

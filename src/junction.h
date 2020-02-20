@@ -315,6 +315,7 @@ namespace torali
 	    if ((rec->core.qual < c.minMapQual) || (rec->core.tid<0)) continue;
 
 	    std::size_t seed = hash_lr(rec);
+	    //std::cerr << bam_get_qname(rec) << '\t' << seed << std::endl;
 	    uint32_t rp = rec->core.pos; // reference pointer
 	    uint32_t sp = 0; // sequence pointer
 	    
@@ -384,15 +385,6 @@ namespace torali
 		  }
 		  _insertJunction(readBp, seed, rec, rpOrig, sp, true);
 		}
-	      } else if (bam_cigar_op(cigar[i]) == BAM_CSOFT_CLIP) {
-		int32_t finalsp = sp;
-		bool scleft = false;
-		if (sp == 0) {
-		  finalsp += bam_cigar_oplen(cigar[i]); // Leading soft-clip / hard-clip
-		  scleft = true;
-		}
-		sp += bam_cigar_oplen(cigar[i]);
-		if (bam_cigar_oplen(cigar[i]) > c.minClip) _insertJunction(readBp, seed, rec, rp, finalsp, scleft);
 	      } else if (bam_cigar_op(cigar[i]) == BAM_CREF_SKIP) {
 		rp += bam_cigar_oplen(cigar[i]);
 	      } else if ((bam_cigar_op(cigar[i]) == BAM_CSOFT_CLIP) || (bam_cigar_op(cigar[i]) == BAM_CHARD_CLIP)) {
@@ -403,6 +395,7 @@ namespace torali
 		  scleft = true;
 		}
 		sp += bam_cigar_oplen(cigar[i]);
+		//std::cerr << bam_get_qname(rec) << ',' << rp << ',' << finalsp << ',' << scleft << std::endl;
 		if (bam_cigar_oplen(cigar[i]) > c.minClip) _insertJunction(readBp, seed, rec, rp, finalsp, scleft);
 	      } else {
 		std::cerr << "Unknown Cigar options" << std::endl;
@@ -463,7 +456,7 @@ namespace torali
     _findSRBreakpoints(c, validRegions, srBR);
 	 	 
     // Debug
-    if (c.hasDumpFile) outputSRBamRecords(c, srBR);
+    //outputSRBamRecords(c, srBR);
     
     // Cluster BAM records
     for(uint32_t svt = 0; svt < srBR.size(); ++svt) {
@@ -474,6 +467,9 @@ namespace torali
       
       // Cluster
       cluster(c, srBR[svt], svc, c.maxReadSep, svt);
+
+      // Debug
+      //outputStructuralVariants(c, svc, srBR, svt);
       
       // Track split-reads
       for(uint32_t i = 0; i < srBR[svt].size(); ++i) {
@@ -508,21 +504,88 @@ namespace torali
     sam_close(samfile);
   }
 
+  template<typename TConfig, typename TSvtSRBamRecord>
+  inline void
+  outputStructuralVariants(TConfig const& c, std::vector<StructuralVariantRecord> const& svs, TSvtSRBamRecord const& srBR, int32_t const svt) {
+    // Header
+    std::cerr << "chr1\tpos1\tchr2\tpos2\tsvtype\tct\tpeSupport\tsrSupport" << std::endl;
+    
+    // Hash reads
+    typedef std::map<std::size_t, std::string> THashMap;
+    THashMap hm;
+    typedef std::vector<samFile*> TSamFile;
+    typedef std::vector<hts_idx_t*> TIndex;
+    TSamFile samfile(c.files.size());
+    TIndex idx(c.files.size());
+    for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
+      samfile[file_c] = sam_open(c.files[file_c].string().c_str(), "r");
+      hts_set_fai_filename(samfile[file_c], c.genome.string().c_str());
+      idx[file_c] = sam_index_load(samfile[file_c], c.files[file_c].string().c_str());
+    }
+    bam_hdr_t* hdr = sam_hdr_read(samfile[0]);
+    for(int32_t refIndex = 0; refIndex < hdr->n_targets; ++refIndex) {
+      for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
+	hts_itr_t* iter = sam_itr_queryi(idx[file_c], refIndex, 0, hdr->target_len[refIndex]);
+	bam1_t* rec = bam_init1();
+	while (sam_itr_next(samfile[file_c], iter, rec) >= 0) {
+	  if (rec->core.flag & (BAM_FQCFAIL | BAM_FDUP | BAM_FUNMAP | BAM_FSECONDARY | BAM_FSUPPLEMENTARY)) continue;
+	  std::size_t seed = hash_lr(rec);
+	  std::string qname = bam_get_qname(rec);
+	  if (hm.find(seed) == hm.end()) hm.insert(std::make_pair(seed, qname));
+	  else {
+	    if (hm[seed] != qname) {
+	      std::cerr << "Warning: Hash collision! " << seed << ',' << hm[seed] << ',' << qname << std::endl;
+	    }
+	  }
+	}
+	bam_destroy1(rec);
+	hts_itr_destroy(iter);
+      }
+    }
+    
+    // Track split-reads
+    typedef std::vector<std::string> TReadNameVector;
+    typedef std::vector<TReadNameVector> TSVReadNames;
+    TSVReadNames svReadNames(svs.size(), TReadNameVector());
+    for(uint32_t i = 0; i < srBR[svt].size(); ++i) {
+      if (srBR[svt][i].svid != -1) {
+	svReadNames[srBR[svt][i].svid].push_back(hm[srBR[svt][i].id]);
+      }
+    }
+  
+    // SVs
+    for(uint32_t i = 0; i < svs.size(); ++i) {
+      if (svs[i].svt != svt) continue;
+      std::cerr << hdr->target_name[svs[i].chr] << '\t' << svs[i].svStart << '\t' << hdr->target_name[svs[i].chr2] << '\t' << svs[i].svEnd << '\t' << _addID(svs[i].svt) << '\t' << _addOrientation(svs[i].svt) << '\t' << svs[i].peSupport << '\t' << svs[i].srSupport << '\t';
+      for(uint32_t k = 0; k < svReadNames[svs[i].id].size(); ++k) std::cerr << svReadNames[svs[i].id][k] << ',';
+      std::cerr << std::endl;
+    }
+
+    // Clean-up
+    bam_hdr_destroy(hdr);
+    for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
+      hts_idx_destroy(idx[file_c]);
+      sam_close(samfile[file_c]);
+    }
+  }
+
+
   template<typename TConfig>
   inline void
-  outputStructuralVariants(TConfig const& c, std::vector<StructuralVariantRecord> const& svs) {
+  outputStructuralVariants(TConfig const& c, std::vector<StructuralVariantRecord> const& svs, int32_t const svt) {
     samFile* samfile = sam_open(c.files[0].string().c_str(), "r");
     hts_set_fai_filename(samfile, c.genome.string().c_str());
     bam_hdr_t* hdr = sam_hdr_read(samfile);
 
     // Header
     std::cerr << "chr1\tpos1\tchr2\tpos2\tsvtype\tct\tpeSupport\tsrSupport" << std::endl;
-
+    
     // SVs
     for(uint32_t i = 0; i < svs.size(); ++i) {
+      if (svs[i].svt != svt) continue;
       std::cerr << hdr->target_name[svs[i].chr] << '\t' << svs[i].svStart << '\t' << hdr->target_name[svs[i].chr2] << '\t' << svs[i].svEnd << '\t' << _addID(svs[i].svt) << '\t' << _addOrientation(svs[i].svt) << '\t' << svs[i].peSupport << '\t' << svs[i].srSupport << std::endl;
     }
-
+    
     // Clean-up
     bam_hdr_destroy(hdr);
     sam_close(samfile);

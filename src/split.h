@@ -448,9 +448,8 @@ namespace torali
 
     // Debug consensus to reference alignment
     //std::cerr << "Consensus-to-Reference alignment" << std::endl;
-    //typedef typename TAlign::index TAIndex;
-    //for(TAIndex i = 0; i < (TAIndex) align.shape()[0]; ++i) {
-    //for(TAIndex j = 0; j< (TAIndex) align.shape()[1]; ++j) {
+    //for(uint32_t i = 0; i < align.shape()[0]; ++i) {
+    //for(uint32_t j = 0; j< align.shape()[1]; ++j) {
     //std::cerr << align[i][j];
     //}
     //std::cerr << std::endl;

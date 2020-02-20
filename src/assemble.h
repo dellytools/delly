@@ -23,7 +23,7 @@ namespace torali
 
   template<typename TConfig, typename TValidRegion, typename TSRStore>
   inline void
-  assemble(TConfig const& c, TValidRegion const& validRegions, TSRStore& srStore, std::vector<StructuralVariantRecord>& svs) {
+    assemble(TConfig const& c, TValidRegion const& validRegions, std::vector<StructuralVariantRecord>& svs, TSRStore& srStore) {
     // Sequence store
     typedef std::set<std::string> TSequences;
     typedef std::vector<TSequences> TSVSequences;
@@ -73,6 +73,7 @@ namespace torali
 	  if (srStore.find(seed) != srStore.end()) {
 	    for(uint32_t ri = 0; ri < srStore[seed].size(); ++ri) {
 	      int32_t svid = srStore[seed][ri].svid;
+	      //std::cerr << svs[svid].svStart << ',' << svs[svid].svEnd << ',' << svs[svid].svt << ',' << svid << " SV" << std::endl;
 	      //std::cerr << seed << '\t' << srStore[seed][ri].svid << '\t' << srStore[seed][ri].sstart << '\t' << srStore[seed][ri].inslen << '\t' << sv[srStore[seed][ri].svid].srSupport << '\t' << sv[srStore[seed][ri].svid].svt << std::endl;
 
 	      if (!svcons[svid]) {
@@ -127,6 +128,26 @@ namespace torali
 	bam_destroy1(rec);
 	hts_itr_destroy(iter);
       }
+      // Handle left-overs
+      for(uint32_t svid = 0; svid < svcons.size(); ++svid) {
+	if (!svcons[svid]) {
+	  if ((!_translocation(svs[svid].svt)) && (svs[svid].chr == refIndex)) {
+	    bool msaSuccess = false;
+	    if (seqStore[svid].size() > 1) {
+	      msa(c, seqStore[svid], svs[svid].consensus);
+	      if (alignConsensus(c, hdr, seq, NULL, svs[svid])) msaSuccess = true;
+	    }
+	    if (!msaSuccess) {
+	      svs[svid].consensus = "";
+	      svs[svid].srSupport = 0;
+	      svs[svid].srAlignQuality = 0;
+	    }
+	    seqStore[svid].clear();
+	    svcons[svid] = true;
+	  }
+	}
+      }
+      
       // Clean-up
       if (seq != NULL) free(seq);
     }
