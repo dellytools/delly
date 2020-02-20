@@ -3,3 +3,6 @@
 .delly
 .envs
 .truvari
+.visor
+
+summary.stats.tsv
