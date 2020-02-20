@@ -28,4 +28,4 @@ test: .conda .channels .envs .truvari .delly
 	export PATH=${PBASE}/bin/bin:${PATH} && source activate sv && VISOR -h && ../bin/dellyLR --version && svim --version && conda deactivate
 
 clean:
-	rm -rf $(TARGETS) $(TARGETS:=.o) bin/ VISOR/ sim/ Miniconda3-latest-Linux-x86_64.sh*
+	rm -rf $(TARGETS) $(TARGETS:=.o) bin/ VISOR/ sim_*/ Miniconda3-latest-Linux-x86_64.sh*

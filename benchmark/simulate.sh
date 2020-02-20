@@ -43,38 +43,24 @@ do
 	if [ ! -d sim_cov${COV}_acc${ACC} ]
 	then
 	    mkdir sim_cov${COV}_acc${ACC}
+
+	    # Simulate haplotypes
 	    bcftools query -f "%CHROM\t%POS\t%INFO/END\t%INFO/SVTYPE\n" HG002_SVs_Tier1_v0.6.vcf.gz | grep "DEL" | grep "^18" | awk '$3-$2>=30' > sim_cov${COV}_acc${ACC}/dels.bed
 	    bedtools cluster -i sim_cov${COV}_acc${ACC}/dels.bed  | sed 's/DEL\t/DEL\tCluster/' | cut -f 5 | sort | uniq -u > sim_cov${COV}_acc${ACC}/fetchDels
 	    bedtools cluster -i sim_cov${COV}_acc${ACC}/dels.bed  | sed 's/DEL\t/DEL\tCluster/' | grep --color -w -Ff sim_cov${COV}_acc${ACC}/fetchDels | sed 's/DEL\tCluster[0-9]*/deletion/' | awk '{print $0"\tNone\t0\t"int(rand()+1.5);}' > sim_cov${COV}_acc${ACC}/deletions.bed
-	    cat sim_cov${COV}_acc${ACC}/deletions.bed  | awk '{print $1"\t"$2"\t"$3"\t"$4"_"$7;}' > sim_cov${COV}_acc${ACC}/dels.igv.bed
-	    VISOR HACk -g chr18.fa -bed sim_cov${COV}_acc${ACC}/deletions.bed -o sim_cov${COV}_acc${ACC}/hack1
 	    cat sim_cov${COV}_acc${ACC}/deletions.bed | grep -P "\t2$" > sim_cov${COV}_acc${ACC}/hap2.dels.bed
-	    VISOR HACk -g chr18.fa -bed sim_cov${COV}_acc${ACC}/hap2.dels.bed -o sim_cov${COV}_acc${ACC}/hack2
-	    
+	    cat sim_cov${COV}_acc${ACC}/deletions.bed  | awk '{print $1"\t"$2"\t"$3"\t"$4"_"$7;}' > sim_cov${COV}_acc${ACC}/dels.igv.bed
+	    VISOR HACk -g chr18.fa -bed sim_cov${COV}_acc${ACC}/deletions.bed sim_cov${COV}_acc${ACC}/hap2.dels.bed -o sim_cov${COV}_acc${ACC}/hack
+
 	    # Draw reads
 	    cat chr18.fa.fai  | awk '{print $1"\t0\t"$2"\t100.0\t100.0";}' > sim_cov${COV}_acc${ACC}/simulate.bed
-	    VISOR LASeR -c ${COV} -a ${ACC} -g chr18.fa -s sim_cov${COV}_acc${ACC}/hack1/ -bed sim_cov${COV}_acc${ACC}/simulate.bed -o sim_cov${COV}_acc${ACC}/laser1
-	    VISOR LASeR -c ${COV} -a ${ACC} -g chr18.fa -s sim_cov${COV}_acc${ACC}/hack2/ -bed sim_cov${COV}_acc${ACC}/simulate.bed -o sim_cov${COV}_acc${ACC}/laser2
-	    
-	    
-	    # Fix me, prefix option
-	    samtools view -h sim_cov${COV}_acc${ACC}/laser1/sim.srt.bam | sed 's/^S1_/HAP1_S1/' | samtools view -bT chr18.fa > sim_cov${COV}_acc${ACC}/laser1/sim.srt.tmp.bam
-	    mv sim_cov${COV}_acc${ACC}/laser1/sim.srt.tmp.bam sim_cov${COV}_acc${ACC}/laser1/sim.srt.bam
-	    samtools index sim_cov${COV}_acc${ACC}/laser1/sim.srt.bam
-	    samtools view -h sim_cov${COV}_acc${ACC}/laser2/sim.srt.bam | sed 's/^S1_/HAP2_S1/' | samtools view -bT chr18.fa > sim_cov${COV}_acc${ACC}/laser2/sim.srt.tmp.bam
-	    mv sim_cov${COV}_acc${ACC}/laser2/sim.srt.tmp.bam sim_cov${COV}_acc${ACC}/laser2/sim.srt.bam
-	    samtools index sim_cov${COV}_acc${ACC}/laser2/sim.srt.bam
-	    
-	    
-	    samtools merge sim_cov${COV}_acc${ACC}/deletions.bam sim_cov${COV}_acc${ACC}/laser1/sim.srt.bam sim_cov${COV}_acc${ACC}/laser2/sim.srt.bam
-	    samtools index sim_cov${COV}_acc${ACC}/deletions.bam
-	    rm -rf sim_cov${COV}_acc${ACC}/hack* sim_cov${COV}_acc${ACC}/laser*
+	    VISOR LASeR --addprefix -c ${COV} -a ${ACC} -g chr18.fa -s sim_cov${COV}_acc${ACC}/hack/ -bed sim_cov${COV}_acc${ACC}/simulate.bed -o sim_cov${COV}_acc${ACC}/laser
 	fi
 
 	# Call deletions using various parameters
 	for N in 25 50 75 100 200 500
 	do
-	    ../bin/dellyLR call -n ${N} -o sim_cov${COV}_acc${ACC}/dels.bcf -g chr18.fa sim_cov${COV}_acc${ACC}/deletions.bam
+	    ../bin/dellyLR call -n ${N} -o sim_cov${COV}_acc${ACC}/dels.bcf -g chr18.fa sim_cov${COV}_acc${ACC}/laser/sim.srt.bam
 	    bcftools query -f '%CHROM\t%POS\t%INFO/END\t%ID[\t%GT]\n' sim_cov${COV}_acc${ACC}/dels.bcf > sim_cov${COV}_acc${ACC}/called.bed
 	    bedtools intersect -a sim_cov${COV}_acc${ACC}/deletions.bed -b sim_cov${COV}_acc${ACC}/called.bed  -wao | awk '$8!="." && ((($9-$2) + ($3-$10))>-50) && ((($9-$2) + ($3-$10))<50)' > sim_cov${COV}_acc${ACC}/true_positives.bed
 	    TOTTRUTH=`cat sim_cov${COV}_acc${ACC}/deletions.bed | cut -f 1-4 | sort | uniq | wc -l | cut -f 1`
