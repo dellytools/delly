@@ -58,11 +58,6 @@ matrix:
       os: osx
       osx_image: xcode8.3
 
-    - env: MYCC="gcc" MYCXX="g++"
-      os: osx
-      osx_image: xcode7.3
-
-
 before_install:
   - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then sudo apt-get update -qq; fi
   - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then sudo apt-get install -qq liblzma-dev libbz2-dev libboost-dev libboost-date-time-dev libboost-program-options-dev libboost-system-dev libboost-filesystem-dev libboost-iostreams-dev; fi
