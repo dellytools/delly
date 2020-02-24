@@ -35,7 +35,7 @@ source activate sv
 
 # Benchmark SV calling
 echo -e "svtype\tnOption\tmode\tcoverage\taccuracy\treadlen\trecall\tprecision\tf1\tgtconc" > summary.stats.tsv
-for SVT in INS DEL
+for SVT in DEL INS
 do
     for MODE in ONT PB
     do
@@ -49,7 +49,7 @@ do
 	do
 	    for ACC in 0.95 0.9 0.85
 	    do
-		for LEN in 9000 5000 1000
+		for LEN in 1000 5000 9000
 		do
 		    # Simulate anew
 		    if [ ! -d sim_svt${SVT}_${MODE}_cov${COV}_acc${ACC}_len${LEN} ]

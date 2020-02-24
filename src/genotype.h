@@ -39,7 +39,6 @@ namespace torali
     typedef std::vector<StructuralVariantRecord> TSVs;
     typedef std::vector<uint8_t> TQuality;
     typedef boost::multi_array<char, 2> TAlign;
-    AlignConfig<false, false> global;
     if (svs.empty()) return;
 
     // Open file handles
@@ -111,7 +110,7 @@ namespace torali
 
 	  AlignDescriptor ad;
 	  if (!_findSplit(c, itSV->consensus, svRefStr, align, ad, itSV->svt)) continue;
-	  
+
 	  // Debug consensus to reference alignment
 	  //std::cerr << "svid:" << itSV->id << ",consensus-to-reference-alignment" << std::endl;
 	  //for(uint32_t i = 0; i<align.shape()[0]; ++i) {
@@ -120,81 +119,19 @@ namespace torali
 	  //}
 	  //std::cerr << std::endl;
 
-	  // Find allele-tagging probes
-	  int32_t stepSize = std::max(c.minimumFlankSize / 5, 2);
-	  for(int32_t boundary = c.minimumFlankSize; boundary <= std::max(c.minimumFlankSize, (int32_t) itSV->consensus.size()); boundary += stepSize) {
-	    if (c.minimumFlankSize + boundary >= (int32_t) itSV->consensus.size()) break;
-	    int32_t leftCutConsStart = std::max(0, ad.cStart - c.minimumFlankSize);
-	    int32_t leftCutConsEnd = std::min(ad.cStart + boundary, (int32_t) itSV->consensus.size());
-	    int32_t leftSize = leftCutConsEnd - leftCutConsStart;
-	    int32_t leftRegionStart = std::max(0, itSV->svStart - c.minimumFlankSize);
-	    int32_t leftRegionEnd = std::min(leftRegionStart + leftSize, (int32_t) hdr[0]->target_len[itSV->chr]);
-	    std::string consLeft;
-	    std::string refLeft;
-	    TAlign alignLeft;
-	    double scoreLeft = 1;
-	    if ((leftRegionStart < itSV->svStart) && (itSV->svStart < leftRegionEnd) && (leftRegionEnd - leftRegionStart <= (int32_t) itSV->consensus.size())) {
-	      consLeft = itSV->consensus.substr(leftCutConsStart, leftSize);
-	      refLeft = boost::to_upper_copy(std::string(seq + leftRegionStart, seq + leftRegionEnd));
-	      scoreLeft = gotoh(consLeft, refLeft, alignLeft, global, c.aliscore);
-	      scoreLeft /= (double) (consLeft.size() * c.aliscore.match);
-	    }
-	    TAlign alignRight;
-	    double scoreRight = 1;
-	    int32_t rightRegionStart = 0;
-	    int32_t rightRegionEnd = 0;
-	    std::string consRight;
-	    std::string refRight;
-	    if (itSV->chr == itSV->chr2) {
-	      int32_t rightCutConsStart = std::max(0, ad.cEnd - boundary);
-	      int32_t rightCutConsEnd = std::min(ad.cEnd + c.minimumFlankSize, (int32_t) itSV->consensus.size());
-	      int32_t rightSize = rightCutConsEnd - rightCutConsStart;
-	      rightRegionStart = std::max(0, itSV->svEnd - boundary);
-	      rightRegionEnd = std::min(rightRegionStart + rightSize, (int32_t) hdr[0]->target_len[itSV->chr2]);
-	      if ((rightRegionStart < itSV->svEnd) && (itSV->svEnd < rightRegionEnd) && (rightRegionEnd - rightRegionStart <= (int32_t) itSV->consensus.size())) {
-		consRight = itSV->consensus.substr(rightCutConsStart, rightSize);
-		refRight = boost::to_upper_copy(std::string(seq + rightRegionStart, seq + rightRegionEnd));
-		scoreRight = gotoh(consRight, refRight, alignRight, global, c.aliscore);
-		scoreRight /= (double) (consRight.size() * c.aliscore.match);
-	      }
-	    }
-	    // Debug probe finding
-	    //std::cerr << "svid:" << itSV->id << "," << itSV->svStart << '-' << itSV->svEnd << ",SVT:" << itSV->svt << ",Left:" << scoreLeft << ",Right:" << scoreRight << std::endl;
-	    //for(uint32_t i = 0; i < alignLeft.shape()[0]; ++i) {
-	    //for(uint32_t j = 0; j < alignLeft.shape()[1]; ++j) std::cerr << alignLeft[i][j];
-	    //std::cerr << std::endl;
-	    //}
-	    //for(uint32_t i = 0; i < alignRight.shape()[0]; ++i) {
-	    //for(uint32_t j = 0; j < alignRight.shape()[1]; ++j) std::cerr << alignRight[i][j];
-	    //std::cerr << std::endl;
-	    //}
-	    if (scoreLeft < scoreRight) {
-	      if (scoreLeft < gbp[itSV->id].score) {
-		gbp[itSV->id].chr = itSV->chr;
-		gbp[itSV->id].score = scoreLeft;
-		gbp[itSV->id].regionStart = leftRegionStart;
-		gbp[itSV->id].regionEnd = leftRegionEnd;
-		gbp[itSV->id].bppos = itSV->svStart;
-		gbp[itSV->id].ref = refLeft;
-		gbp[itSV->id].alt = consLeft;
-		gbp[itSV->id].svt = itSV->svt;
-		gbp[itSV->id].left = true;
-	      }
-	    } else {
-	      if (scoreRight < gbp[itSV->id].score) {
-		gbp[itSV->id].chr = itSV->chr2;
-		gbp[itSV->id].score = scoreRight;
-		gbp[itSV->id].regionStart = rightRegionStart;
-		gbp[itSV->id].regionEnd = rightRegionEnd;
-		gbp[itSV->id].bppos = itSV->svEnd;
-		gbp[itSV->id].ref = refRight;
-		gbp[itSV->id].alt = consRight;
-		gbp[itSV->id].svt = itSV->svt;
-		gbp[itSV->id].left = false;
-	      }
-	    }
-	    if (gbp[itSV->id].score < 0.8) break;
-	  }
+	  std::string altSeq;
+	  std::string refSeq;
+	  _trimAlignedSequences(align, altSeq, refSeq);
+	  
+	  // Allele-tagging probes
+	  gbp[itSV->id].chr = itSV->chr;
+	  gbp[itSV->id].regionStart = std::max(itSV->svStart - ad.cStart, 0);
+	  gbp[itSV->id].regionEnd = std::min(itSV->svStart + ((int32_t) altSeq.size() - ad.cStart), (int32_t) hdr[0]->target_len[refIndex]);
+	  gbp[itSV->id].bppos = itSV->svStart;
+	  gbp[itSV->id].ref = refSeq;
+	  gbp[itSV->id].alt = altSeq;
+	  gbp[itSV->id].svt = itSV->svt;
+	  gbp[itSV->id].left = true;
 	}
       }
       if (seq != NULL) free(seq);
@@ -376,24 +313,26 @@ namespace torali
 	      if (rec->core.flag & BAM_FREVERSE) {
 		if (spHit < rightOffset) continue;
 		if (readlen < leftOffset + spHit) continue;
-		subseq = sequence.substr((readlen - spHit) - leftOffset, leftOffset + rightOffset);
+		//subseq = sequence.substr((readlen - spHit) - leftOffset, leftOffset + rightOffset);
+		subseq = sequence;
 	      } else {
 		if (spHit < leftOffset) continue;
 		if (readlen < rightOffset + spHit) continue;
-		subseq = sequence.substr(spHit - leftOffset, leftOffset + rightOffset);
+		//subseq = sequence.substr(spHit - leftOffset, leftOffset + rightOffset);
+		subseq = sequence;
 	      }
 	    
 	      // Compute alignment to alternative haplotype
 	      TAlign alignAlt;
-	      int32_t scoreA = gotoh(gbp[svid].alt, subseq, alignAlt, global, c.aliscore);
-	      int32_t scoreAltThreshold = (int32_t) (c.flankQuality * gbp[svid].alt.size() * c.aliscore.match + (1.0 - c.flankQuality) * gbp[svid].ref.size() * c.aliscore.mismatch);
-	      double scoreAlt = (double) scoreA / (double) scoreAltThreshold;
+	      DnaScore<int> simple(5, -4, -4, -4);
+	      AlignConfig<true, false> semiglobal;
+	      double scoreAlt = needle(gbp[svid].alt, sequence, alignAlt, semiglobal, simple);
+	      scoreAlt /= (double) (c.flankQuality * gbp[svid].alt.size() * simple.match + (1.0 - c.flankQuality) * gbp[svid].alt.size() * simple.mismatch);
 	    
 	      // Compute alignment to reference haplotype
 	      TAlign alignRef;
-	      int32_t scoreR = gotoh(gbp[svid].ref, subseq, alignRef, global, c.aliscore);
-	      int32_t scoreRefThreshold = (int32_t) (c.flankQuality * gbp[svid].ref.size() * c.aliscore.match + (1.0 - c.flankQuality) * gbp[svid].ref.size() * c.aliscore.mismatch);
-	      double scoreRef = (double) scoreR / (double) scoreRefThreshold;
+	      double scoreRef = needle(gbp[svid].ref, sequence, alignRef, semiglobal, simple);
+	      scoreRef /= (double) (c.flankQuality * gbp[svid].ref.size() * simple.match + (1.0 - c.flankQuality) * gbp[svid].ref.size() * simple.mismatch);
 
 	      // Debug alignment to REF and ALT
 	      //std::cerr << "svid:" << svid << ",gbp:" << gbp[svid].regionStart << ',' << gbp[svid].bppos << ',' << gbp[svid].regionEnd << ',' << gbp[svid].left << ",seqbp:" << spHit << ",readlen:" << readlen << ",reverse:" << (int32_t) (rec->core.flag & BAM_FREVERSE) << ",alt:" << scoreAlt << ",ref:" << scoreRef << std::endl;

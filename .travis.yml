@@ -59,7 +59,7 @@ matrix:
       osx_image: xcode8.3
     - env: MYCC="gcc" MYCXX="g++"
       os: osx
-      osx_image: xcode11.3      
+      osx_image: xcode11.3
 
 before_install:
   - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then sudo apt-get update -qq; fi
