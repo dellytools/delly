@@ -60,6 +60,23 @@ namespace torali {
     std::vector<std::string> sampleName;
   };
   
+  template<typename TConfig>
+  inline void
+  _alignmentScore(TConfig& c, std::string const& scoring) {
+    typedef boost::tokenizer< boost::char_separator<char> > Tokenizer;
+    boost::char_separator<char> sep(",\t ");
+    Tokenizer tokens(scoring, sep);
+    Tokenizer::iterator tokIter = tokens.begin();
+    int32_t match = boost::lexical_cast<int32_t>(*tokIter++);
+    int32_t mismatch = boost::lexical_cast<int32_t>(*tokIter++);
+    int32_t go = boost::lexical_cast<int32_t>(*tokIter++);
+    int32_t ge = boost::lexical_cast<int32_t>(*tokIter++);
+    c.aliscore = DnaScore<int>(match, mismatch, go, ge);
+    std::cerr << c.aliscore.match << ',' << c.aliscore.mismatch << ',' << c.aliscore.go << ',' << c.aliscore.ge << std::endl;
+    return;
+  }
+
+
 
  template<typename TConfig>
  inline int32_t
@@ -213,6 +230,7 @@ namespace torali {
    
    // Parameter
    std::string svtype;
+   std::string scoring;
    boost::program_options::options_description generic("Generic options");
    generic.add_options()
      ("help,?", "show help message")
@@ -235,11 +253,12 @@ namespace torali {
    geno.add_options()
      ("vcffile,v", boost::program_options::value<boost::filesystem::path>(&c.vcffile), "input VCF/BCF file for genotyping")
      ("geno-qual,u", boost::program_options::value<uint16_t>(&c.minGenoQual)->default_value(5), "min. mapping quality for genotyping")
+     ("flank-size,f", boost::program_options::value<int32_t>(&c.minimumFlankSize)->default_value(250), "min. flank size")
+     ("flank-quality,a", boost::program_options::value<float>(&c.flankQuality)->default_value(0.8), "min. flank quality")
+     ("scoring,s", boost::program_options::value<std::string>(&scoring)->default_value("3,-2,-3,-1"), "alignment scoring")
      ("dump,d", boost::program_options::value<boost::filesystem::path>(&c.dumpfile), "gzipped output file for SV-reads (optional)")
      ;
 
-   
-   
    boost::program_options::options_description hidden("Hidden options");
    hidden.add_options()
      ("input-file", boost::program_options::value< std::vector<boost::filesystem::path> >(&c.files), "input file")
@@ -265,6 +284,9 @@ namespace torali {
      return 0;
    }
 
+   // Set alignment score
+   _alignmentScore(c, scoring);
+   
    // SV types to compute?
    _svTypesToCompute(c, svtype, vm.count("svtype"));
 
@@ -377,8 +399,6 @@ namespace torali {
    
    // Run Tegua
    c.aliscore = DnaScore<int>(3, -2, -3, -1);
-   c.flankQuality = 0.8;
-   c.minimumFlankSize = 50;
    return runTegua(c);
  }
 

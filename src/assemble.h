@@ -85,7 +85,7 @@ namespace torali
 		int32_t readlen = sequence.size();
 
 		// Extract subsequence
-		int32_t window = 500; 
+		int32_t window = 2 * c.minimumFlankSize;
 		int32_t sPos = srStore[seed][ri].sstart - window;
 		int32_t ePos = srStore[seed][ri].sstart + srStore[seed][ri].inslen + window;
 		if (rec->core.flag & BAM_FREVERSE) {

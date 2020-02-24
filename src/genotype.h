@@ -19,17 +19,17 @@ namespace torali
 {
 
   struct Geno {
-    int32_t chr;
-    int32_t regionStart;
-    int32_t regionEnd;
-    int32_t bppos;
+    int32_t svStartPrefix;
+    int32_t svStartSuffix;
+    int32_t svEndPrefix;
+    int32_t svEndSuffix;
+    int32_t svStart;
+    int32_t svEnd;
     int32_t svt;
-    double score;
-    bool left;
     std::string ref;
     std::string alt;
 
-    Geno() : chr(-1), regionStart(0), regionEnd(0), bppos(0), svt(-1), score(1), left(false) {}
+    Geno() : svStartPrefix(-1), svStartSuffix(-1), svEndPrefix(-1), svEndSuffix(-1), svStart(-1), svEnd(-1), svt(-1) {}
   };
   
 
@@ -57,21 +57,59 @@ namespace torali
       totalTarget += hdr[file_c]->n_targets;
     }
 
-    // Reference and consensus probes
-    typedef std::vector<Geno> TGenoRegion;
-    TGenoRegion gbp(svs.size(), Geno());
+    // Parse genome chr-by-chr
+    boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
+    std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "SV annotation" << std::endl;
+    boost::progress_display show_progress( hdr[0]->n_targets );
 
-    // Preprocess REF and ALT
-    boost::posix_time::ptime noww = boost::posix_time::second_clock::local_time();
-    std::cout << '[' << boost::posix_time::to_simple_string(noww) << "] " << "Generate REF and ALT probes" << std::endl;
-    boost::progress_display show_progresss( hdr[0]->n_targets );
+    // Ref aligned reads
+    typedef std::vector<uint32_t> TRefAlignCount;
+    typedef std::vector<TRefAlignCount> TFileRefAlignCount;
+    TFileRefAlignCount refAlignedReadCount(c.files.size(), TRefAlignCount());
+    for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) refAlignedReadCount[file_c].resize(svs.size(), 0);
 
+    // Coverage distribution
+    typedef uint16_t TMaxCoverage;
+    uint32_t maxCoverage = std::numeric_limits<TMaxCoverage>::max();
+    typedef std::vector<uint32_t> TCovDist;
+    typedef std::vector<TCovDist> TSampleCovDist;
+    TSampleCovDist covDist(c.files.size(), TCovDist());
+    for(uint32_t i = 0; i < c.files.size(); ++i) covDist[i].resize(maxCoverage, 0);
+
+    // Error rates
+    std::vector<uint64_t> matchCount(c.files.size(), 0);
+    std::vector<uint64_t> mismatchCount(c.files.size(), 0);
+    std::vector<uint64_t> delCount(c.files.size(), 0);
+    std::vector<uint64_t> insCount(c.files.size(), 0);
+
+    // Read length distribution
+    typedef uint16_t TMaxReadLength;
+    uint32_t maxReadLength = std::numeric_limits<TMaxReadLength>::max();
+    uint32_t rlBinSize = 100;
+    typedef std::vector<uint32_t> TReadLengthDist;
+    typedef std::vector<TReadLengthDist> TSampleRLDist;
+    TSampleRLDist rlDist(c.files.size(), TReadLengthDist());
+    for(uint32_t i = 0; i < c.files.size(); ++i) rlDist[i].resize(maxReadLength * rlBinSize, 0);
+
+    // Dump file
+    boost::iostreams::filtering_ostream dumpOut;
+    if (c.hasDumpFile) {
+      dumpOut.push(boost::iostreams::gzip_compressor());
+      dumpOut.push(boost::iostreams::file_sink(c.dumpfile.string().c_str(), std::ios_base::out | std::ios_base::binary));
+      dumpOut << "#svid\tbam\tqname\tchr\tpos\tmatechr\tmatepos\tmapq\ttype" << std::endl;
+    }
+
+    // Iterate chromosomes
     std::vector<std::string> refProbes(svs.size());
     faidx_t* fai = fai_load(c.genome.string().c_str());
     for(int32_t refIndex=0; refIndex < (int32_t) hdr[0]->n_targets; ++refIndex) {
-      ++show_progresss;
+      ++show_progress;
       char* seq = NULL;
 
+      // Reference and consensus probes for this chromosome
+      typedef std::vector<Geno> TGenoRegion;
+      TGenoRegion gbp(svs.size(), Geno());
+      
       // Iterate all structural variants
       for(typename TSVs::iterator itSV = svs.begin(); itSV != svs.end(); ++itSV) {
 	if ((itSV->chr != refIndex) && (itSV->chr2 != refIndex)) continue;
@@ -114,78 +152,45 @@ namespace torali
 	  // Debug consensus to reference alignment
 	  //std::cerr << "svid:" << itSV->id << ",consensus-to-reference-alignment" << std::endl;
 	  //for(uint32_t i = 0; i<align.shape()[0]; ++i) {
+	  //if (i == 0) {
+	  //int32_t cpos = 0;
+	  //  for(uint32_t j = 0; j<align.shape()[1]; ++j) {
+	  //	if (align[i][j] != '-') ++cpos;
+	  //	if (cpos == ad.cStart) std::cerr << '|';
+	  //	else if (cpos == ad.cEnd) std::cerr << '|';
+	  //	else std::cerr << '#';
+	  //  }
+	  //  std::cerr << std::endl;
+	  //}
 	  //for(uint32_t j = 0; j<align.shape()[1]; ++j) std::cerr << align[i][j];
 	  //std::cerr << std::endl;
 	  //}
 	  //std::cerr << std::endl;
 
+	  // Trim aligned sequences
 	  std::string altSeq;
 	  std::string refSeq;
-	  _trimAlignedSequences(align, altSeq, refSeq);
-	  
+	  int32_t leadCrop = _trimAlignedSequences(align, altSeq, refSeq);
+
 	  // Allele-tagging probes
-	  gbp[itSV->id].chr = itSV->chr;
-	  gbp[itSV->id].regionStart = std::max(itSV->svStart - ad.cStart, 0);
-	  gbp[itSV->id].regionEnd = std::min(itSV->svStart + ((int32_t) altSeq.size() - ad.cStart), (int32_t) hdr[0]->target_len[refIndex]);
-	  gbp[itSV->id].bppos = itSV->svStart;
+	  gbp[itSV->id].svStartPrefix = std::max(ad.cStart - leadCrop, 0);
+	  gbp[itSV->id].svStartSuffix = std::max((int32_t) altSeq.size() - gbp[itSV->id].svStartPrefix, 0);
+	  gbp[itSV->id].svStart = itSV->svStart;
+	  if (itSV->chr2 == refIndex) {
+	    gbp[itSV->id].svEndPrefix = std::max(ad.cEnd - leadCrop, 0);
+	    gbp[itSV->id].svEndSuffix = std::max((int32_t) altSeq.size() - gbp[itSV->id].svEndPrefix, 0);
+	    gbp[itSV->id].svEnd = itSV->svEnd;
+	  }
 	  gbp[itSV->id].ref = refSeq;
 	  gbp[itSV->id].alt = altSeq;
 	  gbp[itSV->id].svt = itSV->svt;
-	  gbp[itSV->id].left = true;
 	}
       }
       if (seq != NULL) free(seq);
-    }
-    // Clean-up
-    fai_destroy(fai);
 
-    // Parse genome chr-by-chr
-    boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
-    std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "SV annotation" << std::endl;
-    boost::progress_display show_progress( totalTarget );
-
-    typedef std::vector<uint32_t> TRefAlignCount;
-    typedef std::vector<TRefAlignCount> TFileRefAlignCount;
-    TFileRefAlignCount refAlignedReadCount(c.files.size(), TRefAlignCount());
-    for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) refAlignedReadCount[file_c].resize(svs.size(), 0);
-
-    // Coverage distribution
-    typedef uint16_t TMaxCoverage;
-    uint32_t maxCoverage = std::numeric_limits<TMaxCoverage>::max();
-    typedef std::vector<uint32_t> TCovDist;
-    typedef std::vector<TCovDist> TSampleCovDist;
-    TSampleCovDist covDist(c.files.size(), TCovDist());
-    for(uint32_t i = 0; i < c.files.size(); ++i) covDist[i].resize(maxCoverage, 0);
-
-    // Error rates
-    std::vector<uint64_t> matchCount(c.files.size(), 0);
-    std::vector<uint64_t> mismatchCount(c.files.size(), 0);
-    std::vector<uint64_t> delCount(c.files.size(), 0);
-    std::vector<uint64_t> insCount(c.files.size(), 0);
-
-    // Read length distribution
-    typedef uint16_t TMaxReadLength;
-    uint32_t maxReadLength = std::numeric_limits<TMaxReadLength>::max();
-    uint32_t rlBinSize = 100;
-    typedef std::vector<uint32_t> TReadLengthDist;
-    typedef std::vector<TReadLengthDist> TSampleRLDist;
-    TSampleRLDist rlDist(c.files.size(), TReadLengthDist());
-    for(uint32_t i = 0; i < c.files.size(); ++i) rlDist[i].resize(maxReadLength * rlBinSize, 0);
-
-    // Dump file
-    boost::iostreams::filtering_ostream dumpOut;
-    if (c.hasDumpFile) {
-      dumpOut.push(boost::iostreams::gzip_compressor());
-      dumpOut.push(boost::iostreams::file_sink(c.dumpfile.string().c_str(), std::ios_base::out | std::ios_base::binary));
-      dumpOut << "#svid\tbam\tqname\tchr\tpos\tmatechr\tmatepos\tmapq\ttype" << std::endl;
-    }
-
-    // Iterate samples
-    for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
-      // Iterate chromosomes
-      for(int32_t refIndex=0; refIndex < (int32_t) hdr[file_c]->n_targets; ++refIndex) {
-	++show_progress;
-
+      // Genotype
+      // Iterate samples
+      for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
 	// Check we have mapped reads on this chromosome
 	bool nodata = true;
 	std::string suffix("cram");
@@ -208,10 +213,15 @@ namespace torali
 	typedef boost::dynamic_bitset<> TBitSet;
 	TBitSet bpOccupied(hdr[file_c]->target_len[refIndex], false);
 	for(uint32_t i = 0; i < gbp.size(); ++i) {
-	  if (gbp[i].chr == refIndex) {
-	    bpOccupied[gbp[i].bppos] = 1;
-	    if (bpid.find(gbp[i].bppos) == bpid.end()) bpid.insert(std::make_pair(gbp[i].bppos, TIdSet()));
-	    bpid[gbp[i].bppos].insert(i);
+	  if (gbp[i].svStart != -1) {
+	    bpOccupied[gbp[i].svStart] = 1;
+	    if (bpid.find(gbp[i].svStart) == bpid.end()) bpid.insert(std::make_pair(gbp[i].svStart, TIdSet()));
+	    bpid[gbp[i].svStart].insert(i);
+	  }
+	  if (gbp[i].svEnd != -1) {
+	    bpOccupied[gbp[i].svEnd] = 1;
+	    if (bpid.find(gbp[i].svEnd) == bpid.end()) bpid.insert(std::make_pair(gbp[i].svEnd, TIdSet()));
+	    bpid[gbp[i].svEnd].insert(i);
 	  }
 	}
 
@@ -231,7 +241,8 @@ namespace torali
 	  uint32_t sp = 0; // sequence pointer
 
 	  // All SV hits
-	  typedef std::map<int32_t, int32_t> TSVSeqHit;
+	  typedef std::pair<int32_t, int32_t> TRefSeq;
+	  typedef std::map<int32_t, TRefSeq> TSVSeqHit;
 	  TSVSeqHit genoMap;
 
 	  // Any direct SV support
@@ -257,8 +268,8 @@ namespace torali
 		  for(typename TIdSet::const_iterator it = bpid[rp].begin(); it != bpid[rp].end(); ++it) {
 		    // Ensure fwd alignment and each SV only once
 		    if (genoMap.find(*it) == genoMap.end()) {
-		      if (rec->core.flag & BAM_FREVERSE) genoMap.insert(std::make_pair(*it, readlen - sp));
-		      else genoMap.insert(std::make_pair(*it, sp));
+		      if (rec->core.flag & BAM_FREVERSE) genoMap.insert(std::make_pair(*it, std::make_pair(rp, readlen - sp)));
+		      else genoMap.insert(std::make_pair(*it, std::make_pair(rp, sp)));
 		    }
 		  }
 		}
@@ -274,8 +285,8 @@ namespace torali
 		  for(typename TIdSet::const_iterator it = bpid[rp].begin(); it != bpid[rp].end(); ++it) {
 		    // Ensure fwd alignment and each SV only once
 		    if (genoMap.find(*it) == genoMap.end()) {
-		      if (rec->core.flag & BAM_FREVERSE) genoMap.insert(std::make_pair(*it, readlen - sp));
-		      else genoMap.insert(std::make_pair(*it, sp));
+		      if (rec->core.flag & BAM_FREVERSE) genoMap.insert(std::make_pair(*it, std::make_pair(rp, readlen - sp)));
+		      else genoMap.insert(std::make_pair(*it, std::make_pair(rp, sp)));
 		    }
 		  }
 		}
@@ -304,27 +315,31 @@ namespace torali
 	    // Genotype all SVs covered by this read
 	    for(typename TSVSeqHit::iterator git = genoMap.begin(); git != genoMap.end(); ++git) {
 	      int32_t svid = git->first;
-	      int32_t spHit = git->second;
+	      int32_t rpHit = git->second.first;
+	      int32_t spHit = git->second.second;
 
 	      // Require spanning reads
-	      int32_t leftOffset = gbp[svid].bppos - gbp[svid].regionStart;
-	      int32_t rightOffset = gbp[svid].regionEnd - gbp[svid].bppos;
-	      std::string subseq;
-	      if (rec->core.flag & BAM_FREVERSE) {
-		if (spHit < rightOffset) continue;
-		if (readlen < leftOffset + spHit) continue;
-		//subseq = sequence.substr((readlen - spHit) - leftOffset, leftOffset + rightOffset);
-		subseq = sequence;
+	      if (rpHit == gbp[svid].svStart) {
+		if (rec->core.flag & BAM_FREVERSE) {
+		  if (spHit < gbp[svid].svStartSuffix) continue;
+		  if (readlen < gbp[svid].svStartPrefix + spHit) continue;
+		} else {
+		  if (spHit < gbp[svid].svStartPrefix) continue;
+		  if (readlen < gbp[svid].svStartSuffix + spHit) continue;
+		}
 	      } else {
-		if (spHit < leftOffset) continue;
-		if (readlen < rightOffset + spHit) continue;
-		//subseq = sequence.substr(spHit - leftOffset, leftOffset + rightOffset);
-		subseq = sequence;
+		if (rec->core.flag & BAM_FREVERSE) {
+		  if (spHit < gbp[svid].svEndSuffix) continue;
+		  if (readlen < gbp[svid].svEndPrefix + spHit) continue;
+		} else {
+		  if (spHit < gbp[svid].svEndPrefix) continue;
+		  if (readlen < gbp[svid].svEndSuffix + spHit) continue;
+		}
 	      }
 	    
 	      // Compute alignment to alternative haplotype
 	      TAlign alignAlt;
-	      DnaScore<int> simple(5, -4, -4, -4);
+	      DnaScore<int> simple(c.aliscore.match, c.aliscore.mismatch, c.aliscore.mismatch, c.aliscore.mismatch);
 	      AlignConfig<true, false> semiglobal;
 	      double scoreAlt = needle(gbp[svid].alt, sequence, alignAlt, semiglobal, simple);
 	      scoreAlt /= (double) (c.flankQuality * gbp[svid].alt.size() * simple.match + (1.0 - c.flankQuality) * gbp[svid].alt.size() * simple.mismatch);
@@ -439,6 +454,8 @@ namespace torali
 	}
       }
     }
+    // Clean-up
+    fai_destroy(fai);
 
     // Output coverage info
     std::cout << "Coverage distribution (^COV)" << std::endl;
