@@ -319,21 +319,30 @@ namespace torali
 	      int32_t spHit = git->second.second;
 
 	      // Require spanning reads
+	      std::string subseq;
 	      if (rpHit == gbp[svid].svStart) {
 		if (rec->core.flag & BAM_FREVERSE) {
 		  if (spHit < gbp[svid].svStartSuffix) continue;
 		  if (readlen < gbp[svid].svStartPrefix + spHit) continue;
+		  int32_t st = std::max((readlen - spHit) - gbp[svid].svStartPrefix - c.minimumFlankSize, 0);
+		  subseq = sequence.substr(st, gbp[svid].svStartPrefix + gbp[svid].svStartSuffix + 2 * c.minimumFlankSize);
 		} else {
 		  if (spHit < gbp[svid].svStartPrefix) continue;
 		  if (readlen < gbp[svid].svStartSuffix + spHit) continue;
+		  int32_t st = std::max(spHit - gbp[svid].svStartPrefix - c.minimumFlankSize, 0);
+		  subseq = sequence.substr(st, gbp[svid].svStartPrefix + gbp[svid].svStartSuffix + 2 * c.minimumFlankSize);
 		}
 	      } else {
 		if (rec->core.flag & BAM_FREVERSE) {
 		  if (spHit < gbp[svid].svEndSuffix) continue;
 		  if (readlen < gbp[svid].svEndPrefix + spHit) continue;
+		  int32_t st = std::max((readlen - spHit) - gbp[svid].svEndPrefix - c.minimumFlankSize, 0);
+		  subseq = sequence.substr(st, gbp[svid].svEndPrefix + gbp[svid].svEndSuffix + 2 * c.minimumFlankSize);
 		} else {
 		  if (spHit < gbp[svid].svEndPrefix) continue;
 		  if (readlen < gbp[svid].svEndSuffix + spHit) continue;
+		  int32_t st = std::max(spHit - gbp[svid].svEndPrefix - c.minimumFlankSize, 0);
+		  subseq = sequence.substr(st, gbp[svid].svEndPrefix + gbp[svid].svEndSuffix + 2 * c.minimumFlankSize);
 		}
 	      }
 	    
@@ -341,16 +350,16 @@ namespace torali
 	      TAlign alignAlt;
 	      DnaScore<int> simple(c.aliscore.match, c.aliscore.mismatch, c.aliscore.mismatch, c.aliscore.mismatch);
 	      AlignConfig<true, false> semiglobal;
-	      double scoreAlt = needle(gbp[svid].alt, sequence, alignAlt, semiglobal, simple);
+	      double scoreAlt = needle(gbp[svid].alt, subseq, alignAlt, semiglobal, simple);
 	      scoreAlt /= (double) (c.flankQuality * gbp[svid].alt.size() * simple.match + (1.0 - c.flankQuality) * gbp[svid].alt.size() * simple.mismatch);
 	    
 	      // Compute alignment to reference haplotype
 	      TAlign alignRef;
-	      double scoreRef = needle(gbp[svid].ref, sequence, alignRef, semiglobal, simple);
+	      double scoreRef = needle(gbp[svid].ref, subseq, alignRef, semiglobal, simple);
 	      scoreRef /= (double) (c.flankQuality * gbp[svid].ref.size() * simple.match + (1.0 - c.flankQuality) * gbp[svid].ref.size() * simple.mismatch);
 
 	      // Debug alignment to REF and ALT
-	      //std::cerr << "svid:" << svid << ",gbp:" << gbp[svid].regionStart << ',' << gbp[svid].bppos << ',' << gbp[svid].regionEnd << ',' << gbp[svid].left << ",seqbp:" << spHit << ",readlen:" << readlen << ",reverse:" << (int32_t) (rec->core.flag & BAM_FREVERSE) << ",alt:" << scoreAlt << ",ref:" << scoreRef << std::endl;
+	      //std::cerr << "svid:" << svid << ",seqbp:" << spHit << ",readlen:" << readlen << ",reverse:" << (int32_t) (rec->core.flag & BAM_FREVERSE) << ",alt:" << scoreAlt << ",ref:" << scoreRef << std::endl;
 	      //for(uint32_t i = 0; i< alignAlt.shape()[0]; ++i) {
 	      //for(uint32_t j = 0; j< alignAlt.shape()[1]; ++j) std::cerr << alignAlt[i][j];
 	      //std::cerr << std::endl;

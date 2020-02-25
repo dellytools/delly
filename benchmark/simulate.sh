@@ -34,7 +34,7 @@ export PATH=${BASEDIR}/bin/bin/:${PATH}
 source activate sv
 
 # Benchmark SV calling
-echo -e "svtype\tnOption\tmode\tcoverage\taccuracy\treadlen\trecall\tprecision\tf1\tgtconc" > summary.stats.tsv
+echo -e "svtype\tcOption\tnOption\teOption\tfOption\taOption\tsOption\tmode\tcoverage\taccuracy\treadlen\trecall\tprecision\tf1\tgtconc" > summary.stats.tsv
 for SVT in INS DEL
 do
     for MODE in ONT PB
@@ -86,7 +86,7 @@ do
 			do
 			    for E in 0.5 0.6 0.7
 			    do
-				for F in 50 100 250
+				for F in 100 250 400
 				do
 				    for A in 0.8 0.85 0.9
 				    do
