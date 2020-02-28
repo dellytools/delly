@@ -45,7 +45,7 @@ fi
 
 # Activate environment
 export PATH=${BASEDIR}/bin/bin/:${PATH}
-source activate sv
+source activate truvari
 
 # Delly for long reads
 rm -f delly.vcf*
