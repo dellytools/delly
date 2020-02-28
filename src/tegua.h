@@ -224,7 +224,7 @@ namespace torali {
    return 0;
  }
 
- int teguaMain(int argc, char **argv) {
+ int tegua(int argc, char **argv) {
    TeguaConfig c;
    c.isHaplotagged = false;
    
@@ -279,7 +279,7 @@ namespace torali {
    // Check command line arguments
    if ((vm.count("help")) || (!vm.count("input-file")) || (!vm.count("genome"))) {
      std::cout << std::endl;
-     std::cout << "Usage: dellyLR " << argv[0] << " [OPTIONS] -g <ref.fa> <sample1.sort.bam> <sample2.sort.bam> ..." << std::endl;
+     std::cout << "Usage: delly " << argv[0] << " [OPTIONS] -g <ref.fa> <sample1.sort.bam> <sample2.sort.bam> ..." << std::endl;
      std::cout << visible_options << "\n";
      return 0;
    }
@@ -393,7 +393,7 @@ namespace torali {
    // Show cmd
    boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
    std::cout << '[' << boost::posix_time::to_simple_string(now) << "] ";
-   std::cout << "dellyLR ";
+   std::cout << "delly ";
    for(int i=0; i<argc; ++i) { std::cout << argv[i] << ' '; }
    std::cout << std::endl;
    

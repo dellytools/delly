@@ -17,6 +17,7 @@
 #include "delly.h"
 #include "filter.h"
 #include "merge.h"
+#include "tegua.h"
 
 using namespace torali;
 
@@ -28,6 +29,7 @@ displayUsage() {
   std::cout << "Commands:" << std::endl;
   std::cout << std::endl;
   std::cout << "    call         discover and genotype structural variants" << std::endl;
+  std::cout << "    lr           long-read SV discovery" << std::endl;
   std::cout << "    merge        merge structural variants across VCF/BCF files and within a single VCF/BCF file" << std::endl;
   std::cout << "    filter       filter somatic or germline structural variants" << std::endl;
   std::cout << std::endl;
@@ -62,6 +64,9 @@ int main(int argc, char **argv) {
     }
     else if ((std::string(argv[1]) == "call")) {
       return delly(argc-1,argv+1);
+    }
+    else if ((std::string(argv[1]) == "lr")) {
+      return tegua(argc-1,argv+1);
     }
     else if ((std::string(argv[1]) == "filter")) {
       return filter(argc-1,argv+1);

@@ -84,6 +84,11 @@ namespace torali
   }
 
   inline std::string
+  _addAlleles(std::string const& ref, std::string const& alt) {
+    return ref + "," + alt;
+  }
+      
+  inline std::string
   _addAlleles(std::string const& ref, std::string const& chr2, StructuralVariantRecord const& sv, int32_t const svt) {
     if (_translocation(svt)) {
       uint8_t ct = _getSpanOrientation(svt);
