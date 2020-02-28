@@ -25,7 +25,7 @@ all:   	$(TARGETS)
 	cd ../ && make all && make install && cd benchmark && touch .delly
 
 test: .conda .channels .envs .truvari .delly
-	export PATH=${PBASE}/bin/bin:${PATH} && source activate sv && VISOR -h && ../bin/delly --version && svim --version && conda deactivate
+	export PATH=${PBASE}/bin/bin:${PATH} && source activate sv && VISOR -h && ../bin/delly --version && conda deactivate
 
 clean:
 	rm -rf $(TARGETS) $(TARGETS:=.o) bin/ VISOR/ sim_*/ Miniconda3-latest-Linux-x86_64.sh*
