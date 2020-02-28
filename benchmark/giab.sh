@@ -48,15 +48,24 @@ export PATH=${BASEDIR}/bin/bin/:${PATH}
 source activate truvari
 
 # Delly for long reads
-rm -f delly.vcf*
-../bin/dellyLR call -g hs37d5.fa.gz ultra-long-ont_hs37d5_phased.bam
-bcftools view -i '%QUAL>400' sv.bcf | grep -v 'INV\|BND\|DUP' > delly.vcf
-bgzip delly.vcf
-tabix delly.vcf.gz
+for LR in ONT PB
+do
+    rm -f delly.vcf*
+    if [ ${LR} == "ONT" ]
+    then
+	../bin/delly lr -o ont.bcf -g hs37d5.fa.gz ultra-long-ont_hs37d5_phased.bam
+	bcftools view -i '%QUAL>400' ont.bcf | grep -v 'INV\|BND\|DUP' > delly.vcf
+    else
+	../bin/delly lr -o pb.bcf -g hs37d5.fa.gz HG002.SequelII.pbmm2.hs37d5.whatshap.haplotag.RTG.10x.trio.bam
+	bcftools view pb.bcf | grep -v 'INV\|BND\|DUP' > delly.vcf
+    fi
+    bgzip delly.vcf
+    tabix delly.vcf.gz
 
-# truvari
-rm -rf reportDelly
-truvari --includebed HG002_SVs_Tier1_v0.6.bed --giabreport --passonly --no-ref a -p 0.00 -f hs37d5.fa.gz -b HG002_SVs_Tier1_v0.6.vcf.gz -c delly.vcf.gz -o reportDelly
+    # truvari
+    rm -rf reportDelly${LR}
+    truvari --includebed HG002_SVs_Tier1_v0.6.bed --giabreport --passonly --no-ref a -p 0.00 -f hs37d5.fa.gz -b HG002_SVs_Tier1_v0.6.vcf.gz -c delly.vcf.gz -o reportDelly${LR}
+done
 
 # Done
 source deactivate
