@@ -45,14 +45,11 @@ do
 	else
 	    SUBINDEL="15:50:35"
 	fi
-	#for COV in 10 15 20  # haplotype coverage
-	for COV in 15
+	for COV in 10 15 20  # haplotype coverage
 	do
-	    #for ACC in 0.95 0.9 0.85
-	    for ACC in 0.9
+	    for ACC in 0.95 0.9 0.85
 	    do
-		#for LEN in 1000 5000 9000
-		for LEN in 5000
+		for LEN in 1000 5000 9000
 		do
 		    # Simulate anew
 		    if [ ! -d sim_svt${SVT}_${MODE}_cov${COV}_acc${ACC}_len${LEN} ]
@@ -90,9 +87,9 @@ do
 				do
 				    for A in 0.8 0.85 0.9
 				    do
-					for S in "3,-2,-3,-1" "5,-2,-5,-2" "5,-2,-3,-1"
+					for S in "3,-2,-3,-1" "1,-1,-1,-1" "2,-5,-2,-1"
 					do
-					    ../bin/dellyLR call -c ${C} -n ${N} -e ${E} -f ${F} -a ${A} -s ${S} -o sim_svt${SVT}_${MODE}_cov${COV}_acc${ACC}_len${LEN}/${SVT}.bcf -g chr18.fa sim_svt${SVT}_${MODE}_cov${COV}_acc${ACC}_len${LEN}/laser/sim.srt.bam
+					    ../bin/delly lr -c ${C} -n ${N} -e ${E} -f ${F} -a ${A} -s ${S} -o sim_svt${SVT}_${MODE}_cov${COV}_acc${ACC}_len${LEN}/${SVT}.bcf -g chr18.fa sim_svt${SVT}_${MODE}_cov${COV}_acc${ACC}_len${LEN}/laser/sim.srt.bam
 					    if [ ${SVT} == "INS" ]
 					    then
 						bcftools query -f '%CHROM\t%POS\t%INFO/SVLEN\t%ID[\t%GT]\n' sim_svt${SVT}_${MODE}_cov${COV}_acc${ACC}_len${LEN}/${SVT}.bcf | awk '{print $1"\t"$2"\t"($2+$3)"\t"$4"\t"$5;}' > sim_svt${SVT}_${MODE}_cov${COV}_acc${ACC}_len${LEN}/called.bed
