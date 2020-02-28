@@ -20,7 +20,7 @@ then
 fi
 if [ ! -f ultra-long-ont_hs37d5_phased.bam ]
 then
-    wget ftp://ftp-trace.ncbi.nlm.nih.gov/giab/ftp/data/AshkenazimTrio/HG002_NA24385_son/Ultralong_OxfordNanopore/final/ultra-long-ont_hs37d5_phased.bam
+    wget ftp://ftp-trace.ncbi.nlm.nih.gov/giab/ftp/data/AshkenazimTrio/HG002_NA24385_son/Ultralong_OxfordNanopore/guppy-V2.3.4_2019-06-26/ultra-long-ont_hs37d5_phased.bam
     samtools index ultra-long-ont_hs37d5_phased.bam
 fi
 if [ ! -f HG002.SequelII.pbmm2.hs37d5.whatshap.haplotag.RTG.10x.trio.bam ]
