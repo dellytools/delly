@@ -37,9 +37,9 @@ source activate sv
 echo -e "svtype\tmode\tcoverage\taccuracy\treadlen\trecall\tprecision\tf1\tgtconc" > summary.stats.tsv
 for SVT in INS DEL
 do
-    for MODE in ONT PB
+    for MODE in ont pb
     do
-	if [ ${MODE} == "ONT" ]
+	if [ ${MODE} == "ont" ]
 	then
 	    SUBINDEL="45:25:30"
 	else
@@ -77,7 +77,7 @@ do
 		    fi
 		    
 		    # Call SVs
-		    ../bin/delly lr -o sim_svt${SVT}_${MODE}_cov${COV}_acc${ACC}_len${LEN}/${SVT}.bcf -g chr18.fa sim_svt${SVT}_${MODE}_cov${COV}_acc${ACC}_len${LEN}/laser/sim.srt.bam
+		    ../bin/delly lr -y ${MODE} -o sim_svt${SVT}_${MODE}_cov${COV}_acc${ACC}_len${LEN}/${SVT}.bcf -g chr18.fa sim_svt${SVT}_${MODE}_cov${COV}_acc${ACC}_len${LEN}/laser/sim.srt.bam
 		    if [ ${SVT} == "INS" ]
 		    then
 			bcftools query -f '%CHROM\t%POS\t%INFO/SVLEN\t%ID[\t%GT]\n' sim_svt${SVT}_${MODE}_cov${COV}_acc${ACC}_len${LEN}/${SVT}.bcf | awk '{print $1"\t"$2"\t"($2+$3)"\t"$4"\t"$5;}' > sim_svt${SVT}_${MODE}_cov${COV}_acc${ACC}_len${LEN}/called.bed

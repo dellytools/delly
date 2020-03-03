@@ -48,17 +48,16 @@ export PATH=${BASEDIR}/bin/bin/:${PATH}
 source activate truvari
 
 # Delly for long reads
-for LR in ONT PB
+for LR in ont pb
 do
     rm -f delly.vcf*
-    if [ ${LR} == "ONT" ]
+    if [ ${LR} == "ont" ]
     then
-	../bin/delly lr -o ont.bcf -g hs37d5.fa.gz ultra-long-ont_hs37d5_phased.bam
-	bcftools view -i '%QUAL>400' ont.bcf | grep -v 'INV\|BND\|DUP' > delly.vcf
+	../bin/delly lr -y ${LR} -o ${LR}.bcf -g hs37d5.fa.gz ultra-long-ont_hs37d5_phased.bam
     else
-	../bin/delly lr -o pb.bcf -g hs37d5.fa.gz HG002.SequelII.pbmm2.hs37d5.whatshap.haplotag.RTG.10x.trio.bam
-	bcftools view pb.bcf | grep -v 'INV\|BND\|DUP' > delly.vcf
+	../bin/delly lr -y ${LR} -o ${LR}.bcf -g hs37d5.fa.gz HG002.SequelII.pbmm2.hs37d5.whatshap.haplotag.RTG.10x.trio.bam
     fi
+    bcftools view pb.bcf | grep -v 'INV\|BND\|DUP' > delly.vcf
     bgzip delly.vcf
     tabix delly.vcf.gz
 
