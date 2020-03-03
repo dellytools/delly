@@ -34,7 +34,7 @@ export PATH=${BASEDIR}/bin/bin/:${PATH}
 source activate sv
 
 # Benchmark SV calling
-echo -e "svtype\tcOption\tnOption\teOption\tfOption\taOption\tsOption\tmode\tcoverage\taccuracy\treadlen\trecall\tprecision\tf1\tgtconc" > summary.stats.tsv
+echo -e "svtype\tmode\tcoverage\taccuracy\treadlen\trecall\tprecision\tf1\tgtconc" > summary.stats.tsv
 for SVT in INS DEL
 do
     for MODE in ONT PB
@@ -76,43 +76,25 @@ do
 			VISOR LASeR --addprefix -c ${COV} -a ${ACC} -l ${LEN} -r ${SUBINDEL} -g chr18.fa -s sim_svt${SVT}_${MODE}_cov${COV}_acc${ACC}_len${LEN}/hack/ -bed sim_svt${SVT}_${MODE}_cov${COV}_acc${ACC}_len${LEN}/simulate.bed -o sim_svt${SVT}_${MODE}_cov${COV}_acc${ACC}_len${LEN}/laser
 		    fi
 		    
-		    # Call SVs using various parameters
-		    for N in 75 150 300
-		    do
-			for C in 25 50 100
-			do
-			    for E in 0.5 0.6 0.7
-			    do
-				for F in 100 250 400
-				do
-				    for A in 0.8 0.85 0.9
-				    do
-					for S in "3,-2,-3,-1" "1,-1,-1,-1" "2,-5,-2,-1"
-					do
-					    ../bin/delly lr -c ${C} -n ${N} -e ${E} -f ${F} -a ${A} -s ${S} -o sim_svt${SVT}_${MODE}_cov${COV}_acc${ACC}_len${LEN}/${SVT}.bcf -g chr18.fa sim_svt${SVT}_${MODE}_cov${COV}_acc${ACC}_len${LEN}/laser/sim.srt.bam
-					    if [ ${SVT} == "INS" ]
-					    then
-						bcftools query -f '%CHROM\t%POS\t%INFO/SVLEN\t%ID[\t%GT]\n' sim_svt${SVT}_${MODE}_cov${COV}_acc${ACC}_len${LEN}/${SVT}.bcf | awk '{print $1"\t"$2"\t"($2+$3)"\t"$4"\t"$5;}' > sim_svt${SVT}_${MODE}_cov${COV}_acc${ACC}_len${LEN}/called.bed
-					    else
-						bcftools query -f '%CHROM\t%POS\t%INFO/END\t%ID[\t%GT]\n' sim_svt${SVT}_${MODE}_cov${COV}_acc${ACC}_len${LEN}/${SVT}.bcf > sim_svt${SVT}_${MODE}_cov${COV}_acc${ACC}_len${LEN}/called.bed
-					    fi
-					    bedtools intersect -a sim_svt${SVT}_${MODE}_cov${COV}_acc${ACC}_len${LEN}/${SVT}.bed -b sim_svt${SVT}_${MODE}_cov${COV}_acc${ACC}_len${LEN}/called.bed  -wao | awk '$8!="." && ((($9-$2) + ($3-$10))>-50) && ((($9-$2) + ($3-$10))<50)' > sim_svt${SVT}_${MODE}_cov${COV}_acc${ACC}_len${LEN}/true_positives.bed
-					    TOTTRUTH=`cat sim_svt${SVT}_${MODE}_cov${COV}_acc${ACC}_len${LEN}/${SVT}.bed | cut -f 1-4 | sort | uniq | wc -l | cut -f 1`
-					    TOTCALLED=`cat sim_svt${SVT}_${MODE}_cov${COV}_acc${ACC}_len${LEN}/called.bed | cut -f 1-4 | sort | uniq | wc -l | cut -f 1`
-					    TP=`cut -f 1-4 sim_svt${SVT}_${MODE}_cov${COV}_acc${ACC}_len${LEN}/true_positives.bed | sort | uniq | wc -l | cut -f 1`
-					    RECALL=`echo "${TP} / ${TOTTRUTH}" | bc -l`
-					    PREC=`echo "${TP} / ${TOTCALLED}" | bc -l`
-					    F1=`echo "2 * (${RECALL} * ${PREC}) / (${RECALL} + ${PREC})" | bc -l`
-					    CONCHOM=`cut -f 7,12 sim_svt${SVT}_${MODE}_cov${COV}_acc${ACC}_len${LEN}/true_positives.bed | sort | uniq -c | sed 's/^[ \t]*//' | sed 's/ /\t/' | grep -P "\t2\t1/1" | cut -f 1`
-					    CONCHET=`cut -f 7,12 sim_svt${SVT}_${MODE}_cov${COV}_acc${ACC}_len${LEN}/true_positives.bed | sort | uniq -c | sed 's/^[ \t]*//' | sed 's/ /\t/' | grep -P "\t1\t0/1" | cut -f 1`
-					    GTCONC=`echo "(${CONCHOM} + ${CONCHET}) / ${TOTCALLED}" | bc -l`
-					    echo -e "${SVT}\t${C}\t${N}\t${E}\t${F}\t${A}\t${S}\t${MODE}\t${COV}\t${ACC}\t${LEN}\t${RECALL}\t${PREC}\t${F1}\t${GTCONC}" >> summary.stats.tsv
-					done
-				    done
-				done
-			    done
-			done
-		    done
+		    # Call SVs
+		    ../bin/delly lr -o sim_svt${SVT}_${MODE}_cov${COV}_acc${ACC}_len${LEN}/${SVT}.bcf -g chr18.fa sim_svt${SVT}_${MODE}_cov${COV}_acc${ACC}_len${LEN}/laser/sim.srt.bam
+		    if [ ${SVT} == "INS" ]
+		    then
+			bcftools query -f '%CHROM\t%POS\t%INFO/SVLEN\t%ID[\t%GT]\n' sim_svt${SVT}_${MODE}_cov${COV}_acc${ACC}_len${LEN}/${SVT}.bcf | awk '{print $1"\t"$2"\t"($2+$3)"\t"$4"\t"$5;}' > sim_svt${SVT}_${MODE}_cov${COV}_acc${ACC}_len${LEN}/called.bed
+		    else
+			bcftools query -f '%CHROM\t%POS\t%INFO/END\t%ID[\t%GT]\n' sim_svt${SVT}_${MODE}_cov${COV}_acc${ACC}_len${LEN}/${SVT}.bcf > sim_svt${SVT}_${MODE}_cov${COV}_acc${ACC}_len${LEN}/called.bed
+		    fi
+		    bedtools intersect -a sim_svt${SVT}_${MODE}_cov${COV}_acc${ACC}_len${LEN}/${SVT}.bed -b sim_svt${SVT}_${MODE}_cov${COV}_acc${ACC}_len${LEN}/called.bed  -wao | awk '$8!="." && ((($9-$2) + ($3-$10))>-50) && ((($9-$2) + ($3-$10))<50)' > sim_svt${SVT}_${MODE}_cov${COV}_acc${ACC}_len${LEN}/true_positives.bed
+		    TOTTRUTH=`cat sim_svt${SVT}_${MODE}_cov${COV}_acc${ACC}_len${LEN}/${SVT}.bed | cut -f 1-4 | sort | uniq | wc -l | cut -f 1`
+		    TOTCALLED=`cat sim_svt${SVT}_${MODE}_cov${COV}_acc${ACC}_len${LEN}/called.bed | cut -f 1-4 | sort | uniq | wc -l | cut -f 1`
+		    TP=`cut -f 1-4 sim_svt${SVT}_${MODE}_cov${COV}_acc${ACC}_len${LEN}/true_positives.bed | sort | uniq | wc -l | cut -f 1`
+		    RECALL=`echo "${TP} / ${TOTTRUTH}" | bc -l`
+		    PREC=`echo "${TP} / ${TOTCALLED}" | bc -l`
+		    F1=`echo "2 * (${RECALL} * ${PREC}) / (${RECALL} + ${PREC})" | bc -l`
+		    CONCHOM=`cut -f 7,12 sim_svt${SVT}_${MODE}_cov${COV}_acc${ACC}_len${LEN}/true_positives.bed | sort | uniq -c | sed 's/^[ \t]*//' | sed 's/ /\t/' | grep -P "\t2\t1/1" | cut -f 1`
+		    CONCHET=`cut -f 7,12 sim_svt${SVT}_${MODE}_cov${COV}_acc${ACC}_len${LEN}/true_positives.bed | sort | uniq -c | sed 's/^[ \t]*//' | sed 's/ /\t/' | grep -P "\t1\t0/1" | cut -f 1`
+		    GTCONC=`echo "(${CONCHOM} + ${CONCHET}) / ${TOTCALLED}" | bc -l`
+		    echo -e "${SVT}\t${MODE}\t${COV}\t${ACC}\t${LEN}\t${RECALL}\t${PREC}\t${F1}\t${GTCONC}" >> summary.stats.tsv
 		done
 	    done
 	done
