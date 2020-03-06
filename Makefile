@@ -25,7 +25,7 @@ endif
 
 # Flags for static compile
 ifeq (${STATIC}, 1)
-	LDFLAGS += -static -static-libgcc -pthread -lhts -lz -llzma -lbz2
+	LDFLAGS += -static -static-libgcc -pthread -lhts -lz -llzma -lbz2 $(shell curl-config --static-libs)
 else
 	LDFLAGS += -lhts -lz -llzma -lbz2 -Wl,-rpath,${EBROOTHTSLIB}
 endif
