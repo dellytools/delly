@@ -25,7 +25,7 @@ endif
 
 # Flags for static compile
 ifeq (${STATIC}, 1)
-	LDFLAGS += -static -static-libgcc -pthread -lhts -lz -llzma -lbz2 $(shell curl-config --static-libs)
+	LDFLAGS += -static -static-libgcc -pthread -lhts -lz -llzma -lbz2
 else
 	LDFLAGS += -lhts -lz -llzma -lbz2 -Wl,-rpath,${EBROOTHTSLIB}
 endif
@@ -55,7 +55,7 @@ TARGETS = ${SUBMODULES} ${BUILT_PROGRAMS}
 all:   	$(TARGETS)
 
 .htslib: $(HTSLIBSOURCES)
-	if [ -r src/htslib/Makefile ]; then cd src/htslib && make && make lib-static && cd ../../ && touch .htslib; fi
+	if [ -r src/htslib/Makefile ]; then cd src/htslib && autoheader && autoconf && ./configure --disable-s3 --disable-gcs --disable-libcurl --disable-plugins && make && make lib-static && cd ../../ && touch .htslib; fi
 
 src/delly: ${SUBMODULES} $(SOURCES)
 	$(CXX) $(CXXFLAGS) $@.cpp -o $@ $(LDFLAGS)
