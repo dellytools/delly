@@ -10,6 +10,7 @@ RUN apt-get update && apt-get install -y \
     g++ \
     gfortran \
     git \
+    libcurl4-gnutls-dev \
     hdf5-tools \
     libboost-date-time-dev \
     libboost-program-options-dev \
