@@ -328,11 +328,8 @@ namespace torali
 	    uint32_t* cigar = bam_get_cigar(rec);
 	    for (std::size_t i = 0; i < rec->core.n_cigar; ++i) {
 	      if ((bam_cigar_op(cigar[i]) == BAM_CMATCH) || (bam_cigar_op(cigar[i]) == BAM_CEQUAL) || (bam_cigar_op(cigar[i]) == BAM_CDIFF)) {
-		// match or mismatch
-		for(std::size_t k = 0; k<bam_cigar_oplen(cigar[i]);++k) {
-		  ++sp;
-		  ++rp;
-		}
+		sp += bam_cigar_oplen(cigar[i]);
+		rp += bam_cigar_oplen(cigar[i]);
 	      } else if (bam_cigar_op(cigar[i]) == BAM_CDEL) {
 		if (bam_cigar_oplen(cigar[i]) > c.minRefSep) _insertJunction(readBp, seed, rec, rp, sp, false);
 		rp += bam_cigar_oplen(cigar[i]);
@@ -345,7 +342,7 @@ namespace torali
 		if (sp == 0) {
 		  finalsp += bam_cigar_oplen(cigar[i]); // Leading soft-clip / hard-clip
 		  scleft = true;
-		  }
+		}
 		sp += bam_cigar_oplen(cigar[i]);
 		if (bam_cigar_oplen(cigar[i]) > c.minClip) _insertJunction(readBp, seed, rec, rp, finalsp, scleft);
 	      } else if (bam_cigar_op(cigar[i]) == BAM_CREF_SKIP) {
@@ -454,10 +451,10 @@ namespace torali
 
       // Cluster
       cluster(c, srBR[svt], srSVs, c.maxReadSep, svt);
-    }
 
-    // Debug SR SVs
-    //outputStructuralVariants(c, srSVs);
+      // Debug SR SVs
+      //outputStructuralVariants(c, srSVs, svt);
+    }
 
     // Cluster paired-end records
     now = boost::posix_time::second_clock::local_time();

@@ -195,9 +195,8 @@ namespace torali
 
   inline int32_t
   readLength(bam1_t const* rec) {
-    int32_t slen = rec->core.l_qseq;
-    if (!slen) slen = sequenceLength(rec);
-    return slen;
+    //int32_t slen = rec->core.l_qseq;  # Incorrect for seq. with hard-clips
+    return sequenceLength(rec);
   }
     
   inline uint32_t alignmentLength(bam1_t* rec) {
