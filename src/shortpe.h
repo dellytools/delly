@@ -575,7 +575,10 @@ namespace torali
 	      }
 	    }
 	  }
-	  if (!preciseDuplicate) pe.push_back(sr[i]);
+	  if (!preciseDuplicate) {
+	    pe.push_back(sr[i]);
+	    sort(pe.begin(), pe.end(), SortSVs<StructuralVariantRecord>());
+	  }
 	}
       }
     }
