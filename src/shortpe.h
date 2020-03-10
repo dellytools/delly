@@ -335,7 +335,9 @@ namespace torali
 		rp += bam_cigar_oplen(cigar[i]);
 		if (bam_cigar_oplen(cigar[i]) > c.minRefSep) _insertJunction(readBp, seed, rec, rp, sp, true);
 	      } else if (bam_cigar_op(cigar[i]) == BAM_CINS) {
+		if (bam_cigar_oplen(cigar[i]) > c.minRefSep) _insertJunction(readBp, seed, rec, rp, sp, false);
 		sp += bam_cigar_oplen(cigar[i]);
+		if (bam_cigar_oplen(cigar[i]) > c.minRefSep) _insertJunction(readBp, seed, rec, rp, sp, true);
 	      } else if ((bam_cigar_op(cigar[i]) == BAM_CSOFT_CLIP) || (bam_cigar_op(cigar[i]) == BAM_CHARD_CLIP)) {
 		int32_t finalsp = sp;
 		bool scleft = false;
