@@ -63,9 +63,9 @@ Delly for long reads from PacBio or ONT (experimental)
 
 Delly also has a long-read SV discovery mode.
 
-`delly lr -y ont -g hg19.fa input.bam`
+`delly lr -y ont -g hg19.fa -x hg19.excl input.bam`
 
-`delly lr -y pb -g hg19.fa input.bam`
+`delly lr -y pb -g hg19.fa -x hg19.excl input.bam`
 
 
 Somatic SV calling
