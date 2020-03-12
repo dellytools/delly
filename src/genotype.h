@@ -367,28 +367,15 @@ namespace torali
 	      }
 	    
 	      // Compute alignment to alternative haplotype
-	      TAlign alignAlt;
 	      DnaScore<int> simple(c.aliscore.match, c.aliscore.mismatch, c.aliscore.mismatch, c.aliscore.mismatch);
 	      AlignConfig<true, false> semiglobal;
-	      double scoreAlt = needle(gbp[svid].alt, subseq, alignAlt, semiglobal, simple);
+	      double scoreAlt = needleBanded(gbp[svid].alt, subseq, semiglobal, simple);
 	      scoreAlt /= (double) (c.flankQuality * gbp[svid].alt.size() * simple.match + (1.0 - c.flankQuality) * gbp[svid].alt.size() * simple.mismatch);
 	    
 	      // Compute alignment to reference haplotype
-	      TAlign alignRef;
-	      double scoreRef = needle(gbp[svid].ref, subseq, alignRef, semiglobal, simple);
+	      double scoreRef = needleBanded(gbp[svid].ref, subseq, semiglobal, simple);
 	      scoreRef /= (double) (c.flankQuality * gbp[svid].ref.size() * simple.match + (1.0 - c.flankQuality) * gbp[svid].ref.size() * simple.mismatch);
 
-	      // Debug alignment to REF and ALT
-	      //std::cerr << "svid:" << svid << ",seqbp:" << spHit << ",readlen:" << readlen << ",reverse:" << (int32_t) (rec->core.flag & BAM_FREVERSE) << ",alt:" << scoreAlt << ",ref:" << scoreRef << std::endl;
-	      //for(uint32_t i = 0; i< alignAlt.shape()[0]; ++i) {
-	      //for(uint32_t j = 0; j< alignAlt.shape()[1]; ++j) std::cerr << alignAlt[i][j];
-	      //std::cerr << std::endl;
-	      //}
-	      //for(uint32_t i = 0; i< alignRef.shape()[0]; ++i) {
-	      //for(uint32_t j = 0; j< alignRef.shape()[1]; ++j) std::cerr << alignRef[i][j];
-	      //std::cerr << std::endl;
-	      //}
-	      
 	      // Any confident alignment?
 	      if ((scoreRef > 1) || (scoreAlt > 1)) {
 		if (scoreRef > scoreAlt) {
@@ -398,7 +385,7 @@ namespace torali
 		    quality.resize(rec->core.l_qseq);
 		    uint8_t* qualptr = bam_get_qual(rec);
 		    for (int i = 0; i < rec->core.l_qseq; ++i) quality[i] = qualptr[i];
-		    uint32_t rq = _getAlignmentQual(alignRef, quality);
+		    uint32_t rq = scoreRef * 35;
 		    if (rq >= c.minGenoQual) {
 		      uint8_t* hpptr = bam_aux_get(rec, "HP");
 		      jctMap[file_c][svid].ref.push_back((uint8_t) std::min(rq, (uint32_t) rec->core.qual));
@@ -415,7 +402,7 @@ namespace torali
 		  quality.resize(rec->core.l_qseq);
 		  uint8_t* qualptr = bam_get_qual(rec);
 		  for (int i = 0; i < rec->core.l_qseq; ++i) quality[i] = qualptr[i];
-		  uint32_t aq = _getAlignmentQual(alignAlt, quality);
+		  uint32_t aq = scoreAlt * 35;
 		  if (aq >= c.minGenoQual) {
 		    uint8_t* hpptr = bam_aux_get(rec, "HP");
 		    if (c.hasDumpFile) {

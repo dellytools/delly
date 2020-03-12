@@ -268,6 +268,58 @@ namespace torali
     // Score
     return s[n];
   }
+
+
+  template<typename TAlignConfig, typename TScoreObject>
+  inline int32_t
+  needleBanded(std::string const& s1, std::string const& s2, TAlignConfig const& ac, TScoreObject const& sc)
+  {
+    typedef typename TScoreObject::TValue TScoreValue;
+
+    // DP Matrix
+    int32_t m = s1.size();
+    int32_t n = s2.size();
+    int32_t band = 100;
+    int32_t lowBand = band;
+    int32_t highBand = band;
+    if (m < n) highBand += n - m;
+    else lowBand += m - n;
+    std::vector<TScoreValue> s(n+1, 0);
+    TScoreValue prevsub = 0;
+    TScoreValue prevprevsub = 0;
+
+    // DP
+    for(int32_t row = 0; row <= m; ++row) {
+      for(int32_t col = std::max(0, row - lowBand); col <= std::min(n, row + highBand); ++col) {
+	// Initialization
+	if ((row == 0) && (col == 0)) {
+	  s[0] = 0;
+	  prevsub = 0;
+	} else if (row == 0) {
+	  s[col] = _horizontalGap(ac, 0, m, col * sc.ge);
+	} else if (col == 0) {
+	  s[0] = _verticalGap(ac, 0, n, row * sc.ge);
+	  if (row - 1 == 0) prevsub = 0;
+	  else prevsub = _verticalGap(ac, 0, n, (row - 1) * sc.ge);
+	} else {
+	  // Recursion
+	  prevprevsub = prevsub;
+	  prevsub = s[col];
+	  if (col == row - lowBand) {
+	    prevprevsub = s[col-1];
+	    s[col - 1] = DELLY_OUTOFBAND;
+	  } else if (col == row + highBand) prevsub = DELLY_OUTOFBAND;
+	  s[col] = std::max(std::max(prevprevsub + (s1[row-1] == s2[col-1] ? sc.match : sc.mismatch), prevsub + _verticalGap(ac, col, n, sc.ge)), s[col-1] + _horizontalGap(ac, row, m, sc.ge));
+	}
+      }
+    }
+	
+    // Score
+    return s[n];
+  }
+
+
+
   
   template<typename TAlign1, typename TAlign2, typename TAlign, typename TAlignConfig, typename TScoreObject>
   inline int

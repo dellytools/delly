@@ -11,6 +11,10 @@ namespace torali {
   #define DELLY_CHOP_REFSIZE 1000
   #endif
 
+  #ifndef DELLY_OUTOFBAND
+  #define DELLY_OUTOFBAND -99999999
+  #endif
+
   inline bool
   _translocation(int32_t const svt) {
     return (DELLY_SVT_TRANS <= svt);
