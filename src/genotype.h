@@ -335,6 +335,9 @@ namespace torali
 	    // Genotype all SVs covered by this read
 	    for(typename TSVSeqHit::iterator git = genoMap.begin(); git != genoMap.end(); ++git) {
 	      int32_t svid = git->first;
+	      uint32_t maxGenoReadCount = 500;
+	      if ((jctMap[file_c][svid].ref.size() + jctMap[file_c][svid].alt.size()) >= maxGenoReadCount) continue;
+	      
 	      int32_t rpHit = git->second.first;
 	      int32_t spHit = git->second.second;
 
