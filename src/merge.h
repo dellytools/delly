@@ -131,6 +131,7 @@ void _fillIntervalMap(MergeConfig const& c, TGenomeIntervals& iScore, TContigMap
 	uint32_t inslenVal = 0;
 	if (bcf_get_info_int32(hdr, rec, "INSLEN", &inslen, &ninslen) > 0) inslenVal = *inslen;
 	if ((inslenVal < c.minsize) || (inslenVal > c.maxsize)) continue;
+	svEnd = svStart + inslenVal; // To enable reciprocal overlap
       } else {
 	// Other intra-chr SV
 	if ((svEnd - svStart < c.minsize) || (svEnd - svStart > c.maxsize)) continue;
@@ -391,6 +392,7 @@ void _outputSelectedIntervals(MergeConfig& c, TGenomeIntervals const& iSelected,
 	if (bcf_get_info_int32(hdr[idx], rec[idx], "END", &svend, &nsvend) > 0) svEnd = *svend;
 	unsigned int inslenVal = 0;
 	if (bcf_get_info_int32(hdr[idx], rec[idx], "INSLEN", &inslen, &ninslen) > 0) inslenVal = *inslen;
+	if (recsvt == 4) svEnd = svStart + inslenVal; // To enable reciprocal overlap
 
 	// Parse INFO fields
 	if ((std::string(svt) == "BND") || ((std::string(svt) == "INS") && (inslenVal >= c.minsize) && (inslenVal <= c.maxsize)) || ((std::string(svt) != "BND") && (std::string(svt) != "INS") && (svEnd - svStart >= c.minsize) && (svEnd - svStart <= c.maxsize))) {
