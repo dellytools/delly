@@ -13,9 +13,8 @@ jobs:
     env:
       BOOST_ROOT : "/usr/local/share/boost/1.72.0"
     steps:
+    - uses: actions/checkout@v2
     - name: BOOST_ROOT
       run: echo $BOOST_ROOT
-    steps:
-    - uses: actions/checkout@v2
     - name: make
       run: make
