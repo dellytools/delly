@@ -20,6 +20,6 @@ jobs:
         ${CC} --version
         sudo apt-get update
         sudo apt-get install -y libcurl4-gnutls-dev
-        LDFLAGS="-L/usr/local/share/boost/1.72.0/lib" CXXFLAGS="-I/usr/local/share/boost/1.72.0/include" make
+        CC="gcc" LDFLAGS="-L/usr/local/share/boost/1.72.0/lib" CXXFLAGS="-I/usr/local/share/boost/1.72.0/include" make
       env:
         CC: gcc
