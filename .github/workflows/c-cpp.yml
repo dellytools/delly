@@ -10,7 +10,11 @@ jobs:
   build:
 
     runs-on: ubuntu-latest
-
+    env:
+      BOOST_ROOT : "/usr/local/share/boost/1.72.0"
+    steps:
+    - name: BOOST_ROOT
+      run: echo $BOOST_ROOT
     steps:
     - uses: actions/checkout@v2
     - name: make

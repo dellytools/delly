@@ -118,7 +118,7 @@ namespace torali {
 
      // SV Discovery
      _clusterSRReads(c, validRegions, svc, tmpStore);
-
+     
      // Assemble
      assemble(c, validRegions, svc, tmpStore);
 
