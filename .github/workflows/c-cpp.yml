@@ -12,14 +12,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v2
-      with:
-        submodules: 'recursive'
     - name: make
       run: |
-        ls /usr/local/share/boost/1.72.0/lib
-        ${CC} --version
         sudo apt-get update
-        sudo apt-get install -y libcurl4-gnutls-dev
-        CC="gcc" LDFLAGS="-L/usr/local/share/boost/1.72.0/lib" CXXFLAGS="-I/usr/local/share/boost/1.72.0/include" make
-      env:
-        CC: gcc
+        sudo apt-get install -y libcurl4-gnutls-dev libhts-dev libhts2
+        LDFLAGS="-L/usr/local/share/boost/1.72.0/lib" CXXFLAGS="-I/usr/local/share/boost/1.72.0/include" make
