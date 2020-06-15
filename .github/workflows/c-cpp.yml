@@ -13,6 +13,6 @@ jobs:
     steps:
     - uses: actions/checkout@v2
     - name: boost
-      run: ls /usr/local/share/boost/1.72.0/
+      run: ls /usr/local/share/boost/1.72.0/include/boost/graph/adjacency_list.hpp
     - name: make
       run: LDFLAGS="-L/usr/local/share/boost/1.72.0/lib" CFLAGS="-I/usr/local/share/boost/1.72.0/include"  make
