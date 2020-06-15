@@ -14,7 +14,12 @@ jobs:
     - uses: actions/checkout@v2
       with:
         submodules: 'recursive'
-    - name: boost
-      run: ls /usr/local/share/boost/1.72.0/lib
     - name: make
-      run: LDFLAGS="-L/usr/local/share/boost/1.72.0/lib" CXXFLAGS="-I/usr/local/share/boost/1.72.0/include" make
+      run: |
+        ls /usr/local/share/boost/1.72.0/lib
+        ${CC} --version
+        sudo apt-get update
+        sudo apt-get install -y libcurl4-gnutls-dev
+        LDFLAGS="-L/usr/local/share/boost/1.72.0/lib" CXXFLAGS="-I/usr/local/share/boost/1.72.0/include" make
+      env:
+        CC: gcc
