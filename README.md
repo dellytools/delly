@@ -12,7 +12,6 @@
 [![Docker Build](https://img.shields.io/docker/build/dellytools/delly.svg)](https://hub.docker.com/r/dellytools/delly/)
 [![GitHub license](https://img.shields.io/badge/License-BSD%203--Clause-blue.svg)](https://github.com/dellytools/delly/blob/master/LICENSE)
 [![GitHub Releases](https://img.shields.io/github/release/dellytools/delly.svg)](https://github.com/dellytools/delly/releases)
-[![GitHub Issues](https://img.shields.io/github/issues/dellytools/delly.svg)](https://github.com/dellytools/delly/issues)
 
 Delly is an integrated structural variant (SV) prediction method that can discover, genotype and visualize deletions, tandem duplications, inversions and translocations at single-nucleotide resolution in short-read massively parallel sequencing data. It uses paired-ends, split-reads and read-depth to sensitively and accurately delineate genomic rearrangements throughout the genome. Structural variants can be visualized using [Delly-maze](https://github.com/dellytools/maze) and [Delly-suave](https://github.com/dellytools/suave).
 
