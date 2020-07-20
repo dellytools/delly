@@ -113,6 +113,24 @@ Germline SV calling
 
 `delly filter -f germline -o germline.bcf merged.bcf`
 
+
+Read-depth profiles
+-------------------
+
+You can generate read-depth profiles with delly. This requires a mappability map which can be downloaded here:
+
+[Mappability Maps](https://gear.embl.de/data/delly/)
+
+The command to count reads in 10kbp windows and normalize the coverage is:
+
+`delly rd -a -g hg19.fa -m hg19.map input.bam`
+
+The output file can be plotted using R to generate normalized copy-number profiles:
+
+`Rscript R/rd.R out.cov.gz`
+
+
+
 FAQ
 ---
 * What is the smallest SV size Delly can call?  

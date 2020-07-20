@@ -54,6 +54,7 @@ namespace torali
     uint16_t minTraQual;
     uint16_t minGenoQual;
     uint16_t madCutoff;
+    uint16_t madNormalCutoff;
     int32_t nchr;
     int32_t minimumFlankSize;
     int32_t indelsize;
@@ -196,6 +197,7 @@ namespace torali
   int delly(int argc, char **argv) {
     Config c;
     c.isHaplotagged = false;
+    c.madNormalCutoff = 5;
 
     // Define generic options
     std::string svtype;

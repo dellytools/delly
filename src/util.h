@@ -16,6 +16,10 @@
 namespace torali
 {
 
+  #ifndef LAST_BIN
+  #define LAST_BIN 65535
+  #endif
+  
   struct LibraryInfo {
     int32_t rs;
     int32_t median;
@@ -41,7 +45,13 @@ namespace torali
   };
 
 
-
+  inline bool
+  nContent(std::string const& s) {
+    for(uint32_t i = 0; i < s.size(); ++i) {
+      if ((s[i] == 'N') || (s[i] == 'n')) return true;
+    }
+    return false;
+  }
   
   // Decode Orientation
   inline int32_t
@@ -199,7 +209,7 @@ namespace torali
     return sequenceLength(rec);
   }
     
-  inline uint32_t alignmentLength(bam1_t* rec) {
+  inline uint32_t alignmentLength(bam1_t const* rec) {
     uint32_t* cigar = bam_get_cigar(rec);
     uint32_t alen = 0;
     for (uint32_t i = 0; i < rec->core.n_cigar; ++i)
@@ -207,9 +217,16 @@ namespace torali
     return alen;
   }
 
-  inline uint32_t halfAlignmentLength(bam1_t* rec) {
+  inline uint32_t halfAlignmentLength(bam1_t const* rec) {
     return (alignmentLength(rec) / 2);
   }
+
+  inline uint32_t
+  lastAlignedPosition(bam1_t const* rec) {
+    return rec->core.pos + alignmentLength(rec);
+  }
+
+
 
   inline std::size_t hash_lr(bam1_t* rec) {
     boost::hash<std::string> string_hash;
@@ -293,6 +310,47 @@ namespace torali
   }
 
 
+  inline uint32_t
+  setMinChrLen(bam_hdr_t const* hdr, double const xx) {
+    uint32_t minChrLen = 0;
+    std::vector<uint32_t> chrlen(hdr->n_targets, 0);
+    uint64_t genomelen = 0;
+    for(int32_t refIndex = 0; refIndex < hdr->n_targets; ++refIndex) {
+      chrlen[refIndex] = hdr->target_len[refIndex];
+      genomelen += hdr->target_len[refIndex];
+    }
+    std::sort(chrlen.begin(), chrlen.end(), std::greater<uint32_t>());
+    uint64_t cumsum = 0;
+    for(uint32_t i = 0; i < chrlen.size(); ++i) {
+      cumsum += chrlen[i];
+      minChrLen = chrlen[i];
+      if (cumsum > genomelen * xx) break;
+    }
+    return minChrLen;
+  }
+  
+  
+  template<typename TConfig>
+  inline bool
+  chrNoData(TConfig const& c, uint32_t const refIndex, hts_idx_t const* idx) {
+    // Check we have mapped reads on this chromosome
+    std::string suffix("cram");
+    std::string str(c.bamFile.string());
+    if ((str.size() >= suffix.size()) && (str.compare(str.size() - suffix.size(), suffix.size(), suffix) == 0)) return false;
+    uint64_t mapped = 0;
+    uint64_t unmapped = 0;
+    hts_idx_get_stat(idx, refIndex, &mapped, &unmapped);
+    if (mapped) return false;
+    else return true;
+  }    
+  
+  inline std::size_t hash_se(bam1_t* rec) {
+    std::size_t seed = hash_string(bam_get_qname(rec));
+    boost::hash_combine(seed, rec->core.tid);
+    boost::hash_combine(seed, rec->core.pos);
+    return seed;
+  }
+  
   inline void
   getSMTag(std::string const& header, std::string const& fileName, std::string& sampleName) {
     std::set<std::string> smIdentifiers;
@@ -564,8 +622,8 @@ namespace torali
 	  } else {
 	    sampleLib[file_c].median = median;
 	    sampleLib[file_c].mad = mad;
-	    sampleLib[file_c].maxNormalISize = median + (5 * mad);
-	    sampleLib[file_c].minNormalISize = median - (5 * mad);
+	    sampleLib[file_c].maxNormalISize = median + (c.madNormalCutoff * mad);
+	    sampleLib[file_c].minNormalISize = median - (c.madNormalCutoff * mad);
 	    if (sampleLib[file_c].minNormalISize < 0) sampleLib[file_c].minNormalISize=0;
 	    sampleLib[file_c].maxISizeCutoff = median + (c.madCutoff * mad);
 	    sampleLib[file_c].minISizeCutoff = median - (c.madCutoff * mad);
