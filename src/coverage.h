@@ -441,6 +441,7 @@ namespace torali {
 	      // Fetch all relevant SVs
 	      typename TBpRegion::iterator itBp = std::lower_bound(bpRegion[refIndex].begin(), bpRegion[refIndex].end(), BpRegion(rbegin), SortBp<BpRegion>());
 	      for(; ((itBp != bpRegion[refIndex].end()) && (rec->core.pos + rec->core.l_qseq >= itBp->bppos)); ++itBp) {
+		if ((countMap[file_c][itBp->id].ref.size() + countMap[file_c][itBp->id].alt.size()) >= c.maxGenoReadCount) continue;
 		// Read spans breakpoint?
 		if ((hasSoftClip) || ((!hasClip) && (rec->core.pos + c.minimumFlankSize + itBp->homLeft <= itBp->bppos) &&  (rec->core.pos + rec->core.l_qseq >= itBp->bppos + c.minimumFlankSize + itBp->homRight))) {
 		  std::string consProbe = consProbeArr[itBp->bpPoint][itBp->id];

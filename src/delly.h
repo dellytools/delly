@@ -62,6 +62,7 @@ namespace torali
     uint32_t minRefSep;
     uint32_t maxReadSep;
     uint32_t minClip;
+    uint32_t maxGenoReadCount;
     float flankQuality;
     bool hasExcludeFile;
     bool hasVcfFile;
@@ -232,6 +233,7 @@ namespace torali
     hidden.add_options()
       ("input-file", boost::program_options::value< std::vector<boost::filesystem::path> >(&c.files), "input file")
       ("pruning,j", boost::program_options::value<uint32_t>(&c.graphPruning)->default_value(1000), "PE graph pruning cutoff")
+      ("max-geno-count,a", boost::program_options::value<uint32_t>(&c.maxGenoReadCount)->default_value(250), "max. number of reads aligned for SR genotyping")
       ;
     
     boost::program_options::positional_options_description pos_args;
