@@ -358,13 +358,25 @@ namespace torali
 	  }
 	} else if (c.cnvmode) {
 	  // cnv tiling windows, window_offset smallest window, window_size largest window
-	  dataOut << "#" << std::string(hdr->target_name[refIndex]) << "," << hdr->target_len[refIndex] << "," << c.window_offset << "," << c.window_size << std::endl;
-	  for(uint32_t start = 0; start < hdr->target_len[refIndex]; start = start + c.window_offset) {
+	  uint32_t numTiling = 0;
+	  {
+	    uint32_t winbound = c.window_offset;
+	    while (winbound < c.window_size) {
+	      ++numTiling;
+	      winbound *= 2;
+	    }
+	  }
+	  std::vector<int32_t> cnvec(numTiling, -1);
+	  dataOut << "#" << std::string(hdr->target_name[refIndex]) << "," << hdr->target_len[refIndex] << "," << c.window_offset << "," << c.window_size << "," << c.sampleName << std::endl;
+	  for(uint32_t start = 0; start < hdr->target_len[refIndex]; start = start + 50) {
 	    if (start + c.window_offset < hdr->target_len[refIndex]) {
 	      double covsum = 0;
 	      double expcov = 0;
 	      uint32_t winlen = 0;
 	      uint32_t winbound = c.window_offset;
+	      uint32_t tilingPos = 0;
+	      std::fill(cnvec.begin(), cnvec.end(), -1);
+	      bool validCN = false;
 	      for(uint32_t pos = start; ((pos < start + c.window_size) && (pos < hdr->target_len[refIndex])); ++pos) {
 		if ((gcContent[pos] > gcbound.first) && (gcContent[pos] < gcbound.second) && (uniqContent[pos] >= c.fragmentUnique * c.meanisize)) {
 		  covsum += cov[pos];
@@ -373,20 +385,18 @@ namespace torali
 		}
 		// Multiple of window size?
 		if ((pos - start) == winbound) {
-		  winbound *= 2;
 		  if (winlen >= c.fracWindow * (pos - start)) {
-		    double cn = c.ploidy * covsum / expcov;
-		    dataOut << cn << ',';
-		  } else {
-		    dataOut << "-1,";
+		    cnvec[tilingPos] = (int32_t) std::round(c.ploidy * covsum / expcov * 100.0);
+		    validCN = true;
 		  }
+		  winbound *= 2;
+		  ++tilingPos;
 		}
 	      }
-	      while (winbound < c.window_size) {
-		dataOut << "-1,";
-		winbound *= 2;
-	      }
-	      dataOut << std::endl;
+	      if (validCN) {
+		for(uint32_t i = 0; i < numTiling; ++i) dataOut << cnvec[i] << ',';
+		dataOut << std::endl;
+	      } else dataOut << "-2," << std::endl;
 	    }
 	  }
 	} else {
