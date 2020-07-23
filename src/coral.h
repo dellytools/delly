@@ -23,6 +23,7 @@ namespace torali
 
   struct CountDNAConfig {
     bool adaptive;
+    bool cnvmode;
     bool hasStatsFile;
     bool hasBedFile;
     bool hasScanFile;
@@ -87,7 +88,9 @@ namespace torali
     boost::iostreams::filtering_ostream dataOut;
     dataOut.push(boost::iostreams::gzip_compressor());
     dataOut.push(boost::iostreams::file_sink(c.outfile.c_str(), std::ios_base::out | std::ios_base::binary));
-    dataOut << "chr\tstart\tend\t" << c.sampleName << "_mappable\t" << c.sampleName << "_counts\t" << c.sampleName << "_CN" << std::endl;
+    if (!c.cnvmode) {
+      dataOut << "chr\tstart\tend\t" << c.sampleName << "_mappable\t" << c.sampleName << "_counts\t" << c.sampleName << "_CN" << std::endl;
+    }
     
     // Iterate chromosomes
     faidx_t* faiMap = fai_load(c.mapFile.string().c_str());
@@ -308,6 +311,7 @@ namespace torali
 	  }
 	}
       } else {
+	// Genome-wide
 	if (c.adaptive) {
 	  double covsum = 0;
 	  double expcov = 0;
@@ -351,6 +355,39 @@ namespace torali
 	      }
 	    }
 	    ++pos;
+	  }
+	} else if (c.cnvmode) {
+	  // cnv tiling windows, window_offset smallest window, window_size largest window
+	  dataOut << "#" << std::string(hdr->target_name[refIndex]) << "," << hdr->target_len[refIndex] << "," << c.window_offset << "," << c.window_size << std::endl;
+	  for(uint32_t start = 0; start < hdr->target_len[refIndex]; start = start + c.window_offset) {
+	    if (start + c.window_offset < hdr->target_len[refIndex]) {
+	      double covsum = 0;
+	      double expcov = 0;
+	      uint32_t winlen = 0;
+	      uint32_t winbound = c.window_offset;
+	      for(uint32_t pos = start; ((pos < start + c.window_size) && (pos < hdr->target_len[refIndex])); ++pos) {
+		if ((gcContent[pos] > gcbound.first) && (gcContent[pos] < gcbound.second) && (uniqContent[pos] >= c.fragmentUnique * c.meanisize)) {
+		  covsum += cov[pos];
+		  expcov += gcbias[gcContent[pos]].coverage;
+		  ++winlen;
+		}
+		// Multiple of window size?
+		if ((pos - start) == winbound) {
+		  winbound *= 2;
+		  if (winlen >= c.fracWindow * (pos - start)) {
+		    double cn = c.ploidy * covsum / expcov;
+		    dataOut << cn << ',';
+		  } else {
+		    dataOut << "-1,";
+		  }
+		}
+	      }
+	      while (winbound < c.window_size) {
+		dataOut << "-1,";
+		winbound *= 2;
+	      }
+	      dataOut << std::endl;
+	    }
 	  }
 	} else {
 	  // Fixed windows (genomic tiling)
@@ -430,6 +467,7 @@ namespace torali
     boost::program_options::options_description hidden("Hidden options");
     hidden.add_options()
       ("input-file", boost::program_options::value<boost::filesystem::path>(&c.bamFile), "input bam file")
+      ("cnv-mode,c", "cnv panel mode")
       ;
 
     boost::program_options::positional_options_description pos_args;
@@ -480,6 +518,12 @@ namespace torali
     // Adaptive windowing
     if (vm.count("adaptive-windowing")) c.adaptive = true;
     else c.adaptive = false;
+
+    // CNV mode
+    if (vm.count("cnv-mode")) {
+      c.cnvmode = true;
+      if (c.window_size <= c.window_offset) c.window_size = c.window_offset + 1;
+    } else c.cnvmode = false;
     
     // Check window size
     if (c.window_offset > c.window_size) c.window_offset = c.window_size;
