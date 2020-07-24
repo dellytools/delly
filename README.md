@@ -129,6 +129,13 @@ The output file can be plotted using R to generate normalized copy-number profil
 
 `Rscript R/rd.R out.cov.gz`
 
+The GC bias can be visualized using the stats output.
+
+`delly rd -s stats.gz -g hg19.fa -m hg19.map input.bam`
+
+`zgrep "^GC" stats.gz  > gc.table`
+
+`Rscript R/gcbias.R gc.table`
 
 
 FAQ
