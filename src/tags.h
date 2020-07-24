@@ -149,8 +149,8 @@ namespace torali {
   inline bool
   _svSizeCheck(TSize const s, TSize const e, int32_t const svt) {
     // Short reads
-    if (svt == 0) return (( e - s ) >= 100);
-    else if (svt == 1) return (( e - s ) >= 100);
+    if (svt == 0) return (( e - s ) >= 300);
+    else if (svt == 1) return (( e - s ) >= 300);
     else if (svt == 2) return (( e - s ) >= 300);
     else if (svt == 3) return (( e - s ) >= 100);
     else return true;
