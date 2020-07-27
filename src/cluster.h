@@ -215,9 +215,9 @@ namespace torali
   }
 
 
-  template<typename TCompEdgeList>
+  template<typename TConfig, typename TCompEdgeList>
   inline void
-  _searchCliques(TCompEdgeList& compEdge, std::vector<SRBamRecord>& br, std::vector<StructuralVariantRecord>& sv, uint32_t const wiggle, int32_t const svt) {
+  _searchCliques(TConfig const& c, TCompEdgeList& compEdge, std::vector<SRBamRecord>& br, std::vector<StructuralVariantRecord>& sv, uint32_t const wiggle, int32_t const svt) {
     typedef typename TCompEdgeList::mapped_type TEdgeList;
     typedef typename TEdgeList::value_type TEdgeRecord;
     typedef typename TEdgeRecord::TVertexType TVertex;
@@ -285,8 +285,8 @@ namespace torali
 	}
       }
 
-      // At least 2 split reads?
-      if (clique.size()>1) {
+      // Enough split reads?
+      if (clique.size() >= c.minCliqueSize) {
 	int32_t svStart = (int32_t) (pos / (uint64_t) clique.size());
 	int32_t svEnd = (int32_t) (pos2 / (uint64_t) clique.size());
 	int32_t svInsLen = (int32_t) (inslen / (int32_t) clique.size());
@@ -338,7 +338,7 @@ namespace torali
 	    // Clean edge lists
 	    if (!compEdge.empty()) {
 	      // Search cliques
-	      _searchCliques(compEdge, br, sv, varisize, svt);
+	      _searchCliques(c, compEdge, br, sv, varisize, svt);
 	      lastConnectedNodeStart = lastConnectedNode;
 	      compEdge.clear();
 	    }
@@ -409,16 +409,16 @@ namespace torali
       }
       // Search cliques
       if (!compEdge.empty()) {
-	_searchCliques(compEdge, br, sv, varisize, svt);
+	_searchCliques(c, compEdge, br, sv, varisize, svt);
 	compEdge.clear();
       }
     }
   }
 
 
-  template<typename TCompEdgeList, typename TBamRecord, typename TSVs>
+  template<typename TConfig, typename TCompEdgeList, typename TBamRecord, typename TSVs>
   inline void
-  _searchCliques(TCompEdgeList& compEdge, TBamRecord const& bamRecord, TSVs& svs, int32_t const svt) {
+  _searchCliques(TConfig const& c, TCompEdgeList& compEdge, TBamRecord const& bamRecord, TSVs& svs, int32_t const svt) {
     typedef typename TCompEdgeList::mapped_type TEdgeList;
     typedef typename TEdgeList::value_type TEdgeRecord;
 
@@ -459,8 +459,9 @@ namespace torali
 	  else incompatible.insert(v);
 	}
       }
-      
-      if ((clique.size()>1) && (_svSizeCheck(svStart, svEnd, svt))) {
+
+      // Enough paired-ends
+      if ((clique.size() >= c.minCliqueSize) && (_svSizeCheck(svStart, svEnd, svt))) {
 	StructuralVariantRecord svRec;
 	svRec.chr = clusterRefID;
 	svRec.chr2 = clusterMateRefID;
@@ -520,7 +521,7 @@ namespace torali
       if (bamItIndex > lastConnectedNode) {
 	// Clean edge lists
 	if (!compEdge.empty()) {
-	  _searchCliques(compEdge, bamRecord, svs, svt);
+	  _searchCliques(c, compEdge, bamRecord, svs, svt);
 	  lastConnectedNodeStart = lastConnectedNode;
 	  compEdge.clear();
 	}
@@ -591,7 +592,7 @@ namespace torali
       }
     }
     if (!compEdge.empty()) {
-      _searchCliques(compEdge, bamRecord, svs, svt);
+      _searchCliques(c, compEdge, bamRecord, svs, svt);
       compEdge.clear();
     }
   }

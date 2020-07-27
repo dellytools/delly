@@ -16,6 +16,7 @@
 #include "bed.h"
 #include "scan.h"
 #include "gcbias.h"
+#include "cnv.h"
 #include "version.h"
 
 namespace torali
@@ -23,7 +24,7 @@ namespace torali
 
   struct CountDNAConfig {
     bool adaptive;
-    bool cnvmode;
+    bool hasPanelFile;
     bool hasStatsFile;
     bool hasBedFile;
     bool hasScanFile;
@@ -44,6 +45,7 @@ namespace torali
     float controlMaf;
     std::string sampleName;
     boost::filesystem::path outfile;
+    boost::filesystem::path panelfile;
     boost::filesystem::path genome;
     boost::filesystem::path statsFile;
     boost::filesystem::path mapFile;
@@ -88,8 +90,12 @@ namespace torali
     boost::iostreams::filtering_ostream dataOut;
     dataOut.push(boost::iostreams::gzip_compressor());
     dataOut.push(boost::iostreams::file_sink(c.outfile.c_str(), std::ios_base::out | std::ios_base::binary));
-    if (!c.cnvmode) {
-      dataOut << "chr\tstart\tend\t" << c.sampleName << "_mappable\t" << c.sampleName << "_counts\t" << c.sampleName << "_CN" << std::endl;
+    dataOut << "chr\tstart\tend\t" << c.sampleName << "_mappable\t" << c.sampleName << "_counts\t" << c.sampleName << "_CN" << std::endl;
+
+    boost::iostreams::filtering_ostream panelOut;
+    if (c.hasPanelFile) {
+      panelOut.push(boost::iostreams::gzip_compressor());
+      panelOut.push(boost::iostreams::file_sink(c.panelfile.c_str(), std::ios_base::out | std::ios_base::binary));
     }
     
     // Iterate chromosomes
@@ -207,6 +213,11 @@ namespace torali
 	bam_destroy1(rec);
 	hts_itr_destroy(iter);
       }
+
+
+      // Call CNVs
+      //callCNVs(c, gcbound, gcContent, uniqContent, gcbias, cov, hdr, refIndex);
+
 
       // BED File (target intervals)
       if (c.hasBedFile) {
@@ -356,49 +367,6 @@ namespace torali
 	    }
 	    ++pos;
 	  }
-	} else if (c.cnvmode) {
-	  // cnv tiling windows, window_offset smallest window, window_size largest window
-	  uint32_t numTiling = 0;
-	  {
-	    uint32_t winbound = c.window_offset;
-	    while (winbound < c.window_size) {
-	      ++numTiling;
-	      winbound *= 2;
-	    }
-	  }
-	  std::vector<int32_t> cnvec(numTiling, -1);
-	  dataOut << "#" << std::string(hdr->target_name[refIndex]) << "," << hdr->target_len[refIndex] << "," << c.window_offset << "," << c.window_size << "," << c.sampleName << std::endl;
-	  for(uint32_t start = 0; start < hdr->target_len[refIndex]; start = start + 50) {
-	    if (start + c.window_offset < hdr->target_len[refIndex]) {
-	      double covsum = 0;
-	      double expcov = 0;
-	      uint32_t winlen = 0;
-	      uint32_t winbound = c.window_offset;
-	      uint32_t tilingPos = 0;
-	      std::fill(cnvec.begin(), cnvec.end(), -1);
-	      bool validCN = false;
-	      for(uint32_t pos = start; ((pos < start + c.window_size) && (pos < hdr->target_len[refIndex])); ++pos) {
-		if ((gcContent[pos] > gcbound.first) && (gcContent[pos] < gcbound.second) && (uniqContent[pos] >= c.fragmentUnique * c.meanisize)) {
-		  covsum += cov[pos];
-		  expcov += gcbias[gcContent[pos]].coverage;
-		  ++winlen;
-		}
-		// Multiple of window size?
-		if ((pos - start) == winbound) {
-		  if (winlen >= c.fracWindow * (pos - start)) {
-		    cnvec[tilingPos] = (int32_t) std::round(c.ploidy * covsum / expcov * 100.0);
-		    validCN = true;
-		  }
-		  winbound *= 2;
-		  ++tilingPos;
-		}
-	      }
-	      if (validCN) {
-		for(uint32_t i = 0; i < numTiling; ++i) dataOut << cnvec[i] << ',';
-		dataOut << std::endl;
-	      } else dataOut << "-2," << std::endl;
-	    }
-	  }
 	} else {
 	  // Fixed windows (genomic tiling)
 	  for(uint32_t start = 0; start < hdr->target_len[refIndex]; start = start + c.window_offset) {
@@ -424,6 +392,54 @@ namespace torali
 	    }
 	  }
 	}
+
+	// Panel output?
+	if (c.hasPanelFile) {
+	  // cnv tiling windows
+	  uint32_t smallestWin = 300;
+	  uint32_t largestWin = 40000;
+	  uint32_t numTiling = 0;
+	  {
+	    uint32_t winbound = smallestWin;
+	    while (winbound < largestWin) {
+	      ++numTiling;
+	      winbound *= 2;
+	    }
+	  }
+	  std::vector<int32_t> cnvec(numTiling, -1);
+	  panelOut << "#" << std::string(hdr->target_name[refIndex]) << "," << hdr->target_len[refIndex] << "," << smallestWin << "," << largestWin << "," << c.sampleName << std::endl;
+	  for(uint32_t start = 0; start < hdr->target_len[refIndex]; start = start + 50) {
+	    if (start + smallestWin < hdr->target_len[refIndex]) {
+	      double covsum = 0;
+	      double expcov = 0;
+	      uint32_t winlen = 0;
+	      uint32_t winbound = smallestWin;
+	      uint32_t tilingPos = 0;
+	      std::fill(cnvec.begin(), cnvec.end(), -1);
+	      bool validCN = false;
+	      for(uint32_t pos = start; ((pos < start + largestWin) && (pos < hdr->target_len[refIndex])); ++pos) {
+		if ((gcContent[pos] > gcbound.first) && (gcContent[pos] < gcbound.second) && (uniqContent[pos] >= c.fragmentUnique * c.meanisize)) {
+		  covsum += cov[pos];
+		  expcov += gcbias[gcContent[pos]].coverage;
+		  ++winlen;
+		}
+		// Multiple of window size?
+		if ((pos - start) == winbound) {
+		  if (winlen >= c.fracWindow * (pos - start)) {
+		    cnvec[tilingPos] = (int32_t) std::round(c.ploidy * covsum / expcov * 100.0);
+		    validCN = true;
+		  }
+		  winbound *= 2;
+		  ++tilingPos;
+		}
+	      }
+	      if (validCN) {
+		for(uint32_t i = 0; i < numTiling; ++i) panelOut << cnvec[i] << ',';
+		panelOut << std::endl;
+	      } else panelOut << "-2," << std::endl;
+	    }
+	  }
+	}
       }
     }
 
@@ -435,6 +451,11 @@ namespace torali
     sam_close(samfile);
     dataOut.pop();
     dataOut.pop();
+    if (c.hasPanelFile) {
+      panelOut.pop();
+      panelOut.pop();
+    }
+    
     return 0;
   }
 
@@ -477,7 +498,7 @@ namespace torali
     boost::program_options::options_description hidden("Hidden options");
     hidden.add_options()
       ("input-file", boost::program_options::value<boost::filesystem::path>(&c.bamFile), "input bam file")
-      ("cnv-mode,c", "cnv panel mode")
+      ("panelfile,z", boost::program_options::value<boost::filesystem::path>(&c.panelfile), "output panel file")
       ;
 
     boost::program_options::positional_options_description pos_args;
@@ -530,10 +551,8 @@ namespace torali
     else c.adaptive = false;
 
     // CNV mode
-    if (vm.count("cnv-mode")) {
-      c.cnvmode = true;
-      if (c.window_size <= c.window_offset) c.window_size = c.window_offset + 1;
-    } else c.cnvmode = false;
+    if (vm.count("panelfile")) c.hasPanelFile = true;
+    else c.hasPanelFile = false;
     
     // Check window size
     if (c.window_offset > c.window_size) c.window_offset = c.window_size;

@@ -45,6 +45,7 @@ namespace torali {
     uint32_t minRefSep;
     uint32_t maxReadSep;
     uint32_t graphPruning;
+    uint32_t minCliqueSize;
     int32_t nchr;
     int32_t minimumFlankSize;
     float indelExtension;
@@ -246,6 +247,7 @@ namespace torali {
    disc.add_options()
      ("mapqual,q", boost::program_options::value<uint16_t>(&c.minMapQual)->default_value(10), "min. mapping quality")
      ("minclip,c", boost::program_options::value<uint32_t>(&c.minClip)->default_value(25), "min. clipping length")
+     ("min-clique-size,z", boost::program_options::value<uint32_t>(&c.minCliqueSize)->default_value(2), "min. clique size")     
      ("minrefsep,m", boost::program_options::value<uint32_t>(&c.minRefSep)->default_value(30), "min. reference separation")
      ("maxreadsep,n", boost::program_options::value<uint32_t>(&c.maxReadSep)->default_value(75), "max. read separation")
      ;
@@ -295,6 +297,9 @@ namespace torali {
    // Dump reads
    if (vm.count("dump")) c.hasDumpFile = true;
    else c.hasDumpFile = false;
+
+   // Clique size
+   if (c.minCliqueSize < 2) c.minCliqueSize = 2;
 
    // Check reference
    if (!(boost::filesystem::exists(c.genome) && boost::filesystem::is_regular_file(c.genome) && boost::filesystem::file_size(c.genome))) {

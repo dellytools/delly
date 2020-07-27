@@ -63,6 +63,7 @@ namespace torali
     uint32_t maxReadSep;
     uint32_t minClip;
     uint32_t maxGenoReadCount;
+    uint32_t minCliqueSize;
     float flankQuality;
     bool hasExcludeFile;
     bool hasVcfFile;
@@ -217,6 +218,7 @@ namespace torali
       ("qual-tra,r", boost::program_options::value<uint16_t>(&c.minTraQual)->default_value(20), "min. PE quality for translocation")
       ("mad-cutoff,s", boost::program_options::value<uint16_t>(&c.madCutoff)->default_value(9), "insert size cutoff, median+s*MAD (deletions only)")
       ("minclip,c", boost::program_options::value<uint32_t>(&c.minClip)->default_value(25), "min. clipping length")
+      ("min-clique-size,z", boost::program_options::value<uint32_t>(&c.minCliqueSize)->default_value(2), "min. PE/SR clique size")
       ("minrefsep,m", boost::program_options::value<uint32_t>(&c.minRefSep)->default_value(25), "min. reference separation")
       ("maxreadsep,n", boost::program_options::value<uint32_t>(&c.maxReadSep)->default_value(40), "max. read separation")
       ;
@@ -263,6 +265,9 @@ namespace torali
     // Dump PE and SR support?
     if (vm.count("dump")) c.hasDumpFile = true;
     else c.hasDumpFile = false;
+
+    // Clique size
+    if (c.minCliqueSize < 2) c.minCliqueSize = 2;
     
     // Check quality cuts
     if (c.minMapQual > c.minTraQual) c.minTraQual = c.minMapQual;
