@@ -144,7 +144,7 @@ namespace torali {
   
   template<typename TConfig, typename TSVs, typename TBreakProbes, typename TGenomicBpRegion>
   inline void
-  _generateProbes(TConfig const& c, bam_hdr_t* hdr, TSVs& svs, TBreakProbes& refProbeArr, TBreakProbes& consProbeArr, TGenomicBpRegion& bpRegion) {
+    _generateProbes(TConfig const& c, bam_hdr_t* hdr, TSVs& svs, TBreakProbes& refProbeArr, TBreakProbes& consProbeArr, TGenomicBpRegion& bpRegion, std::vector<bool>& svOnChr) {
     typedef typename TBreakProbes::value_type TProbes;
 
     // Preprocess REF and ALT
@@ -161,7 +161,8 @@ namespace torali {
       // Iterate all structural variants
       for(typename TSVs::iterator itSV = svs.begin(); itSV != svs.end(); ++itSV) {
 	if ((itSV->chr != refIndex) && (itSV->chr2 != refIndex)) continue;
-
+	svOnChr[refIndex] = true;
+	
 	// Lazy loading of reference sequence
 	if (seq == NULL) {
 	  int32_t seqlen = -1;
@@ -291,9 +292,10 @@ namespace torali {
     typedef std::vector<BpRegion> TBpRegion;
     typedef std::vector<TBpRegion> TGenomicBpRegion;
     TGenomicBpRegion bpRegion(hdr[0]->n_targets, TBpRegion());
-
+    std::vector<bool> svOnChr(hdr[0]->n_targets, false);
+    
     // Generate probes
-    _generateProbes(c, hdr[0], svs, refProbeArr, consProbeArr, bpRegion);
+    _generateProbes(c, hdr[0], svs, refProbeArr, consProbeArr, bpRegion, svOnChr);
   
     // Debug
     //for(uint32_t k = 0; k < 2; ++k) {
@@ -340,7 +342,7 @@ namespace torali {
 	++show_progress;
       
 	// Any SV breakpoints on this chromosome?
-	if (bpRegion[refIndex].empty()) continue;
+	if (!svOnChr[refIndex]) continue;
 
 	// Check we have mapped reads on this chromosome
 	bool nodata = true;
@@ -536,9 +538,9 @@ namespace torali {
 	      }
 	    }
 	  }
-	
+
 	  // Read-count and spanning annotation
-	  if ((!(rec->core.flag & BAM_FPAIRED)) || (bpRegion[rec->core.mtid].empty())) continue;
+	  if ((!(rec->core.flag & BAM_FPAIRED)) || (!svOnChr[rec->core.mtid])) continue;
 
 	  // Clean-up the read store for identical alignment positions
 	  if (rec->core.pos > lastAlignedPos) {
@@ -575,7 +577,7 @@ namespace torali {
 	      qualitiestra[hv] = 0;
 	      cliptra[hv] = false;
 	    }
-	    
+
 	    // Pair quality
 	    if (pairQuality < c.minGenoQual) continue; // Low quality pair
 	    
