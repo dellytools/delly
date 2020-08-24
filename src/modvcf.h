@@ -651,8 +651,10 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
 	if (gqval[file_c] < 15) ftarr[file_c] = "LowQual";
 	else ftarr[file_c] = "PASS";
       }
-      rec->qual = svIter->mapq;
-
+      int32_t qvalout = svIter->mapq;
+      if (qvalout < 0) qvalout = 0;
+      if (qvalout > 10000) qvalout = 10000;
+      rec->qual = qvalout;
       
       bcf_update_genotypes(hdr, rec, gts, bcf_hdr_nsamples(hdr) * 2);
       bcf_update_format_float(hdr, rec, "GL",  gls, bcf_hdr_nsamples(hdr) * 3);
