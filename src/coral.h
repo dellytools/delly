@@ -8,6 +8,7 @@
 #include <boost/unordered_map.hpp>
 #include <boost/date_time/posix_time/posix_time.hpp>
 #include <boost/date_time/gregorian/gregorian.hpp>
+#include <boost/math/special_functions/round.hpp>
 #include <boost/progress.hpp>
 
 #include <htslib/sam.h>
@@ -426,7 +427,7 @@ namespace torali
 		// Multiple of window size?
 		if ((pos - start) == winbound) {
 		  if (winlen >= c.fracWindow * (pos - start)) {
-		    cnvec[tilingPos] = (int32_t) std::round(c.ploidy * covsum / expcov * 100.0);
+		    cnvec[tilingPos] = (int32_t) boost::math::round(c.ploidy * covsum / expcov * 100.0);
 		    validCN = true;
 		  }
 		  winbound *= 2;

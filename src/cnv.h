@@ -88,7 +88,7 @@ namespace torali
 	  // Multiple of window size?
 	  if ((pos - start) == winbound) {
 	    if (winlen >= c.fracWindow * (pos - start)) {
-	      cnvec[tilingPos][start/hdr->target_len[refIndex]] = (int32_t) std::round(c.ploidy * covsum / expcov * 100.0);
+	      cnvec[tilingPos][start/hdr->target_len[refIndex]] = (int32_t) boost::math::round(c.ploidy * covsum / expcov * 100.0);
 	    }
 	    winbound *= 2;
 	    ++tilingPos;
