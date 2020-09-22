@@ -143,29 +143,23 @@ FAQ
 * What is the smallest SV size Delly can call?  
 This depends on the sharpness of the insert size distribution. For an insert size of 200-300bp with a 20-30bp standard deviation, Delly starts to call reliable SVs >=300bp. Delly also supports calling of small InDels using soft-clipped reads only (-i option). In this mode the smallest SV size called is 15bp.
 
-* Is Delly read-group aware?   
-Yes. If you want to estimate separate insert size distributions for every read-group then use the -e option.
-
 * Can Delly be used on a non-diploid genome?  
 Yes and no. The SV site discovery works for any ploidy. However, Delly's genotyping model assumes diploidy (hom. reference, het. and hom. alternative).
 
-* How do I run Delly if I have multiple different libraries/bam files for a single sample?    
-Merge these BAMs using tools such as [Picard](http://broadinstitute.github.io/picard/) and tag each library with a unique ReadGroup. If you have a sample with multiple read-groups please run delly with the -e option.
-
 * Delly is running too slowly what can I do?    
-You should exclude telomere and centromere regions and also all unplaced contigs. Delly ships with such an exclude list for human and mouse samples. In addition, you can filter input reads more stringently using -q 20 and -s 15. Small InDel calling takes more time (-i option), leave it out if you are only interested in large SVs (>=300bp).
+You should exclude telomere and centromere regions and also all unplaced contigs. Delly ships with such an exclude list for human and mouse samples. In addition, you can filter input reads more stringently using -q 20 and -s 15.
 
 * Are non-unique alignments, multi-mappings and/or multiple split-read alignments allowed?  
-Delly expects two alignment records in the bam file for every paired-end, one for the first and one for the second read. Multiple split-read alignment records of a given read are allowed if and only if one of them (e.g. the longest split alignment) is a primary alignment whereas all others are marked as secondary or supplementary (flag 0x0100 or flag 0x0800). This is the default for bwa mem.
+Delly expects two alignment records in the bam file for every paired-end, one for the first and one for the second read. Multiple split-read alignment records of a given read are allowed if and only if one of them is a primary alignment whereas all others are marked as secondary or supplementary (flag 0x0100 or flag 0x0800). This is the default for bwa mem.
 
 * What pre-processing of bam files is required?    
-Bam files need to be sorted, indexed and ideally duplicate marked. If multiple libraries are present for a single sample these need to be merged in a single bam file with unique ReadGroup tags.
+Bam files need to be sorted, indexed and ideally duplicate marked.
 
 * Usage/discussion mailing list?         
 There is a delly discussion group [delly-users](http://groups.google.com/d/forum/delly-users).
 
-* Docker support?            
-There is a dockerized delly available [here](https://hub.docker.com/r/dellytools/delly/).
+* Docker/Singularity support?            
+There is a dockerized delly available [here](https://hub.docker.com/r/dellytools/delly/) and singularity containers (*.sif files) are part of the [delly release](https://github.com/dellytools/delly/releases).
 
 * Bioconda support?             
 Delly is available via [bioconda](http://bioconda.github.io/recipes/delly/README.html).
