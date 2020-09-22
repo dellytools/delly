@@ -36,9 +36,6 @@ Delly supports parallel computing using the OpenMP API (www.openmp.org).
 
 `make PARALLEL=1 -B src/delly`
 
-There is also a statically linked, multi-threaded binary for Linux 64-bit available under [releases](https://github.com/dellytools/delly/releases/).
-
-
 You can set the number of threads using the environment variable OMP_NUM_THREADS.
 
 `export OMP_NUM_THREADS=2`
