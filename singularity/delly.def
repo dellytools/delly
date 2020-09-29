@@ -17,7 +17,7 @@ Stage: build
 
 # Final image
 BootStrap: library
-From: alpine:3.9
+From: alpine:latest
 Stage: final
 
 %files from build
