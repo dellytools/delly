@@ -57,7 +57,7 @@ Delly needs a sorted, indexed and duplicate marked bam file for every input samp
 Delly for long reads from PacBio or ONT (experimental)
 ------------------------------------------------------
 
-Delly also has a long-read SV discovery mode.
+Delly also has a long-read SV discovery mode (currently, only INS and DEL are supported).
 
 `delly lr -y ont -g hg19.fa -x hg19.excl input.bam`
 
