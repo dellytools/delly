@@ -31,7 +31,6 @@ namespace torali
 
     // SV consensus done
     std::vector<bool> svcons(svs.size(), false);
-    uint32_t maxReadPerSV = 20;
 
     // Open file handles
     typedef std::vector<samFile*> TSamFile;
@@ -76,7 +75,7 @@ namespace torali
 	      //std::cerr << svs[svid].svStart << ',' << svs[svid].svEnd << ',' << svs[svid].svt << ',' << svid << " SV" << std::endl;
 	      //std::cerr << seed << '\t' << srStore[seed][ri].svid << '\t' << srStore[seed][ri].sstart << '\t' << srStore[seed][ri].inslen << '\t' << sv[srStore[seed][ri].svid].srSupport << '\t' << sv[srStore[seed][ri].svid].svt << std::endl;
 
-	      if (!svcons[svid]) {
+	      if ((!svcons[svid]) && (seqStore[svid].size() < c.maxReadPerSV)) {
 		// Get sequence
 		std::string sequence;
 		sequence.resize(rec->core.l_qseq);
@@ -95,18 +94,23 @@ namespace torali
 		if (sPos < 0) sPos = 0;
 		if (ePos > (int32_t) readlen) ePos = readlen;
 		// Min. seq length and max insertion size, 10kbp?
-		if (((ePos - sPos) > window) && ((ePos - sPos) <= 10000)) {
+		if (((ePos - sPos) > window) && ((ePos - sPos) <= (10000 + window))) {
 		  std::string seqalign = sequence.substr(sPos, (ePos - sPos));
+		  if ((svs[svid].svt == 5) || (svs[svid].svt == 6)) {
+		    if (svs[svid].chr == refIndex) reverseComplement(seqalign);
+		  }
 		  seqStore[svid].insert(seqalign);
-	      
+
 		  // Enough split-reads?
 		  if ((!_translocation(svs[svid].svt)) && (svs[svid].chr == refIndex)) {
-		    if ((seqStore[svid].size() == maxReadPerSV) || ((int32_t) seqStore[svid].size() == svs[svid].srSupport)) {
+		    if ((seqStore[svid].size() == c.maxReadPerSV) || ((int32_t) seqStore[svid].size() == svs[svid].srSupport)) {
 		      bool msaSuccess = false;
 		      if (seqStore[svid].size() > 1) {
 			//std::cerr << svs[svid].svStart << ',' << svs[svid].svEnd << ',' << svs[svid].svt << ',' << svid << " SV" << std::endl;
 			//for(typename TSequences::iterator it = seqStore[svid].begin(); it != seqStore[svid].end(); ++it) std::cerr << *it << std::endl;
 			msa(c, seqStore[svid], svs[svid].consensus);
+			//outputConsensus(hdr, svs[svid], svs[svid].consensus);
+			if ((svs[svid].svt == 1) || (svs[svid].svt == 5)) reverseComplement(svs[svid].consensus);
 			//std::cerr << svs[svid].consensus << std::endl;
 			if (alignConsensus(c, hdr, seq, NULL, svs[svid])) msaSuccess = true;
 			//std::cerr << msaSuccess << std::endl;
@@ -128,14 +132,30 @@ namespace torali
 	bam_destroy1(rec);
 	hts_itr_destroy(iter);
       }
-      // Handle left-overs
-      for(uint32_t svid = 0; svid < svcons.size(); ++svid) {
-	if (!svcons[svid]) {
-	  if ((!_translocation(svs[svid].svt)) && (svs[svid].chr == refIndex)) {
+      // Handle left-overs and translocations
+      for(int32_t refIndex2 = 0; refIndex2 <= refIndex; ++refIndex2) {
+	char* sndSeq = NULL;
+	for(uint32_t svid = 0; svid < svcons.size(); ++svid) {
+	  if (!svcons[svid]) {
+	    if ((svs[svid].chr != refIndex) || (svs[svid].chr2 != refIndex2)) continue;
 	    bool msaSuccess = false;
 	    if (seqStore[svid].size() > 1) {
+	      // Lazy loading of references
+	      if (refIndex != refIndex2) {
+		if (sndSeq == NULL) {
+		  int32_t seqlen = -1;
+		  std::string tname(hdr->target_name[refIndex2]);
+		  sndSeq = faidx_fetch_seq(fai, tname.c_str(), 0, hdr->target_len[refIndex2], &seqlen);
+		}
+	      }
+	      //std::cerr << svs[svid].svStart << ',' << svs[svid].svEnd << ',' << svs[svid].svt << ',' << svid << " SV" << std::endl;
+	      //for(typename TSequences::iterator it = seqStore[svid].begin(); it != seqStore[svid].end(); ++it) std::cerr << *it << std::endl;
 	      msa(c, seqStore[svid], svs[svid].consensus);
-	      if (alignConsensus(c, hdr, seq, NULL, svs[svid])) msaSuccess = true;
+	      //outputConsensus(hdr, svs[svid], svs[svid].consensus);
+	      if ((svs[svid].svt == 1) || (svs[svid].svt == 5)) reverseComplement(svs[svid].consensus);
+	      //std::cerr << "Consensus: " << svs[svid].consensus << std::endl;
+	      if (alignConsensus(c, hdr, seq, sndSeq, svs[svid])) msaSuccess = true;
+	      //std::cerr << msaSuccess << std::endl;
 	    }
 	    if (!msaSuccess) {
 	      svs[svid].consensus = "";
@@ -146,6 +166,7 @@ namespace torali
 	    svcons[svid] = true;
 	  }
 	}
+	if (sndSeq != NULL) free(sndSeq);
       }
       
       // Clean-up

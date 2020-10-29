@@ -248,10 +248,10 @@ namespace torali
 		// Same direction, opposing soft-clips
 		if (it->second[chr1ev].scleft != it->second[chr2ev].scleft) {
 		  if (it->second[chr1ev].scleft) {
-		    // 5to3
+		    // 3to5
 		    br[DELLY_SVT_TRANS + 2].push_back(SRBamRecord(it->second[chr2ev].refidx, it->second[chr2ev].refpos, it->second[chr1ev].refidx, it->second[chr1ev].refpos, rst, std::min(it->second[j].seqpos, it->second[i].seqpos), qval, std::abs(it->second[j].seqpos - it->second[i].seqpos), it->first));
 		  } else {
-		    // 3to5
+		    // 5to3
 		    br[DELLY_SVT_TRANS + 3].push_back(SRBamRecord(it->second[chr2ev].refidx, it->second[chr2ev].refpos, it->second[chr1ev].refidx, it->second[chr1ev].refpos, rst, std::min(it->second[j].seqpos, it->second[i].seqpos), qval, std::abs(it->second[j].seqpos - it->second[i].seqpos), it->first));
 		  }
 		}
@@ -259,10 +259,10 @@ namespace torali
 		// Opposing direction, same soft-clips
 		if (it->second[chr1ev].scleft == it->second[chr2ev].scleft) {
 		  if (it->second[chr1ev].scleft) {
-		    // 3to3
+		    // 5to5
 		    br[DELLY_SVT_TRANS + 1].push_back(SRBamRecord(it->second[chr2ev].refidx, it->second[chr2ev].refpos, it->second[chr1ev].refidx, it->second[chr1ev].refpos, rst, std::min(it->second[j].seqpos, it->second[i].seqpos), qval, std::abs(it->second[j].seqpos - it->second[i].seqpos), it->first));
 		  } else {
-		    // 5to5
+		    // 3to3
 		    br[DELLY_SVT_TRANS + 0].push_back(SRBamRecord(it->second[chr2ev].refidx, it->second[chr2ev].refpos, it->second[chr1ev].refidx, it->second[chr1ev].refpos, rst, std::min(it->second[j].seqpos, it->second[i].seqpos), qval, std::abs(it->second[j].seqpos - it->second[i].seqpos), it->first));
 		  }
 		}
@@ -427,10 +427,10 @@ namespace torali
   fetchSVs(TConfig const& c, TReadBp& readBp, std::vector<std::vector<SRBamRecord> >& br) {
     // Extract BAM records
     if ((!c.svtcmd) || (c.svtset.find(2) != c.svtset.end())) selectDeletions(c, readBp, br);
-    //if ((!c.svtcmd) || (c.svtset.find(3) != c.svtset.end())) selectDuplications(c, readBp, br);
-    //if ((!c.svtcmd) || (c.svtset.find(0) != c.svtset.end()) || (c.svtset.find(1) != c.svtset.end())) selectInversions(c, readBp, br);
+    if ((!c.svtcmd) || (c.svtset.find(3) != c.svtset.end())) selectDuplications(c, readBp, br);
+    if ((!c.svtcmd) || (c.svtset.find(0) != c.svtset.end()) || (c.svtset.find(1) != c.svtset.end())) selectInversions(c, readBp, br);
     if ((!c.svtcmd) || (c.svtset.find(4) != c.svtset.end())) selectInsertions(c, readBp, br);
-    //if ((!c.svtcmd) || (c.svtset.find(5) != c.svtset.end()) || (c.svtset.find(6) != c.svtset.end()) || (c.svtset.find(7) != c.svtset.end()) || (c.svtset.find(8) != c.svtset.end())) selectTranslocations(c, readBp, br);
+    if ((!c.svtcmd) || (c.svtset.find(5) != c.svtset.end()) || (c.svtset.find(6) != c.svtset.end()) || (c.svtset.find(7) != c.svtset.end()) || (c.svtset.find(8) != c.svtset.end())) selectTranslocations(c, readBp, br);
   }
 
   template<typename TConfig, typename TValidRegions, typename TSvtSRBamRecord>
@@ -457,7 +457,7 @@ namespace torali
 	 	 
     // Debug
     //outputSRBamRecords(c, srBR);
-    
+
     // Cluster BAM records
     for(uint32_t svt = 0; svt < srBR.size(); ++svt) {
       if (srBR[svt].empty()) continue;
@@ -528,7 +528,7 @@ namespace torali
 	hts_itr_t* iter = sam_itr_queryi(idx[file_c], refIndex, 0, hdr->target_len[refIndex]);
 	bam1_t* rec = bam_init1();
 	while (sam_itr_next(samfile[file_c], iter, rec) >= 0) {
-	  if (rec->core.flag & (BAM_FQCFAIL | BAM_FDUP | BAM_FUNMAP | BAM_FSECONDARY | BAM_FSUPPLEMENTARY)) continue;
+	  if (rec->core.flag & (BAM_FQCFAIL | BAM_FDUP | BAM_FUNMAP)) continue;
 	  std::size_t seed = hash_lr(rec);
 	  std::string qname = bam_get_qname(rec);
 	  if (hm.find(seed) == hm.end()) hm.insert(std::make_pair(seed, qname));
@@ -578,17 +578,23 @@ namespace torali
     bam_hdr_t* hdr = sam_hdr_read(samfile);
 
     // Header
-    std::cerr << "chr1\tpos1\tchr2\tpos2\tsvtype\tct\tpeSupport\tsrSupport" << std::endl;
+    std::cerr << "chr1\tpos1\tchr2\tpos2\tsvtype\tct\tpeSupport\tsrSupport\tconsensus" << std::endl;
     
     // SVs
     for(uint32_t i = 0; i < svs.size(); ++i) {
       if (svs[i].svt != svt) continue;
-      std::cerr << hdr->target_name[svs[i].chr] << '\t' << svs[i].svStart << '\t' << hdr->target_name[svs[i].chr2] << '\t' << svs[i].svEnd << '\t' << _addID(svs[i].svt) << '\t' << _addOrientation(svs[i].svt) << '\t' << svs[i].peSupport << '\t' << svs[i].srSupport << std::endl;
+      std::cerr << hdr->target_name[svs[i].chr] << '\t' << svs[i].svStart << '\t' << hdr->target_name[svs[i].chr2] << '\t' << svs[i].svEnd << '\t' << _addID(svs[i].svt) << '\t' << _addOrientation(svs[i].svt) << '\t' << svs[i].peSupport << '\t' << svs[i].srSupport << '\t' << svs[i].consensus << std::endl;
     }
     
     // Clean-up
     bam_hdr_destroy(hdr);
     sam_close(samfile);
+  }
+
+  template<typename TConfig>
+  inline void
+  outputStructuralVariants(TConfig const& c, std::vector<StructuralVariantRecord> const& svs) {
+    for(uint32_t i = 0; i <= 8; ++i) outputStructuralVariants(c, svs, i);
   }
   
 

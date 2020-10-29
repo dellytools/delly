@@ -458,12 +458,12 @@ namespace torali
     // Check breakpoint
     AlignDescriptor ad;
     if (!_findSplit(c, sv.consensus, svRefStr, align, ad, sv.svt)) return false;
-
+    
     // Get the start and end of the structural variant
     unsigned int finalGapStart = 0;
     unsigned int finalGapEnd = 0;
     if (!_coordTransform(svRefStr, bp, ad, finalGapStart, finalGapEnd, sv.svt)) return false;
-	
+    
     sv.precise=true;
     sv.svStart=finalGapStart;
     sv.svEnd=finalGapEnd;

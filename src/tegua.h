@@ -46,6 +46,7 @@ namespace torali {
     uint32_t maxReadSep;
     uint32_t graphPruning;
     uint32_t minCliqueSize;
+    uint32_t maxReadPerSV;
     int32_t nchr;
     int32_t minimumFlankSize;
     float indelExtension;
@@ -106,20 +107,21 @@ namespace torali {
      return 1;
    }
      
-   // Split-read assembly?
+   // SR Store
+   typedef std::vector<SeqSlice> TSvPosVector;
+   typedef boost::unordered_map<std::size_t, TSvPosVector> TReadSV;
+   TReadSV srStore;
    if (!c.hasVcfFile) {
      // Structural Variant Candidates
      typedef std::vector<StructuralVariantRecord> TVariants;
      TVariants svc;
 
-     // SR Store
-     typedef std::vector<SeqSlice> TSvPosVector;
-     typedef boost::unordered_map<std::size_t, TSvPosVector> TReadSV;
+     // Temporary split-read store
      TReadSV tmpStore;
 
      // SV Discovery
      _clusterSRReads(c, validRegions, svc, tmpStore);
-     
+
      // Assemble
      assemble(c, validRegions, svc, tmpStore);
 
@@ -142,49 +144,11 @@ namespace torali {
    bam_hdr_destroy(hdr);
    sam_close(samfile);
 
-   // Re-number SVs
+   // Re-number SVs and update SR Store
    sort(svs.begin(), svs.end(), SortSVs<StructuralVariantRecord>());
+   //outputStructuralVariants(c, svs);
    uint32_t cliqueCount = 0;
    for(typename TVariants::iterator svIt = svs.begin(); svIt != svs.end(); ++svIt, ++cliqueCount) svIt->id = cliqueCount;
-
-   // Genotyping
-   typedef std::vector<SeqSlice> TSvPosVector;
-   typedef boost::unordered_map<std::size_t, TSvPosVector> TReadSV;
-   TReadSV srStore;
-   if (srStore.empty()) {
-     // Structural Variant Candidates
-     typedef std::vector<StructuralVariantRecord> TVariants;
-     TVariants svc;
-
-     // Tmp SR Store
-     TReadSV tmpStore;
-     //_clusterSRReads(c, validRegions, svc, tmpStore);
-
-     // Update srStore
-     typedef std::vector<SeqSlice> TSvPosVector;
-     typedef boost::unordered_map<std::size_t, TSvPosVector> TReadSV;
-     for(typename TReadSV::iterator readit = tmpStore.begin(); readit != tmpStore.end(); ++readit) {
-       std::set<int32_t> svIdSet;
-       for(uint32_t i = 0; i < readit->second.size(); ++i) {
-	 int32_t svid = readit->second[i].svid;
-	 typename TVariants::iterator itGeno = std::lower_bound(svs.begin(), svs.end(), StructuralVariantRecord(svc[svid].chr, std::max(0, svc[svid].svStart - (int32_t) c.minRefSep), svc[svid].svEnd), SortSVs<StructuralVariantRecord>());
-	 for(;((itGeno != svs.end()) && (std::abs(svc[svid].svStart - itGeno->svStart) <= c.minRefSep));++itGeno) {
-	   if ((svc[svid].chr != itGeno->chr) || (svc[svid].chr2 != itGeno->chr2) || (svc[svid].svt != itGeno->svt)) continue;
-	   if (std::abs(svc[svid].svEnd - itGeno->svEnd) > c.minRefSep) continue;
-	   if (srStore.find(readit->first) == srStore.end()) srStore.insert(std::make_pair(readit->first, TSvPosVector()));
-	   // Assign read only once to a given SV
-	   if (svIdSet.find(itGeno->id) == svIdSet.end()) {
-	     // Debug
-	     //std::cerr << readit->first << ':' << svc[svid].chr << ',' << svc[svid].svStart << ',' << svc[svid].chr2 << ',' << svc[svid].svEnd << ',' << svc[svid].svt << ';' << itGeno->chr << ',' << itGeno->svStart << ',' << itGeno->chr2 << ',' << itGeno->svEnd << ',' << itGeno->svt << std::endl;
-
-	     svIdSet.insert(itGeno->id);
-	     readit->second[i].svid = itGeno->id;
-	     srStore[readit->first].push_back(readit->second[i]);
-	   }
-	 }
-       }
-     }
-   }
    
    // Annotate junction reads
    typedef std::vector<JunctionCount> TSVJunctionMap;
@@ -252,6 +216,13 @@ namespace torali {
      ("maxreadsep,n", boost::program_options::value<uint32_t>(&c.maxReadSep)->default_value(75), "max. read separation")
      ;
 
+   boost::program_options::options_description cons("Consensus options");
+   cons.add_options()
+     ("max-reads,p", boost::program_options::value<uint32_t>(&c.maxReadPerSV)->default_value(20), "max. reads for consensus computation")
+     ("flank-size,f", boost::program_options::value<int32_t>(&c.minimumFlankSize)->default_value(400), "min. flank size")
+     ("flank-quality,a", boost::program_options::value<float>(&c.flankQuality)->default_value(0.8), "min. flank quality")
+     ;     
+   
    boost::program_options::options_description geno("Genotyping options");
    geno.add_options()
      ("vcffile,v", boost::program_options::value<boost::filesystem::path>(&c.vcffile), "input VCF/BCF file for genotyping")
@@ -264,8 +235,6 @@ namespace torali {
      ("input-file", boost::program_options::value< std::vector<boost::filesystem::path> >(&c.files), "input file")
      ("pruning,j", boost::program_options::value<uint32_t>(&c.graphPruning)->default_value(1000), "graph pruning cutoff")
      ("extension,e", boost::program_options::value<float>(&c.indelExtension)->default_value(0.5), "enforce indel extension")
-     ("flank-size,f", boost::program_options::value<int32_t>(&c.minimumFlankSize)->default_value(400), "min. flank size")
-     ("flank-quality,a", boost::program_options::value<float>(&c.flankQuality)->default_value(0.9), "min. flank quality")
      ("scoring,s", boost::program_options::value<std::string>(&scoring)->default_value("3,-2,-3,-1"), "alignment scoring")
      ;
    
@@ -273,9 +242,9 @@ namespace torali {
    pos_args.add("input-file", -1);
    
    boost::program_options::options_description cmdline_options;
-   cmdline_options.add(generic).add(disc).add(geno).add(hidden);
+   cmdline_options.add(generic).add(disc).add(cons).add(geno).add(hidden);
    boost::program_options::options_description visible_options;
-   visible_options.add(generic).add(disc).add(geno);
+   visible_options.add(generic).add(disc).add(cons).add(geno);
    boost::program_options::variables_map vm;
    boost::program_options::store(boost::program_options::command_line_parser(argc, argv).options(cmdline_options).positional(pos_args).run(), vm);
    boost::program_options::notify(vm);
@@ -405,13 +374,8 @@ namespace torali {
    std::cout << std::endl;
    
    // Run Tegua
-   if (mode == "pb") {
-     c.indelExtension = 0.7;
-     c.flankQuality = 0.85;
-   } else if (mode == "ont") {
-     c.indelExtension = 0.5;
-     c.flankQuality = 0.9;
-   }
+   if (mode == "pb") c.indelExtension = 0.7;
+   else if (mode == "ont") c.indelExtension = 0.5;
    return runTegua(c);
  }
 

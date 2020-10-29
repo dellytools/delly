@@ -288,6 +288,13 @@ namespace torali {
     return align.shape()[0];
   }
 
+  template<typename TStructuralVariant>
+  inline void
+  outputConsensus(bam_hdr_t* hdr, TStructuralVariant const& sv, std::string const& cons) {
+    std::cerr << ">" << hdr->target_name[sv.chr] << ':' << sv.svStart << ',' << hdr->target_name[sv.chr2] << ':' << sv.svEnd << " SVT:" << sv.svt << " SR:" << sv.srSupport << " PE:" << sv.peSupport << std::endl;
+    std::cerr << cons << std::endl;
+  }
+
 }
 
 #endif
