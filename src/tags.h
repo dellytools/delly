@@ -198,8 +198,21 @@ namespace torali {
 
   inline int32_t
   _isizeMappingPos(bam1_t* rec, int32_t isize) {
-    if (_translocation(rec)) return DELLY_SVT_TRANS + getSVType(rec->core);
-    else {
+    if (_translocation(rec)) {
+      uint8_t orient = getSVType(rec->core);
+      if (orient == 0) return DELLY_SVT_TRANS + 0;
+      else if (orient == 1) return DELLY_SVT_TRANS + 1;
+      else {
+	// 3to5 or 5to3?
+	if (rec->core.tid > rec->core.mtid) {
+	  if (!(rec->core.flag & BAM_FREVERSE)) return DELLY_SVT_TRANS + 2;
+	  else return DELLY_SVT_TRANS + 3;
+	} else {
+	  if (!(rec->core.flag & BAM_FREVERSE)) return DELLY_SVT_TRANS + 3;
+	  else return DELLY_SVT_TRANS + 2;
+	}
+      }
+    } else {
       if (rec->core.pos == rec->core.mpos) return -1; // No SV
       uint8_t orient = getSVType(rec->core);
       if (orient == 0) return 0;
@@ -211,7 +224,7 @@ namespace torali {
 	if (std::abs(rec->core.pos - rec->core.mpos) < 100) return -1; // Too small
 	return 3;
       }
-    } 
+    }
   }
 
   inline unsigned hash_string(const char *s) {
