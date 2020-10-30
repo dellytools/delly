@@ -17,6 +17,7 @@ namespace torali
     int32_t inslen;
     int32_t qual;  // Only required for junction count map
 
+    SeqSlice() : svid(-1), sstart(-1), inslen(-1), qual(-1) {}
     SeqSlice(int32_t const sv, int32_t const sst, int32_t const il, int32_t q) : svid(sv), sstart(sst), inslen(il), qual(q) {}
   };
 

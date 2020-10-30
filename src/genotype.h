@@ -36,6 +36,10 @@ namespace torali
   template<typename TConfig, typename TSRStore, typename TJunctionMap, typename TReadCountMap>
   inline void
   trackRef(TConfig& c, std::vector<StructuralVariantRecord>& svs, TSRStore& srStore, TJunctionMap& jctMap, TReadCountMap& covMap) {
+
+    typedef uint16_t TMaxCoverage;
+    uint32_t maxCoverage = std::numeric_limits<TMaxCoverage>::max();
+    
     typedef std::vector<StructuralVariantRecord> TSVs;
     typedef std::vector<uint8_t> TQuality;
     typedef boost::multi_array<char, 2> TAlign;
@@ -67,29 +71,6 @@ namespace torali
     typedef std::vector<TRefAlignCount> TFileRefAlignCount;
     TFileRefAlignCount refAlignedReadCount(c.files.size(), TRefAlignCount());
     for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) refAlignedReadCount[file_c].resize(svs.size(), 0);
-
-    // Coverage distribution
-    typedef uint16_t TMaxCoverage;
-    uint32_t maxCoverage = std::numeric_limits<TMaxCoverage>::max();
-    typedef std::vector<uint32_t> TCovDist;
-    typedef std::vector<TCovDist> TSampleCovDist;
-    TSampleCovDist covDist(c.files.size(), TCovDist());
-    for(uint32_t i = 0; i < c.files.size(); ++i) covDist[i].resize(maxCoverage, 0);
-
-    // Error rates
-    std::vector<uint64_t> matchCount(c.files.size(), 0);
-    std::vector<uint64_t> mismatchCount(c.files.size(), 0);
-    std::vector<uint64_t> delCount(c.files.size(), 0);
-    std::vector<uint64_t> insCount(c.files.size(), 0);
-
-    // Read length distribution
-    typedef uint16_t TMaxReadLength;
-    uint32_t maxReadLength = std::numeric_limits<TMaxReadLength>::max();
-    uint32_t rlBinSize = 100;
-    typedef std::vector<uint32_t> TReadLengthDist;
-    typedef std::vector<TReadLengthDist> TSampleRLDist;
-    TSampleRLDist rlDist(c.files.size(), TReadLengthDist());
-    for(uint32_t i = 0; i < c.files.size(); ++i) rlDist[i].resize(maxReadLength * rlBinSize, 0);
 
     // Dump file
     boost::iostreams::filtering_ostream dumpOut;
@@ -254,7 +235,6 @@ namespace torali
 	  
 	  // Read length
 	  int32_t readlen = readLength(rec);
-	  if (readlen < (int32_t) (maxReadLength * rlBinSize)) ++rlDist[file_c][(int32_t) (readlen / rlBinSize)];
 
 	  // Reference and sequence pointer
 	  uint32_t rp = rec->core.pos; // reference pointer
@@ -265,14 +245,13 @@ namespace torali
 	  typedef std::map<int32_t, TRefSeq> TSVSeqHit;
 	  TSVSeqHit genoMap;
 
-	  // Any direct SV support
 	  /*
+	  // Any direct SV support
 	  std::size_t seed = hash_lr(rec);
 	  if (srStore.find(seed) != srStore.end()) {
 	    for(uint32_t ri = 0; ri < srStore[seed].size(); ++ri) {
 	      int32_t svid = srStore[seed][ri].svid;
-	      if (gbp[svid].left) genoMap.insert(std::make_pair(srStore[seed][ri].svid, srStore[seed][ri].sstart));
-	      else genoMap.insert(std::make_pair(srStore[seed][ri].svid, srStore[seed][ri].sstart + srStore[seed][ri].inslen));
+	      genoMap.insert(std::make_pair(srStore[seed][ri].svid, std::make_pair(gbp[svid].svStart, srStore[seed][ri].sstart)));
 	    }
 	  }
 	  */
@@ -293,13 +272,10 @@ namespace torali
 		    }
 		  }
 		}
-		if ((bam_cigar_op(cigar[i]) == BAM_CMATCH) || (bam_cigar_op(cigar[i]) == BAM_CEQUAL)) ++matchCount[file_c];
-		else if (bam_cigar_op(cigar[i]) == BAM_CDIFF) ++mismatchCount[file_c];
 		++sp;
 		++rp;
 	      }
 	    } else if ((bam_cigar_op(cigar[i]) == BAM_CDEL) || (bam_cigar_op(cigar[i]) == BAM_CREF_SKIP)) {
-	      ++delCount[file_c];
 	      for(uint32_t k = 0; k < bam_cigar_oplen(cigar[i]); ++k) {
 		if (bpOccupied[rp]) {
 		  for(typename TIdSet::const_iterator it = bpid[rp].begin(); it != bpid[rp].end(); ++it) {
@@ -313,7 +289,6 @@ namespace torali
 		++rp;
 	      }
 	    } else if (bam_cigar_op(cigar[i]) == BAM_CINS) {
-	      ++insCount[file_c];
 	      sp += bam_cigar_oplen(cigar[i]);
 	    } else if (bam_cigar_op(cigar[i]) == BAM_CSOFT_CLIP) {
 	      sp += bam_cigar_oplen(cigar[i]);
@@ -432,9 +407,6 @@ namespace torali
 	bam_destroy1(rec);
 	hts_itr_destroy(iter);
       
-	// Summarize coverage for this chromosome
-	for(uint32_t i = 0; i < hdr[file_c]->target_len[refIndex]; ++i) ++covDist[file_c][covBases[i]];
-            
 	// Assign SV support
 	for(uint32_t i = 0; i < svs.size(); ++i) {
 	  if (svs[i].chr == refIndex) {
@@ -476,63 +448,286 @@ namespace torali
     // Clean-up
     fai_destroy(fai);
 
-    // Output coverage info
-    std::cout << "Coverage distribution (^COV)" << std::endl;
-    for(uint32_t file_c = 0; file_c < c.files.size(); ++file_c) {
-      uint64_t totalCovCount = 0;
-      for (uint32_t i = 0; i < covDist[file_c].size(); ++i) totalCovCount += covDist[file_c][i];
-      std::vector<uint32_t> covPercentiles(5, 0);  // 5%, 25%, 50%, 75%, 95%
-      uint64_t cumCovCount = 0;
-      for (uint32_t i = 0; i < covDist[file_c].size(); ++i) {
-	cumCovCount += covDist[file_c][i];
-	double frac = (double) cumCovCount / (double) totalCovCount;
-	if (frac < 0.05) covPercentiles[0] = i + 1;
-	if (frac < 0.25) covPercentiles[1] = i + 1;
-	if (frac < 0.5) covPercentiles[2] = i + 1;
-	if (frac < 0.75) covPercentiles[3] = i + 1;
-	if (frac < 0.95) covPercentiles[4] = i + 1;
-      }
-      std::cout << "COV\t" << c.sampleName[file_c] << "\t95% of bases are >= " << covPercentiles[0] << "x" << std::endl;
-      std::cout << "COV\t" << c.sampleName[file_c] << "\t75% of bases are >= " << covPercentiles[1] << "x" << std::endl;
-      std::cout << "COV\t" << c.sampleName[file_c] << "\t50% of bases are >= " << covPercentiles[2] << "x" << std::endl;
-      std::cout << "COV\t" << c.sampleName[file_c] << "\t25% of bases are >= " << covPercentiles[3] << "x" << std::endl;
-      std::cout << "COV\t" << c.sampleName[file_c] << "\t5% of bases are >= " << covPercentiles[4] << "x" << std::endl;
+    // Clean-up
+    for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
+      bam_hdr_destroy(hdr[file_c]);	  
+      hts_idx_destroy(idx[file_c]);
+      sam_close(samfile[file_c]);
     }
+  }
+
+
+
+  template<typename TConfig, typename TSRStore, typename TJunctionMap, typename TReadCountMap>
+  inline void
+  genotypeLR(TConfig& c, std::vector<StructuralVariantRecord>& svs, TSRStore& srStore, TJunctionMap& jctMap, TReadCountMap& covMap) {
+    typedef std::vector<StructuralVariantRecord> TSVs;
+    if (svs.empty()) return;
     
-    // Output read length info
-    std::cout << "Read-length distribution (^RL)" << std::endl;
-    for(uint32_t file_c = 0; file_c < c.files.size(); ++file_c) {
-      uint64_t totalRlCount = 0;
-      for (uint32_t i = 0; i < rlDist[file_c].size(); ++i) totalRlCount += rlDist[file_c][i];
-      std::vector<uint32_t> rlPercentiles(5, 0);  // 5%, 25%, 50%, 75%, 95%
-      uint64_t cumRlCount = 0;
-      for (uint32_t i = 0; i < rlDist[file_c].size(); ++i) {
-	cumRlCount += rlDist[file_c][i];
-	double frac = (double) cumRlCount / (double) totalRlCount;
-	if (frac < 0.05) rlPercentiles[0] = (i + 1) * rlBinSize;
-	if (frac < 0.25) rlPercentiles[1] = (i + 1) * rlBinSize;
-	if (frac < 0.5) rlPercentiles[2] = (i + 1) * rlBinSize;
-	if (frac < 0.75) rlPercentiles[3] = (i + 1) * rlBinSize;
-	if (frac < 0.95) rlPercentiles[4] = (i + 1) * rlBinSize;
-      }
-      std::cout << "RL\t" << c.sampleName[file_c] << "\t95% of reads are >= " << rlPercentiles[0] << "bp" << std::endl;
-      std::cout << "RL\t" << c.sampleName[file_c] << "\t75% of reads are >= " << rlPercentiles[1] << "bp" << std::endl;
-      std::cout << "RL\t" << c.sampleName[file_c] << "\t50% of reads are >= " << rlPercentiles[2] << "bp" << std::endl;
-      std::cout << "RL\t" << c.sampleName[file_c] << "\t25% of reads are >= " << rlPercentiles[3] << "bp" << std::endl;
-      std::cout << "RL\t" << c.sampleName[file_c] << "\t5% of reads are >= " << rlPercentiles[4] << "bp" << std::endl;
-    }
+    typedef uint16_t TMaxCoverage;
+    uint32_t maxCoverage = std::numeric_limits<TMaxCoverage>::max();
     
-    // Output sequencing error rates
-    std::cout << "Sequencing error rates (^ERR)" << std::endl;
+    // Open file handles
+    typedef std::vector<samFile*> TSamFile;
+    typedef std::vector<hts_idx_t*> TIndex;
+    typedef std::vector<bam_hdr_t*> THeader;
+    TSamFile samfile(c.files.size());
+    TIndex idx(c.files.size());
+    THeader hdr(c.files.size());
+    int32_t totalTarget = 0;
     for(uint32_t file_c = 0; file_c < c.files.size(); ++file_c) {
-      uint64_t alignedbases = matchCount[file_c] + mismatchCount[file_c] + delCount[file_c] + insCount[file_c];
-      if (mismatchCount[file_c]) {
-	std::cout << "ERR\t" << c.sampleName[file_c] << "\tMatchRate\t" << (double) matchCount[file_c] / (double) alignedbases << std::endl;
-	std::cout << "ERR\t" << c.sampleName[file_c] << "\tMismatchRate\t" << (double) mismatchCount[file_c] / (double) alignedbases << std::endl;
-      }
-      std::cout << "ERR\t" << c.sampleName[file_c] << "\tDeletionRate\t" << (double) delCount[file_c] / (double) alignedbases << std::endl;
-      std::cout << "ERR\t" << c.sampleName[file_c] << "\tInsertionRate\t" << (double) insCount[file_c] / (double) alignedbases << std::endl;
+      samfile[file_c] = sam_open(c.files[file_c].string().c_str(), "r");
+      hts_set_fai_filename(samfile[file_c], c.genome.string().c_str());
+      idx[file_c] = sam_index_load(samfile[file_c], c.files[file_c].string().c_str());
+      hdr[file_c] = sam_hdr_read(samfile[file_c]);
+      totalTarget += hdr[file_c]->n_targets;
     }
+
+    // Parse genome chr-by-chr
+    boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
+    std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "SV annotation" << std::endl;
+    boost::progress_display show_progress( hdr[0]->n_targets );
+
+    // Ref aligned reads
+    typedef std::vector<uint32_t> TRefAlignCount;
+    typedef std::vector<TRefAlignCount> TFileRefAlignCount;
+    TFileRefAlignCount refAlignedReadCount(c.files.size(), TRefAlignCount());
+    for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) refAlignedReadCount[file_c].resize(svs.size(), 0);
+
+    // Dump file
+    boost::iostreams::filtering_ostream dumpOut;
+    if (c.hasDumpFile) {
+      dumpOut.push(boost::iostreams::gzip_compressor());
+      dumpOut.push(boost::iostreams::file_sink(c.dumpfile.string().c_str(), std::ios_base::out | std::ios_base::binary));
+      dumpOut << "#svid\tbam\tqname\tchr\tpos\tmatechr\tmatepos\tmapq\ttype" << std::endl;
+    }
+
+
+    faidx_t* fai = fai_load(c.genome.string().c_str());
+    // Iterate chromosomes
+    for(int32_t refIndex=0; refIndex < (int32_t) hdr[0]->n_targets; ++refIndex) {
+      ++show_progress;
+      char* seq = NULL;
+      
+      // Iterate samples
+      for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
+	// Check we have mapped reads on this chromosome
+	bool nodata = true;
+	std::string suffix("cram");
+	std::string str(c.files[file_c].string());
+	if ((str.size() >= suffix.size()) && (str.compare(str.size() - suffix.size(), suffix.size(), suffix) == 0)) nodata = false;
+	uint64_t mapped = 0;
+	uint64_t unmapped = 0;
+	hts_idx_get_stat(idx[file_c], refIndex, &mapped, &unmapped);
+	if (mapped) nodata = false;
+	if (nodata) continue;
+
+	// Flag breakpoints
+	typedef std::set<int32_t> TIdSet;
+	typedef std::map<uint32_t, TIdSet> TBpToIdMap;
+	TBpToIdMap bpid;
+	typedef boost::dynamic_bitset<> TBitSet;
+	TBitSet bpOccupied(hdr[file_c]->target_len[refIndex], false);
+	for(typename TSVs::iterator itSV = svs.begin(); itSV != svs.end(); ++itSV) {
+	  if (itSV->chr == refIndex) {
+	    bpOccupied[itSV->svStart] = 1;
+	    if (bpid.find(itSV->svStart) == bpid.end()) bpid.insert(std::make_pair(itSV->svStart, TIdSet()));
+	    bpid[itSV->svStart].insert(itSV->id);
+	  }
+	  if (itSV->chr2 == refIndex) {
+	    bpOccupied[itSV->svEnd] = 1;
+	    if (bpid.find(itSV->svEnd) == bpid.end()) bpid.insert(std::make_pair(itSV->svEnd, TIdSet()));
+	    bpid[itSV->svEnd].insert(itSV->id);
+	  }
+	}
+	if (bpid.empty()) continue;
+
+	// Lazy loading of reference sequence
+	if (seq == NULL) {
+	  int32_t seqlen = -1;
+	  std::string tname(hdr[0]->target_name[refIndex]);
+	  seq = faidx_fetch_seq(fai, tname.c_str(), 0, hdr[0]->target_len[refIndex], &seqlen);
+	}    
+	
+	// Coverage track
+	typedef std::vector<TMaxCoverage> TBpCoverage;
+	TBpCoverage covBases(hdr[file_c]->target_len[refIndex], 0);
+
+	// Count reads
+	hts_itr_t* iter = sam_itr_queryi(idx[file_c], refIndex, 0, hdr[file_c]->target_len[refIndex]);
+	bam1_t* rec = bam_init1();
+	while (sam_itr_next(samfile[file_c], iter, rec) >= 0) {
+	  // Genotyping only primary alignments
+	  if (rec->core.flag & (BAM_FSECONDARY | BAM_FQCFAIL | BAM_FDUP | BAM_FSUPPLEMENTARY | BAM_FUNMAP)) continue;
+	  
+	  // Read length
+	  std::size_t seed = hash_lr(rec);
+
+	  // Reference and sequence pointer
+	  uint32_t rp = rec->core.pos; // reference pointer
+	  uint32_t sp = 0; // sequence pointer
+
+	  // Get sequence
+	  std::string sequence;
+	  sequence.resize(rec->core.l_qseq);
+	  uint8_t* seqptr = bam_get_seq(rec);
+	  for (int i = 0; i < rec->core.l_qseq; ++i) sequence[i] = "=ACMGRSVTWYHKDBN"[bam_seqi(seqptr, i)];
+	  
+	  // Any REF support
+	  std::string refAlign = "";
+	  std::string altAlign = "";
+	  std::vector<int32_t> hits;
+	  uint32_t* cigar = bam_get_cigar(rec);
+	  for (std::size_t i = 0; i < rec->core.n_cigar; ++i) {
+	    if ((bam_cigar_op(cigar[i]) == BAM_CMATCH) || (bam_cigar_op(cigar[i]) == BAM_CEQUAL) || (bam_cigar_op(cigar[i]) == BAM_CDIFF)) {
+	      // Fetch reference alignments
+	      for(uint32_t k = 0; k < bam_cigar_oplen(cigar[i]); ++k) {
+		if ((rp < hdr[file_c]->target_len[refIndex]) && (covBases[rp] < maxCoverage - 1)) ++covBases[rp];
+		refAlign += seq[rp];
+		altAlign += sequence[sp];
+		if (bpOccupied[rp]) hits.push_back(rp);
+		++sp;
+		++rp;
+	      }
+	    } else if ((bam_cigar_op(cigar[i]) == BAM_CDEL) || (bam_cigar_op(cigar[i]) == BAM_CREF_SKIP)) {
+	      for(uint32_t k = 0; k < bam_cigar_oplen(cigar[i]); ++k) {
+		refAlign += seq[rp];
+		altAlign += "-";
+		if (bpOccupied[rp]) hits.push_back(rp);
+		++rp;
+	      }
+	    } else if (bam_cigar_op(cigar[i]) == BAM_CINS) {
+	      for(uint32_t k = 0; k < bam_cigar_oplen(cigar[i]); ++k) {
+		refAlign += "-";
+		altAlign += sequence[sp];
+		++sp;
+	      }
+	    } else if (bam_cigar_op(cigar[i]) == BAM_CSOFT_CLIP) {
+	      sp += bam_cigar_oplen(cigar[i]);
+	    } else if (bam_cigar_op(cigar[i]) == BAM_CHARD_CLIP) {
+	      // Do nothing
+	    } else {
+	      std::cerr << "Unknown Cigar options" << std::endl;
+	    }
+	  }
+
+	  // Sufficiently long flank mapping?
+	  if (refAlign.size() < (uint32_t) c.minimumFlankSize) continue;
+
+	  // Confident mapping?
+	  double score = _score(refAlign, altAlign, c.aliscore);
+	  score /= (double) refAlign.size();
+	  score /= c.aliscore.match;
+	  score *= 10;
+	  if (score < c.minGenoQual) continue;
+
+	  // Any ALT support?
+	  TIdSet altAssigned;
+	  if (srStore.find(seed) != srStore.end()) {
+	    for(uint32_t ri = 0; ri < srStore[seed].size(); ++ri) {
+	      int32_t svid = srStore[seed][ri].svid;
+	      if (svid == -1) continue;
+	      altAssigned.insert(svid);
+	      uint8_t* hpptr = bam_aux_get(rec, "HP");
+	      if (c.hasDumpFile) {
+		std::string svidStr(_addID(svs[svid].svt));
+		std::string padNumber = boost::lexical_cast<std::string>(svid);
+		padNumber.insert(padNumber.begin(), 8 - padNumber.length(), '0');
+		svidStr += padNumber;
+		dumpOut << svidStr << "\t" << c.files[file_c].string() << "\t" << bam_get_qname(rec) << "\t" << hdr[file_c]->target_name[rec->core.tid] << "\t" << rec->core.pos << "\t" << hdr[file_c]->target_name[rec->core.mtid] << "\t" << rec->core.mpos << "\t" << (int32_t) rec->core.qual << "\tSR" << std::endl;
+	      }
+	      jctMap[file_c][svid].alt.push_back((uint8_t) std::min((uint32_t) score, (uint32_t) rec->core.qual));
+	      if (hpptr) {
+		c.isHaplotagged = true;
+		int hap = bam_aux2i(hpptr);
+		if (hap == 1) ++jctMap[file_c][svid].alth1;
+		else ++jctMap[file_c][svid].alth2;
+	      }
+	    }
+	  }
+
+	  // Any REF support
+	  if (hits.empty()) continue;
+
+	  /*
+	  std::cerr << ">" << hdr[file_c]->target_len[refIndex] << ":" << rec->core.pos << "\t" << score << "\t" << seed << std::endl;
+	  uint32_t refpos = rec->core.pos;
+	  for(uint32_t i = 0; i < refAlign.size(); ++i) {
+	    std::cerr << refpos << "\t" << refAlign[i] << "\t" << altAlign[i];
+	    if (refAlign != "-") {
+	      if (bpOccupied[refpos]) std::cerr << "\t<---";
+	      ++refpos;
+	    }
+	    std::cerr << std::endl;
+	  }
+	  */
+	  
+	  // Iterate all spanned SVs
+	  for(uint32_t idx = 0; idx < hits.size(); ++idx) {
+	    for(typename TIdSet::const_iterator its = bpid[hits[idx]].begin(); its != bpid[hits[idx]].end(); ++its) {
+	      int32_t svid = *its;
+	      if (altAssigned.find(svid) != altAssigned.end()) continue; 
+	      std::cerr << svs[svid].chr << ',' << svs[svid].svStart << ',' << svs[svid].chr2 << ',' << svs[svid].svEnd << std::endl;
+
+	      // Account for reference bias
+	      if (++refAlignedReadCount[file_c][svid] % 2) {
+		uint8_t* hpptr = bam_aux_get(rec, "HP");
+		jctMap[file_c][svid].ref.push_back((uint8_t) std::min((uint32_t) score, (uint32_t) rec->core.qual));
+		if (hpptr) {
+		  c.isHaplotagged = true;
+		  int hap = bam_aux2i(hpptr);
+		  if (hap == 1) ++jctMap[file_c][svid].refh1;
+		  else ++jctMap[file_c][svid].refh2;
+		}
+	      }
+	    }
+	  }
+	}
+	// Clean-up
+	bam_destroy1(rec);
+	hts_itr_destroy(iter);
+      
+	// Assign SV support
+	for(uint32_t i = 0; i < svs.size(); ++i) {
+	  if (svs[i].chr == refIndex) {
+	    int32_t halfSize = (svs[i].svEnd - svs[i].svStart)/2;
+	    if ((_translocation(svs[i].svt)) || (svs[i].svt == 4)) halfSize = 500;
+
+	    // Left region
+	    int32_t lstart = std::max(svs[i].svStart - halfSize, 0);
+	    int32_t lend = svs[i].svStart;
+	    int32_t covbase = 0;
+	    for(uint32_t k = lstart; ((k < (uint32_t) lend) && (k < hdr[file_c]->target_len[refIndex])); ++k) covbase += covBases[k];
+	    covMap[file_c][svs[i].id].leftRC = covbase;
+
+	    // Actual SV
+	    covbase = 0;
+	    int32_t mstart = svs[i].svStart;
+	    int32_t mend = svs[i].svEnd;
+	    if ((_translocation(svs[i].svt)) || (svs[i].svt == 4)) {
+	      mstart = std::max(svs[i].svStart - halfSize, 0);
+	      mend = std::min(svs[i].svStart + halfSize, (int32_t) hdr[file_c]->target_len[refIndex]);
+	    }
+	    for(uint32_t k = mstart; ((k < (uint32_t) mend) && (k < hdr[file_c]->target_len[refIndex])); ++k) covbase += covBases[k];
+	    covMap[file_c][svs[i].id].rc = covbase;
+
+	    // Right region
+	    covbase = 0;
+	    int32_t rstart = svs[i].svEnd;
+	    int32_t rend = std::min(svs[i].svEnd + halfSize, (int32_t) hdr[file_c]->target_len[refIndex]);
+	    if ((_translocation(svs[i].svt)) || (svs[i].svt == 4)) {
+	      rstart = svs[i].svStart;
+	      rend = std::min(svs[i].svStart + halfSize, (int32_t) hdr[file_c]->target_len[refIndex]);
+	    }
+	    for(uint32_t k = rstart; ((k < (uint32_t) rend) && (k < hdr[file_c]->target_len[refIndex])); ++k) covbase += covBases[k];
+	    covMap[file_c][svs[i].id].rightRC = covbase;
+	  }
+	}
+      }
+      if (seq != NULL) free(seq);
+    }
+    // Clean-up
+    fai_destroy(fai);
 
     // Clean-up
     for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {

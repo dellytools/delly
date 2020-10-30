@@ -491,12 +491,12 @@ namespace torali
     bam_hdr_t* hdr = sam_hdr_read(samfile);
 
     // Header
-    std::cerr << "chr1\tpos1\tchr2\tpos2\tsvtype\tct\tinslen" << std::endl;
+    std::cerr << "id\tchr1\tpos1\tchr2\tpos2\tsvtype\tct\tinslen" << std::endl;
 
     // SVs
     for(uint32_t svt = 0; svt < br.size(); ++svt) {
       for(uint32_t i = 0; i < br[svt].size(); ++i) {
-	std::cerr << hdr->target_name[br[svt][i].chr] << '\t' << br[svt][i].pos << '\t' << hdr->target_name[br[svt][i].chr2] << '\t' << br[svt][i].pos2 << '\t' << _addID(svt) << '\t' << _addOrientation(svt) << '\t' << br[svt][i].inslen << std::endl;
+	std::cerr << br[svt][i].id << '\t' << hdr->target_name[br[svt][i].chr] << '\t' << br[svt][i].pos << '\t' << hdr->target_name[br[svt][i].chr2] << '\t' << br[svt][i].pos2 << '\t' << _addID(svt) << '\t' << _addOrientation(svt) << '\t' << br[svt][i].inslen << std::endl;
       }
     }
     // Clean-up

@@ -34,6 +34,7 @@ namespace torali {
 
 
   struct TeguaConfig {
+    bool islr;
     bool hasDumpFile;
     bool hasVcfFile;
     bool hasExcludeFile;
@@ -111,7 +112,10 @@ namespace torali {
    typedef std::vector<SeqSlice> TSvPosVector;
    typedef boost::unordered_map<std::size_t, TSvPosVector> TReadSV;
    TReadSV srStore;
-   if (!c.hasVcfFile) {
+
+   // Identify SVs
+   if (srStore.empty()) {
+       
      // Structural Variant Candidates
      typedef std::vector<StructuralVariantRecord> TVariants;
      TVariants svc;
@@ -122,33 +126,56 @@ namespace torali {
      // SV Discovery
      _clusterSRReads(c, validRegions, svc, tmpStore);
 
-     // Assemble
-     assemble(c, validRegions, svc, tmpStore);
+     if (!c.hasVcfFile) {
+       // Assemble
+       assemble(c, validRegions, svc, tmpStore);
 
-     // Sort SVs
-     sort(svc.begin(), svc.end(), SortSVs<StructuralVariantRecord>());
+       // Sort SVs
+       sort(svc.begin(), svc.end(), SortSVs<StructuralVariantRecord>());
       
-     // Keep assembled SVs only
-     StructuralVariantRecord lastSV;
-     for(typename TVariants::iterator svIter = svc.begin(); svIter != svc.end(); ++svIter) {
-       if ((svIter->srSupport == 0) && (svIter->peSupport == 0)) continue;
-       // Duplicate?
-       if (!svs.empty()) {
-	 if ((lastSV.chr == svIter->chr) && (lastSV.chr2 == svIter->chr2) && (std::abs(svIter->svStart - lastSV.svStart) < c.minRefSep) && (std::abs(svIter->svEnd - lastSV.svEnd) < c.minRefSep)) continue;
+       // Keep assembled SVs only
+       StructuralVariantRecord lastSV;
+       for(typename TVariants::iterator svIter = svc.begin(); svIter != svc.end(); ++svIter) {
+	 if ((svIter->srSupport == 0) && (svIter->peSupport == 0)) continue;
+	 // Duplicate?
+	 if (!svs.empty()) {
+	   if ((lastSV.chr == svIter->chr) && (lastSV.chr2 == svIter->chr2) && (std::abs(svIter->svStart - lastSV.svStart) < c.minRefSep) && (std::abs(svIter->svEnd - lastSV.svEnd) < c.minRefSep)) continue;
+	 }
+	 lastSV = *svIter;
+	 svs.push_back(*svIter);
        }
-       lastSV = *svIter;
-       svs.push_back(*svIter);
+     } else {
+       vcfParse(c, hdr, svs);   // Re-genotyping
+
+       // Todo: match SVs
      }
-   } else vcfParse(c, hdr, svs);   // Re-genotyping
+
+     sort(svs.begin(), svs.end(), SortSVs<StructuralVariantRecord>());
+     //outputStructuralVariants(c, svs);
+
+     // Re-number SVs and update SR Store
+     typedef std::map<uint32_t, uint32_t> TIdMap;
+     TIdMap idmap;
+     uint32_t cliqueCount = 0;
+     for(typename TVariants::iterator svIt = svs.begin(); svIt != svs.end(); ++svIt, ++cliqueCount) {
+       idmap.insert(std::make_pair(svIt->id, cliqueCount));
+       svIt->id = cliqueCount;
+     }
+     for(typename TReadSV::iterator ts = tmpStore.begin(); ts != tmpStore.end(); ++ts) {
+       bool keep = false;
+       for(uint32_t idx = 0; idx < ts->second.size(); ++idx) {
+	 if (idmap.find(ts->second[idx].svid) == idmap.end()) ts->second[idx].svid = -1;
+	 else {
+	   ts->second[idx].svid = idmap.find(ts->second[idx].svid)->second;
+	   keep = true;
+	 }
+       }
+       if (keep) srStore.insert(*ts);
+     }
+   }
    // Clean-up
    bam_hdr_destroy(hdr);
    sam_close(samfile);
-
-   // Re-number SVs and update SR Store
-   sort(svs.begin(), svs.end(), SortSVs<StructuralVariantRecord>());
-   //outputStructuralVariants(c, svs);
-   uint32_t cliqueCount = 0;
-   for(typename TVariants::iterator svIt = svs.begin(); svIt != svs.end(); ++svIt, ++cliqueCount) svIt->id = cliqueCount;
    
    // Annotate junction reads
    typedef std::vector<JunctionCount> TSVJunctionMap;
@@ -173,7 +200,7 @@ namespace torali {
    }
       
    // Reference SV Genotyping
-   trackRef(c, svs, srStore, jctMap, rcMap);
+   genotypeLR(c, svs, srStore, jctMap, rcMap);
 
    // VCF Output
    vcfOutput(c, svs, jctMap, rcMap, spanMap);
@@ -192,6 +219,7 @@ namespace torali {
  int tegua(int argc, char **argv) {
    TeguaConfig c;
    c.isHaplotagged = false;
+   c.islr = true;
    
    // Parameter
    std::string svtype;
@@ -218,7 +246,7 @@ namespace torali {
 
    boost::program_options::options_description cons("Consensus options");
    cons.add_options()
-     ("max-reads,p", boost::program_options::value<uint32_t>(&c.maxReadPerSV)->default_value(20), "max. reads for consensus computation")
+     ("max-reads,p", boost::program_options::value<uint32_t>(&c.maxReadPerSV)->default_value(10), "max. reads for consensus computation")
      ("flank-size,f", boost::program_options::value<int32_t>(&c.minimumFlankSize)->default_value(400), "min. flank size")
      ("flank-quality,a", boost::program_options::value<float>(&c.flankQuality)->default_value(0.8), "min. flank quality")
      ;     
