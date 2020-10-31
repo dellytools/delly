@@ -31,15 +31,12 @@ namespace torali
 
     Geno() : svStartPrefix(-1), svStartSuffix(-1), svEndPrefix(-1), svEndSuffix(-1), svStart(-1), svEnd(-1), svt(-1) {}
   };
-  
 
-  template<typename TConfig, typename TSRStore, typename TJunctionMap, typename TReadCountMap>
+
+
+  template<typename TConfig, typename TJunctionMap, typename TReadCountMap>
   inline void
-  trackRef(TConfig& c, std::vector<StructuralVariantRecord>& svs, TSRStore& srStore, TJunctionMap& jctMap, TReadCountMap& covMap) {
-
-    typedef uint16_t TMaxCoverage;
-    uint32_t maxCoverage = std::numeric_limits<TMaxCoverage>::max();
-    
+  trackRef(TConfig& c, std::vector<StructuralVariantRecord>& svs, TJunctionMap& jctMap, TReadCountMap& covMap) {
     typedef std::vector<StructuralVariantRecord> TSVs;
     typedef std::vector<uint8_t> TQuality;
     typedef boost::multi_array<char, 2> TAlign;
@@ -71,6 +68,29 @@ namespace torali
     typedef std::vector<TRefAlignCount> TFileRefAlignCount;
     TFileRefAlignCount refAlignedReadCount(c.files.size(), TRefAlignCount());
     for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) refAlignedReadCount[file_c].resize(svs.size(), 0);
+
+    // Coverage distribution
+    typedef uint16_t TMaxCoverage;
+    uint32_t maxCoverage = std::numeric_limits<TMaxCoverage>::max();
+    typedef std::vector<uint32_t> TCovDist;
+    typedef std::vector<TCovDist> TSampleCovDist;
+    TSampleCovDist covDist(c.files.size(), TCovDist());
+    for(uint32_t i = 0; i < c.files.size(); ++i) covDist[i].resize(maxCoverage, 0);
+
+    // Error rates
+    std::vector<uint64_t> matchCount(c.files.size(), 0);
+    std::vector<uint64_t> mismatchCount(c.files.size(), 0);
+    std::vector<uint64_t> delCount(c.files.size(), 0);
+    std::vector<uint64_t> insCount(c.files.size(), 0);
+
+    // Read length distribution
+    typedef uint16_t TMaxReadLength;
+    uint32_t maxReadLength = std::numeric_limits<TMaxReadLength>::max();
+    uint32_t rlBinSize = 100;
+    typedef std::vector<uint32_t> TReadLengthDist;
+    typedef std::vector<TReadLengthDist> TSampleRLDist;
+    TSampleRLDist rlDist(c.files.size(), TReadLengthDist());
+    for(uint32_t i = 0; i < c.files.size(); ++i) rlDist[i].resize(maxReadLength * rlBinSize, 0);
 
     // Dump file
     boost::iostreams::filtering_ostream dumpOut;
@@ -235,6 +255,7 @@ namespace torali
 	  
 	  // Read length
 	  int32_t readlen = readLength(rec);
+	  if (readlen < (int32_t) (maxReadLength * rlBinSize)) ++rlDist[file_c][(int32_t) (readlen / rlBinSize)];
 
 	  // Reference and sequence pointer
 	  uint32_t rp = rec->core.pos; // reference pointer
@@ -245,13 +266,14 @@ namespace torali
 	  typedef std::map<int32_t, TRefSeq> TSVSeqHit;
 	  TSVSeqHit genoMap;
 
-	  /*
 	  // Any direct SV support
+	  /*
 	  std::size_t seed = hash_lr(rec);
 	  if (srStore.find(seed) != srStore.end()) {
 	    for(uint32_t ri = 0; ri < srStore[seed].size(); ++ri) {
 	      int32_t svid = srStore[seed][ri].svid;
-	      genoMap.insert(std::make_pair(srStore[seed][ri].svid, std::make_pair(gbp[svid].svStart, srStore[seed][ri].sstart)));
+	      if (gbp[svid].left) genoMap.insert(std::make_pair(srStore[seed][ri].svid, srStore[seed][ri].sstart));
+	      else genoMap.insert(std::make_pair(srStore[seed][ri].svid, srStore[seed][ri].sstart + srStore[seed][ri].inslen));
 	    }
 	  }
 	  */
@@ -272,10 +294,13 @@ namespace torali
 		    }
 		  }
 		}
+		if ((bam_cigar_op(cigar[i]) == BAM_CMATCH) || (bam_cigar_op(cigar[i]) == BAM_CEQUAL)) ++matchCount[file_c];
+		else if (bam_cigar_op(cigar[i]) == BAM_CDIFF) ++mismatchCount[file_c];
 		++sp;
 		++rp;
 	      }
 	    } else if ((bam_cigar_op(cigar[i]) == BAM_CDEL) || (bam_cigar_op(cigar[i]) == BAM_CREF_SKIP)) {
+	      ++delCount[file_c];
 	      for(uint32_t k = 0; k < bam_cigar_oplen(cigar[i]); ++k) {
 		if (bpOccupied[rp]) {
 		  for(typename TIdSet::const_iterator it = bpid[rp].begin(); it != bpid[rp].end(); ++it) {
@@ -289,6 +314,7 @@ namespace torali
 		++rp;
 	      }
 	    } else if (bam_cigar_op(cigar[i]) == BAM_CINS) {
+	      ++insCount[file_c];
 	      sp += bam_cigar_oplen(cigar[i]);
 	    } else if (bam_cigar_op(cigar[i]) == BAM_CSOFT_CLIP) {
 	      sp += bam_cigar_oplen(cigar[i]);
@@ -407,6 +433,9 @@ namespace torali
 	bam_destroy1(rec);
 	hts_itr_destroy(iter);
       
+	// Summarize coverage for this chromosome
+	for(uint32_t i = 0; i < hdr[file_c]->target_len[refIndex]; ++i) ++covDist[file_c][covBases[i]];
+            
 	// Assign SV support
 	for(uint32_t i = 0; i < svs.size(); ++i) {
 	  if (svs[i].chr == refIndex) {
@@ -448,6 +477,64 @@ namespace torali
     // Clean-up
     fai_destroy(fai);
 
+    // Output coverage info
+    std::cout << "Coverage distribution (^COV)" << std::endl;
+    for(uint32_t file_c = 0; file_c < c.files.size(); ++file_c) {
+      uint64_t totalCovCount = 0;
+      for (uint32_t i = 0; i < covDist[file_c].size(); ++i) totalCovCount += covDist[file_c][i];
+      std::vector<uint32_t> covPercentiles(5, 0);  // 5%, 25%, 50%, 75%, 95%
+      uint64_t cumCovCount = 0;
+      for (uint32_t i = 0; i < covDist[file_c].size(); ++i) {
+	cumCovCount += covDist[file_c][i];
+	double frac = (double) cumCovCount / (double) totalCovCount;
+	if (frac < 0.05) covPercentiles[0] = i + 1;
+	if (frac < 0.25) covPercentiles[1] = i + 1;
+	if (frac < 0.5) covPercentiles[2] = i + 1;
+	if (frac < 0.75) covPercentiles[3] = i + 1;
+	if (frac < 0.95) covPercentiles[4] = i + 1;
+      }
+      std::cout << "COV\t" << c.sampleName[file_c] << "\t95% of bases are >= " << covPercentiles[0] << "x" << std::endl;
+      std::cout << "COV\t" << c.sampleName[file_c] << "\t75% of bases are >= " << covPercentiles[1] << "x" << std::endl;
+      std::cout << "COV\t" << c.sampleName[file_c] << "\t50% of bases are >= " << covPercentiles[2] << "x" << std::endl;
+      std::cout << "COV\t" << c.sampleName[file_c] << "\t25% of bases are >= " << covPercentiles[3] << "x" << std::endl;
+      std::cout << "COV\t" << c.sampleName[file_c] << "\t5% of bases are >= " << covPercentiles[4] << "x" << std::endl;
+    }
+    
+    // Output read length info
+    std::cout << "Read-length distribution (^RL)" << std::endl;
+    for(uint32_t file_c = 0; file_c < c.files.size(); ++file_c) {
+      uint64_t totalRlCount = 0;
+      for (uint32_t i = 0; i < rlDist[file_c].size(); ++i) totalRlCount += rlDist[file_c][i];
+      std::vector<uint32_t> rlPercentiles(5, 0);  // 5%, 25%, 50%, 75%, 95%
+      uint64_t cumRlCount = 0;
+      for (uint32_t i = 0; i < rlDist[file_c].size(); ++i) {
+	cumRlCount += rlDist[file_c][i];
+	double frac = (double) cumRlCount / (double) totalRlCount;
+	if (frac < 0.05) rlPercentiles[0] = (i + 1) * rlBinSize;
+	if (frac < 0.25) rlPercentiles[1] = (i + 1) * rlBinSize;
+	if (frac < 0.5) rlPercentiles[2] = (i + 1) * rlBinSize;
+	if (frac < 0.75) rlPercentiles[3] = (i + 1) * rlBinSize;
+	if (frac < 0.95) rlPercentiles[4] = (i + 1) * rlBinSize;
+      }
+      std::cout << "RL\t" << c.sampleName[file_c] << "\t95% of reads are >= " << rlPercentiles[0] << "bp" << std::endl;
+      std::cout << "RL\t" << c.sampleName[file_c] << "\t75% of reads are >= " << rlPercentiles[1] << "bp" << std::endl;
+      std::cout << "RL\t" << c.sampleName[file_c] << "\t50% of reads are >= " << rlPercentiles[2] << "bp" << std::endl;
+      std::cout << "RL\t" << c.sampleName[file_c] << "\t25% of reads are >= " << rlPercentiles[3] << "bp" << std::endl;
+      std::cout << "RL\t" << c.sampleName[file_c] << "\t5% of reads are >= " << rlPercentiles[4] << "bp" << std::endl;
+    }
+    
+    // Output sequencing error rates
+    std::cout << "Sequencing error rates (^ERR)" << std::endl;
+    for(uint32_t file_c = 0; file_c < c.files.size(); ++file_c) {
+      uint64_t alignedbases = matchCount[file_c] + mismatchCount[file_c] + delCount[file_c] + insCount[file_c];
+      if (mismatchCount[file_c]) {
+	std::cout << "ERR\t" << c.sampleName[file_c] << "\tMatchRate\t" << (double) matchCount[file_c] / (double) alignedbases << std::endl;
+	std::cout << "ERR\t" << c.sampleName[file_c] << "\tMismatchRate\t" << (double) mismatchCount[file_c] / (double) alignedbases << std::endl;
+      }
+      std::cout << "ERR\t" << c.sampleName[file_c] << "\tDeletionRate\t" << (double) delCount[file_c] / (double) alignedbases << std::endl;
+      std::cout << "ERR\t" << c.sampleName[file_c] << "\tInsertionRate\t" << (double) insCount[file_c] / (double) alignedbases << std::endl;
+    }
+
     // Clean-up
     for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
       bam_hdr_destroy(hdr[file_c]);	  
@@ -455,8 +542,6 @@ namespace torali
       sam_close(samfile[file_c]);
     }
   }
-
-
 
   template<typename TConfig, typename TSRStore, typename TJunctionMap, typename TReadCountMap>
   inline void

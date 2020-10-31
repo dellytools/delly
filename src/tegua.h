@@ -200,7 +200,8 @@ namespace torali {
    }
       
    // Reference SV Genotyping
-   genotypeLR(c, svs, srStore, jctMap, rcMap);
+   trackRef(c, svs, jctMap, rcMap);
+   //genotypeLR(c, svs, srStore, jctMap, rcMap);
 
    // VCF Output
    vcfOutput(c, svs, jctMap, rcMap, spanMap);
@@ -246,7 +247,7 @@ namespace torali {
 
    boost::program_options::options_description cons("Consensus options");
    cons.add_options()
-     ("max-reads,p", boost::program_options::value<uint32_t>(&c.maxReadPerSV)->default_value(10), "max. reads for consensus computation")
+     ("max-reads,p", boost::program_options::value<uint32_t>(&c.maxReadPerSV)->default_value(20), "max. reads for consensus computation")
      ("flank-size,f", boost::program_options::value<int32_t>(&c.minimumFlankSize)->default_value(400), "min. flank size")
      ("flank-quality,a", boost::program_options::value<float>(&c.flankQuality)->default_value(0.8), "min. flank quality")
      ;     
