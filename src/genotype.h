@@ -114,7 +114,8 @@ namespace torali
       // Iterate all structural variants
       for(typename TSVs::iterator itSV = svs.begin(); itSV != svs.end(); ++itSV) {
 	if ((itSV->chr != refIndex) && (itSV->chr2 != refIndex)) continue;
-
+	if ((itSV->svt != 2) && (itSV->svt != 4)) continue;
+	
 	// Lazy loading of reference sequence
 	if (seq == NULL) {
 	  int32_t seqlen = -1;
@@ -174,14 +175,14 @@ namespace torali
 	  //std::cerr << "svid:" << itSV->id << ",consensus-to-reference-alignment" << std::endl;
 	  //for(uint32_t i = 0; i<align.shape()[0]; ++i) {
 	  //if (i == 0) {
-	  //  int32_t cpos = 0;
-	  //  for(uint32_t j = 0; j<align.shape()[1]; ++j) {
-	  //	if (align[i][j] != '-') ++cpos;
-	  //	if (cpos == ad.cStart) std::cerr << '|';
-	  //	else if (cpos == ad.cEnd) std::cerr << '|';
-	  //	else std::cerr << '#';
-	  //  }
-	  //  std::cerr << std::endl;
+	  //int32_t cpos = 0;
+	  //for(uint32_t j = 0; j<align.shape()[1]; ++j) {
+	  //if (align[i][j] != '-') ++cpos;
+	  //if (cpos == ad.cStart) std::cerr << '|';
+	  //else if (cpos == ad.cEnd) std::cerr << '|';
+	  //else std::cerr << '#';
+	  //}
+	  //std::cerr << std::endl;
 	  //}
 	  //for(uint32_t j = 0; j<align.shape()[1]; ++j) std::cerr << align[i][j];
 	  //std::cerr << std::endl;
@@ -712,6 +713,7 @@ namespace torali
 	    for(uint32_t ri = 0; ri < srStore[seed].size(); ++ri) {
 	      int32_t svid = srStore[seed][ri].svid;
 	      if (svid == -1) continue;
+	      if ((svs[svid].svt == 2) || (svs[svid].svt == 4)) continue;
 	      altAssigned.insert(svid);
 	      uint8_t* hpptr = bam_aux_get(rec, "HP");
 	      if (c.hasDumpFile) {
@@ -752,7 +754,7 @@ namespace torali
 	    for(typename TIdSet::const_iterator its = bpid[hits[idx]].begin(); its != bpid[hits[idx]].end(); ++its) {
 	      int32_t svid = *its;
 	      if (altAssigned.find(svid) != altAssigned.end()) continue; 
-	      std::cerr << svs[svid].chr << ',' << svs[svid].svStart << ',' << svs[svid].chr2 << ',' << svs[svid].svEnd << std::endl;
+	      //std::cerr << svs[svid].chr << ',' << svs[svid].svStart << ',' << svs[svid].chr2 << ',' << svs[svid].svEnd << std::endl;
 
 	      // Account for reference bias
 	      if (++refAlignedReadCount[file_c][svid] % 2) {

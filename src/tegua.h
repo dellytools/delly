@@ -201,7 +201,7 @@ namespace torali {
       
    // Reference SV Genotyping
    trackRef(c, svs, jctMap, rcMap);
-   //genotypeLR(c, svs, srStore, jctMap, rcMap);
+   genotypeLR(c, svs, srStore, jctMap, rcMap);
 
    // VCF Output
    vcfOutput(c, svs, jctMap, rcMap, spanMap);
