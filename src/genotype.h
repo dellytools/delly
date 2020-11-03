@@ -753,6 +753,7 @@ namespace torali
 	  for(uint32_t idx = 0; idx < hits.size(); ++idx) {
 	    for(typename TIdSet::const_iterator its = bpid[hits[idx]].begin(); its != bpid[hits[idx]].end(); ++its) {
 	      int32_t svid = *its;
+	      if ((svs[svid].svt == 2) || (svs[svid].svt == 4)) continue;
 	      if (altAssigned.find(svid) != altAssigned.end()) continue; 
 	      //std::cerr << svs[svid].chr << ',' << svs[svid].svStart << ',' << svs[svid].chr2 << ',' << svs[svid].svEnd << std::endl;
 
