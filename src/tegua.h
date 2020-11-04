@@ -36,7 +36,6 @@ namespace torali {
   struct TeguaConfig {
     bool islr;
     bool hasDumpFile;
-    bool hasVcfFile;
     bool hasExcludeFile;
     bool isHaplotagged;
     bool svtcmd;
@@ -56,7 +55,6 @@ namespace torali {
     DnaScore<int> aliscore;
     boost::filesystem::path dumpfile;
     boost::filesystem::path outfile;
-    boost::filesystem::path vcffile;
     std::vector<boost::filesystem::path> files;
     boost::filesystem::path genome;
     boost::filesystem::path exclude;
@@ -126,33 +124,27 @@ namespace torali {
      // SV Discovery
      _clusterSRReads(c, validRegions, svc, tmpStore);
 
-     if (!c.hasVcfFile) {
-       // Assemble
-       assemble(c, validRegions, svc, tmpStore);
+     // Assemble
+     assemble(c, validRegions, svc, tmpStore);
 
-       // Sort SVs
-       sort(svc.begin(), svc.end(), SortSVs<StructuralVariantRecord>());
+     // Sort SVs
+     sort(svc.begin(), svc.end(), SortSVs<StructuralVariantRecord>());
       
-       // Keep assembled SVs only
-       StructuralVariantRecord lastSV;
-       for(typename TVariants::iterator svIter = svc.begin(); svIter != svc.end(); ++svIter) {
-	 if ((svIter->srSupport == 0) && (svIter->peSupport == 0)) continue;
-	 // Duplicate?
-	 if (!svs.empty()) {
-	   if ((lastSV.chr == svIter->chr) && (lastSV.chr2 == svIter->chr2) && (std::abs(svIter->svStart - lastSV.svStart) < c.minRefSep) && (std::abs(svIter->svEnd - lastSV.svEnd) < c.minRefSep)) continue;
-	 }
-	 lastSV = *svIter;
-	 svs.push_back(*svIter);
+     // Keep assembled SVs only
+     StructuralVariantRecord lastSV;
+     for(typename TVariants::iterator svIter = svc.begin(); svIter != svc.end(); ++svIter) {
+       if ((svIter->srSupport == 0) && (svIter->peSupport == 0)) continue;
+       // Duplicate?
+       if (!svs.empty()) {
+	 if ((lastSV.chr == svIter->chr) && (lastSV.chr2 == svIter->chr2) && (std::abs(svIter->svStart - lastSV.svStart) < c.minRefSep) && (std::abs(svIter->svEnd - lastSV.svEnd) < c.minRefSep)) continue;
        }
-     } else {
-       vcfParse(c, hdr, svs);   // Re-genotyping
-
-       // Todo: match SVs
+       lastSV = *svIter;
+       svs.push_back(*svIter);
      }
 
+     // Sort
      sort(svs.begin(), svs.end(), SortSVs<StructuralVariantRecord>());
-     //outputStructuralVariants(c, svs);
-
+     
      // Re-number SVs and update SR Store
      typedef std::map<uint32_t, uint32_t> TIdMap;
      TIdMap idmap;
@@ -172,6 +164,7 @@ namespace torali {
        }
        if (keep) srStore.insert(*ts);
      }
+     //outputStructuralVariants(c, svs);
    }
    // Clean-up
    bam_hdr_destroy(hdr);
@@ -247,14 +240,13 @@ namespace torali {
 
    boost::program_options::options_description cons("Consensus options");
    cons.add_options()
-     ("max-reads,p", boost::program_options::value<uint32_t>(&c.maxReadPerSV)->default_value(20), "max. reads for consensus computation")
+     ("max-reads,p", boost::program_options::value<uint32_t>(&c.maxReadPerSV)->default_value(5), "max. reads for consensus computation")
      ("flank-size,f", boost::program_options::value<int32_t>(&c.minimumFlankSize)->default_value(400), "min. flank size")
      ("flank-quality,a", boost::program_options::value<float>(&c.flankQuality)->default_value(0.9), "min. flank quality")
      ;     
    
    boost::program_options::options_description geno("Genotyping options");
    geno.add_options()
-     ("vcffile,v", boost::program_options::value<boost::filesystem::path>(&c.vcffile), "input VCF/BCF file for genotyping")
      ("geno-qual,u", boost::program_options::value<uint16_t>(&c.minGenoQual)->default_value(5), "min. mapping quality for genotyping")
      ("dump,d", boost::program_options::value<boost::filesystem::path>(&c.dumpfile), "gzipped output file for SV-reads")
      ;
@@ -370,28 +362,6 @@ namespace torali {
      c.hasExcludeFile = true;
    } else c.hasExcludeFile = false;
    
-   // Check input VCF file
-   if (vm.count("vcffile")) {
-     if (!(boost::filesystem::exists(c.vcffile) && boost::filesystem::is_regular_file(c.vcffile) && boost::filesystem::file_size(c.vcffile))) {
-       std::cerr << "Input VCF/BCF file is missing: " << c.vcffile.string() << std::endl;
-       return 1;
-     }
-     htsFile* ifile = bcf_open(c.vcffile.string().c_str(), "r");
-     if (ifile == NULL) {
-       std::cerr << "Fail to open file " << c.vcffile.string() << std::endl;
-       return 1;
-     }
-     bcf_hdr_t* hdr = bcf_hdr_read(ifile);
-     if (hdr == NULL) {
-       std::cerr << "Fail to open index file " << c.vcffile.string() << std::endl;
-       return 1;
-     }
-     bcf_hdr_destroy(hdr);
-     bcf_close(ifile);
-     c.hasVcfFile = true;
-   } else c.hasVcfFile = false;
-
-
    // Check output directory
    if (!_outfileValid(c.outfile)) return 1;
 
