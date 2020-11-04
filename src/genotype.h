@@ -33,6 +33,65 @@ namespace torali
   };
 
 
+  inline float
+  percentIdentity(std::string const& s1, std::string const& s2, int32_t splitpos, int32_t window) {
+    // Get window boundaries
+    int32_t ws = std::max(splitpos - window, 0);
+    int32_t we = std::min(splitpos + window, (int32_t) s1.size());
+    // Find percent identity
+    bool varSeen = false;
+    bool refSeen = false;
+    int32_t refpos = 0;
+    uint32_t gapMM = 0;
+    uint32_t mm = 0;
+    uint32_t ma = 0;
+    float leftPerc = -1;
+    float rightPerc = -1;
+    bool inGap=false;
+    for(uint32_t j = 0; j < s1.size(); ++j) {
+      if (s2[j] != '-') varSeen = true;
+      if (s1[j] != '-') {
+	refSeen = true;
+	if ((refpos == splitpos) || (refpos == ws) || (refpos == we)) {
+	  if (refpos == splitpos) {
+	    leftPerc = 0;
+	    if (ma + mm > 0) leftPerc = (float) ma / (float) (ma + mm);
+	  }
+	  if (refpos == we) {
+	    rightPerc = 0;
+	    if (ma + mm > 0) rightPerc = (float) ma / (float) (ma + mm);
+	  }
+	  mm = 0;
+	  ma = 0;
+	  gapMM = 0;
+	}
+	++refpos;
+      }
+      if ((refSeen) && (varSeen)) {
+	// Internal gap?
+	if ((s2[j] == '-') || (s1[j] == '-')) {
+	  if (!inGap) {
+	    inGap = true;
+	    gapMM = 0;
+	  }
+	  gapMM += 1;
+	} else {
+	  if (inGap) {
+	    mm += gapMM;
+	    inGap=false;
+	  }
+	  if (s2[j] == s1[j]) ma += 1;
+	  else mm += 1;
+	}
+      }
+    }
+    if (rightPerc == -1) {
+      rightPerc = 0;
+      if (ma + mm > 0) rightPerc = (float) ma / (float) (ma + mm);
+    }
+    //std::cerr << ws << ',' << splitpos << ',' << we << ',' << leftPerc << ',' << rightPerc << std::endl;
+    return std::min(leftPerc, rightPerc); 
+  }
 
   template<typename TConfig, typename TJunctionMap, typename TReadCountMap>
   inline void
@@ -646,7 +705,7 @@ namespace torali
 	  // Genotyping only primary alignments
 	  if (rec->core.flag & (BAM_FSECONDARY | BAM_FQCFAIL | BAM_FDUP | BAM_FSUPPLEMENTARY | BAM_FUNMAP)) continue;
 	  
-	  // Read length
+	  // Read hash
 	  std::size_t seed = hash_lr(rec);
 
 	  // Reference and sequence pointer
@@ -662,7 +721,7 @@ namespace torali
 	  // Any REF support
 	  std::string refAlign = "";
 	  std::string altAlign = "";
-	  std::vector<int32_t> hits;
+	  std::vector<uint32_t> hits;
 	  uint32_t* cigar = bam_get_cigar(rec);
 	  for (std::size_t i = 0; i < rec->core.n_cigar; ++i) {
 	    if ((bam_cigar_op(cigar[i]) == BAM_CMATCH) || (bam_cigar_op(cigar[i]) == BAM_CEQUAL) || (bam_cigar_op(cigar[i]) == BAM_CDIFF)) {
@@ -697,23 +756,13 @@ namespace torali
 	    }
 	  }
 
-	  // Sufficiently long flank mapping?
-	  if (refAlign.size() < (uint32_t) c.minimumFlankSize) continue;
-
-	  // Confident mapping?
-	  double score = _score(refAlign, altAlign, c.aliscore);
-	  score /= (double) refAlign.size();
-	  score /= c.aliscore.match;
-	  score *= 10;
-	  if (score < c.minGenoQual) continue;
-
 	  // Any ALT support?
 	  TIdSet altAssigned;
 	  if (srStore.find(seed) != srStore.end()) {
 	    for(uint32_t ri = 0; ri < srStore[seed].size(); ++ri) {
 	      int32_t svid = srStore[seed][ri].svid;
 	      if (svid == -1) continue;
-	      if ((svs[svid].svt == 2) || (svs[svid].svt == 4)) continue;
+	      //if ((svs[svid].svt == 2) || (svs[svid].svt == 4)) continue;
 	      altAssigned.insert(svid);
 	      uint8_t* hpptr = bam_aux_get(rec, "HP");
 	      if (c.hasDumpFile) {
@@ -723,7 +772,11 @@ namespace torali
 		svidStr += padNumber;
 		dumpOut << svidStr << "\t" << c.files[file_c].string() << "\t" << bam_get_qname(rec) << "\t" << hdr[file_c]->target_name[rec->core.tid] << "\t" << rec->core.pos << "\t" << hdr[file_c]->target_name[rec->core.mtid] << "\t" << rec->core.mpos << "\t" << (int32_t) rec->core.qual << "\tSR" << std::endl;
 	      }
-	      jctMap[file_c][svid].alt.push_back((uint8_t) std::min((uint32_t) score, (uint32_t) rec->core.qual));
+
+
+	      // ToDo
+	      //jctMap[file_c][svid].alt.push_back((uint8_t) std::min((uint32_t) score, (uint32_t) rec->core.qual));
+	      jctMap[file_c][svid].alt.push_back((uint8_t) std::min((uint32_t) 20, (uint32_t) rec->core.qual));
 	      if (hpptr) {
 		c.isHaplotagged = true;
 		int hap = bam_aux2i(hpptr);
@@ -748,16 +801,28 @@ namespace torali
 	    std::cerr << std::endl;
 	  }
 	  */
-	  
+
+	  // Sufficiently long flank mapping?
+	  if ((rp - rec->core.pos) < c.minimumFlankSize) continue;
+
 	  // Iterate all spanned SVs
 	  for(uint32_t idx = 0; idx < hits.size(); ++idx) {
+	    //std::cerr << hits[idx] - rec->core.pos << ',' << rp - hits[idx] << std::endl;
+	    
+	    // Long enough flanking sequence
+	    if (hits[idx] < rec->core.pos + c.minimumFlankSize) continue;
+	    if (rp < hits[idx] + c.minimumFlankSize) continue;
+
+	    // Confident mapping?
+	    float percid = percentIdentity(refAlign, altAlign, hits[idx] - rec->core.pos, c.minRefSep *  2);
+	    double score = percid * percid * percid * percid * percid * percid * percid * percid * 30;
+	    if (score < c.minGenoQual) continue;
+	    
 	    for(typename TIdSet::const_iterator its = bpid[hits[idx]].begin(); its != bpid[hits[idx]].end(); ++its) {
 	      int32_t svid = *its;
-	      if ((svs[svid].svt == 2) || (svs[svid].svt == 4)) continue;
+	      //if ((svs[svid].svt == 2) || (svs[svid].svt == 4)) continue;
 	      if (altAssigned.find(svid) != altAssigned.end()) continue; 
 	      //std::cerr << svs[svid].chr << ',' << svs[svid].svStart << ',' << svs[svid].chr2 << ',' << svs[svid].svEnd << std::endl;
-
-	      // Account for reference bias
 	      if (++refAlignedReadCount[file_c][svid] % 2) {
 		uint8_t* hpptr = bam_aux_get(rec, "HP");
 		jctMap[file_c][svid].ref.push_back((uint8_t) std::min((uint32_t) score, (uint32_t) rec->core.qual));

@@ -100,27 +100,6 @@ namespace torali
     return (s1[row] == s2[col] ? sc.match : sc.mismatch );
   }
 
-  template<typename TScore>
-  inline int
-    _score(std::string const& s1, std::string const& s2, TScore const& sc)
-  {
-    int32_t sum = 0;
-    bool inGap = false;
-    for(uint32_t i = 0; i < s1.size(); ++i) {
-      if ((s1[i] == '-') || (s2[i] == '-')) {
-	if (inGap) sum += sc.ge;
-	else {
-	  sum += sc.go;
-	  inGap = true;
-	}
-      } else {
-	inGap = false;
-	sum += (s1[i] == s2[i]) ? sc.match : sc.mismatch;
-      }
-    }
-    return sum;
-  }
-
   template<typename TChar, typename TProfile, typename TAIndex, typename TScore>
   inline int
   _score(boost::multi_array<TChar, 2> const& a1, boost::multi_array<TChar, 2> const& a2, TProfile const& p1, TProfile const& p2, TAIndex row, TAIndex col, TScore const& sc)
