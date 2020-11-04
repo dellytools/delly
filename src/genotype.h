@@ -326,18 +326,6 @@ namespace torali
 	  typedef std::map<int32_t, TRefSeq> TSVSeqHit;
 	  TSVSeqHit genoMap;
 
-	  // Any direct SV support
-	  /*
-	  std::size_t seed = hash_lr(rec);
-	  if (srStore.find(seed) != srStore.end()) {
-	    for(uint32_t ri = 0; ri < srStore[seed].size(); ++ri) {
-	      int32_t svid = srStore[seed][ri].svid;
-	      if (gbp[svid].left) genoMap.insert(std::make_pair(srStore[seed][ri].svid, srStore[seed][ri].sstart));
-	      else genoMap.insert(std::make_pair(srStore[seed][ri].svid, srStore[seed][ri].sstart + srStore[seed][ri].inslen));
-	    }
-	  }
-	  */
-	  
 	  // Parse the CIGAR
 	  uint32_t* cigar = bam_get_cigar(rec);
 	  for (std::size_t i = 0; i < rec->core.n_cigar; ++i) {
@@ -788,19 +776,6 @@ namespace torali
 
 	  // Any REF support
 	  if (hits.empty()) continue;
-
-	  /*
-	  std::cerr << ">" << hdr[file_c]->target_len[refIndex] << ":" << rec->core.pos << "\t" << score << "\t" << seed << std::endl;
-	  uint32_t refpos = rec->core.pos;
-	  for(uint32_t i = 0; i < refAlign.size(); ++i) {
-	    std::cerr << refpos << "\t" << refAlign[i] << "\t" << altAlign[i];
-	    if (refAlign != "-") {
-	      if (bpOccupied[refpos]) std::cerr << "\t<---";
-	      ++refpos;
-	    }
-	    std::cerr << std::endl;
-	  }
-	  */
 
 	  // Sufficiently long flank mapping?
 	  if ((rp - rec->core.pos) < c.minimumFlankSize) continue;
