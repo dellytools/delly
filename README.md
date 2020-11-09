@@ -54,10 +54,10 @@ Delly needs a sorted, indexed and duplicate marked bam file for every input samp
 `bcftools view delly.bcf > delly.vcf`
 
 
-Delly for long reads from PacBio or ONT (experimental)
-------------------------------------------------------
+Delly for long reads from PacBio or ONT
+---------------------------------------
 
-Delly also has a long-read SV discovery mode (currently, only INS and DEL are supported).
+Delly also has a long-read (lr) SV discovery mode.
 
 `delly lr -y ont -g hg19.fa -x hg19.excl input.bam`
 

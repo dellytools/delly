@@ -33,7 +33,7 @@ displayUsage() {
   std::cout << "    filter       filter somatic or germline structural variants" << std::endl;
   std::cout << std::endl;
   std::cout << "Long-read commands:" << std::endl;
-  std::cout << "    lr           long-read SV discovery (currently, only INS and DEL are supported)" << std::endl;
+  std::cout << "    lr           long-read SV discovery" << std::endl;
   std::cout << std::endl;
   std::cout << "Read-depth commands:" << std::endl;
   std::cout << "    rd           read-depth normalization" << std::endl;
