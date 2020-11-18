@@ -2,7 +2,7 @@ name: Docker CI
 
 on:
   push:
-    branches: main
+    branches: master
 
 jobs:
   main:
