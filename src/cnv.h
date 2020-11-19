@@ -69,132 +69,141 @@ namespace torali
   callCNVs(TConfig const& c, std::pair<uint32_t, uint32_t> const& gcbound, std::vector<uint16_t> const& gcContent, std::vector<uint16_t> const& uniqContent, TGcBias const& gcbias, TCoverage const& cov, bam_hdr_t const* hdr, int32_t const refIndex) {
 
     // Parameters
-    int32_t smallestWin = 2500;
+    int32_t smallestWin = 100;
     int32_t biggestWin = 15000;
     uint32_t chain = 10;
     float sdundo = 2;
+
+    // Find breakpoints
+    std::vector<BpCNV> bpmax;
+    if (bpmax.empty()) {
+      // Scanning window sizes
+      std::vector<int32_t> winsize;
+      int32_t wsize = smallestWin;
+      while (wsize < biggestWin) {
+	winsize.push_back(wsize);
+	wsize *= 2;
+      }
+
+      // Iterate window sizes
+      typedef int32_t TCnVal;
+      typedef std::vector<TCnVal> TCN;
+      typedef std::vector<int32_t> TChrPos;
+      std::vector<BpCNV> bpvec;
+      for(uint32_t idx = 0; idx < winsize.size(); ++idx) {
+	uint32_t idxOffset = winsize[idx] / winsize[0];
+	//std::cerr << idx << ',' << winsize[idx] << ',' << idxOffset << ',' << bpvec.size() << ',' << hdr->target_len[refIndex] << std::endl;
+	TCN cnvec;
+	TChrPos wpos;
+	uint32_t wstart = 0;
+	while(wstart < hdr->target_len[refIndex]) {
+	  double covsum = 0;
+	  double expcov = 0;
+	  int32_t winlen = 0;
+	  uint32_t pos = wstart;
+	  while ((winlen < winsize[idx]) && (pos < hdr->target_len[refIndex])) {
+	    if ((gcContent[pos] > gcbound.first) && (gcContent[pos] < gcbound.second) && (uniqContent[pos] >= c.fragmentUnique * c.meanisize)) {
+	      covsum += cov[pos];
+	      expcov += gcbias[gcContent[pos]].coverage;
+	      ++winlen;
+	    }
+	    ++pos;
+	  }
+	  if (winlen == winsize[idx]) {
+	    // Full window
+	    cnvec.push_back((int32_t) boost::math::round(c.ploidy * covsum / expcov * 100.0));
+	    wpos.push_back(wstart);
+	  }
+	  wstart = pos;
+	}
+	
+	// Identify breakpoints
+	TCN pre(chain, -1);
+	TCN suc(chain, -1);
+	TChrPos prep(chain, 0);
+	TChrPos sucp(chain, 0);
+	uint32_t idxbp = 0;
+	for(uint32_t k = 0; k < cnvec.size(); ++k) {
+	  if (k < chain) {
+	    pre[k % chain] = cnvec[k];
+	    prep[k % chain] = wpos[k];
+	    if (k + 1 < cnvec.size()) {
+	      if (idx == 0 ) bpvec.push_back(BpCNV(wpos[k], wpos[k+1], 0));
+	      else idxbp += idxOffset;
+	    }
+	  } else if (k < 2 * chain) {
+	    suc[k % chain] = cnvec[k];
+	    sucp[k % chain] = wpos[k];
+	  } else {
+	    // Midpoint
+	    TCnVal val = suc[k%chain];	  
+	    int32_t pos = sucp[k%chain];
+	    int32_t posNext = sucp[(k+1)%chain];
+	    suc[k%chain] = cnvec[k];
+	    sucp[k%chain] = wpos[k];
+	    
+	    // Debug
+	    //for(uint32_t m = 0; m < pre.size(); ++m) std::cerr << prep[m] << '\t' << pre[m] << std::endl;
+	    //std::cerr << "M:" << pos << '\t' << val << std::endl;
+	    //for(uint32_t m = 0; m < suc.size(); ++m) std::cerr << sucp[m] << '\t' << suc[m] << std::endl;
+	    
+	    // Any shift in CN?
+	    boost::accumulators::accumulator_set<TCnVal, boost::accumulators::features<boost::accumulators::tag::mean, boost::accumulators::tag::variance>> accpre;
+	    boost::accumulators::accumulator_set<TCnVal, boost::accumulators::features<boost::accumulators::tag::mean, boost::accumulators::tag::variance>> accsuc;
+	    for(uint32_t m = 0; m < pre.size(); ++m) accpre(pre[m]);
+	    for(uint32_t m = 0; m < suc.size(); ++m) accsuc(suc[m]);
+	    double diff = std::abs(boost::accumulators::mean(accsuc) - boost::accumulators::mean(accpre));
+	    // Breakpoint candidate
+	    double zscore = 0;
+	    if ((diff > sdundo *sqrt(boost::accumulators::variance(accpre))) && (diff > sdundo * sqrt(boost::accumulators::variance(accsuc)))) {
+	      zscore = diff / std::max(sqrt(boost::accumulators::variance(accpre)), sqrt(boost::accumulators::variance(accsuc)));
+	    }
+	    if (idx == 0) bpvec.push_back(BpCNV(pos, posNext, zscore));
+	    else {
+	      for(uint32_t sub = idxbp; sub < idxbp + idxOffset; ++sub) bpvec[sub].zscore += zscore;
+	      idxbp += idxOffset;
+	    }
+	    pre[k%chain] = val;
+	    prep[k%chain] = pos;
+	  }
+	}
+      }
     
-    // Scanning window sizes
-    std::vector<int32_t> winsize;
-    int32_t wsize = smallestWin;
-    while (wsize < biggestWin) {
-      winsize.push_back(wsize);
-      wsize *= 2;
-    }
-
-    // Iterate window sizes, largest to smallest
-    typedef int32_t TCnVal;
-    typedef std::vector<TCnVal> TCN;
-    typedef std::vector<int32_t> TChrPos;
-    std::vector<BpCNV> bpvec;
-    for(uint32_t idx = 0; idx < winsize.size(); ++idx) {
-      TCN cnvec;
-      TChrPos wpos;
-      uint32_t wstart = 0;
-      while(wstart < hdr->target_len[refIndex]) {
-	double covsum = 0;
-	double expcov = 0;
-	int32_t winlen = 0;
-	uint32_t pos = wstart;
-	while ((winlen < winsize[idx]) && (pos < hdr->target_len[refIndex])) {
-	  if ((gcContent[pos] > gcbound.first) && (gcContent[pos] < gcbound.second) && (uniqContent[pos] >= c.fragmentUnique * c.meanisize)) {
-	    covsum += cov[pos];
-	    expcov += gcbias[gcContent[pos]].coverage;
-	    ++winlen;
-	  }
-	  ++pos;
-	}
-	if (winlen == winsize[idx]) {
-	  // Full window
-	  cnvec.push_back((int32_t) boost::math::round(c.ploidy * covsum / expcov * 100.0));
-	  wpos.push_back(wstart);
-	}
-	wstart = pos;
-      }
-
-      // Identify breakpoints
-      TCN pre(chain, -1);
-      TCN suc(chain, -1);
-      TChrPos prep(chain, 0);
-      TChrPos sucp(chain, 0);
-      uint32_t idxbp = 0;
-      for(uint32_t k = 0; k < cnvec.size(); ++k) {
-	if (k < chain) {
-	  pre[k % chain] = cnvec[k];
-	  prep[k % chain] = wpos[k];
-	  if (k + 1 < cnvec.size()) {
-	    if (idx == 0 ) bpvec.push_back(BpCNV(wpos[k], wpos[k+1], 0));
-	    else idxbp += 2*idx;
-	  }
-	} else if (k < 2 * chain) {
-	  suc[k % chain] = cnvec[k];
-	  sucp[k % chain] = wpos[k];
-	} else {
-	  // Midpoint
-	  TCnVal val = suc[k%chain];	  
-	  int32_t pos = sucp[k%chain];
-	  int32_t posNext = sucp[(k+1)%chain];
-	  suc[k%chain] = cnvec[k];
-	  sucp[k%chain] = wpos[k];
-
-	  // Debug
-	  //for(uint32_t m = 0; m < pre.size(); ++m) std::cerr << prep[m] << '\t' << pre[m] << std::endl;
-	  //std::cerr << "M:" << pos << '\t' << val << std::endl;
-	  //for(uint32_t m = 0; m < suc.size(); ++m) std::cerr << sucp[m] << '\t' << suc[m] << std::endl;
-
-	  // Any shift in CN?
-	  boost::accumulators::accumulator_set<TCnVal, boost::accumulators::features<boost::accumulators::tag::mean, boost::accumulators::tag::variance>> accpre;
-	  boost::accumulators::accumulator_set<TCnVal, boost::accumulators::features<boost::accumulators::tag::mean, boost::accumulators::tag::variance>> accsuc;
-	  for(uint32_t m = 0; m < pre.size(); ++m) accpre(pre[m]);
-	  for(uint32_t m = 0; m < suc.size(); ++m) accsuc(suc[m]);
-	  double diff = std::abs(boost::accumulators::mean(accsuc) - boost::accumulators::mean(accpre));
-	  // Breakpoint candidate
-	  double zscore = 0;
-	  if ((diff > sdundo *sqrt(boost::accumulators::variance(accpre))) && (diff > sdundo * sqrt(boost::accumulators::variance(accsuc)))) {
-	    zscore = diff / std::max(sqrt(boost::accumulators::variance(accpre)), sqrt(boost::accumulators::variance(accsuc)));
-	  }
-	  if (idx == 0) bpvec.push_back(BpCNV(pos, posNext, zscore));
-	  else {
-	    for(uint32_t sub = idxbp; sub < idxbp + 2 * idx; ++sub) bpvec[sub].zscore += zscore;
-	    idxbp += 2*idx;
-	  }
-	  pre[k%chain] = val;
-	  prep[k%chain] = pos;
-	}
-      }
-
-      /*
-      // Select local maxima
-      std::vector<BpCNV> bpmax;
+      // Local maxima
       if (bpvec.size()) {
 	int32_t pos = bpvec[0].start;
 	int32_t posNext = bpvec[0].end;
-	double bestDiff = bpvec[0].diff;
+	double bestDiff = bpvec[0].zscore;
 	for(uint32_t n = 1; n < bpvec.size(); ++n) {
-	  if (bpvec[n].start != bpvec[n-1].end) {
-	    bpmax.push_back(BpCNV(pos, posNext, bestDiff));
-	    pos = bpvec[n].start;
-	    posNext = bpvec[n].end;
-	    bestDiff = bpvec[n].diff;
-	  } else {
-	    if (bpvec[n].diff > bestDiff) {
+	  //std::cerr << "B:" << bpvec[n].start << '-' << bpvec[n].end << ':' << bpvec[n].zscore << std::endl;
+	  if (bpvec[n].zscore == 0) {
+	    if (bestDiff != 0) {
+	      //std::cerr << "M:" << pos << '-' << posNext << ':' << bestDiff << std::endl;
+	      bpmax.push_back(BpCNV(pos, posNext, bestDiff));
 	      pos = bpvec[n].start;
 	      posNext = bpvec[n].end;
-	      bestDiff = bpvec[n].diff;
+	      bestDiff = bpvec[n].zscore;
+	    }
+	  } else {
+	    if (bpvec[n].zscore > bestDiff) {
+	      // Replace local max
+	      pos = bpvec[n].start;
+	      posNext = bpvec[n].end;
+	      bestDiff = bpvec[n].zscore;
+	    } else if (bpvec[n].zscore == bestDiff) {
+	      // Extend local max
+	      posNext = bpvec[n].end;
 	    }
 	  }
 	}
-	bpmax.push_back(BpCNV(pos, posNext, bestDiff));
       }
-      */
     }
-    
-    // Merge local maxima
-    for(uint32_t n = 0; n < bpvec.size(); ++n) {
-      std::cerr << bpvec[n].start << '-' << bpvec[n].end << ':' << bpvec[n].zscore << std::endl;
-    }
-     
 
+
+    // Breakpoints
+    for(uint32_t n = 0; n < bpmax.size(); ++n) std::cerr << bpmax[n].start << '\t' << bpmax[n].end << '\t' << bpmax[n].zscore << std::endl;
+    
+    
   }
   
 
