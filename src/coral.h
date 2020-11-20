@@ -397,6 +397,12 @@ namespace torali
       }
     }
 
+    // Sort CNVs
+    sort(cnvs.begin(), cnvs.end(), SortCNVs<CNV>());
+
+    // Genotype CNVs
+    cnvVCF(c, cnvs);
+
     // clean-up
     fai_destroy(faiRef);
     fai_destroy(faiMap);
@@ -421,10 +427,7 @@ namespace torali
       ("quality,q", boost::program_options::value<uint16_t>(&c.minQual)->default_value(10), "min. mapping quality")
       ("mappability,m", boost::program_options::value<boost::filesystem::path>(&c.mapFile), "input mappability map")
       ("ploidy,y", boost::program_options::value<uint16_t>(&c.ploidy)->default_value(2), "baseline ploidy")
-      ("fragment,e", boost::program_options::value<float>(&c.fragmentUnique)->default_value(0.97), "min. fragment uniqueness [0,1]")
-      ("statsfile,s", boost::program_options::value<boost::filesystem::path>(&c.statsFile), "gzipped stats output file (optional)")
       ("outfile,o", boost::program_options::value<boost::filesystem::path>(&c.outfile)->default_value("out.cov.gz"), "output file")
-      ("adaptive-windowing,a", "use mappable bases for window size")
       ;
 
     boost::program_options::options_description cnv("CNV calling");
@@ -434,15 +437,16 @@ namespace torali
       ("cnvfile,c", boost::program_options::value<boost::filesystem::path>(&c.cnvfile)->default_value("cnv.bcf"), "output BCF file")
       ;
     
-    boost::program_options::options_description window("Window options");
+    boost::program_options::options_description window("Read-depth windows");
     window.add_options()
       ("window-size,i", boost::program_options::value<uint32_t>(&c.window_size)->default_value(10000), "window size")
       ("window-offset,j", boost::program_options::value<uint32_t>(&c.window_offset)->default_value(10000), "window offset")
       ("bed-intervals,b", boost::program_options::value<boost::filesystem::path>(&c.bedFile), "input BED file")
       ("fraction-window,k", boost::program_options::value<float>(&c.fracWindow)->default_value(0.25), "min. callable window fraction [0,1]")
+      ("adaptive-windowing,a", "use mappable bases for window size")
       ;
 
-    boost::program_options::options_description gcopt("GC options");
+    boost::program_options::options_description gcopt("GC fragment normalization");
     gcopt.add_options()
       ("scan-window,w", boost::program_options::value<uint32_t>(&c.scanWindow)->default_value(10000), "scanning window size")
       ("fraction-unique,f", boost::program_options::value<float>(&c.uniqueToTotalCovRatio)->default_value(0.8), "uniqueness filter for scan windows [0,1]")
@@ -455,6 +459,8 @@ namespace torali
     boost::program_options::options_description hidden("Hidden options");
     hidden.add_options()
       ("input-file", boost::program_options::value<boost::filesystem::path>(&c.bamFile), "input bam file")
+      ("fragment,e", boost::program_options::value<float>(&c.fragmentUnique)->default_value(0.97), "min. fragment uniqueness [0,1]")
+      ("statsfile,s", boost::program_options::value<boost::filesystem::path>(&c.statsFile), "gzipped stats output file (optional)")
       ;
 
     boost::program_options::positional_options_description pos_args;

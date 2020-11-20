@@ -284,6 +284,170 @@ namespace torali
   }
 
 
+  template<typename TConfig>
+  inline void
+  cnvVCF(TConfig const& c, std::vector<CNV> const& cnvs) {
+    // BoLog class
+    BoLog<double> bl;
+
+    // Open one bam file header
+    samFile* samfile = sam_open(c.bamFile.string().c_str(), "r");
+    hts_set_fai_filename(samfile, c.genome.string().c_str());
+    bam_hdr_t* bamhd = sam_hdr_read(samfile);
+
+    // Output all copy-number variants
+    htsFile *fp = hts_open(c.cnvfile.string().c_str(), "wb");
+    bcf_hdr_t *hdr = bcf_hdr_init("w");
+
+    // Print vcf header
+    boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
+    boost::gregorian::date today = now.date();
+    std::string datestr("##fileDate=");
+    datestr += boost::gregorian::to_iso_string(today);
+    bcf_hdr_append(hdr, datestr.c_str());
+    bcf_hdr_append(hdr, "##ALT=<ID=MCNV,Description=\"multi-allelic copy-number variants\">");
+    bcf_hdr_append(hdr, "##FILTER=<ID=LowQual,Description=\"Poor quality and insufficient number of PEs and SRs.\">");
+    bcf_hdr_append(hdr, "##INFO=<ID=CIEND,Number=2,Type=Integer,Description=\"Confidence interval around END\">");
+    bcf_hdr_append(hdr, "##INFO=<ID=CIPOS,Number=2,Type=Integer,Description=\"Confidence interval around POS\">");
+    bcf_hdr_append(hdr, "##INFO=<ID=END,Number=1,Type=Integer,Description=\"End position of the copy-number variant\">");
+    bcf_hdr_append(hdr, "##INFO=<ID=MP,Number=1,Type=Float,Description=\"Mappable fraction of CNV\">");
+    bcf_hdr_append(hdr, "##INFO=<ID=IMPRECISE,Number=0,Type=Flag,Description=\"Imprecise structural variation\">");
+    bcf_hdr_append(hdr, "##INFO=<ID=SVTYPE,Number=1,Type=String,Description=\"Type of structural variant\">");
+    bcf_hdr_append(hdr, "##INFO=<ID=SVMETHOD,Number=1,Type=String,Description=\"Type of approach used to detect CNV\">");
+    bcf_hdr_append(hdr, "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">");
+    bcf_hdr_append(hdr, "##FORMAT=<ID=GL,Number=G,Type=Float,Description=\"Log10-scaled genotype likelihoods for RR,RA,AA genotypes\">");
+    bcf_hdr_append(hdr, "##FORMAT=<ID=GQ,Number=1,Type=Integer,Description=\"Genotype Quality\">");
+    bcf_hdr_append(hdr, "##FORMAT=<ID=FT,Number=1,Type=String,Description=\"Per-sample genotype filter\">");
+    bcf_hdr_append(hdr, "##FORMAT=<ID=CN,Number=1,Type=Integer,Description=\"Integer copy-number\">");
+    bcf_hdr_append(hdr, "##FORMAT=<ID=RDCN,Number=1,Type=Float,Description=\"Read-depth based copy-number estimate\">");
+    bcf_hdr_append(hdr, "##FORMAT=<ID=BP,Number=1,Type=Float,Description=\"Z-score breakpoint RD shift\">");
+
+    // Add reference
+    std::string refloc("##reference=");
+    refloc += c.genome.string();
+    bcf_hdr_append(hdr, refloc.c_str());
+    for (int i = 0; i<bamhd->n_targets; ++i) {
+      std::string refname("##contig=<ID=");
+      refname += std::string(bamhd->target_name[i]) + ",length=" + boost::lexical_cast<std::string>(bamhd->target_len[i]) + ">";
+      bcf_hdr_append(hdr, refname.c_str());
+    }
+    // Add samples
+    bcf_hdr_add_sample(hdr, c.sampleName.c_str());
+    bcf_hdr_add_sample(hdr, NULL);
+    if (bcf_hdr_write(fp, hdr) != 0) std::cerr << "Error: Failed to write BCF header!" << std::endl;
+
+    if (!cnvs.empty()) {
+      // Genotype arrays
+      int32_t *gts = (int*) malloc(bcf_hdr_nsamples(hdr) * 2 * sizeof(int));
+      float *gls = (float*) malloc(bcf_hdr_nsamples(hdr) * 3 * sizeof(float));
+      int32_t *gqval = (int*) malloc(bcf_hdr_nsamples(hdr) * sizeof(int));
+      int32_t *cnval = (int*) malloc(bcf_hdr_nsamples(hdr) * sizeof(int));
+      float *cnrdval = (float*) malloc(bcf_hdr_nsamples(hdr) * sizeof(float));
+      float *zscoreval = (float*) malloc(bcf_hdr_nsamples(hdr) * sizeof(float));
+
+      std::vector<std::string> ftarr;
+      ftarr.resize(bcf_hdr_nsamples(hdr));
+    
+      // Iterate all structural variants
+      now = boost::posix_time::second_clock::local_time();
+      std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Genotyping" << std::endl;
+      boost::progress_display show_progress( cnvs.size() );
+      bcf1_t *rec = bcf_init();
+      for(uint32_t i = 0; i < cnvs.size(); ++i) {
+	++show_progress;
+
+	// Integer copy-number
+	int32_t absCN = (int32_t) boost::math::round(cnvs[i].cn);
+	if (absCN == c.ploidy) continue;
+      
+	// Output main vcf fields
+	rec->rid = bcf_hdr_name2id(hdr, bamhd->target_name[cnvs[i].chr]);
+	int32_t svStartPos = cnvs[i].start + 1;
+	int32_t svEndPos = cnvs[i].end;
+	if (svEndPos >= (int32_t) bamhd->target_len[cnvs[i].chr]) svEndPos = bamhd->target_len[cnvs[i].chr] - 1;
+	rec->pos = svStartPos;
+	std::string id("MCNV");
+	std::string padNumber = boost::lexical_cast<std::string>(i+1);
+	padNumber.insert(padNumber.begin(), 8 - padNumber.length(), '0');
+	id += padNumber;
+	bcf_update_id(hdr, rec, id.c_str());
+	std::string svtype = "MCNV";
+	std::string alleles = "N,<" + svtype + ">";
+	bcf_update_alleles_str(hdr, rec, alleles.c_str());
+	int32_t tmpi = bcf_hdr_id2int(hdr, BCF_DT_ID, "PASS");
+	bcf_update_filter(hdr, rec, &tmpi, 1);
+      
+	// Add INFO fields
+	bcf_update_info_flag(hdr, rec, "IMPRECISE", NULL, 1);
+
+	bcf_update_info_string(hdr, rec, "SVTYPE", svtype.c_str());
+	std::string dellyVersion("EMBL.DELLYv");
+	dellyVersion += dellyVersionNumber;
+	bcf_update_info_string(hdr,rec, "SVMETHOD", dellyVersion.c_str());
+	tmpi = svEndPos;
+	bcf_update_info_int32(hdr, rec, "END", &tmpi, 1);
+	int32_t ciend[2];
+	ciend[0] = cnvs[i].ciendlow - svEndPos;
+	ciend[1] = cnvs[i].ciendhigh - svEndPos;
+	int32_t cipos[2];
+	cipos[0] = cnvs[i].ciposlow - svStartPos;
+	cipos[1] = cnvs[i].ciposhigh - svStartPos;
+	bcf_update_info_int32(hdr, rec, "CIPOS", cipos, 2);
+	bcf_update_info_int32(hdr, rec, "CIEND", ciend, 2);
+	float tmpf = cnvs[i].mappable;
+	bcf_update_info_float(hdr, rec, "MP", &tmpf, 1);
+
+	// Genotyping
+	gts[0] = bcf_gt_missing;
+	gts[1] = bcf_gt_missing;
+	gls[0] = 0;
+	gls[1] = 0;
+	gls[2] = 0;
+	gqval[0] = 0;
+	if (gqval[0] < 15) ftarr[0] = "LowQual";
+	else ftarr[0] = "PASS";
+	cnval[0] = absCN;
+	cnrdval[0] = cnvs[i].cn;
+	zscoreval[0] = cnvs[i].zscore;
+	
+
+	
+	bcf_update_genotypes(hdr, rec, gts, bcf_hdr_nsamples(hdr) * 2);
+	bcf_update_format_float(hdr, rec, "GL",  gls, bcf_hdr_nsamples(hdr) * 3);
+	bcf_update_format_int32(hdr, rec, "GQ", gqval, bcf_hdr_nsamples(hdr));
+	std::vector<const char*> strp(bcf_hdr_nsamples(hdr));
+	std::transform(ftarr.begin(), ftarr.end(), strp.begin(), cstyle_str());
+	bcf_update_format_string(hdr, rec, "FT", &strp[0], bcf_hdr_nsamples(hdr));
+	bcf_update_format_int32(hdr, rec, "CN", cnval, bcf_hdr_nsamples(hdr));
+	bcf_update_format_float(hdr, rec, "RDCN",  cnrdval, bcf_hdr_nsamples(hdr));
+	bcf_update_format_float(hdr, rec, "BP",  zscoreval, bcf_hdr_nsamples(hdr));
+	bcf_write1(fp, hdr, rec);
+	bcf_clear1(rec);
+      }
+      bcf_destroy1(rec);
+    
+      // Clean-up
+      free(gts);
+      free(gls);
+      free(gqval);
+      free(cnval);
+      free(cnrdval);
+      free(zscoreval);
+    }
+
+    // Close BAM file
+    bam_hdr_destroy(bamhd);
+    sam_close(samfile);
+    
+    // Close VCF file
+    bcf_hdr_destroy(hdr);
+    hts_close(fp);
+    
+    // Build index
+    bcf_index_build(c.outfile.string().c_str(), 14);
+  }
+ 
+
 }
 
 #endif

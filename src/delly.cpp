@@ -27,16 +27,16 @@ inline void
 displayUsage() {
   std::cout << "Usage: delly <command> <arguments>" << std::endl;
   std::cout << std::endl;
-  std::cout << "Short-read commands:" << std::endl;
+  std::cout << "Short-read SV calling:" << std::endl;
   std::cout << "    call         discover and genotype structural variants" << std::endl;
   std::cout << "    merge        merge structural variants across VCF/BCF files and within a single VCF/BCF file" << std::endl;
   std::cout << "    filter       filter somatic or germline structural variants" << std::endl;
   std::cout << std::endl;
-  std::cout << "Long-read commands:" << std::endl;
+  std::cout << "Long-read SV calling:" << std::endl;
   std::cout << "    lr           long-read SV discovery" << std::endl;
   std::cout << std::endl;
-  std::cout << "Read-depth commands:" << std::endl;
-  std::cout << "    rd           read-depth normalization" << std::endl;
+  std::cout << "CNV calling:" << std::endl;
+  std::cout << "    cnv          discover and genotype copy-number variants" << std::endl;
   std::cout << std::endl;
   std::cout << std::endl;
 }
@@ -73,7 +73,7 @@ int main(int argc, char **argv) {
     else if ((std::string(argv[1]) == "lr")) {
       return tegua(argc-1,argv+1);
     }
-    else if ((std::string(argv[1]) == "rd")) {
+    else if ((std::string(argv[1]) == "cnv")) {
       return coral(argc-1,argv+1);
     }
     else if ((std::string(argv[1]) == "filter")) {

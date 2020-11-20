@@ -118,21 +118,21 @@ You can generate read-depth profiles with delly. This requires a mappability map
 
 [Mappability Maps](https://gear.embl.de/data/delly/)
 
-The command to count reads in 10kbp windows and normalize the coverage is:
+The command to count reads in 10kbp mappable windows and normalize the coverage is:
 
-`delly rd -a -g hg19.fa -m hg19.map input.bam`
+`delly cnv -a -g hg19.fa -m hg19.map input.bam`
 
 The output file can be plotted using R to generate normalized copy-number profiles:
 
 `Rscript R/rd.R out.cov.gz`
 
-The GC bias can be visualized using the stats output.
 
-`delly rd -s stats.gz -g hg19.fa -m hg19.map input.bam`
+Germline CNV calling (work-in-progress)
+---------------------------------------
 
-`zgrep "^GC" stats.gz  > gc.table`
+Delly uses GC and mappability fragment correction to call CNVs. This requires a [mappability map](https://gear.embl.de/data/delly/). Using a minimum CNV size of 1000bp you can call CNVs using:
 
-`Rscript R/gcbias.R gc.table`
+`delly cnv -g hg19.fa -m hg19.map input.bam`
 
 
 FAQ
