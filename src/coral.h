@@ -91,6 +91,9 @@ namespace torali
     dataOut.push(boost::iostreams::file_sink(c.outfile.c_str(), std::ios_base::out | std::ios_base::binary));
     dataOut << "chr\tstart\tend\t" << c.sampleName << "_mappable\t" << c.sampleName << "_counts\t" << c.sampleName << "_CN" << std::endl;
 
+    // CNVs
+    std::vector<CNV> cnvs;
+    
     // Iterate chromosomes
     faidx_t* faiMap = fai_load(c.mapFile.string().c_str());
     faidx_t* faiRef = fai_load(c.genome.string().c_str());
@@ -209,7 +212,7 @@ namespace torali
 
 
       // Call CNVs
-      //callCNVs(c, gcbound, gcContent, uniqContent, gcbias, cov, hdr, refIndex);
+      //callCNVs(c, gcbound, gcContent, uniqContent, gcbias, cov, hdr, refIndex, cnvs);
 
 
       // BED File (target intervals)

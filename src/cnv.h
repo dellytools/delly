@@ -35,25 +35,20 @@ namespace torali
     int32_t ciposhigh;
     int32_t ciendlow;
     int32_t ciendhigh;
-    uint32_t srleft;
-    uint32_t srright;
-    uint32_t nsnps;
-    float cn;
-    float rdsupport;
-    float penalty;
-    float mappable;
-    double maf;
+    double cn;
+    double zscore;
+    double mappable;
     
-  CNV(int32_t const c, int32_t const s, int32_t const e, int32_t const cil, int32_t const cih, int32_t const cel, int32_t ceh, float const estcn, float const sp, float const pty, float const mp) : chr(c), start(s), end(e), ciposlow(cil), ciposhigh(cih), ciendlow(cel), ciendhigh(ceh), srleft(0), srright(0), nsnps(0), cn(estcn), rdsupport(sp), penalty(pty), mappable(mp), maf(0) {}
+    CNV(int32_t const c, int32_t const s, int32_t const e, int32_t const cil, int32_t const cih, int32_t const cel, int32_t ceh, double const estcn, double const zs, double const mp) : chr(c), start(s), end(e), ciposlow(cil), ciposhigh(cih), ciendlow(cel), ciendhigh(ceh), cn(estcn), zscore(zs), mappable(mp) {}
   };
 
-    template<typename TCNV>
-    struct SortCNVs : public std::binary_function<TCNV, TCNV, bool>
-      {
-	inline bool operator()(TCNV const& sv1, TCNV const& sv2) {
-	  return ((sv1.chr<sv2.chr) || ((sv1.chr==sv2.chr) && (sv1.start<sv2.start)) || ((sv1.chr==sv2.chr) && (sv1.start==sv2.start) && (sv1.end<sv2.end)) || ((sv1.chr==sv2.chr) && (sv1.start==sv2.start) && (sv1.end==sv2.end) && (sv1.penalty > sv2.penalty)));
-	}
-      };
+  template<typename TCNV>
+  struct SortCNVs : public std::binary_function<TCNV, TCNV, bool>
+  {
+    inline bool operator()(TCNV const& sv1, TCNV const& sv2) {
+      return ((sv1.chr<sv2.chr) || ((sv1.chr==sv2.chr) && (sv1.start<sv2.start)) || ((sv1.chr==sv2.chr) && (sv1.start==sv2.start) && (sv1.end<sv2.end)) || ((sv1.chr==sv2.chr) && (sv1.start==sv2.start) && (sv1.end==sv2.end) && (sv1.cn < sv2.cn)));
+    }
+  };
 
 
   struct BpCNV {
@@ -66,7 +61,7 @@ namespace torali
   
   template<typename TConfig, typename TGcBias, typename TCoverage>
   inline void
-  callCNVs(TConfig const& c, std::pair<uint32_t, uint32_t> const& gcbound, std::vector<uint16_t> const& gcContent, std::vector<uint16_t> const& uniqContent, TGcBias const& gcbias, TCoverage const& cov, bam_hdr_t const* hdr, int32_t const refIndex) {
+  callCNVs(TConfig const& c, std::pair<uint32_t, uint32_t> const& gcbound, std::vector<uint16_t> const& gcContent, std::vector<uint16_t> const& uniqContent, TGcBias const& gcbias, TCoverage const& cov, bam_hdr_t const* hdr, int32_t const refIndex, std::vector<CNV>& cnvs) {
 
     // Parameters
     int32_t smallestWin = 100;
@@ -199,11 +194,47 @@ namespace torali
       }
     }
 
-
     // Breakpoints
-    for(uint32_t n = 0; n < bpmax.size(); ++n) std::cerr << bpmax[n].start << '\t' << bpmax[n].end << '\t' << bpmax[n].zscore << std::endl;
-    
-    
+    for(uint32_t n = 0; n <= bpmax.size(); ++n) {
+      int32_t cil = 0;
+      int32_t cih = 0;
+      double zscorepre = 0;
+      if (n > 0) {
+	cil = bpmax[n-1].start;
+	cih = bpmax[n-1].end;
+	zscorepre = bpmax[n-1].zscore;
+      }
+      int32_t cel = hdr->target_len[refIndex] - 1;
+      int32_t ceh = hdr->target_len[refIndex] - 1;
+      double zscoresuc = 0;
+      if (n < bpmax.size()) {
+	cel = bpmax[n].start;
+	ceh = bpmax[n].end;
+	zscoresuc = bpmax[n].zscore;
+      }
+      int32_t cnvstart = (int32_t) ((cil + cih)/2);
+      int32_t cnvend = (int32_t) ((cel + ceh)/2);
+      double covsum = 0;
+      double expcov = 0;
+      double obsexp = 0;
+      int32_t winlen = 0;
+      int32_t pos = cnvstart;
+      while((pos < cnvend) && (pos < (int32_t) hdr->target_len[refIndex])) {
+	if ((gcContent[pos] > gcbound.first) && (gcContent[pos] < gcbound.second) && (uniqContent[pos] >= c.fragmentUnique * c.meanisize)) {
+	  covsum += cov[pos];
+	  obsexp += gcbias[gcContent[pos]].obsexp;
+	  expcov += gcbias[gcContent[pos]].coverage;
+	  ++winlen;
+	}
+	++pos;
+      }
+      obsexp /= (double) winlen;
+      double cn = c.ploidy * covsum / expcov;
+      double zsc = (zscorepre + zscoresuc) / 2.0;
+      double mp = (double) winlen / (double) (cnvend - cnvstart);
+      cnvs.push_back(CNV(refIndex, cnvstart, cnvend, cil, cih, cel, ceh, cn, zsc, mp));
+      //std::cerr << hdr->target_name[refIndex] << '\t' << cnvstart << '\t' << cnvend << '\t' << '(' << cil << ',' << cih << ')' << '\t' << '(' << cel << ',' << ceh << ')' << '\t' << cn << '\t' << zsc << '\t' << mp << std::endl;
+    }    
   }
   
 
