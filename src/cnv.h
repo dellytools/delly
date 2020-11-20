@@ -61,13 +61,12 @@ namespace torali
   
   template<typename TConfig, typename TGcBias, typename TCoverage>
   inline void
-  callCNVs(TConfig const& c, std::pair<uint32_t, uint32_t> const& gcbound, std::vector<uint16_t> const& gcContent, std::vector<uint16_t> const& uniqContent, TGcBias const& gcbias, TCoverage const& cov, bam_hdr_t const* hdr, int32_t const refIndex, std::vector<CNV>& cnvs) {
+  callCNVs(TConfig const& c, std::pair<uint32_t, uint32_t> const& gcbound, std::vector<uint16_t> const& gcContent, std::vector<uint16_t> const& uniqContent, TGcBias const& gcbias, TCoverage const& cov, bam_hdr_t const* hdr, int32_t const refIndex, std::vector<CNV>& chrcnv) {
 
     // Parameters
     int32_t smallestWin = 100;
     int32_t biggestWin = 15000;
     uint32_t chain = 10;
-    float sdundo = 2;
 
     // Find breakpoints
     std::vector<BpCNV> bpmax;
@@ -150,7 +149,7 @@ namespace torali
 	    double diff = std::abs(boost::accumulators::mean(accsuc) - boost::accumulators::mean(accpre));
 	    // Breakpoint candidate
 	    double zscore = 0;
-	    if ((diff > sdundo *sqrt(boost::accumulators::variance(accpre))) && (diff > sdundo * sqrt(boost::accumulators::variance(accsuc)))) {
+	    if ((diff > c.stringency * sqrt(boost::accumulators::variance(accpre))) && (diff > c.stringency * sqrt(boost::accumulators::variance(accsuc)))) {
 	      zscore = diff / std::max(sqrt(boost::accumulators::variance(accpre)), sqrt(boost::accumulators::variance(accsuc)));
 	    }
 	    if (idx == 0) bpvec.push_back(BpCNV(pos, posNext, zscore));
@@ -232,11 +231,58 @@ namespace torali
       double cn = c.ploidy * covsum / expcov;
       double zsc = (zscorepre + zscoresuc) / 2.0;
       double mp = (double) winlen / (double) (cnvend - cnvstart);
-      cnvs.push_back(CNV(refIndex, cnvstart, cnvend, cil, cih, cel, ceh, cn, zsc, mp));
+      chrcnv.push_back(CNV(refIndex, cnvstart, cnvend, cil, cih, cel, ceh, cn, zsc, mp));
       //std::cerr << hdr->target_name[refIndex] << '\t' << cnvstart << '\t' << cnvend << '\t' << '(' << cil << ',' << cih << ')' << '\t' << '(' << cel << ',' << ceh << ')' << '\t' << cn << '\t' << zsc << '\t' << mp << std::endl;
     }    
   }
-  
+
+  template<typename TConfig>
+  inline void
+  mergeCNVs(TConfig const& c, std::vector<CNV>& chrcnv, std::vector<CNV>& cnvs) {
+    // Merge neighboring segments if too similar
+    bool merged = true;
+    std::vector<CNV> newcnv;
+    while(merged) {
+      int32_t k = -1;
+      for(int32_t i = 0; i < (int32_t) chrcnv.size(); ++i) {
+	if (i <= k) continue;
+	k = i;
+	for(int32_t j = i + 1; j < (int32_t) chrcnv.size(); ++j) {
+	  bool allValid = true;
+	  for(int32_t pre = i; pre < j; ++pre) {
+	    double diff = std::abs(chrcnv[pre].cn - chrcnv[j].cn);
+	    if (diff >= c.cn_offset) {
+	      allValid = false;
+	      break;
+	    }
+	  }
+	  if (allValid) k = j;
+	  else break;
+	}
+	if (k > i) {
+	  // Merge
+	  double cn = (chrcnv[i].cn + chrcnv[k].cn) / 2.0;
+	  double zsc = (chrcnv[i].zscore + chrcnv[k].zscore) / 2.0;
+	  double mp = (chrcnv[i].mappable + chrcnv[k].mappable) / 2.0;
+	  newcnv.push_back(CNV(chrcnv[i].chr, chrcnv[i].start, chrcnv[k].end, chrcnv[i].ciposlow, chrcnv[i].ciposhigh, chrcnv[k].ciendlow, chrcnv[k].ciendhigh, cn, zsc, mp));	  
+	} else {
+	  newcnv.push_back(chrcnv[i]);
+	}
+      }
+      if (newcnv.size() == chrcnv.size()) merged = false;
+      else {
+	chrcnv = newcnv;
+	newcnv.clear();
+      }
+    }
+
+    // Insert into global CNV vector
+    for(uint32_t i = 0; i < chrcnv.size(); ++i) {
+      cnvs.push_back(chrcnv[i]);
+      //std::cerr << chrcnv[i].chr << '\t' << chrcnv[i].start << '\t' << chrcnv[i].end << '\t' << '(' << chrcnv[i].ciposlow << ',' << chrcnv[i].ciposhigh << ')' << '\t' << '(' << chrcnv[i].ciendlow << ',' << chrcnv[i].ciendhigh << ')' << '\t' << chrcnv[i].cn << '\t' << chrcnv[i].zscore << '\t' << chrcnv[i].mappable << std::endl;
+    }
+  }
+
 
 }
 

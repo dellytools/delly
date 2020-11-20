@@ -43,7 +43,10 @@ namespace torali
     float fracWindow;
     float fragmentUnique;
     float controlMaf;
+    float stringency;
+    float cn_offset;
     std::string sampleName;
+    boost::filesystem::path cnvfile;
     boost::filesystem::path outfile;
     boost::filesystem::path genome;
     boost::filesystem::path statsFile;
@@ -52,7 +55,7 @@ namespace torali
     boost::filesystem::path bedFile;
     boost::filesystem::path scanFile;
   };
-
+  
   struct CountDNAConfigLib {
     uint16_t madCutoff;
     uint16_t madNormalCutoff;
@@ -212,8 +215,11 @@ namespace torali
 
 
       // Call CNVs
-      //callCNVs(c, gcbound, gcContent, uniqContent, gcbias, cov, hdr, refIndex, cnvs);
+      std::vector<CNV> chrcnv;
+      callCNVs(c, gcbound, gcContent, uniqContent, gcbias, cov, hdr, refIndex, chrcnv);
 
+      // Merge adjacent CNVs lacking read-depth shift
+      mergeCNVs(c, chrcnv, cnvs);
 
       // BED File (target intervals)
       if (c.hasBedFile) {
@@ -421,6 +427,13 @@ namespace torali
       ("adaptive-windowing,a", "use mappable bases for window size")
       ;
 
+    boost::program_options::options_description cnv("CNV calling");
+    cnv.add_options()
+      ("stringency,y", boost::program_options::value<float>(&c.stringency)->default_value(2), "min. SD read-depth shift")
+      ("cn-offset,t", boost::program_options::value<float>(&c.cn_offset)->default_value(0.1), "min. CN offset")
+      ("cnvfile,c", boost::program_options::value<boost::filesystem::path>(&c.cnvfile)->default_value("cnv.bcf"), "output BCF file")
+      ;
+    
     boost::program_options::options_description window("Window options");
     window.add_options()
       ("window-size,i", boost::program_options::value<uint32_t>(&c.window_size)->default_value(10000), "window size")
@@ -449,9 +462,9 @@ namespace torali
 
     // Set the visibility
     boost::program_options::options_description cmdline_options;
-    cmdline_options.add(generic).add(window).add(gcopt).add(hidden);
+    cmdline_options.add(generic).add(cnv).add(window).add(gcopt).add(hidden);
     boost::program_options::options_description visible_options;
-    visible_options.add(generic).add(window).add(gcopt);
+    visible_options.add(generic).add(cnv).add(window).add(gcopt);
 
     // Parse command-line
     boost::program_options::variables_map vm;
