@@ -29,12 +29,14 @@ namespace torali
     bool hasBedFile;
     bool hasScanFile;
     bool noScanWindowSelection;
+    bool segmentation;
     uint32_t nchr;
     uint32_t meanisize;
     uint32_t window_size;
     uint32_t window_offset;
     uint32_t scanWindow;
     uint32_t minChrLen;
+    uint32_t minCnvSize;
     uint16_t minQual;
     uint16_t mad;
     uint16_t ploidy;
@@ -213,13 +215,21 @@ namespace torali
 	hts_itr_destroy(iter);
       }
 
+      // CNV discovery
+      {
+	// Call CNVs
+	std::vector<CNV> chrcnv;
+	callCNVs(c, gcbound, gcContent, uniqContent, gcbias, cov, hdr, refIndex, chrcnv);
 
-      // Call CNVs
-      std::vector<CNV> chrcnv;
-      callCNVs(c, gcbound, gcContent, uniqContent, gcbias, cov, hdr, refIndex, chrcnv);
+	// Merge adjacent CNVs lacking read-depth shift
+	mergeCNVs(c, chrcnv, cnvs);
 
-      // Merge adjacent CNVs lacking read-depth shift
-      mergeCNVs(c, chrcnv, cnvs);
+	// Refine breakpoints
+	//breakpointRefinement(c, gcbound, gcContent, uniqContent, gcbias, cov, hdr, refIndex, cnvs);
+      }
+	
+      // CNV genotyping
+      genotypeCNVs(c, gcbound, gcContent, uniqContent, gcbias, cov, hdr, refIndex, cnvs);
 
       // BED File (target intervals)
       if (c.hasBedFile) {
@@ -434,7 +444,9 @@ namespace torali
     cnv.add_options()
       ("stringency,y", boost::program_options::value<float>(&c.stringency)->default_value(2), "min. SD read-depth shift")
       ("cn-offset,t", boost::program_options::value<float>(&c.cn_offset)->default_value(0.1), "min. CN offset")
+      ("cnv-size,z", boost::program_options::value<uint32_t>(&c.minCnvSize)->default_value(1000), "min. CNV size")
       ("cnvfile,c", boost::program_options::value<boost::filesystem::path>(&c.cnvfile)->default_value("cnv.bcf"), "output BCF file")
+      ("segmentation,u", "copy-number segmentation")
       ;
     
     boost::program_options::options_description window("Read-depth windows");
@@ -511,6 +523,10 @@ namespace torali
     // Adaptive windowing
     if (vm.count("adaptive-windowing")) c.adaptive = true;
     else c.adaptive = false;
+
+    // Segmentation
+    if (vm.count("segmentation")) c.segmentation = true;
+    else c.segmentation = false;
 
     // Check window size
     if (c.window_offset > c.window_size) c.window_offset = c.window_size;

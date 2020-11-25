@@ -19,6 +19,10 @@ namespace torali
   #ifndef LAST_BIN
   #define LAST_BIN 65535
   #endif
+
+  #ifndef MAX_CN
+  #define MAX_CN 10
+  #endif
   
   struct LibraryInfo {
     int32_t rs;
@@ -32,6 +36,31 @@ namespace torali
 
     LibraryInfo() : rs(0), median(0), mad(0), minNormalISize(0), minISizeCutoff(0), maxNormalISize(0), maxISizeCutoff(0), abnormal_pairs(0) {}
   };
+
+  struct CNV {
+    int32_t chr;
+    int32_t start;
+    int32_t end;
+    int32_t ciposlow;
+    int32_t ciposhigh;
+    int32_t ciendlow;
+    int32_t ciendhigh;
+    double cn;
+    double mappable;
+    double sd;
+    
+    CNV(int32_t const c, int32_t const s, int32_t const e, int32_t const cil, int32_t const cih, int32_t const cel, int32_t ceh, double const estcn, double const mp) : chr(c), start(s), end(e), ciposlow(cil), ciposhigh(cih), ciendlow(cel), ciendhigh(ceh), cn(estcn), mappable(mp), sd(1) {}
+  };
+
+  template<typename TCNV>
+  struct SortCNVs : public std::binary_function<TCNV, TCNV, bool>
+  {
+    inline bool operator()(TCNV const& sv1, TCNV const& sv2) {
+      return ((sv1.chr<sv2.chr) || ((sv1.chr==sv2.chr) && (sv1.start<sv2.start)) || ((sv1.chr==sv2.chr) && (sv1.start==sv2.start) && (sv1.end<sv2.end)) || ((sv1.chr==sv2.chr) && (sv1.start==sv2.start) && (sv1.end==sv2.end) && (sv1.cn < sv2.cn)));
+    }
+  };
+
+
 
 
   // Read count struct

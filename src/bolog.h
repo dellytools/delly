@@ -2,6 +2,7 @@
 #define BOLOG_H
 
 #include <boost/math/special_functions/round.hpp>
+#include <boost/math/distributions/normal.hpp>
 
 namespace torali {
 
@@ -82,7 +83,54 @@ struct BoLog {
    gls[file_c * 3 + 1] = (float) gl[1];
    gls[file_c * 3] = (float) gl[2];
  }
- 
+
+
+ template<typename TConfig>
+ inline int32_t
+ _computeCNLs(TConfig const& c, CNV const& cnv, float* gl, int32_t* gqval) {
+   // Compute copy-number likelihoods
+   boost::math::normal s(cnv.cn, cnv.sd);
+   for(uint32_t geno=0; geno< MAX_CN; ++geno) {
+     double prob = boost::math::pdf(s, geno);
+     gl[geno] = std::log10(prob);
+     gl[geno] = (gl[geno] > SMALLEST_GL) ? gl[geno] : SMALLEST_GL;
+   }
+   uint32_t glBest=0;
+   uint32_t glBest2nd=1;
+   if (gl[glBest] < gl[glBest2nd]) {
+     glBest = 1;
+     glBest2nd = 0;
+   }
+   for(uint32_t geno=2; geno < MAX_CN; ++geno) {
+     if (gl[geno] > gl[glBest2nd]) {
+       if (gl[geno] > gl[glBest]) {
+	 glBest2nd = glBest;
+	 glBest = geno;
+       } else {
+	 glBest2nd = geno;
+       }
+     }
+   }
+
+   // Variant quality
+   double glObs = std::log10(boost::math::pdf(s, cnv.cn));
+   glObs = (glObs > SMALLEST_GL) ? glObs : SMALLEST_GL;
+   uint32_t plVariant = (uint32_t) boost::math::round(-10 * glObs);
+   uint32_t plPloidy = (uint32_t) boost::math::round(-10 * gl[c.ploidy]);
+   int32_t varqual = plPloidy - plVariant;
+   
+   // GQ
+   uint32_t plBest = (uint32_t) boost::math::round(-10 * gl[glBest]);
+   uint32_t plBest2nd = (uint32_t) boost::math::round(-10 * gl[glBest2nd]);
+   gqval[0] = plBest2nd - plBest;
+   
+   // Rescale by best genotype
+   double glBestVal = gl[glBest];
+   for(uint32_t geno=0; geno< MAX_CN; ++geno) gl[geno] -= glBestVal;
+
+   // Variant quality
+   return varqual;
+ }
 
 }
 

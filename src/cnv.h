@@ -27,30 +27,6 @@
 namespace torali
 {
 
-  struct CNV {
-    int32_t chr;
-    int32_t start;
-    int32_t end;
-    int32_t ciposlow;
-    int32_t ciposhigh;
-    int32_t ciendlow;
-    int32_t ciendhigh;
-    double cn;
-    double zscore;
-    double mappable;
-    
-    CNV(int32_t const c, int32_t const s, int32_t const e, int32_t const cil, int32_t const cih, int32_t const cel, int32_t ceh, double const estcn, double const zs, double const mp) : chr(c), start(s), end(e), ciposlow(cil), ciposhigh(cih), ciendlow(cel), ciendhigh(ceh), cn(estcn), zscore(zs), mappable(mp) {}
-  };
-
-  template<typename TCNV>
-  struct SortCNVs : public std::binary_function<TCNV, TCNV, bool>
-  {
-    inline bool operator()(TCNV const& sv1, TCNV const& sv2) {
-      return ((sv1.chr<sv2.chr) || ((sv1.chr==sv2.chr) && (sv1.start<sv2.start)) || ((sv1.chr==sv2.chr) && (sv1.start==sv2.start) && (sv1.end<sv2.end)) || ((sv1.chr==sv2.chr) && (sv1.start==sv2.start) && (sv1.end==sv2.end) && (sv1.cn < sv2.cn)));
-    }
-  };
-
-
   struct BpCNV {
     int32_t start;
     int32_t end;
@@ -58,14 +34,172 @@ namespace torali
 
     BpCNV(int32_t const s, int32_t const e, double const z) : start(s), end(e), zscore(z) {}
   };
+
+
+  template<typename TConfig>
+  inline void
+  mergeCNVs(TConfig const& c, std::vector<CNV>& chrcnv, std::vector<CNV>& cnvs) {
+    // Merge neighboring segments if too similar
+    bool merged = true;
+    std::vector<CNV> newcnv;
+    while(merged) {
+      int32_t k = -1;
+      for(int32_t i = 0; i < (int32_t) chrcnv.size(); ++i) {
+	if (i <= k) continue;
+	k = i;
+	for(int32_t j = i + 1; j < (int32_t) chrcnv.size(); ++j) {
+	  bool allValid = true;
+	  for(int32_t pre = i; pre < j; ++pre) {
+	    double diff = std::abs(chrcnv[pre].cn - chrcnv[j].cn);
+	    if (diff >= c.cn_offset) {
+	      allValid = false;
+	      break;
+	    }
+	  }
+	  if (allValid) k = j;
+	  else break;
+	}
+	if (k > i) {
+	  // Merge
+	  double cn = (chrcnv[i].cn + chrcnv[k].cn) / 2.0;
+	  double mp = (chrcnv[i].mappable + chrcnv[k].mappable) / 2.0;
+	  newcnv.push_back(CNV(chrcnv[i].chr, chrcnv[i].start, chrcnv[k].end, chrcnv[i].ciposlow, chrcnv[i].ciposhigh, chrcnv[k].ciendlow, chrcnv[k].ciendhigh, cn, mp));	  
+	} else {
+	  newcnv.push_back(chrcnv[i]);
+	}
+      }
+      if (newcnv.size() == chrcnv.size()) merged = false;
+      else {
+	chrcnv = newcnv;
+	newcnv.clear();
+      }
+    }
+
+    // Insert into global CNV vector
+    for(uint32_t i = 0; i < chrcnv.size(); ++i) {
+      cnvs.push_back(chrcnv[i]);
+      //std::cerr << chrcnv[i].chr << '\t' << chrcnv[i].start << '\t' << chrcnv[i].end << "\tMerged" << std::endl;
+    }
+  }
+
+
+  template<typename TConfig, typename TGcBias, typename TCoverage>
+  inline void
+  breakpointRefinement(TConfig const& c, std::pair<uint32_t, uint32_t> const& gcbound, std::vector<uint16_t> const& gcContent, std::vector<uint16_t> const& uniqContent, TGcBias const& gcbias, TCoverage const& cov, bam_hdr_t const* hdr, int32_t const refIndex, std::vector<CNV>& cnvs) {
+
+    int32_t maxbpshift = 10000;
+	
+    // Breakpoint refinement
+    for(uint32_t n = 1; n < cnvs.size(); ++n) {
+      int32_t prehalf = (cnvs[n-1].start + cnvs[n-1].end) / 2;
+      prehalf = std::max(cnvs[n-1].end - maxbpshift, prehalf);
+      int32_t suchalf = (cnvs[n].start + cnvs[n].end) / 2;
+      suchalf = std::min(cnvs[n].start + maxbpshift, suchalf);
+      double precovsum = 0;
+      double preexpcov = 0;
+      double succovsum = 0;
+      double sucexpcov = 0;
+      int32_t pos = cnvs[n-1].start;
+      std::vector<int32_t> validpos;
+      while((pos < cnvs[n].end) && (pos < (int32_t) hdr->target_len[refIndex])) {
+	if ((gcContent[pos] > gcbound.first) && (gcContent[pos] < gcbound.second) && (uniqContent[pos] >= c.fragmentUnique * c.meanisize)) {
+	  if (pos < prehalf) {
+	    precovsum += cov[pos];
+	    preexpcov += gcbias[gcContent[pos]].coverage;
+	  } else {
+	    if (pos <= suchalf) validpos.push_back(pos);
+	    succovsum += cov[pos];
+	    sucexpcov += gcbias[gcContent[pos]].coverage;
+	  }
+	}
+	++pos;
+      }
+      double precn = c.ploidy * precovsum / preexpcov;
+      double succn = c.ploidy * succovsum / sucexpcov;
+      // Shift Bp
+      std::vector<double> diffcn(validpos.size(), 0);
+      for(uint32_t idx = 0; idx < validpos.size(); ++idx) {
+	if ((preexpcov > 0) && (sucexpcov > 0)) {
+	  precn = c.ploidy * precovsum / preexpcov;
+	  succn = c.ploidy * succovsum / sucexpcov;
+	  diffcn[idx] = std::abs(precn - succn);
+	  //if (validpos[idx] == cnvs[n-1].end) std::cerr << "-->";
+	  //std::cerr << validpos[idx] << ',' << precn << ',' << succn << ',' << diffcn[idx] << std::endl;
+	}
+	// Add to pre, remove from suc
+	precovsum += cov[validpos[idx]];
+	preexpcov += gcbias[gcContent[validpos[idx]]].coverage;
+	succovsum -= cov[validpos[idx]];
+	sucexpcov -= gcbias[gcContent[validpos[idx]]].coverage;
+      }
+      // Find best
+      int32_t bestIdx = -1;
+      for(uint32_t idx = 0; idx < validpos.size(); ++idx) {
+	if ((bestIdx == -1) || (diffcn[idx] > diffcn[bestIdx])) bestIdx = idx;
+      }
+      if (bestIdx != -1) {
+	// Update breakpoint
+	cnvs[n-1].end = validpos[bestIdx];
+	cnvs[n].start = validpos[bestIdx];
+      }
+    }
+    //for(uint32_t n = 0; n < cnvs.size(); ++n) std::cerr << hdr->target_name[cnvs[n].chr] << '\t' << cnvs[n].start << '\t' << cnvs[n].end << "\tRefinement" << std::endl;
+  }
+  
+
+  template<typename TConfig, typename TGcBias, typename TCoverage>
+  inline void
+  genotypeCNVs(TConfig const& c, std::pair<uint32_t, uint32_t> const& gcbound, std::vector<uint16_t> const& gcContent, std::vector<uint16_t> const& uniqContent, TGcBias const& gcbias, TCoverage const& cov, bam_hdr_t const* hdr, int32_t const refIndex, std::vector<CNV>& cnvs) {
+    for(uint32_t n = 0; n < cnvs.size(); ++n) {
+      double covsum = 0;
+      double expcov = 0;
+      int32_t winlen = 0;
+      int32_t pos = cnvs[n].start;
+      while((pos < cnvs[n].end) && (pos < (int32_t) hdr->target_len[refIndex])) {
+	if ((gcContent[pos] > gcbound.first) && (gcContent[pos] < gcbound.second) && (uniqContent[pos] >= c.fragmentUnique * c.meanisize)) {
+	  covsum += cov[pos];
+	  expcov += gcbias[gcContent[pos]].coverage;
+	  ++winlen;
+	}
+	++pos;
+      }
+      double cn = c.ploidy * covsum / expcov;
+      double mp = (double) winlen / (double) (cnvs[n].end - cnvs[n].start);
+      cnvs[n].cn = cn;
+      cnvs[n].mappable = mp;
+
+      // Estimate SD
+      boost::accumulators::accumulator_set<double, boost::accumulators::features<boost::accumulators::tag::mean, boost::accumulators::tag::variance>> acc;
+      uint32_t wsz = winlen / 10;
+      covsum = 0;
+      expcov = 0;
+      winlen = 0;
+      pos = cnvs[n].start;
+      while((pos < cnvs[n].end) && (pos < (int32_t) hdr->target_len[refIndex])) {
+	if ((gcContent[pos] > gcbound.first) && (gcContent[pos] < gcbound.second) && (uniqContent[pos] >= c.fragmentUnique * c.meanisize)) {
+	  covsum += cov[pos];
+	  expcov += gcbias[gcContent[pos]].coverage;
+	  ++winlen;
+	  if (winlen % wsz == 0) {
+	    double cn = c.ploidy * covsum / expcov;
+	    acc(cn);
+	    covsum = 0;
+	    expcov = 0;
+	  }
+	}
+	++pos;
+      }
+      cnvs[n].sd = sqrt(boost::accumulators::variance(acc));
+    }
+  }
   
   template<typename TConfig, typename TGcBias, typename TCoverage>
   inline void
-  callCNVs(TConfig const& c, std::pair<uint32_t, uint32_t> const& gcbound, std::vector<uint16_t> const& gcContent, std::vector<uint16_t> const& uniqContent, TGcBias const& gcbias, TCoverage const& cov, bam_hdr_t const* hdr, int32_t const refIndex, std::vector<CNV>& chrcnv) {
+  callCNVs(TConfig const& c, std::pair<uint32_t, uint32_t> const& gcbound, std::vector<uint16_t> const& gcContent, std::vector<uint16_t> const& uniqContent, TGcBias const& gcbias, TCoverage const& cov, bam_hdr_t const* hdr, int32_t const refIndex, std::vector<CNV>& cnvs) {
 
     // Parameters
-    int32_t smallestWin = 100;
-    int32_t biggestWin = 15000;
+    int32_t smallestWin = c.minCnvSize / 10;
+    int32_t biggestWin = smallestWin * 200;
     uint32_t chain = 10;
 
     // Find breakpoints
@@ -197,99 +331,46 @@ namespace torali
     for(uint32_t n = 0; n <= bpmax.size(); ++n) {
       int32_t cil = 0;
       int32_t cih = 0;
-      double zscorepre = 0;
       if (n > 0) {
 	cil = bpmax[n-1].start;
 	cih = bpmax[n-1].end;
-	zscorepre = bpmax[n-1].zscore;
       }
       int32_t cel = hdr->target_len[refIndex] - 1;
       int32_t ceh = hdr->target_len[refIndex] - 1;
-      double zscoresuc = 0;
       if (n < bpmax.size()) {
 	cel = bpmax[n].start;
 	ceh = bpmax[n].end;
-	zscoresuc = bpmax[n].zscore;
       }
       int32_t cnvstart = (int32_t) ((cil + cih)/2);
       int32_t cnvend = (int32_t) ((cel + ceh)/2);
+      int32_t estcnvstart = -1;
+      int32_t estcnvend = -1;
       double covsum = 0;
       double expcov = 0;
-      double obsexp = 0;
       int32_t winlen = 0;
       int32_t pos = cnvstart;
       while((pos < cnvend) && (pos < (int32_t) hdr->target_len[refIndex])) {
 	if ((gcContent[pos] > gcbound.first) && (gcContent[pos] < gcbound.second) && (uniqContent[pos] >= c.fragmentUnique * c.meanisize)) {
+	  if (estcnvstart == -1) estcnvstart = pos;
+	  estcnvend = pos;
 	  covsum += cov[pos];
-	  obsexp += gcbias[gcContent[pos]].obsexp;
 	  expcov += gcbias[gcContent[pos]].coverage;
 	  ++winlen;
 	}
 	++pos;
       }
-      obsexp /= (double) winlen;
-      double cn = c.ploidy * covsum / expcov;
-      double zsc = (zscorepre + zscoresuc) / 2.0;
-      double mp = (double) winlen / (double) (cnvend - cnvstart);
-      chrcnv.push_back(CNV(refIndex, cnvstart, cnvend, cil, cih, cel, ceh, cn, zsc, mp));
-      //std::cerr << hdr->target_name[refIndex] << '\t' << cnvstart << '\t' << cnvend << '\t' << '(' << cil << ',' << cih << ')' << '\t' << '(' << cel << ',' << ceh << ')' << '\t' << cn << '\t' << zsc << '\t' << mp << std::endl;
-    }    
-  }
-
-  template<typename TConfig>
-  inline void
-  mergeCNVs(TConfig const& c, std::vector<CNV>& chrcnv, std::vector<CNV>& cnvs) {
-    // Merge neighboring segments if too similar
-    bool merged = true;
-    std::vector<CNV> newcnv;
-    while(merged) {
-      int32_t k = -1;
-      for(int32_t i = 0; i < (int32_t) chrcnv.size(); ++i) {
-	if (i <= k) continue;
-	k = i;
-	for(int32_t j = i + 1; j < (int32_t) chrcnv.size(); ++j) {
-	  bool allValid = true;
-	  for(int32_t pre = i; pre < j; ++pre) {
-	    double diff = std::abs(chrcnv[pre].cn - chrcnv[j].cn);
-	    if (diff >= c.cn_offset) {
-	      allValid = false;
-	      break;
-	    }
-	  }
-	  if (allValid) k = j;
-	  else break;
-	}
-	if (k > i) {
-	  // Merge
-	  double cn = (chrcnv[i].cn + chrcnv[k].cn) / 2.0;
-	  double zsc = (chrcnv[i].zscore + chrcnv[k].zscore) / 2.0;
-	  double mp = (chrcnv[i].mappable + chrcnv[k].mappable) / 2.0;
-	  newcnv.push_back(CNV(chrcnv[i].chr, chrcnv[i].start, chrcnv[k].end, chrcnv[i].ciposlow, chrcnv[i].ciposhigh, chrcnv[k].ciendlow, chrcnv[k].ciendhigh, cn, zsc, mp));	  
-	} else {
-	  newcnv.push_back(chrcnv[i]);
-	}
-      }
-      if (newcnv.size() == chrcnv.size()) merged = false;
-      else {
-	chrcnv = newcnv;
-	newcnv.clear();
+      if ((estcnvstart != -1) && (estcnvend != -1) && (estcnvend - estcnvstart > 0)) {
+	double cn = c.ploidy * covsum / expcov;
+	double mp = (double) winlen / (double) (estcnvend - estcnvstart);
+	cnvs.push_back(CNV(refIndex, estcnvstart, estcnvend, cil, cih, cel, ceh, cn, mp));
+	//std::cerr << hdr->target_name[refIndex] << '\t' << estcnvstart << '\t' << estcnvend << '\t' << '(' << cil << ',' << cih << ')' << '\t' << '(' << cel << ',' << ceh << ')' << '\t' << cn << '\t' << mp << std::endl;
       }
     }
-
-    // Insert into global CNV vector
-    for(uint32_t i = 0; i < chrcnv.size(); ++i) {
-      cnvs.push_back(chrcnv[i]);
-      //std::cerr << chrcnv[i].chr << '\t' << chrcnv[i].start << '\t' << chrcnv[i].end << '\t' << '(' << chrcnv[i].ciposlow << ',' << chrcnv[i].ciposhigh << ')' << '\t' << '(' << chrcnv[i].ciendlow << ',' << chrcnv[i].ciendhigh << ')' << '\t' << chrcnv[i].cn << '\t' << chrcnv[i].zscore << '\t' << chrcnv[i].mappable << std::endl;
-    }
   }
-
 
   template<typename TConfig>
   inline void
   cnvVCF(TConfig const& c, std::vector<CNV> const& cnvs) {
-    // BoLog class
-    BoLog<double> bl;
-
     // Open one bam file header
     samFile* samfile = sam_open(c.bamFile.string().c_str(), "r");
     hts_set_fai_filename(samfile, c.genome.string().c_str());
@@ -305,7 +386,7 @@ namespace torali
     std::string datestr("##fileDate=");
     datestr += boost::gregorian::to_iso_string(today);
     bcf_hdr_append(hdr, datestr.c_str());
-    bcf_hdr_append(hdr, "##ALT=<ID=MCNV,Description=\"multi-allelic copy-number variants\">");
+    bcf_hdr_append(hdr, "##ALT=<ID=CNV,Description=\"copy-number variants\">");
     bcf_hdr_append(hdr, "##FILTER=<ID=LowQual,Description=\"Poor quality and insufficient number of PEs and SRs.\">");
     bcf_hdr_append(hdr, "##INFO=<ID=CIEND,Number=2,Type=Integer,Description=\"Confidence interval around END\">");
     bcf_hdr_append(hdr, "##INFO=<ID=CIPOS,Number=2,Type=Integer,Description=\"Confidence interval around POS\">");
@@ -315,12 +396,12 @@ namespace torali
     bcf_hdr_append(hdr, "##INFO=<ID=SVTYPE,Number=1,Type=String,Description=\"Type of structural variant\">");
     bcf_hdr_append(hdr, "##INFO=<ID=SVMETHOD,Number=1,Type=String,Description=\"Type of approach used to detect CNV\">");
     bcf_hdr_append(hdr, "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">");
-    bcf_hdr_append(hdr, "##FORMAT=<ID=GL,Number=G,Type=Float,Description=\"Log10-scaled genotype likelihoods for RR,RA,AA genotypes\">");
+    bcf_hdr_append(hdr, "##FORMAT=<ID=CN,Number=1,Type=Integer,Description=\"Integer copy-number\">");
+    bcf_hdr_append(hdr, "##FORMAT=<ID=CNL,Number=.,Type=Float,Description=\"Log10-scaled copy-number likelihoods\">");
     bcf_hdr_append(hdr, "##FORMAT=<ID=GQ,Number=1,Type=Integer,Description=\"Genotype Quality\">");
     bcf_hdr_append(hdr, "##FORMAT=<ID=FT,Number=1,Type=String,Description=\"Per-sample genotype filter\">");
-    bcf_hdr_append(hdr, "##FORMAT=<ID=CN,Number=1,Type=Integer,Description=\"Integer copy-number\">");
+
     bcf_hdr_append(hdr, "##FORMAT=<ID=RDCN,Number=1,Type=Float,Description=\"Read-depth based copy-number estimate\">");
-    bcf_hdr_append(hdr, "##FORMAT=<ID=BP,Number=1,Type=Float,Description=\"Z-score breakpoint RD shift\">");
 
     // Add reference
     std::string refloc("##reference=");
@@ -339,11 +420,10 @@ namespace torali
     if (!cnvs.empty()) {
       // Genotype arrays
       int32_t *gts = (int*) malloc(bcf_hdr_nsamples(hdr) * 2 * sizeof(int));
-      float *gls = (float*) malloc(bcf_hdr_nsamples(hdr) * 3 * sizeof(float));
       int32_t *gqval = (int*) malloc(bcf_hdr_nsamples(hdr) * sizeof(int));
       int32_t *cnval = (int*) malloc(bcf_hdr_nsamples(hdr) * sizeof(int));
       float *cnrdval = (float*) malloc(bcf_hdr_nsamples(hdr) * sizeof(float));
-      float *zscoreval = (float*) malloc(bcf_hdr_nsamples(hdr) * sizeof(float));
+      float *cnl = (float*) malloc(bcf_hdr_nsamples(hdr) * MAX_CN * sizeof(float));
 
       std::vector<std::string> ftarr;
       ftarr.resize(bcf_hdr_nsamples(hdr));
@@ -358,7 +438,7 @@ namespace torali
 
 	// Integer copy-number
 	int32_t absCN = (int32_t) boost::math::round(cnvs[i].cn);
-	if (absCN == c.ploidy) continue;
+	if ((!c.segmentation) && (absCN == c.ploidy)) continue;
       
 	// Output main vcf fields
 	rec->rid = bcf_hdr_name2id(hdr, bamhd->target_name[cnvs[i].chr]);
@@ -366,16 +446,14 @@ namespace torali
 	int32_t svEndPos = cnvs[i].end;
 	if (svEndPos >= (int32_t) bamhd->target_len[cnvs[i].chr]) svEndPos = bamhd->target_len[cnvs[i].chr] - 1;
 	rec->pos = svStartPos;
-	std::string id("MCNV");
+	std::string id("CNV");
 	std::string padNumber = boost::lexical_cast<std::string>(i+1);
 	padNumber.insert(padNumber.begin(), 8 - padNumber.length(), '0');
 	id += padNumber;
 	bcf_update_id(hdr, rec, id.c_str());
-	std::string svtype = "MCNV";
+	std::string svtype = "CNV";
 	std::string alleles = "N,<" + svtype + ">";
 	bcf_update_alleles_str(hdr, rec, alleles.c_str());
-	int32_t tmpi = bcf_hdr_id2int(hdr, BCF_DT_ID, "PASS");
-	bcf_update_filter(hdr, rec, &tmpi, 1);
       
 	// Add INFO fields
 	bcf_update_info_flag(hdr, rec, "IMPRECISE", NULL, 1);
@@ -384,7 +462,7 @@ namespace torali
 	std::string dellyVersion("EMBL.DELLYv");
 	dellyVersion += dellyVersionNumber;
 	bcf_update_info_string(hdr,rec, "SVMETHOD", dellyVersion.c_str());
-	tmpi = svEndPos;
+	int32_t tmpi = svEndPos;
 	bcf_update_info_int32(hdr, rec, "END", &tmpi, 1);
 	int32_t ciend[2];
 	ciend[0] = cnvs[i].ciendlow - svEndPos;
@@ -398,29 +476,25 @@ namespace torali
 	bcf_update_info_float(hdr, rec, "MP", &tmpf, 1);
 
 	// Genotyping
-	gts[0] = bcf_gt_missing;
-	gts[1] = bcf_gt_missing;
-	gls[0] = 0;
-	gls[1] = 0;
-	gls[2] = 0;
-	gqval[0] = 0;
-	if (gqval[0] < 15) ftarr[0] = "LowQual";
-	else ftarr[0] = "PASS";
 	cnval[0] = absCN;
 	cnrdval[0] = cnvs[i].cn;
-	zscoreval[0] = cnvs[i].zscore;
+	gts[0] = bcf_gt_missing;
+	gts[1] = bcf_gt_missing;
+	rec->qual = _computeCNLs(c, cnvs[i], cnl, gqval);
+	tmpi = bcf_hdr_id2int(hdr, BCF_DT_ID, "PASS");
+	if (rec->qual < 15) tmpi = bcf_hdr_id2int(hdr, BCF_DT_ID, "LowQual");
+	bcf_update_filter(hdr, rec, &tmpi, 1);
 	
-
-	
-	bcf_update_genotypes(hdr, rec, gts, bcf_hdr_nsamples(hdr) * 2);
-	bcf_update_format_float(hdr, rec, "GL",  gls, bcf_hdr_nsamples(hdr) * 3);
-	bcf_update_format_int32(hdr, rec, "GQ", gqval, bcf_hdr_nsamples(hdr));
+	if (gqval[0] < 15) ftarr[0] = "LowQual";
+	else ftarr[0] = "PASS";
 	std::vector<const char*> strp(bcf_hdr_nsamples(hdr));
-	std::transform(ftarr.begin(), ftarr.end(), strp.begin(), cstyle_str());
-	bcf_update_format_string(hdr, rec, "FT", &strp[0], bcf_hdr_nsamples(hdr));
+	std::transform(ftarr.begin(), ftarr.end(), strp.begin(), cstyle_str());	
+	bcf_update_genotypes(hdr, rec, gts, bcf_hdr_nsamples(hdr) * 2);
 	bcf_update_format_int32(hdr, rec, "CN", cnval, bcf_hdr_nsamples(hdr));
+	bcf_update_format_float(hdr, rec, "CNL",  cnl, bcf_hdr_nsamples(hdr) * MAX_CN);
+	bcf_update_format_int32(hdr, rec, "GQ", gqval, bcf_hdr_nsamples(hdr));
+	bcf_update_format_string(hdr, rec, "FT", &strp[0], bcf_hdr_nsamples(hdr));
 	bcf_update_format_float(hdr, rec, "RDCN",  cnrdval, bcf_hdr_nsamples(hdr));
-	bcf_update_format_float(hdr, rec, "BP",  zscoreval, bcf_hdr_nsamples(hdr));
 	bcf_write1(fp, hdr, rec);
 	bcf_clear1(rec);
       }
@@ -428,11 +502,10 @@ namespace torali
     
       // Clean-up
       free(gts);
-      free(gls);
       free(gqval);
       free(cnval);
       free(cnrdval);
-      free(zscoreval);
+      free(cnl);
     }
 
     // Close BAM file
