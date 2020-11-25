@@ -403,6 +403,7 @@ namespace torali
     bcf_hdr_append(hdr, "##FORMAT=<ID=FT,Number=1,Type=String,Description=\"Per-sample genotype filter\">");
 
     bcf_hdr_append(hdr, "##FORMAT=<ID=RDCN,Number=1,Type=Float,Description=\"Read-depth based copy-number estimate\">");
+    bcf_hdr_append(hdr, "##FORMAT=<ID=RDSD,Number=1,Type=Float,Description=\"Read-depth standard deviation\">");
 
     // Add reference
     std::string refloc("##reference=");
@@ -424,6 +425,7 @@ namespace torali
       int32_t *gqval = (int*) malloc(bcf_hdr_nsamples(hdr) * sizeof(int));
       int32_t *cnval = (int*) malloc(bcf_hdr_nsamples(hdr) * sizeof(int));
       float *cnrdval = (float*) malloc(bcf_hdr_nsamples(hdr) * sizeof(float));
+      float *cnsdval = (float*) malloc(bcf_hdr_nsamples(hdr) * sizeof(float));
       float *cnl = (float*) malloc(bcf_hdr_nsamples(hdr) * MAX_CN * sizeof(float));
 
       std::vector<std::string> ftarr;
@@ -479,6 +481,7 @@ namespace torali
 	// Genotyping
 	cnval[0] = absCN;
 	cnrdval[0] = cnvs[i].cn;
+	cnsdval[0] = cnvs[i].sd;
 	gts[0] = bcf_gt_missing;
 	gts[1] = bcf_gt_missing;
 	rec->qual = _computeCNLs(c, cnvs[i], cnl, gqval);
@@ -496,6 +499,7 @@ namespace torali
 	bcf_update_format_int32(hdr, rec, "GQ", gqval, bcf_hdr_nsamples(hdr));
 	bcf_update_format_string(hdr, rec, "FT", &strp[0], bcf_hdr_nsamples(hdr));
 	bcf_update_format_float(hdr, rec, "RDCN",  cnrdval, bcf_hdr_nsamples(hdr));
+	bcf_update_format_float(hdr, rec, "RDSD",  cnsdval, bcf_hdr_nsamples(hdr));
 	bcf_write1(fp, hdr, rec);
 	bcf_clear1(rec);
       }
@@ -506,6 +510,7 @@ namespace torali
       free(gqval);
       free(cnval);
       free(cnrdval);
+      free(cnsdval);
       free(cnl);
     }
 
