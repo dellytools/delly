@@ -30,6 +30,7 @@ namespace torali
     bool hasScanFile;
     bool noScanWindowSelection;
     bool segmentation;
+    bool hasVcfFile;
     uint32_t nchr;
     uint32_t meanisize;
     uint32_t window_size;
@@ -48,6 +49,7 @@ namespace torali
     float stringency;
     float cn_offset;
     std::string sampleName;
+    boost::filesystem::path vcffile;
     boost::filesystem::path cnvfile;
     boost::filesystem::path outfile;
     boost::filesystem::path genome;
@@ -98,6 +100,9 @@ namespace torali
 
     // CNVs
     std::vector<CNV> cnvs;
+    if (c.hasVcfFile) {
+      // Parse cnvs
+    }
     
     // Iterate chromosomes
     faidx_t* faiMap = fai_load(c.mapFile.string().c_str());
@@ -216,7 +221,7 @@ namespace torali
       }
 
       // CNV discovery
-      {
+      if (!c.hasVcfFile) {
 	// Call CNVs
 	std::vector<CNV> chrcnv;
 	callCNVs(c, gcbound, gcContent, uniqContent, gcbias, cov, hdr, refIndex, chrcnv);
@@ -227,7 +232,7 @@ namespace torali
 	// Refine breakpoints
 	//breakpointRefinement(c, gcbound, gcContent, uniqContent, gcbias, cov, hdr, refIndex, cnvs);
       }
-	
+      
       // CNV genotyping
       genotypeCNVs(c, gcbound, gcContent, uniqContent, gcbias, cov, hdr, refIndex, cnvs);
 
@@ -446,6 +451,7 @@ namespace torali
       ("cn-offset,t", boost::program_options::value<float>(&c.cn_offset)->default_value(0.1), "min. CN offset")
       ("cnv-size,z", boost::program_options::value<uint32_t>(&c.minCnvSize)->default_value(1000), "min. CNV size")
       ("cnvfile,c", boost::program_options::value<boost::filesystem::path>(&c.cnvfile)->default_value("cnv.bcf"), "output BCF file")
+      ("vcffile,v", boost::program_options::value<boost::filesystem::path>(&c.vcffile), "input VCF/BCF file for genotyping")
       ("segmentation,u", "copy-number segmentation")
       ;
     
@@ -533,6 +539,28 @@ namespace torali
     if (c.window_size == 0) c.window_size = 1;
     if (c.window_offset == 0) c.window_offset = 1;
 
+    // Check input VCF file
+    if (vm.count("vcffile")) {
+      if (!(boost::filesystem::exists(c.vcffile) && boost::filesystem::is_regular_file(c.vcffile) && boost::filesystem::file_size(c.vcffile))) {
+	std::cerr << "Input VCF/BCF file is missing: " << c.vcffile.string() << std::endl;
+	return 1;
+      }
+      htsFile* ifile = bcf_open(c.vcffile.string().c_str(), "r");
+      if (ifile == NULL) {
+	std::cerr << "Fail to open file " << c.vcffile.string() << std::endl;
+	return 1;
+      }
+      bcf_hdr_t* hdr = bcf_hdr_read(ifile);
+      if (hdr == NULL) {
+	std::cerr << "Fail to open index file " << c.vcffile.string() << std::endl;
+	return 1;
+      }
+      bcf_hdr_destroy(hdr);
+      bcf_close(ifile);
+      c.hasVcfFile = true;
+    } else c.hasVcfFile = false;
+
+    
     // Check bam file
     LibraryInfo li;
     if (!(boost::filesystem::exists(c.bamFile) && boost::filesystem::is_regular_file(c.bamFile) && boost::filesystem::file_size(c.bamFile))) {

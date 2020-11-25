@@ -151,6 +151,7 @@ namespace torali
   inline void
   genotypeCNVs(TConfig const& c, std::pair<uint32_t, uint32_t> const& gcbound, std::vector<uint16_t> const& gcContent, std::vector<uint16_t> const& uniqContent, TGcBias const& gcbias, TCoverage const& cov, bam_hdr_t const* hdr, int32_t const refIndex, std::vector<CNV>& cnvs) {
     for(uint32_t n = 0; n < cnvs.size(); ++n) {
+      if (cnvs[n].chr != refIndex) continue;
       double covsum = 0;
       double expcov = 0;
       int32_t winlen = 0;
