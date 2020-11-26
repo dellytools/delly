@@ -228,6 +228,7 @@ namespace torali
       }
 
       // CNV discovery
+      /*
       if (!c.hasGenoFile) {
 	// Call CNVs
 	std::vector<CNV> chrcnv;
@@ -242,7 +243,7 @@ namespace torali
       
       // CNV genotyping
       genotypeCNVs(c, gcbound, gcContent, uniqContent, gcbias, cov, hdr, refIndex, cnvs);
-
+      */
       // BED File (target intervals)
       if (c.hasBedFile) {
 	if (c.adaptive) {
