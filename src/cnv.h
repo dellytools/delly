@@ -86,7 +86,53 @@ namespace torali
 
   template<typename TConfig, typename TGcBias, typename TCoverage>
   inline void
-  breakpointRefinement(TConfig const& c, std::pair<uint32_t, uint32_t> const& gcbound, std::vector<uint16_t> const& gcContent, std::vector<uint16_t> const& uniqContent, TGcBias const& gcbias, TCoverage const& cov, bam_hdr_t const* hdr, int32_t const refIndex, std::vector<CNV>& cnvs) {
+  breakpointRefinement(TConfig const& c, std::pair<uint32_t, uint32_t> const& gcbound, std::vector<uint16_t> const& gcContent, std::vector<uint16_t> const& uniqContent, TGcBias const& gcbias, TCoverage const& cov, bam_hdr_t const* hdr, int32_t const refIndex, std::vector<StructuralVariantRecord> const& svs, std::vector<CNV>& cnvs) {
+    typedef typename std::vector<StructuralVariantRecord> TSVs;
+    
+    // Estimate CN shift
+    for(uint32_t n = 1; n < cnvs.size(); ++n) {
+      if ((cnvs[n-1].chr != refIndex) || (cnvs[n].chr != refIndex)) continue;
+      double precovsum = 0;
+      double preexpcov = 0;
+      double succovsum = 0;
+      double sucexpcov = 0;
+      int32_t pos = cnvs[n-1].start;
+      while((pos < cnvs[n].end) && (pos < (int32_t) hdr->target_len[refIndex])) {
+	if ((gcContent[pos] > gcbound.first) && (gcContent[pos] < gcbound.second) && (uniqContent[pos] >= c.fragmentUnique * c.meanisize)) {
+	  if (pos < cnvs[n-1].end) {
+	    precovsum += cov[pos];
+	    preexpcov += gcbias[gcContent[pos]].coverage;
+	  } else {
+	    succovsum += cov[pos];
+	    sucexpcov += gcbias[gcContent[pos]].coverage;
+	  }
+	}
+	++pos;
+      }
+      double precn = c.ploidy * precovsum / preexpcov;
+      double succn = c.ploidy * succovsum / sucexpcov;
+
+      // Intersect with delly SVs
+      std::cerr << cnvs[n].start << ',' << cnvs[n].end << ',' << precn << ',' << succn << std::endl;
+      int32_t searchWindow = 10000;
+      typename TSVs::const_iterator itsv = std::lower_bound(svs.begin(), svs.end(), StructuralVariantRecord(refIndex, std::max(0, cnvs[n].start - searchWindow), cnvs[n].end), SortSVs<StructuralVariantRecord>());
+      for(;itsv != svs.end(); ++itsv) {
+	if (itsv->chr != refIndex) continue;
+	if (itsv->svStart - cnvs[n].start > searchWindow) break;
+	std::cerr << itsv->svStart << ',' << itsv->svEnd << ',' << itsv->svt << std::endl;
+      }
+      std::cerr << std::endl;
+
+
+    }
+    //for(uint32_t n = 0; n < cnvs.size(); ++n) std::cerr << hdr->target_name[cnvs[n].chr] << '\t' << cnvs[n].start << '\t' << cnvs[n].end << "\tRefinement" << std::endl;
+  }
+
+  
+
+  template<typename TConfig, typename TGcBias, typename TCoverage>
+  inline void
+  breakpointRefinement2(TConfig const& c, std::pair<uint32_t, uint32_t> const& gcbound, std::vector<uint16_t> const& gcContent, std::vector<uint16_t> const& uniqContent, TGcBias const& gcbias, TCoverage const& cov, bam_hdr_t const* hdr, int32_t const refIndex, std::vector<CNV>& cnvs) {
 
     int32_t maxbpshift = 10000;
 	
@@ -376,7 +422,7 @@ namespace torali
   inline void
   parseVcfCNV(TConfig const& c, bam_hdr_t* hd, std::vector<CNV>& cnvs) {
     // Load bcf file
-    htsFile* ifile = bcf_open(c.vcffile.string().c_str(), "r");
+    htsFile* ifile = bcf_open(c.genofile.string().c_str(), "r");
     bcf_hdr_t* hdr = bcf_hdr_read(ifile);
     bcf1_t* rec = bcf_init();
 

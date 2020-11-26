@@ -30,6 +30,7 @@ namespace torali
     bool hasScanFile;
     bool noScanWindowSelection;
     bool segmentation;
+    bool hasGenoFile;
     bool hasVcfFile;
     uint32_t nchr;
     uint32_t meanisize;
@@ -50,6 +51,7 @@ namespace torali
     float cn_offset;
     std::string sampleName;
     boost::filesystem::path vcffile;
+    boost::filesystem::path genofile;
     boost::filesystem::path cnvfile;
     boost::filesystem::path outfile;
     boost::filesystem::path genome;
@@ -100,9 +102,13 @@ namespace torali
 
     // CNVs
     std::vector<CNV> cnvs;
+    if (c.hasGenoFile) parseVcfCNV(c, hdr, cnvs);
+
+    // SVs for breakpoint refinement
+    std::vector<StructuralVariantRecord> svs;
     if (c.hasVcfFile) {
-      // Parse cnvs
-      parseVcfCNV(c, hdr, cnvs);
+      vcfParse(c, hdr, svs);
+      sort(svs.begin(), svs.end(), SortSVs<StructuralVariantRecord>());
     }
     
     // Iterate chromosomes
@@ -222,7 +228,7 @@ namespace torali
       }
 
       // CNV discovery
-      if (!c.hasVcfFile) {
+      if (!c.hasGenoFile) {
 	// Call CNVs
 	std::vector<CNV> chrcnv;
 	callCNVs(c, gcbound, gcContent, uniqContent, gcbias, cov, hdr, refIndex, chrcnv);
@@ -231,7 +237,7 @@ namespace torali
 	mergeCNVs(c, chrcnv, cnvs);
 
 	// Refine breakpoints
-	//breakpointRefinement(c, gcbound, gcContent, uniqContent, gcbias, cov, hdr, refIndex, cnvs);
+	//if (c.hasVcfFile) breakpointRefinement(c, gcbound, gcContent, uniqContent, gcbias, cov, hdr, refIndex, svs, cnvs);
       }
       
       // CNV genotyping
@@ -452,7 +458,8 @@ namespace torali
       ("cn-offset,t", boost::program_options::value<float>(&c.cn_offset)->default_value(0.1), "min. CN offset")
       ("cnv-size,z", boost::program_options::value<uint32_t>(&c.minCnvSize)->default_value(1000), "min. CNV size")
       ("cnvfile,c", boost::program_options::value<boost::filesystem::path>(&c.cnvfile)->default_value("cnv.bcf"), "output BCF file")
-      ("vcffile,v", boost::program_options::value<boost::filesystem::path>(&c.vcffile), "input VCF/BCF file for genotyping")
+      ("svfile,l", boost::program_options::value<boost::filesystem::path>(&c.vcffile), "delly SV file for breakpoint refinement")
+      ("vcffile,v", boost::program_options::value<boost::filesystem::path>(&c.genofile), "input VCF/BCF file for re-genotyping")
       ("segmentation,u", "copy-number segmentation")
       ;
     
@@ -540,8 +547,29 @@ namespace torali
     if (c.window_size == 0) c.window_size = 1;
     if (c.window_offset == 0) c.window_offset = 1;
 
-    // Check input VCF file
+    // Check input VCF file (CNV genotyping)
     if (vm.count("vcffile")) {
+      if (!(boost::filesystem::exists(c.genofile) && boost::filesystem::is_regular_file(c.genofile) && boost::filesystem::file_size(c.genofile))) {
+	std::cerr << "Input VCF/BCF file is missing: " << c.genofile.string() << std::endl;
+	return 1;
+      }
+      htsFile* ifile = bcf_open(c.genofile.string().c_str(), "r");
+      if (ifile == NULL) {
+	std::cerr << "Fail to open file " << c.genofile.string() << std::endl;
+	return 1;
+      }
+      bcf_hdr_t* hdr = bcf_hdr_read(ifile);
+      if (hdr == NULL) {
+	std::cerr << "Fail to open index file " << c.genofile.string() << std::endl;
+	return 1;
+      }
+      bcf_hdr_destroy(hdr);
+      bcf_close(ifile);
+      c.hasGenoFile = true;
+    } else c.hasGenoFile = false;
+
+    // Check input VCF file (delly SV file)
+    if (vm.count("svfile")) {
       if (!(boost::filesystem::exists(c.vcffile) && boost::filesystem::is_regular_file(c.vcffile) && boost::filesystem::file_size(c.vcffile))) {
 	std::cerr << "Input VCF/BCF file is missing: " << c.vcffile.string() << std::endl;
 	return 1;
@@ -560,7 +588,6 @@ namespace torali
       bcf_close(ifile);
       c.hasVcfFile = true;
     } else c.hasVcfFile = false;
-
     
     // Check bam file
     LibraryInfo li;
