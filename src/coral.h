@@ -102,6 +102,7 @@ namespace torali
     std::vector<CNV> cnvs;
     if (c.hasVcfFile) {
       // Parse cnvs
+      parseVcfCNV(c, hdr, cnvs);
     }
     
     // Iterate chromosomes

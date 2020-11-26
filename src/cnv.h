@@ -22,6 +22,7 @@
 #include <htslib/faidx.h>
 #include <htslib/vcf.h>
 #include <htslib/sam.h>
+#include "util.h"
 
 
 namespace torali
@@ -369,6 +370,91 @@ namespace torali
     }
   }
 
+
+  // Parse Delly CNV VCF file
+  template<typename TConfig>
+  inline void
+  parseVcfCNV(TConfig const& c, bam_hdr_t* hd, std::vector<CNV>& cnvs) {
+    // Load bcf file
+    htsFile* ifile = bcf_open(c.vcffile.string().c_str(), "r");
+    bcf_hdr_t* hdr = bcf_hdr_read(ifile);
+    bcf1_t* rec = bcf_init();
+
+    // Parse bcf
+    int32_t nsvend = 0;
+    int32_t* svend = NULL;
+    int32_t ncipos = 0;
+    int32_t* cipos = NULL;
+    int32_t nmp = 0;
+    float* mp = NULL;
+    int32_t nsvt = 0;
+    char* svt = NULL;
+    int32_t nmethod = 0;
+    char* method = NULL;
+    uint16_t wimethod = 0; 
+    while (bcf_read(ifile, hdr, rec) == 0) {
+      bcf_unpack(rec, BCF_UN_INFO);
+
+      // Delly BCF file?
+      if (!wimethod) {
+	wimethod = 2;
+	if (bcf_get_info_string(hdr, rec, "SVMETHOD", &method, &nmethod) > 0) {
+	  std::string mstr = std::string(method);
+	  if ((mstr.size() >= 10) && (mstr.substr(0, 10)  == "EMBL.DELLY")) wimethod = 1;
+	}
+      }
+
+      // Delly
+      if (wimethod == 1) {
+	// Fill SV record
+	CNV cnv;
+	std::string chrName = bcf_hdr_id2name(hdr, rec->rid);
+	int32_t tid = bam_name2id(hd, chrName.c_str());
+	cnv.chr = tid;
+	cnv.start = rec->pos - 1;
+
+	// Parse CNV type
+	if (bcf_get_info_string(hdr, rec, "SVTYPE", &svt, &nsvt) > 0) {
+	  if (std::string(svt) != "CNV") continue;
+	} else continue;
+      
+	// Parse INFO
+	if (bcf_get_info_int32(hdr, rec, "END", &svend, &nsvend) > 0) cnv.end = *svend;
+	else continue;
+	if (bcf_get_info_int32(hdr, rec, "CIPOS", &cipos, &ncipos) > 0) {
+	  cnv.ciposlow = cnv.start + cipos[0];
+	  cnv.ciposhigh = cnv.start + cipos[1];
+	} else {
+	  cnv.ciposlow = cnv.start - 50;
+	  cnv.ciposhigh = cnv.start + 50;
+	}
+	if (bcf_get_info_int32(hdr, rec, "CIEND", &cipos, &ncipos) > 0) {
+	  cnv.ciendlow = cnv.end + cipos[0];
+	  cnv.ciendhigh = cnv.end + cipos[1];
+	} else {
+	  cnv.ciendlow = cnv.end - 50;
+	  cnv.ciendhigh = cnv.end + 50;
+	}
+	if (bcf_get_info_float(hdr, rec, "MP", &mp, &nmp) > 0) cnv.mappable = (double) *mp;
+	else cnv.mappable = 0;
+
+	cnvs.push_back(cnv);
+      }
+    }
+    // Clean-up
+    free(svend);
+    free(svt);
+    free(method);
+    free(cipos);
+    free(mp);
+    
+    // Close VCF
+    bcf_hdr_destroy(hdr);
+    bcf_close(ifile);
+    bcf_destroy(rec);
+  }
+
+  
   template<typename TConfig>
   inline void
   cnvVCF(TConfig const& c, std::vector<CNV> const& cnvs) {
@@ -419,6 +505,7 @@ namespace torali
     bcf_hdr_add_sample(hdr, NULL);
     if (bcf_hdr_write(fp, hdr) != 0) std::cerr << "Error: Failed to write BCF header!" << std::endl;
 
+    uint32_t cnvid = 0;
     if (!cnvs.empty()) {
       // Genotype arrays
       int32_t *gts = (int*) malloc(bcf_hdr_nsamples(hdr) * 2 * sizeof(int));
@@ -450,7 +537,7 @@ namespace torali
 	if (svEndPos >= (int32_t) bamhd->target_len[cnvs[i].chr]) svEndPos = bamhd->target_len[cnvs[i].chr] - 1;
 	rec->pos = svStartPos;
 	std::string id("CNV");
-	std::string padNumber = boost::lexical_cast<std::string>(i+1);
+	std::string padNumber = boost::lexical_cast<std::string>(++cnvid);
 	padNumber.insert(padNumber.begin(), 8 - padNumber.length(), '0');
 	id += padNumber;
 	bcf_update_id(hdr, rec, id.c_str());
@@ -468,11 +555,11 @@ namespace torali
 	int32_t tmpi = svEndPos;
 	bcf_update_info_int32(hdr, rec, "END", &tmpi, 1);
 	int32_t ciend[2];
-	ciend[0] = cnvs[i].ciendlow - svEndPos;
-	ciend[1] = cnvs[i].ciendhigh - svEndPos;
+	ciend[0] = cnvs[i].ciendlow - cnvs[i].end;
+	ciend[1] = cnvs[i].ciendhigh - cnvs[i].end;
 	int32_t cipos[2];
-	cipos[0] = cnvs[i].ciposlow - svStartPos;
-	cipos[1] = cnvs[i].ciposhigh - svStartPos;
+	cipos[0] = cnvs[i].ciposlow - cnvs[i].start;
+	cipos[1] = cnvs[i].ciposhigh - cnvs[i].start;
 	bcf_update_info_int32(hdr, rec, "CIPOS", cipos, 2);
 	bcf_update_info_int32(hdr, rec, "CIEND", ciend, 2);
 	float tmpf = cnvs[i].mappable;
