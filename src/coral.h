@@ -105,10 +105,17 @@ namespace torali
     if (c.hasGenoFile) parseVcfCNV(c, hdr, cnvs);
 
     // SVs for breakpoint refinement
-    std::vector<StructuralVariantRecord> svs;
+    typedef std::vector<SVBreakpoint> TChrBreakpoints;
+    typedef std::vector<TChrBreakpoints> TGenomicBreakpoints;
+    TGenomicBreakpoints svbp(c.nchr, TChrBreakpoints());
     if (c.hasVcfFile) {
+      std::vector<StructuralVariantRecord> svs;
       vcfParse(c, hdr, svs);
-      sort(svs.begin(), svs.end(), SortSVs<StructuralVariantRecord>());
+      for(uint32_t i = 0; i < svs.size(); ++i) {
+	svbp[svs[i].chr].push_back(SVBreakpoint(svs[i].svStart, svs[i].ciposlow, svs[i].ciposhigh, svs[i].mapq));
+	svbp[svs[i].chr2].push_back(SVBreakpoint(svs[i].svEnd, svs[i].ciendlow, svs[i].ciendhigh, svs[i].mapq));
+      }
+      for (uint32_t i = 0; i < svbp.size(); ++i) sort(svbp[i].begin(), svbp[i].end(), SortSVBreakpoint<SVBreakpoint>());
     }
     
     // Iterate chromosomes
@@ -228,7 +235,6 @@ namespace torali
       }
 
       // CNV discovery
-      /*
       if (!c.hasGenoFile) {
 	// Call CNVs
 	std::vector<CNV> chrcnv;
@@ -238,12 +244,12 @@ namespace torali
 	mergeCNVs(c, chrcnv, cnvs);
 
 	// Refine breakpoints
-	//if (c.hasVcfFile) breakpointRefinement(c, gcbound, gcContent, uniqContent, gcbias, cov, hdr, refIndex, svs, cnvs);
+	if (c.hasVcfFile) breakpointRefinement(c, gcbound, gcContent, uniqContent, gcbias, cov, hdr, refIndex, svbp, cnvs);
       }
       
       // CNV genotyping
       genotypeCNVs(c, gcbound, gcContent, uniqContent, gcbias, cov, hdr, refIndex, cnvs);
-      */
+
       // BED File (target intervals)
       if (c.hasBedFile) {
 	if (c.adaptive) {

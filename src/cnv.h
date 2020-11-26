@@ -28,6 +28,26 @@
 namespace torali
 {
 
+  struct SVBreakpoint {
+    int32_t pos;
+    int32_t cilow;
+    int32_t cihigh;
+    int32_t qual;
+
+    explicit SVBreakpoint(int32_t const p) : pos(p), cilow(0), cihigh(0), qual(0) {}
+    SVBreakpoint(int32_t const p, int32_t const cil, int32_t const cih, int32_t q) : pos(p), cilow(cil), cihigh(cih), qual(q) {}
+  };
+
+
+  template<typename TSVBp>
+  struct SortSVBreakpoint : public std::binary_function<TSVBp, TSVBp, bool>
+  {
+    inline bool operator()(TSVBp const& sv1, TSVBp const& sv2) {
+      return ((sv1.pos<sv2.pos) || ((sv1.pos==sv2.pos) && (sv1.qual<sv2.qual)));
+    }
+  };
+
+  
   struct BpCNV {
     int32_t start;
     int32_t end;
@@ -84,10 +104,10 @@ namespace torali
   }
 
 
-  template<typename TConfig, typename TGcBias, typename TCoverage>
+  template<typename TConfig, typename TGcBias, typename TCoverage, typename TGenomicBreakpoints>
   inline void
-  breakpointRefinement(TConfig const& c, std::pair<uint32_t, uint32_t> const& gcbound, std::vector<uint16_t> const& gcContent, std::vector<uint16_t> const& uniqContent, TGcBias const& gcbias, TCoverage const& cov, bam_hdr_t const* hdr, int32_t const refIndex, std::vector<StructuralVariantRecord> const& svs, std::vector<CNV>& cnvs) {
-    typedef typename std::vector<StructuralVariantRecord> TSVs;
+  breakpointRefinement(TConfig const& c, std::pair<uint32_t, uint32_t> const& gcbound, std::vector<uint16_t> const& gcContent, std::vector<uint16_t> const& uniqContent, TGcBias const& gcbias, TCoverage const& cov, bam_hdr_t const* hdr, int32_t const refIndex, TGenomicBreakpoints const& svbp, std::vector<CNV>& cnvs) {
+    typedef typename TGenomicBreakpoints::value_type TSVs;
     
     // Estimate CN shift
     for(uint32_t n = 1; n < cnvs.size(); ++n) {
@@ -109,25 +129,52 @@ namespace torali
 	}
 	++pos;
       }
-      double precn = c.ploidy * precovsum / preexpcov;
-      double succn = c.ploidy * succovsum / sucexpcov;
+      double precndiff = std::abs((c.ploidy * precovsum / preexpcov) - (c.ploidy * succovsum / sucexpcov));
 
       // Intersect with delly SVs
-      std::cerr << cnvs[n].start << ',' << cnvs[n].end << ',' << precn << ',' << succn << std::endl;
-      int32_t searchWindow = 10000;
-      typename TSVs::const_iterator itsv = std::lower_bound(svs.begin(), svs.end(), StructuralVariantRecord(refIndex, std::max(0, cnvs[n].start - searchWindow), cnvs[n].end), SortSVs<StructuralVariantRecord>());
-      for(;itsv != svs.end(); ++itsv) {
-	if (itsv->chr != refIndex) continue;
-	if (itsv->svStart - cnvs[n].start > searchWindow) break;
-	std::cerr << itsv->svStart << ',' << itsv->svEnd << ',' << itsv->svt << std::endl;
+      int32_t searchWindow = std::max( std::max(1000, cnvs[n].start - cnvs[n].ciposlow), std::max(1000, cnvs[n].ciposhigh - cnvs[n].start));
+      typename TSVs::const_iterator itbest = svbp[refIndex].end();
+      // Current CNV start for this breakpoint
+      typename TSVs::const_iterator itsv = std::lower_bound(svbp[refIndex].begin(), svbp[refIndex].end(), SVBreakpoint(std::max(0, cnvs[n].start - searchWindow)), SortSVBreakpoint<SVBreakpoint>());
+      for(; itsv != svbp[refIndex].end(); ++itsv) {
+	if (itsv->pos - cnvs[n].start > searchWindow) break;
+	if (itsv->pos >= cnvs[n].end) continue;
+	if (itsv->pos <= cnvs[n-1].start) continue;
+	if ((itbest == svbp[refIndex].end()) || (itsv->qual > itbest->qual)) itbest = itsv;
       }
-      std::cerr << std::endl;
-
-
+      if ((itbest != svbp[refIndex].end()) && (itbest->qual > 50)) {
+	// Check refined CNV
+	precovsum = 0;
+	preexpcov = 0;
+	succovsum = 0;
+	sucexpcov = 0;
+	pos = cnvs[n-1].start;
+	while((pos < cnvs[n].end) && (pos < (int32_t) hdr->target_len[refIndex])) {
+	  if ((gcContent[pos] > gcbound.first) && (gcContent[pos] < gcbound.second) && (uniqContent[pos] >= c.fragmentUnique * c.meanisize)) {
+	    if (pos < itbest->pos) {
+	      precovsum += cov[pos];
+	      preexpcov += gcbias[gcContent[pos]].coverage;
+	    } else {
+	      succovsum += cov[pos];
+	      sucexpcov += gcbias[gcContent[pos]].coverage;
+	    }
+	  }
+	  ++pos;
+	}
+	double postcndiff = std::abs((c.ploidy * precovsum / preexpcov) - (c.ploidy * succovsum / sucexpcov));
+	//std::cerr << cnvs[n-1].end << ',' << itbest->pos << ',' << precndiff << ',' << postcndiff << std::endl;
+	if (precndiff < postcndiff + c.cn_offset) {
+	  // Accept new breakpoint
+	  cnvs[n-1].end = itbest->pos;
+	  cnvs[n].start = itbest->pos;
+	  cnvs[n-1].ciendlow = itbest->pos + itbest->cilow;
+	  cnvs[n-1].ciendhigh = itbest->pos + itbest->cihigh;
+	  cnvs[n].ciposlow = itbest->pos + itbest->cilow;
+	  cnvs[n].ciposhigh = itbest->pos + itbest->cihigh;
+	}
+      }
     }
-    //for(uint32_t n = 0; n < cnvs.size(); ++n) std::cerr << hdr->target_name[cnvs[n].chr] << '\t' << cnvs[n].start << '\t' << cnvs[n].end << "\tRefinement" << std::endl;
   }
-
   
 
   template<typename TConfig, typename TGcBias, typename TCoverage>
@@ -238,6 +285,7 @@ namespace torali
 	++pos;
       }
       cnvs[n].sd = sqrt(boost::accumulators::variance(acc));
+      if (cnvs[n].sd < 0.1) cnvs[n].sd = 0.1;
     }
   }
   
@@ -389,6 +437,7 @@ namespace torali
 	cel = bpmax[n].start;
 	ceh = bpmax[n].end;
       }
+      //std::cerr << (cih - cil) << ';' << (ceh - cel) << std::endl;
       int32_t cnvstart = (int32_t) ((cil + cih)/2);
       int32_t cnvend = (int32_t) ((cel + ceh)/2);
       int32_t estcnvstart = -1;
