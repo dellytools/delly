@@ -30,7 +30,7 @@ p = p + geom_point(pch=21, size=0.5)
 p = p + xlab("Chromosome")
 p = p + ylab("Copy-number")
 p = p + scale_x_continuous(labels=comma)
-if (nrow(seg)) { p = p + geom_segment(data=seg, aes(x=start, y=cn, xend=end, yend=cn), color="#31a354"); }
+if (nrow(seg)) { p = p + geom_segment(data=seg, aes(x=start, y=cn, xend=end, yend=cn), color="#31a354", size=1.2); }
 p = p + facet_grid(. ~ chr, scales="free_x", space="free_x")
 p = p + ylim(0, maxCN)
 p = p + theme(axis.text.x = element_text(angle=45, hjust=1))
@@ -46,7 +46,7 @@ for(chrname in unique(x$chr)) {
  p = p + geom_point(pch=21, size=0.5)
  p = p + ylab("Copy-number") + xlab(chrname)
  p = p + scale_x_continuous(labels=comma, breaks = scales::pretty_breaks(n=20))
- if (nrow(sl)) { p = p + geom_segment(data=sl, aes(x=start, y=cn, xend=end, yend=cn), color="lightblue"); }
+ if (nrow(sl)) { p = p + geom_segment(data=sl, aes(x=start, y=cn, xend=end, yend=cn), color="#31a354", size=1.2); }
  p = p + ylim(0, maxCN)
  p = p + theme(axis.text.x = element_text(angle=45, hjust=1))
  ggsave(p, file=paste0("plot.", chrname, ".png"), width=24, height=6)
