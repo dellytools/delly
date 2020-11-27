@@ -49,6 +49,7 @@ struct ClassifyConfig {
   int32_t minsize;
   int32_t maxsize;
   float gq;
+  float pgerm;
   std::string filter;
   std::set<std::string> tumorSet;
   std::set<std::string> controlSet;
@@ -70,13 +71,10 @@ classifyRun(TClassifyConfig const& c) {
   htsFile *ofile = hts_open(c.outfile.string().c_str(), "wb");
   bcf_hdr_t *hdr_out = bcf_hdr_dup(hdr);
   if (c.filter == "somatic") {
-    bcf_hdr_remove(hdr_out, BCF_HL_INFO, "RDRATIO");
-    bcf_hdr_append(hdr_out, "##INFO=<ID=RDRATIO,Number=1,Type=Float,Description=\"Read-depth ratio of tumor vs. normal.\">");
     bcf_hdr_remove(hdr_out, BCF_HL_INFO, "SOMATIC");
-    bcf_hdr_append(hdr_out, "##INFO=<ID=SOMATIC,Number=0,Type=Flag,Description=\"Somatic structural variant.\">");
-  } else if (c.filter == "germline") {
-    bcf_hdr_remove(hdr_out, BCF_HL_INFO, "RDRATIO");
-    bcf_hdr_append(hdr_out, "##INFO=<ID=RDRATIO,Number=1,Type=Float,Description=\"Read-depth ratio of SV carrier vs. non-carrier.\">");
+    bcf_hdr_append(hdr_out, "##INFO=<ID=SOMATIC,Number=0,Type=Flag,Description=\"Somatic copy-number variant.\">");
+    bcf_hdr_remove(hdr_out, BCF_HL_INFO, "PGERM");
+    bcf_hdr_append(hdr_out, "##INFO=<ID=PGERM,Number=1,Type=Float,Description=\"Probability of being germline.\">");
   }
   if (bcf_hdr_write(ofile, hdr_out) != 0) std::cerr << "Error: Failed to write BCF header!" << std::endl;
 
@@ -91,6 +89,8 @@ classifyRun(TClassifyConfig const& c) {
   int32_t* cn = NULL;
   int nrdcn = 0;
   float* rdcn = NULL;
+  int nrdsd = 0;
+  float* rdsd = NULL;
   bool germline = false;
   if (c.filter == "germline") germline = true;
 
@@ -118,72 +118,55 @@ classifyRun(TClassifyConfig const& c) {
     int32_t svlen = svEnd - svStart;
     if ((svlen < c.minsize) || (svlen > c.maxsize)) continue;
 
-    // Check genotypes
+    // Check copy-number
     bcf_unpack(rec, BCF_UN_ALL);
     bcf_get_format_int32(hdr, rec, "GQ", &gq, &ngq);
     bcf_get_format_int32(hdr, rec, "CN", &cn, &ncn);
     bcf_get_format_float(hdr, rec, "RDCN", &rdcn, &nrdcn);
+    bcf_get_format_float(hdr, rec, "RDSD", &rdsd, &nrdsd);
+
+    typedef std::pair<float, float> TCnSd;
+    typedef std::vector<TCnSd> TSampleDist;
+    TSampleDist control;
+    TSampleDist tumor;
     for (int i = 0; i < bcf_hdr_nsamples(hdr); ++i) {
-      /*
-      if ((bcf_gt_allele(gt[i*2]) != -1) && (bcf_gt_allele(gt[i*2 + 1]) != -1)) {
-	int gt_type = bcf_gt_allele(gt[i*2]) + bcf_gt_allele(gt[i*2 + 1]);
-	++ac[bcf_gt_allele(gt[i*2])];
-	++ac[bcf_gt_allele(gt[i*2 + 1])];
-	if ((germline) || (c.controlSet.find(hdr->samples[i]) != c.controlSet.end())) {
-	  // Control or population genomics
-	  ++nCount;
-	  if (gt_type == 0) {
-	    rcraw.push_back(rc[i]);
-	    if (_getFormatType(hdr, "GQ") == BCF_HT_INT) gqRef.push_back(gq[i]);
-	    else if (_getFormatType(hdr, "GQ") == BCF_HT_REAL) gqRef.push_back(gqf[i]);
-	    if ((rcl != NULL) && (rcr != NULL) && (rcl[i] + rcr[i] != 0)) rcControl.push_back((float) rc[i] / ((float) (rcl[i] + rcr[i])));
-	    else rcControl.push_back(rc[i]);
-	    float rVar = 0;
-	    if (!precise) rVar = (float) dv[i] / (float) (dr[i] + dv[i]);
-	    else rVar = (float) rv[i] / (float) (rr[i] + rv[i]);
-	    rRefVar.push_back(rVar);
-	    if (rVar <= c.controlcont) ++controlpass;
-	  } else if ((germline) && (gt_type >= 1)) {
-	    if (_getFormatType(hdr, "GQ") == BCF_HT_INT) gqAlt.push_back(gq[i]);
-	    else if (_getFormatType(hdr, "GQ") == BCF_HT_REAL) gqAlt.push_back(gqf[i]);
-	    if ((rcl != NULL) && (rcr != NULL) && (rcl[i] + rcr[i] != 0)) rcAlt.push_back((float) rc[i] / ((float) (rcl[i] + rcr[i])));
-	    else rcAlt.push_back(rc[i]);
-	    float rVar = 0;
-	    if (!precise) rVar = (float) dv[i] / (float) (dr[i] + dv[i]);
-	    else rVar = (float) rv[i] / (float) (rr[i] + rv[i]);
-	    rAltVar.push_back(rVar);
-	  }
-	} else if ((!germline) && (c.tumorSet.find(hdr->samples[i]) != c.tumorSet.end())) {
-	  // Tumor
-	  ++tCount;
-	  if ((rcl != NULL) && (rcr != NULL) && (rcl[i] + rcr[i] != 0)) rcTumor.push_back((float) rc[i] / ((float) (rcl[i] + rcr[i])));
-	  else rcTumor.push_back(rc[i]);
-	  if (!precise) {
-	    if ((((float) dv[i] / (float) (dr[i] + dv[i])) >= c.altaf) && (dr[i] + dv[i] >= c.coverage)) ++tumorpass;
-	  } else {
-	    if ((((float) rv[i] / (float) (rr[i] + rv[i])) >= c.altaf) && (rr[i] + rv[i] >= c.coverage)) ++tumorpass;
-	  }
-	}
-      */
+      if ((germline) || (c.controlSet.find(hdr->samples[i]) != c.controlSet.end())) {
+	// Control or population genomics
+	control.push_back(std::make_pair(rdcn[i], rdsd[i]));
+      } else if ((!germline) && (c.tumorSet.find(hdr->samples[i]) != c.tumorSet.end())) {
+	// Tumor
+	tumor.push_back(std::make_pair(rdcn[i], rdsd[i]));
+      }
     }
-    if (c.filter == "somatic") {
-      /*
-      float genotypeRatio = (float) (nCount + tCount) / (float) (c.controlSet.size() + c.tumorSet.size());
-      if ((controlpass) && (tumorpass) && (controlpass == nCount) && (genotypeRatio >= c.ratiogeno)) {
-	float rccontrolmed = 0;
-	getMedian(rcControl.begin(), rcControl.end(), rccontrolmed);
-	float rctumormed = 0;
-	getMedian(rcTumor.begin(), rcTumor.end(), rctumormed);
-	float rdRatio = 1;
-	if (rccontrolmed != 0) rdRatio = rctumormed/rccontrolmed;
-	_remove_info_tag(hdr_out, rec, "RDRATIO");
-	bcf_update_info_float(hdr_out, rec, "RDRATIO", &rdRatio, 1);
-	_remove_info_tag(hdr_out, rec, "SOMATIC");
-	bcf_update_info_flag(hdr_out, rec, "SOMATIC", NULL, 1);
-	bcf_write1(ofile, hdr_out, rec);
+
+    // Classify
+    if (!germline) {
+      // Somatic mode
+      bool somaticcnv = false;
+      double worstp = 0;
+      for(uint32_t i = 0; i < tumor.size(); ++i) {
+	bool germcnv = false;
+	double highestprob = 0;
+	for(uint32_t k = 0; k < control.size(); ++k) {
+	  boost::math::normal s(control[k].first, control[k].second);
+	  double prob = boost::math::pdf(s, tumor[i].first);
+	  if (prob > c.pgerm) germcnv = true;
+	  else {
+	    if (prob > highestprob) highestprob = prob;
+	  }
 	}
-      */
-    } else if (c.filter == "germline") {
+	if (!germcnv) {
+	  somaticcnv = true;
+	  if (highestprob > worstp) worstp = highestprob;
+	}
+      }
+      if (!somaticcnv) continue;
+      _remove_info_tag(hdr_out, rec, "SOMATIC");
+      bcf_update_info_flag(hdr_out, rec, "SOMATIC", NULL, 1);
+      float pgerm = (float) worstp;
+      _remove_info_tag(hdr_out, rec, "PGERM");
+      bcf_update_info_float(hdr_out, rec, "PGERM", &pgerm, 1);
+    } else {
       /*
       float genotypeRatio = (float) (nCount + tCount) / (float) (bcf_hdr_nsamples(hdr));
       float rrefvarpercentile = 0;
@@ -219,6 +202,7 @@ classifyRun(TClassifyConfig const& c) {
   if (gq != NULL) free(gq);
   if (cn != NULL) free(cn);
   if (rdcn != NULL) free(rdcn);
+  if (rdsd != NULL) free(rdsd);
 
   // Close output VCF
   bcf_hdr_destroy(hdr_out);
@@ -257,6 +241,7 @@ int classify(int argc, char **argv) {
   boost::program_options::options_description somatic("Somatic options");
   somatic.add_options()
     ("samples,s", boost::program_options::value<boost::filesystem::path>(&c.samplefile), "Two-column sample file listing sample name and tumor or control")
+    ("pgerm,e", boost::program_options::value<float>(&c.pgerm)->default_value(0.05), "probability germline")
     ;
 
   // Define germline options

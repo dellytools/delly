@@ -507,6 +507,7 @@ namespace torali
 	int32_t tid = bam_name2id(hd, chrName.c_str());
 	cnv.chr = tid;
 	cnv.start = rec->pos - 1;
+	cnv.qval = rec->qual;
 
 	// Parse CNV type
 	if (bcf_get_info_string(hdr, rec, "SVTYPE", &svt, &nsvt) > 0) {
@@ -666,7 +667,9 @@ namespace torali
 	cnsdval[0] = cnvs[i].sd;
 	gts[0] = bcf_gt_missing;
 	gts[1] = bcf_gt_missing;
-	rec->qual = _computeCNLs(c, cnvs[i], cnl, gqval);
+	int32_t qval = _computeCNLs(c, cnvs[i], cnl, gqval);
+	if (c.hasGenoFile) rec->qual = cnvs[i].qval;  // Leave site quality in genotyping mode
+	else rec->qual = qval;
 	tmpi = bcf_hdr_id2int(hdr, BCF_DT_ID, "PASS");
 	if (rec->qual < 15) tmpi = bcf_hdr_id2int(hdr, BCF_DT_ID, "LowQual");
 	bcf_update_filter(hdr, rec, &tmpi, 1);

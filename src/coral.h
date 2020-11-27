@@ -461,7 +461,7 @@ namespace torali
 
     boost::program_options::options_description cnv("CNV calling");
     cnv.add_options()
-      ("stringency,y", boost::program_options::value<float>(&c.stringency)->default_value(2), "min. SD read-depth shift")
+      ("sdrd,x", boost::program_options::value<float>(&c.stringency)->default_value(2), "min. SD read-depth shift")
       ("cn-offset,t", boost::program_options::value<float>(&c.cn_offset)->default_value(0.1), "min. CN offset")
       ("cnv-size,z", boost::program_options::value<uint32_t>(&c.minCnvSize)->default_value(1000), "min. CNV size")
       ("cnvfile,c", boost::program_options::value<boost::filesystem::path>(&c.cnvfile)->default_value("cnv.bcf"), "output BCF file")

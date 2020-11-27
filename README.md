@@ -153,9 +153,9 @@ Delly uses GC and mappability fragment correction to call CNVs. This requires a 
 Somatic CNV calling (work-in-progress)
 --------------------------------------
 
-* For somatic CNV calling, delly first segments the tumor genome (`-u` is required).
+* For somatic CNV calling, delly first segments the tumor genome (`-u` is required). Depending on the coverage, tumor purity and ploidy you can adapt parameters `-z`, `-t` and `-x` which control the sensitivity of CNV detection.
 
-`delly cnv -u -c tumor.bcf -g hg19.fa -m hg19.map tumor.bam`
+`delly cnv -u -z 10000 -t 0.3 -x 3 -c tumor.bcf -o tumor.cov.gz -g hg19.fa -m hg19.map tumor.bam`
 
 * Then these tumor CNVs are genotyped in the control sample (`-u` is required).
 
@@ -167,7 +167,13 @@ Somatic CNV calling (work-in-progress)
 
 * Somatic filtering requires a tab-delimited sample description file where the first column is the sample id (as in the VCF/BCF file) and the second column is either tumor or control.
 
-`delly classify -f somatic -o somatic.bcf -s samples.tsv tumor_control.bcf`
+`delly classify -p -f somatic -o somatic.bcf -s samples.tsv tumor_control.bcf`
+
+* Optionally you can plot the somatic CNVs using bcftools and R.
+
+`bcftools query -s tumor -f "%CHROM\t%POS\t%INFO/END\t%ID\t[%RDCN]\n" somatic.bcf > segmentation.bed`
+
+`Rscript R/rd.R tumor.cov.gz segmentation.bed`
 
 
 FAQ
