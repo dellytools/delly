@@ -705,7 +705,7 @@ namespace torali
     hts_close(fp);
     
     // Build index
-    bcf_index_build(c.outfile.string().c_str(), 14);
+    bcf_index_build(c.cnvfile.string().c_str(), 14);
   }
  
 

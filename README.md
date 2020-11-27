@@ -54,16 +54,6 @@ Delly needs a sorted, indexed and duplicate marked bam file for every input samp
 `bcftools view delly.bcf > delly.vcf`
 
 
-Delly for long reads from PacBio or ONT
----------------------------------------
-
-Delly also has a long-read (lr) SV discovery mode.
-
-`delly lr -y ont -g hg19.fa -x hg19.excl input.bam`
-
-`delly lr -y pb -g hg19.fa -x hg19.excl input.bam`
-
-
 Somatic SV calling
 ------------------
 
@@ -111,6 +101,16 @@ Germline SV calling
 `delly filter -f germline -o germline.bcf merged.bcf`
 
 
+Delly for long reads from PacBio or ONT
+---------------------------------------
+
+Delly also has a long-read (lr) SV discovery mode.
+
+`delly lr -y ont -g hg19.fa -x hg19.excl input.bam`
+
+`delly lr -y pb -g hg19.fa -x hg19.excl input.bam`
+
+
 Read-depth profiles
 -------------------
 
@@ -142,7 +142,6 @@ Plotting:
 
 `Rscript R/rd.R out.cov.gz segmentation.bed`
 
-
 Germline CNV calling (work-in-progress)
 ---------------------------------------
 
@@ -151,16 +150,36 @@ Delly uses GC and mappability fragment correction to call CNVs. This requires a 
 `delly cnv -g hg19.fa -m hg19.map input.bam`
 
 
+Somatic CNV calling (work-in-progress)
+--------------------------------------
+
+* For somatic CNV calling, delly first segments the tumor genome (`-u` is required).
+
+`delly cnv -u -c tumor.bcf -g hg19.fa -m hg19.map tumor.bam`
+
+* Then these tumor CNVs are genotyped in the control sample (`-u` is required).
+
+`delly cnv -u -v tumor.bcf -c control.bcf -g hg19.fa -m hg19.map control.bam`
+
+* The VCF IDs are matched between tumor and control. Thus, you can merge both files using [bcftools](https://github.com/samtools/bcftools).
+
+`bcftools merge -m id -O b -o tumor_control.bcf tumor.bcf control.bcf`
+
+* Somatic filtering requires a tab-delimited sample description file where the first column is the sample id (as in the VCF/BCF file) and the second column is either tumor or control.
+
+`delly classify -f somatic -o somatic.bcf -s samples.tsv tumor_control.bcf`
+
+
 FAQ
 ---
 * What is the smallest SV size Delly can call?  
 This depends on the sharpness of the insert size distribution. For an insert size of 200-300bp with a 20-30bp standard deviation, Delly starts to call reliable SVs >=300bp. Delly also supports calling of small InDels using soft-clipped reads only, the smallest SV size called is 15bp.
 
 * Can Delly be used on a non-diploid genome?  
-Yes and no. The SV site discovery works for any ploidy. However, Delly's genotyping model assumes diploidy (hom. reference, het. and hom. alternative).
+Yes and no. The SV site discovery works for any ploidy. However, Delly's genotyping model assumes diploidy (hom. reference, het. and hom. alternative). The CNV calling allows to set the baseline ploidy on the command-line.
 
 * Delly is running too slowly what can I do?    
-You should exclude telomere and centromere regions and also all unplaced contigs. Delly ships with such an exclude list for human and mouse samples. In addition, you can filter input reads more stringently using -q 20 and -s 15.
+You should exclude telomere and centromere regions and also all unplaced contigs. Delly ships with such an exclude list for human and mouse samples. In addition, you can filter input reads more stringently using -q 20 and -s 15. Lastly, `-z` can be set to 5 for high-coverage data.
 
 * Are non-unique alignments, multi-mappings and/or multiple split-read alignments allowed?  
 Delly expects two alignment records in the bam file for every paired-end, one for the first and one for the second read. Multiple split-read alignment records of a given read are allowed if and only if one of them is a primary alignment whereas all others are marked as secondary or supplementary (flag 0x0100 or flag 0x0800). This is the default for bwa mem.
@@ -174,7 +193,7 @@ There is a delly discussion group [delly-users](http://groups.google.com/d/forum
 * Docker/Singularity support?            
 There is a dockerized delly available [here](https://hub.docker.com/r/dellytools/delly/) and singularity containers (*.sif files) are part of the [delly release](https://github.com/dellytools/delly/releases).
 
-* Bioconda support?             
+* Bioconda support?              
 Delly is available via [bioconda](http://bioconda.github.io/recipes/delly/README.html).
 
 

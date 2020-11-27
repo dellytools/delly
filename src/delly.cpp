@@ -16,6 +16,7 @@
 #include "version.h"
 #include "delly.h"
 #include "filter.h"
+#include "classify.h"
 #include "merge.h"
 #include "tegua.h"
 #include "coral.h"
@@ -35,8 +36,9 @@ displayUsage() {
   std::cout << "Long-read SV calling:" << std::endl;
   std::cout << "    lr           long-read SV discovery" << std::endl;
   std::cout << std::endl;
-  std::cout << "CNV calling:" << std::endl;
+  std::cout << "Copy-number variant calling:" << std::endl;
   std::cout << "    cnv          discover and genotype copy-number variants" << std::endl;
+  std::cout << "    classify     classify somatic or germline copy-number variants" << std::endl;
   std::cout << std::endl;
   std::cout << std::endl;
 }
@@ -75,6 +77,9 @@ int main(int argc, char **argv) {
     }
     else if ((std::string(argv[1]) == "cnv")) {
       return coral(argc-1,argv+1);
+    }
+    else if ((std::string(argv[1]) == "classify")) {
+      return classify(argc-1,argv+1);
     }
     else if ((std::string(argv[1]) == "filter")) {
       return filter(argc-1,argv+1);
