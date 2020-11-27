@@ -122,9 +122,25 @@ The command to count reads in 10kbp mappable windows and normalize the coverage 
 
 `delly cnv -a -g hg19.fa -m hg19.map input.bam`
 
-The output file can be plotted using R to generate normalized copy-number profiles:
+The output file `out.cov.gz` can be plotted using [R](https://www.r-project.org/) to generate normalized copy-number profiles:
 
 `Rscript R/rd.R out.cov.gz`
+
+
+Copy-number segmentation
+------------------------
+
+Read-depth profiles can also be segmented at the same time.
+
+`delly cnv -a -u -g hg19.fa -m hg19.map input.bam`
+
+The segmentation is in VCF format but you can extract a BED-like file using bcftools.
+
+`bcftools query -f "%CHROM\t%POS\t%INFO/END\t%ID\t[%RDCN]\n" cnv.bcf > segmentation.bed`
+
+Plotting:
+
+`Rscript R/rd.R out.cov.gz segmentation.bed`
 
 
 Germline CNV calling (work-in-progress)

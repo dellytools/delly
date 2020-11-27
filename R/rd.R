@@ -9,11 +9,20 @@ chrNamesShort = c("1","2","3","4","5","6","7","8","9","10","11","12","13","14","
 args = commandArgs(trailingOnly=TRUE)
 x = read.table(args[1], header=T)
 maxCN = 8
+seg = data.frame()
+if (length(args)>1) {
+   seg = read.table(args[2], header=F, sep="\t")
+   colnames(seg) = c("chr", "start", "end", "id", "cn")
+}
 
 # Fix chromosome ordering
 if (sum(x$chr %in% chrNamesLong) > sum(x$chr %in% chrNamesShort)) { chrs = chrNamesLong; } else { chrs = chrNamesShort; }
 x = x[x$chr %in% chrs,]
 x$chr = factor(x$chr, levels=chrs)
+if (nrow(seg) > 0) {
+ seg = seg[seg$chr %in% chrs,]
+ seg$chr = factor(seg$chr, levels=chrs)
+}
 
 # Whole genome
 p = ggplot(data=x, aes(x=start, y=x[,6]))
@@ -21,6 +30,7 @@ p = p + geom_point(pch=21, size=0.5)
 p = p + xlab("Chromosome")
 p = p + ylab("Copy-number")
 p = p + scale_x_continuous(labels=comma)
+if (nrow(seg)) { p = p + geom_segment(data=seg, aes(x=start, y=cn, xend=end, yend=cn), color="#31a354"); }
 p = p + facet_grid(. ~ chr, scales="free_x", space="free_x")
 p = p + ylim(0, maxCN)
 p = p + theme(axis.text.x = element_text(angle=45, hjust=1))
@@ -31,10 +41,12 @@ print(warnings())
 for(chrname in unique(x$chr)) {
  print(chrname)
  sub = x[x$chr == chrname,]
+ sl = seg[seg$chr == chrname,]
  p = ggplot(data=sub, aes(x=start, y=sub[,6]))
  p = p + geom_point(pch=21, size=0.5)
  p = p + ylab("Copy-number") + xlab(chrname)
  p = p + scale_x_continuous(labels=comma, breaks = scales::pretty_breaks(n=20))
+ if (nrow(sl)) { p = p + geom_segment(data=sl, aes(x=start, y=cn, xend=end, yend=cn), color="lightblue"); }
  p = p + ylim(0, maxCN)
  p = p + theme(axis.text.x = element_text(angle=45, hjust=1))
  ggsave(p, file=paste0("plot.", chrname, ".png"), width=24, height=6)
