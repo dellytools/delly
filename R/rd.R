@@ -26,7 +26,7 @@ if (nrow(seg) > 0) {
 
 # Whole genome
 p = ggplot(data=x, aes(x=start, y=x[,6]))
-p = p + geom_point(pch=21, size=0.5)
+p = p + geom_point(pch=21, color="black", fill="black", size=0.5)
 p = p + xlab("Chromosome")
 p = p + ylab("Copy-number")
 p = p + scale_x_continuous(labels=comma)
@@ -43,7 +43,7 @@ for(chrname in unique(x$chr)) {
  sub = x[x$chr == chrname,]
  sl = seg[seg$chr == chrname,]
  p = ggplot(data=sub, aes(x=start, y=sub[,6]))
- p = p + geom_point(pch=21, size=0.5)
+ p = p + geom_point(pch=21, color="black", fill="black", size=0.5)
  p = p + ylab("Copy-number") + xlab(chrname)
  p = p + scale_x_continuous(labels=comma, breaks = scales::pretty_breaks(n=20))
  if (nrow(sl)) { p = p + geom_segment(data=sl, aes(x=start, y=cn, xend=end, yend=cn), color="#31a354", size=1.2); }
