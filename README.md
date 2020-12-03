@@ -145,9 +145,15 @@ Plotting:
 Germline CNV calling (work-in-progress)
 ---------------------------------------
 
-Delly uses GC and mappability fragment correction to call CNVs. This requires a [mappability map](https://gear.embl.de/data/delly/). Using a minimum CNV size of 1000bp you can call CNVs using:
+Delly uses GC and mappability fragment correction to call CNVs. This requires a [mappability map](https://gear.embl.de/data/delly/).
 
-`delly cnv -g hg19.fa -m hg19.map input.bam`
+* Call CNVs for each germline sample
+
+`delly cnv -c c1.bcf -g hg19.fa -m hg19.map input.bam`
+
+* Merge CNVs into a unified site list
+
+`delly merge -e -p -m 1000 -n 100000 c1.bcf c2.bcf ... cN.bcf`
 
 
 Somatic CNV calling (work-in-progress)

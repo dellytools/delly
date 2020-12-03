@@ -17,7 +17,7 @@ namespace torali {
 
   inline bool
   _translocation(int32_t const svt) {
-    return (DELLY_SVT_TRANS <= svt);
+    return (DELLY_SVT_TRANS <= svt) && (svt < 9);
   }
 
   inline bool

@@ -104,6 +104,8 @@ namespace torali
       else if (value=="3to5") return DELLY_SVT_TRANS + 2;
       else if (value=="5to3") return DELLY_SVT_TRANS + 3;
       else return -1;
+    } else if (svt == "CNV") {
+      return 9;
     } else {
       if (value=="3to3") return 0;
       else if (value=="5to5") return 1;
@@ -122,6 +124,7 @@ namespace torali
     else if (svt == 2) return "DEL";
     else if (svt == 3) return "DUP";
     else if (svt == 4) return "INS";
+    else if (svt == 9) return "CNV";
     else return "BND";
   }
 
@@ -162,7 +165,7 @@ namespace torali
 
   // Output directory/file checks
   inline bool
-  _outfileValid(boost::filesystem::path& outfile) {
+  _outfileValid(boost::filesystem::path const& outfile) {
     try {
       boost::filesystem::path outdir;
       if (outfile.has_parent_path()) outdir = outfile.parent_path();

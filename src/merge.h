@@ -41,6 +41,7 @@ namespace torali
 struct MergeConfig {
   bool filterForPass;
   bool filterForPrecise;
+  bool cnvMode;
   uint32_t chunksize;
   uint32_t svcounter;
   uint32_t bpoffset;
@@ -117,7 +118,10 @@ void _fillIntervalMap(MergeConfig const& c, TGenomeIntervals& iScore, TContigMap
 
       // Correct SV type
       int32_t recsvt = -1;
-      if ((bcf_get_info_string(hdr, rec, "SVTYPE", &svt, &nsvt) > 0) && (bcf_get_info_string(hdr, rec, "CT", &ct, &nct) > 0)) recsvt = _decodeOrientation(std::string(ct), std::string(svt));
+      if (bcf_get_info_string(hdr, rec, "SVTYPE", &svt, &nsvt) > 0) {
+	if (bcf_get_info_string(hdr, rec, "CT", &ct, &nct) > 0) recsvt = _decodeOrientation(std::string(ct), std::string(svt));
+	else recsvt = _decodeOrientation(std::string("NA"), std::string(svt));
+      }
       if (recsvt != svtin) continue;
 
       // Correct size?
@@ -183,9 +187,12 @@ void _fillIntervalMap(MergeConfig const& c, TGenomeIntervals& iScore, TContigMap
 	if (rv != NULL) free(rv);
 	if (rr != NULL) free(rr);
 	if (gt != NULL) free(gt);
-	if ((maxvaf < c.vaf) || (maxcov < c.coverage)) continue;
+	if (recsvt != 9) {
+	  if ((maxvaf < c.vaf) || (maxcov < c.coverage)) continue;
+	}
       }
       // Store the interval
+      //std::cerr << tid << ',' << svStart << ',' << svEnd << ',' << rec->qual << std::endl;
       iScore[tid].push_back(IntervalScore(svStart, svEnd, rec->qual));
     }
     if (svend != NULL) free(svend);
@@ -548,6 +555,216 @@ void _outputSelectedIntervals(MergeConfig& c, TGenomeIntervals const& iSelected,
   bcf_index_build(c.outfile.string().c_str(), 14);
 }
 
+
+
+  template<typename TGenomeIntervals, typename TContigMap>
+  void _outputSelectedIntervalsCNVs(MergeConfig& c, TGenomeIntervals const& iSelected, TContigMap& cMap) {
+    typedef typename TGenomeIntervals::value_type TIntervalScores;
+    typedef typename TIntervalScores::value_type IntervalScore;
+
+    boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
+    std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Filtering SVs" << std::endl;
+
+    // Open output VCF file
+    htsFile *fp = hts_open(c.outfile.string().c_str(), "wb");
+    bcf_hdr_t *hdr_out = bcf_hdr_init("w");
+
+    // Write VCF header
+    boost::gregorian::date today = now.date();
+    std::string datestr("##fileDate=");
+    datestr += boost::gregorian::to_iso_string(today);
+    bcf_hdr_append(hdr_out, datestr.c_str());
+    bcf_hdr_append(hdr_out, "##ALT=<ID=CNV,Description=\"copy-number variants\">");
+    bcf_hdr_append(hdr_out, "##FILTER=<ID=LowQual,Description=\"Poor quality copy-number variant\">");
+    bcf_hdr_append(hdr_out, "##INFO=<ID=CIEND,Number=2,Type=Integer,Description=\"Confidence interval around END\">");
+    bcf_hdr_append(hdr_out, "##INFO=<ID=CIPOS,Number=2,Type=Integer,Description=\"Confidence interval around POS\">");
+    bcf_hdr_append(hdr_out, "##INFO=<ID=END,Number=1,Type=Integer,Description=\"End position of the copy-number variant\">");
+    bcf_hdr_append(hdr_out, "##INFO=<ID=MP,Number=1,Type=Float,Description=\"Mappable fraction of CNV\">");
+    bcf_hdr_append(hdr_out, "##INFO=<ID=IMPRECISE,Number=0,Type=Flag,Description=\"Imprecise copy-number variant\">");
+    bcf_hdr_append(hdr_out, "##INFO=<ID=SVTYPE,Number=1,Type=String,Description=\"Type of structural variant\">");
+    bcf_hdr_append(hdr_out, "##INFO=<ID=SVMETHOD,Number=1,Type=String,Description=\"Type of approach used to detect CNV\">");
+  
+    // Add reference contigs
+    uint32_t numseq = 0;
+    typedef std::map<uint32_t, std::string> TReverseMap;
+    TReverseMap rMap;
+    for(typename TContigMap::iterator cIt = cMap.begin(); cIt != cMap.end(); ++cIt, ++numseq) rMap[cIt->second] = cIt->first;
+    for(typename TReverseMap::iterator rIt = rMap.begin(); rIt != rMap.end(); ++rIt) {
+      std::string refname("##contig=<ID=");
+      refname += rIt->second + ">";
+      bcf_hdr_append(hdr_out, refname.c_str());
+    }
+    bcf_hdr_add_sample(hdr_out, NULL);
+    if (bcf_hdr_write(fp, hdr_out) != 0) std::cerr << "Error: Failed to write BCF header!" << std::endl;
+
+    // Duplicate filter (identical start, end, score values)
+    typedef std::pair<uint32_t, uint32_t> TStartEnd;
+    typedef std::set<TStartEnd> TIntervalSet;
+    typedef std::vector<TIntervalSet> TGenomicIntervalSet;
+    TGenomicIntervalSet gis(numseq);
+
+    // Parse input VCF files
+    bcf1_t *rout = bcf_init();
+    typedef std::vector<htsFile*> THtsFile;
+    typedef std::vector<bcf_hdr_t*> TBcfHeader;
+    typedef std::vector<bcf1_t*> TBcfRecord;
+    typedef std::vector<bool> TEof;
+    THtsFile ifile(c.files.size());
+    TBcfHeader hdr(c.files.size());
+    TBcfRecord rec(c.files.size());
+    TEof eof(c.files.size());
+    uint32_t allEOF = 0;
+    for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
+      ifile[file_c] = bcf_open(c.files[file_c].string().c_str(), "r");
+      hdr[file_c] = bcf_hdr_read(ifile[file_c]);
+      if (bcf_hdr_set_samples(hdr[file_c], NULL, false) != 0) std::cerr << "Error: Failed to set sample information!" << std::endl;
+      rec[file_c] = bcf_init();
+      if (bcf_read(ifile[file_c], hdr[file_c], rec[file_c]) == 0) {
+	bcf_unpack(rec[file_c], BCF_UN_INFO);
+	eof[file_c] = false;
+      } else {
+	++allEOF;
+	eof[file_c] = true;
+      }
+    }
+
+    int32_t nsvend = 0;
+    int32_t* svend = NULL;
+    int32_t nmp = 0;
+    float* mp = NULL;
+    int32_t nsvt = 0;
+    char* svt = NULL;
+    int32_t ncipos = 0;
+    int32_t* cipos = NULL;
+    int32_t nciend = 0;
+    int32_t* ciend = NULL;
+    while (allEOF < c.files.size()) {
+      // Find next sorted record
+      int32_t idx = -1;
+      for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
+	if (!eof[file_c]) {
+	  if ((idx < 0) || (rec[idx]->rid > rec[file_c]->rid) || ((rec[idx]->rid == rec[file_c]->rid) && (rec[idx]->pos > rec[file_c]->pos))) idx = file_c;
+	}
+      }
+
+      // Correct SV type
+      int32_t recsvt = -1;
+      if (bcf_get_info_string(hdr[idx], rec[idx], "SVTYPE", &svt, &nsvt) > 0) recsvt = _decodeOrientation(std::string("NA"), std::string(svt));
+      // CNV ?
+      if (recsvt == 9) {
+	// Check PASS
+	bool pass = true;
+	if (c.filterForPass) pass = (bcf_has_filter(hdr[idx], rec[idx], const_cast<char*>("PASS"))==1);
+
+	// Check PRECISE
+	bool precise = false;
+	bool passPrecise = true;
+	if (bcf_get_info_flag(hdr[idx], rec[idx], "PRECISE", 0, 0) > 0) precise=true;
+	if ((c.filterForPrecise) && (!precise)) passPrecise = false;
+
+	// Check PASS and precise
+	if ((passPrecise) && (pass)) {
+	  // Correct size
+	  std::string chrName(bcf_hdr_id2name(hdr[idx], rec[idx]->rid));
+	  uint32_t tid = cMap[chrName];
+	  uint32_t svStart = rec[idx]->pos;
+	  uint32_t svEnd = svStart + 1;
+	  if (bcf_get_info_int32(hdr[idx], rec[idx], "END", &svend, &nsvend) > 0) svEnd = *svend;
+	  
+	  // Parse INFO fields
+	  if ((svEnd - svStart >= c.minsize) && (svEnd - svStart <= c.maxsize)) {
+	    int32_t score = rec[idx]->qual;
+	  
+	    // Is this a selected interval
+	    typename TIntervalScores::const_iterator iter = std::lower_bound(iSelected[tid].begin(), iSelected[tid].end(), IntervalScore(svStart, svEnd, score), SortIScores<IntervalScore>());
+	    bool foundInterval = false;
+	    for(; (iter != iSelected[tid].end()) && (iter->start == svStart); ++iter) {
+	      if ((iter->start == svStart) && (iter->end == svEnd) && (iter->score == score)) {
+		// Duplicate?
+		if (gis[tid].find(std::make_pair(svStart, svEnd)) == gis[tid].end()) {
+		  foundInterval = true;
+		  gis[tid].insert(std::make_pair(svStart, svEnd));
+		}
+		break;
+	      }
+	    }
+	    if (foundInterval) {
+	      // Fetch missing INFO fields
+	      bcf_get_info_int32(hdr[idx], rec[idx], "CIPOS", &cipos, &ncipos);
+	      bcf_get_info_int32(hdr[idx], rec[idx], "CIEND", &ciend, &nciend);
+	      float mpval = 0;
+	      if (bcf_get_info_float(hdr[idx], rec[idx], "MP", &mp, &nmp) > 0) mpval = *mp;
+	      
+	      // Create new record
+	      rout->rid = bcf_hdr_name2id(hdr_out, chrName.c_str());
+	      rout->pos = rec[idx]->pos;
+	      rout->qual = rec[idx]->qual;
+	      std::string id;
+	      if (c.files.size() == 1) id = std::string(rec[idx]->d.id); // Within one VCF file IDs are unique
+	      else {
+		id += _addID(recsvt);
+		std::string padNumber = boost::lexical_cast<std::string>(c.svcounter++);
+		padNumber.insert(padNumber.begin(), 8 - padNumber.length(), '0');
+		id += padNumber;
+	      }
+	      bcf_update_id(hdr_out, rout, id.c_str());
+	      std::string refAllele = rec[idx]->d.allele[0];
+	      std::string altAllele = rec[idx]->d.allele[1];
+	      std::string alleles = refAllele + "," + altAllele;
+	      bcf_update_alleles_str(hdr_out, rout, alleles.c_str());
+	      int32_t tmppass = bcf_hdr_id2int(hdr_out, BCF_DT_ID, "PASS");
+	      bcf_update_filter(hdr_out, rout, &tmppass, 1);
+	    
+	      // Add INFO fields
+	      if (precise) bcf_update_info_flag(hdr_out, rout, "PRECISE", NULL, 1);
+	      else bcf_update_info_flag(hdr_out, rout, "IMPRECISE", NULL, 1);
+	      bcf_update_info_string(hdr_out, rout, "SVTYPE", _addID(recsvt).c_str());
+	      std::string dellyVersion("EMBL.DELLYv");
+	      dellyVersion += dellyVersionNumber;
+	      bcf_update_info_string(hdr_out,rout, "SVMETHOD", dellyVersion.c_str());
+	      bcf_update_info_int32(hdr_out, rout, "END", &svEnd, 1);
+	      bcf_update_info_int32(hdr_out, rout, "CIPOS", cipos, 2);
+	      bcf_update_info_int32(hdr_out, rout, "CIEND", ciend, 2);
+	      bcf_update_info_float(hdr_out, rout, "MP", &mpval, 1);
+
+	      // Write record
+	      bcf_write1(fp, hdr_out, rout);
+	      bcf_clear1(rout);	  
+	      //std::cerr << bcf_hdr_id2name(hdr[idx], tid) << '\t' << svStart << '\t' << svEnd << std::endl;
+	    }
+	  }
+	}
+      }
+
+      // Fetch next record
+      if (bcf_read(ifile[idx], hdr[idx], rec[idx]) == 0) bcf_unpack(rec[idx], BCF_UN_INFO);
+      else {
+	++allEOF;
+	eof[idx] = true;
+      }
+    }
+    if (svend != NULL) free(svend);
+    if (mp != NULL) free(mp);
+    if (svt != NULL) free(svt);
+    if (cipos != NULL) free(cipos);
+    if (ciend != NULL) free(ciend);
+
+    // Clean-up
+    for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
+      bcf_hdr_destroy(hdr[file_c]);
+      bcf_close(ifile[file_c]);
+      bcf_destroy(rec[file_c]);
+    }
+
+    // Close VCF file
+    bcf_destroy(rout);
+    bcf_hdr_destroy(hdr_out);
+    hts_close(fp);
+
+    // Build index
+    bcf_index_build(c.outfile.string().c_str(), 14);
+  }
+
 inline void
 mergeBCFs(MergeConfig& c, std::vector<boost::filesystem::path> const& cts) {
   boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
@@ -660,7 +877,8 @@ mergeRun(MergeConfig& c, int32_t const svt) {
   for(uint32_t i = 0; i<numseq; ++i) std::sort(iSelected[i].begin(), iSelected[i].end(), SortIScores<IntervalScore>());
 
   // Output best intervals
-  _outputSelectedIntervals(c, iSelected, contigMap, svt);
+  if (svt == 9) _outputSelectedIntervalsCNVs(c, iSelected, contigMap);
+  else _outputSelectedIntervals(c, iSelected, contigMap, svt);
 
   // End
   boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
@@ -683,6 +901,7 @@ int merge(int argc, char **argv) {
     ("coverage,v", boost::program_options::value<uint32_t>(&c.coverage)->default_value(10), "min. coverage")
     ("minsize,m", boost::program_options::value<uint32_t>(&c.minsize)->default_value(0), "min. SV size")
     ("maxsize,n", boost::program_options::value<uint32_t>(&c.maxsize)->default_value(1000000), "max. SV size")
+    ("cnvmode,e", "Merge delly CNV files")
     ("precise,c", "Filter sites for PRECISE")
     ("pass,p", "Filter sites for PASS")
     ;
@@ -727,6 +946,14 @@ int merge(int argc, char **argv) {
   // Filter for PRECISE
   if (vm.count("precise")) c.filterForPrecise = true;
   else c.filterForPrecise = false;
+
+  // Merge CNVs
+  if (vm.count("cnvmode")) c.cnvMode = true;
+  else c.cnvMode = false;
+
+  // Check output files
+  if (!_outfileValid(c.outfile)) return 1;
+  if (!_outfileValid(boost::filesystem::path(c.outfile.string() + ".csi"))) return 1;
 
   // Show cmd
   boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
@@ -797,9 +1024,15 @@ int merge(int argc, char **argv) {
   }
   
   // Run merging
+  int32_t minSVT = 0;
+  int32_t maxSVT = 9;
+  if (c.cnvMode) {
+    minSVT = 9;
+    maxSVT = 10;
+  }
   boost::filesystem::path oldPath = c.outfile;
-  std::vector<boost::filesystem::path> svtCollect(9);
-  for(int32_t svt = 0; svt < 9; ++svt) {
+  std::vector<boost::filesystem::path> svtCollect(maxSVT);
+  for(int32_t svt = minSVT; svt < maxSVT; ++svt) {
     boost::uuids::uuid uuid = boost::uuids::random_generator()();
     std::string filename = "svt" + boost::lexical_cast<std::string>(svt) + "_" + boost::lexical_cast<std::string>(uuid) + ".bcf";
     svtCollect[svt] = filename;
@@ -843,10 +1076,19 @@ int merge(int argc, char **argv) {
   
   // Merge temporary files
   c.outfile = oldPath;
-  mergeBCFs(c, svtCollect);
-  for(int32_t svt = 0; svt < 9; ++svt) {
-    boost::filesystem::remove(svtCollect[svt]);
-    boost::filesystem::remove(boost::filesystem::path(svtCollect[svt].string() + ".csi"));
+  if (c.cnvMode) {
+    // Copy
+    boost::filesystem::copy_file(svtCollect[9], c.outfile);
+    boost::filesystem::copy_file(boost::filesystem::path(svtCollect[9].string() + ".csi"), boost::filesystem::path(c.outfile.string() + ".csi"));
+    // Delete
+    boost::filesystem::remove(svtCollect[9]);
+    boost::filesystem::remove(boost::filesystem::path(svtCollect[9].string() + ".csi"));
+  } else {
+    mergeBCFs(c, svtCollect);
+    for(int32_t svt = minSVT; svt < maxSVT; ++svt) {
+      boost::filesystem::remove(svtCollect[svt]);
+      boost::filesystem::remove(boost::filesystem::path(svtCollect[svt].string() + ".csi"));
+    }
   }
   return 0;
 }
