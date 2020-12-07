@@ -147,13 +147,23 @@ Germline CNV calling (work-in-progress)
 
 Delly uses GC and mappability fragment correction to call CNVs. This requires a [mappability map](https://gear.embl.de/data/delly/).
 
-* Call CNVs for each germline sample
+* Call CNVs for each sample
 
 `delly cnv -c c1.bcf -g hg19.fa -m hg19.map input.bam`
 
 * Merge CNVs into a unified site list
 
-`delly merge -e -p -m 1000 -n 100000 c1.bcf c2.bcf ... cN.bcf`
+`delly merge -e -p -o sites.bcf -m 1000 -n 100000 c1.bcf c2.bcf ... cN.bcf`
+
+* Genotype CNVs for each sample
+
+`delly cnv -u -v sites.bcf -g hg19.fa -m hg19.map -c geno1.bcf input.bam`
+
+* Merge genotypes using [bcftools](https://github.com/samtools/bcftools)
+
+`bcftools merge -m id -O b -o merged.bcf geno1.bcf ... genoN.bcf`
+
+* Filter for germline CNVs (ToDo)
 
 
 Somatic CNV calling (work-in-progress)
@@ -175,7 +185,7 @@ Somatic CNV calling (work-in-progress)
 
 `delly classify -p -f somatic -o somatic.bcf -s samples.tsv tumor_control.bcf`
 
-* Optionally you can plot the somatic CNVs using bcftools and R.
+* Optional: Plot the somatic CNVs using bcftools and R.
 
 `bcftools query -s tumor -f "%CHROM\t%POS\t%INFO/END\t%ID\t[%RDCN]\n" somatic.bcf > segmentation.bed`
 
