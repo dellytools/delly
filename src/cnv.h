@@ -667,7 +667,7 @@ namespace torali
 	cnsdval[0] = cnvs[i].sd;
 	gts[0] = bcf_gt_missing;
 	gts[1] = bcf_gt_missing;
-	int32_t qval = _computeCNLs(c, cnvs[i], cnl, gqval);
+	int32_t qval = _computeCNLs(c, cnvs[i].cn, cnvs[i].sd, cnl, gqval);
 	if (c.hasGenoFile) rec->qual = cnvs[i].qval;  // Leave site quality in genotyping mode
 	else rec->qual = qval;
 	tmpi = bcf_hdr_id2int(hdr, BCF_DT_ID, "PASS");

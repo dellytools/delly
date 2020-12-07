@@ -22,6 +22,8 @@
 #include <boost/filesystem.hpp>
 #include <boost/tokenizer.hpp>
 #include <boost/progress.hpp>
+#include <boost/accumulators/accumulators.hpp>
+#include <boost/accumulators/statistics.hpp>
 
 #include <htslib/sam.h>
 #include <htslib/vcf.h>
@@ -48,7 +50,8 @@ struct ClassifyConfig {
   bool hasSampleFile;
   int32_t minsize;
   int32_t maxsize;
-  float gq;
+  int32_t qual;
+  uint16_t ploidy;
   float pgerm;
   std::string filter;
   std::set<std::string> tumorSet;
@@ -75,6 +78,11 @@ classifyRun(TClassifyConfig const& c) {
     bcf_hdr_append(hdr_out, "##INFO=<ID=SOMATIC,Number=0,Type=Flag,Description=\"Somatic copy-number variant.\">");
     bcf_hdr_remove(hdr_out, BCF_HL_INFO, "PGERM");
     bcf_hdr_append(hdr_out, "##INFO=<ID=PGERM,Number=1,Type=Float,Description=\"Probability of being germline.\">");
+  } else {
+    bcf_hdr_remove(hdr_out, BCF_HL_INFO, "CNSHIFT");
+    bcf_hdr_append(hdr_out, "##INFO=<ID=CNSHIFT,Number=1,Type=Float,Description=\"Estimated CN shift.\">");
+    bcf_hdr_remove(hdr_out, BCF_HL_INFO, "CNSD");
+    bcf_hdr_append(hdr_out, "##INFO=<ID=CNSD,Number=1,Type=Float,Description=\"Estimated CN standard deviation.\">");
   }
   if (bcf_hdr_write(ofile, hdr_out) != 0) std::cerr << "Error: Failed to write BCF header!" << std::endl;
 
@@ -83,10 +91,12 @@ classifyRun(TClassifyConfig const& c) {
   int32_t* svend = NULL;
   int32_t nsvt = 0;
   char* svt = NULL;
-  int ngq = 0;
-  int32_t* gq = NULL;
-  int ncn = 0;
-  int32_t* cn = NULL;
+  int ngqval = 0;
+  int32_t* gqval = NULL;
+  int ncnval = 0;
+  int32_t* cnval = NULL;
+  int ncnl = 0;
+  float* cnl = NULL;
   int nrdcn = 0;
   float* rdcn = NULL;
   int nrdsd = 0;
@@ -120,8 +130,9 @@ classifyRun(TClassifyConfig const& c) {
 
     // Check copy-number
     bcf_unpack(rec, BCF_UN_ALL);
-    bcf_get_format_int32(hdr, rec, "GQ", &gq, &ngq);
-    bcf_get_format_int32(hdr, rec, "CN", &cn, &ncn);
+    bcf_get_format_int32(hdr, rec, "GQ", &gqval, &ngqval);
+    bcf_get_format_int32(hdr, rec, "CN", &cnval, &ncnval);
+    bcf_get_format_float(hdr, rec, "CNL", &cnl, &ncnl);
     bcf_get_format_float(hdr, rec, "RDCN", &rdcn, &nrdcn);
     bcf_get_format_float(hdr, rec, "RDSD", &rdsd, &nrdsd);
 
@@ -167,30 +178,67 @@ classifyRun(TClassifyConfig const& c) {
       _remove_info_tag(hdr_out, rec, "PGERM");
       bcf_update_info_float(hdr_out, rec, "PGERM", &pgerm, 1);
     } else {
-      /*
-      float genotypeRatio = (float) (nCount + tCount) / (float) (bcf_hdr_nsamples(hdr));
-      float rrefvarpercentile = 0;
-      if (!rRefVar.empty()) getPercentile(rRefVar, 0.9, rrefvarpercentile);
-      float raltvarmed = 0;
-      if (!rAltVar.empty()) getMedian(rAltVar.begin(), rAltVar.end(), raltvarmed);
-      float rccontrolmed = 0;
-      if (!rcControl.empty()) getMedian(rcControl.begin(), rcControl.end(), rccontrolmed);
-      float rcaltmed = 0;
-      if (!rcAlt.empty()) getMedian(rcAlt.begin(), rcAlt.end(), rcaltmed);
-      float rdRatio = 1;
-      if (rccontrolmed != 0) rdRatio = rcaltmed/rccontrolmed;
-      float gqaltmed = 0;
-      if (!gqAlt.empty()) getMedian(gqAlt.begin(), gqAlt.end(), gqaltmed);
-      float gqrefmed = 0;
-      if (!gqRef.empty()) getMedian(gqRef.begin(), gqRef.end(), gqrefmed);
-      float af = (float) ac[1] / (float) (ac[0] + ac[1]);      
-      if ((af>0) && (gqaltmed >= c.gq) && (gqrefmed >= c.gq) && (raltvarmed >= c.altaf) && (genotypeRatio >= c.ratiogeno)) {
-      if ((std::string(svt)=="DEL") && (rdRatio > c.rddel)) continue;
-      if ((std::string(svt)=="DUP") && (rdRatio < c.rddup)) continue;
-      if ((std::string(svt)!="DEL") && (std::string(svt)!="DUP") && (rrefvarpercentile > 0)) continue;
-      _remove_info_tag(hdr_out, rec, "RDRATIO");
-      bcf_update_info_float(hdr_out, rec, "RDRATIO", &rdRatio, 1);
-      */
+      // Correct CN shift
+      int32_t cnmain = 0;
+      {
+	std::vector<int32_t> cncount(MAX_CN, 0);
+	{
+	  boost::accumulators::accumulator_set<double, boost::accumulators::features<boost::accumulators::tag::mean, boost::accumulators::tag::variance>> acc;
+	  for(uint32_t k = 0; k < control.size(); ++k) acc(boost::math::round(control[k].first) - control[k].first);
+	  double cnshift = boost::accumulators::mean(acc);
+	  float cnshiftval = cnshift;
+	  _remove_info_tag(hdr_out, rec, "CNSHIFT");
+	  bcf_update_info_float(hdr_out, rec, "CNSHIFT", &cnshiftval, 1);
+	  for (int i = 0; i < bcf_hdr_nsamples(hdr); ++i) {
+	    rdcn[i] += cnshift;
+	    cnval[i] = boost::math::round(rdcn[i]);
+	    if (cnval[i] < MAX_CN) ++cncount[cnval[i]];
+	  }
+	}
+	
+	// Find max CN
+	for(uint32_t i = 1; i < MAX_CN; ++i) {
+	  if (cncount[i] > cncount[cnmain]) cnmain = i;
+	}
+      }
+
+      // Calculate SD
+      boost::accumulators::accumulator_set<double, boost::accumulators::features<boost::accumulators::tag::mean, boost::accumulators::tag::variance>> accLocal;
+      for (int i = 0; i < bcf_hdr_nsamples(hdr); ++i) {
+	if (cnval[i] == cnmain) accLocal(rdcn[i]);
+      }
+      double sd = sqrt(boost::accumulators::variance(accLocal));
+      if (sd < 0.1) sd = 0.1;
+      float cnsdval = sd;
+      _remove_info_tag(hdr_out, rec, "CNSD");
+      bcf_update_info_float(hdr_out, rec, "CNSD", &cnsdval, 1);
+
+      // Re-compute CNLs
+      std::vector<std::string> ftarr(bcf_hdr_nsamples(hdr));
+      int32_t altqual = 0;
+      for (int i = 0; i < bcf_hdr_nsamples(hdr); ++i) {
+	int32_t qval = _computeCNLs(c, rdcn[i], sd, cnl, gqval, i);
+	if (cnval[i] != c.ploidy) altqual += qval;
+	if (gqval[i] < 15) ftarr[i] = "LowQual";
+	else ftarr[i] = "PASS";
+      }
+      if (altqual < c.qual) continue;
+      if (altqual > 10000) altqual = 10000;
+      
+      // Update QUAL and FILTER
+      rec->qual = altqual;
+      int32_t tmpi = bcf_hdr_id2int(hdr_out, BCF_DT_ID, "PASS");
+      if (rec->qual < 15) tmpi = bcf_hdr_id2int(hdr_out, BCF_DT_ID, "LowQual");
+      bcf_update_filter(hdr_out, rec, &tmpi, 1);
+
+      // Update GT fields
+      std::vector<const char*> strp(bcf_hdr_nsamples(hdr));
+      std::transform(ftarr.begin(), ftarr.end(), strp.begin(), cstyle_str());
+      bcf_update_format_int32(hdr_out, rec, "CN", cnval, bcf_hdr_nsamples(hdr));
+      bcf_update_format_float(hdr_out, rec, "CNL",  cnl, bcf_hdr_nsamples(hdr) * MAX_CN);
+      bcf_update_format_int32(hdr_out, rec, "GQ", gqval, bcf_hdr_nsamples(hdr));
+      bcf_update_format_string(hdr_out, rec, "FT", &strp[0], bcf_hdr_nsamples(hdr));
+      bcf_update_format_float(hdr_out, rec, "RDCN",  rdcn, bcf_hdr_nsamples(hdr));
     }
     bcf_write1(ofile, hdr_out, rec);
   }
@@ -199,8 +247,9 @@ classifyRun(TClassifyConfig const& c) {
   // Clean-up
   if (svend != NULL) free(svend);
   if (svt != NULL) free(svt);
-  if (gq != NULL) free(gq);
-  if (cn != NULL) free(cn);
+  if (gqval != NULL) free(gqval);
+  if (cnval != NULL) free(cnval);
+  if (cnl != NULL) free(cnl);
   if (rdcn != NULL) free(rdcn);
   if (rdsd != NULL) free(rdsd);
 
@@ -247,7 +296,8 @@ int classify(int argc, char **argv) {
   // Define germline options
   boost::program_options::options_description germline("Germline options");
   germline.add_options()
-    ("gq,q", boost::program_options::value<float>(&c.gq)->default_value(15), "min. median GQ for carriers and non-carriers")
+    ("ploidy,y", boost::program_options::value<uint16_t>(&c.ploidy)->default_value(2), "baseline ploidy")
+    ("qual,q", boost::program_options::value<int32_t>(&c.qual)->default_value(50), "min. site quality")
     ;
 
   // Define hidden options

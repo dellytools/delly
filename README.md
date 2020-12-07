@@ -163,7 +163,15 @@ Delly uses GC and mappability fragment correction to call CNVs. This requires a 
 
 `bcftools merge -m id -O b -o merged.bcf geno1.bcf ... genoN.bcf`
 
-* Filter for germline CNVs (ToDo)
+* Filter for germline CNVs
+
+`delly classify -f germline -o filtered.bcf merged.bcf`
+
+* Optional: Plot copy-number distribution for large number of samples (>>100)
+
+`bcftools query -f "%ID[\t%RDCN]\n" filtered.bcf > plot.tsv`
+
+`Rscript R/cnv.R plot.tsv`
 
 
 Somatic CNV calling (work-in-progress)
