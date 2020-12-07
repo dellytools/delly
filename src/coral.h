@@ -53,7 +53,7 @@ namespace torali
     boost::filesystem::path vcffile;
     boost::filesystem::path genofile;
     boost::filesystem::path cnvfile;
-    boost::filesystem::path outfile;
+    boost::filesystem::path covfile;
     boost::filesystem::path genome;
     boost::filesystem::path statsFile;
     boost::filesystem::path mapFile;
@@ -97,7 +97,7 @@ namespace torali
     // Open output files
     boost::iostreams::filtering_ostream dataOut;
     dataOut.push(boost::iostreams::gzip_compressor());
-    dataOut.push(boost::iostreams::file_sink(c.outfile.c_str(), std::ios_base::out | std::ios_base::binary));
+    dataOut.push(boost::iostreams::file_sink(c.covfile.c_str(), std::ios_base::out | std::ios_base::binary));
     dataOut << "chr\tstart\tend\t" << c.sampleName << "_mappable\t" << c.sampleName << "_counts\t" << c.sampleName << "_CN" << std::endl;
 
     // CNVs
@@ -456,7 +456,8 @@ namespace torali
       ("quality,q", boost::program_options::value<uint16_t>(&c.minQual)->default_value(10), "min. mapping quality")
       ("mappability,m", boost::program_options::value<boost::filesystem::path>(&c.mapFile), "input mappability map")
       ("ploidy,y", boost::program_options::value<uint16_t>(&c.ploidy)->default_value(2), "baseline ploidy")
-      ("outfile,o", boost::program_options::value<boost::filesystem::path>(&c.outfile)->default_value("out.cov.gz"), "output file")
+      ("outfile,o", boost::program_options::value<boost::filesystem::path>(&c.cnvfile)->default_value("cnv.bcf"), "output CNV file")
+      ("covfile,c", boost::program_options::value<boost::filesystem::path>(&c.covfile)->default_value("cov.gz"), "output coverage file")
       ;
 
     boost::program_options::options_description cnv("CNV calling");
@@ -464,7 +465,6 @@ namespace torali
       ("sdrd,x", boost::program_options::value<float>(&c.stringency)->default_value(2), "min. SD read-depth shift")
       ("cn-offset,t", boost::program_options::value<float>(&c.cn_offset)->default_value(0.1), "min. CN offset")
       ("cnv-size,z", boost::program_options::value<uint32_t>(&c.minCnvSize)->default_value(1000), "min. CNV size")
-      ("cnvfile,c", boost::program_options::value<boost::filesystem::path>(&c.cnvfile)->default_value("cnv.bcf"), "output BCF file")
       ("svfile,l", boost::program_options::value<boost::filesystem::path>(&c.vcffile), "delly SV file for breakpoint refinement")
       ("vcffile,v", boost::program_options::value<boost::filesystem::path>(&c.genofile), "input VCF/BCF file for re-genotyping")
       ("segmentation,u", "copy-number segmentation")

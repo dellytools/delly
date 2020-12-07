@@ -149,7 +149,7 @@ Delly uses GC and mappability fragment correction to call CNVs. This requires a 
 
 * Call CNVs for each sample
 
-`delly cnv -c c1.bcf -g hg19.fa -m hg19.map input.bam`
+`delly cnv -o c1.bcf -g hg19.fa -m hg19.map input.bam`
 
 * Merge CNVs into a unified site list
 
@@ -157,7 +157,7 @@ Delly uses GC and mappability fragment correction to call CNVs. This requires a 
 
 * Genotype CNVs for each sample
 
-`delly cnv -u -v sites.bcf -g hg19.fa -m hg19.map -c geno1.bcf input.bam`
+`delly cnv -u -v sites.bcf -g hg19.fa -m hg19.map -o geno1.bcf input.bam`
 
 * Merge genotypes using [bcftools](https://github.com/samtools/bcftools)
 
@@ -179,11 +179,11 @@ Somatic CNV calling (work-in-progress)
 
 * For somatic CNV calling, delly first segments the tumor genome (`-u` is required). Depending on the coverage, tumor purity and ploidy you can adapt parameters `-z`, `-t` and `-x` which control the sensitivity of CNV detection.
 
-`delly cnv -u -z 10000 -t 0.3 -x 3 -c tumor.bcf -o tumor.cov.gz -g hg19.fa -m hg19.map tumor.bam`
+`delly cnv -u -z 10000 -t 0.3 -x 3 -o tumor.bcf -c tumor.cov.gz -g hg19.fa -m hg19.map tumor.bam`
 
 * Then these tumor CNVs are genotyped in the control sample (`-u` is required).
 
-`delly cnv -u -v tumor.bcf -c control.bcf -g hg19.fa -m hg19.map control.bam`
+`delly cnv -u -v tumor.bcf -o control.bcf -g hg19.fa -m hg19.map control.bam`
 
 * The VCF IDs are matched between tumor and control. Thus, you can merge both files using [bcftools](https://github.com/samtools/bcftools).
 
