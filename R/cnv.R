@@ -24,7 +24,7 @@ for (CNV in unique(x$cnv)) {
   }
   p = p + xlab("Copy-number")
   p = p + ylab("Count")
-  p = p + scale_x_continuous(labels=comma)
+  p = p + scale_x_continuous(breaks=0:10, labels=comma)
 #  p = p + scale_fill_manual(values=c("#a6cee3","#1f78b4","#b2df8a","#33a02c","#fb9a99","#e31a1c","#fdbf6f","#ff7f00","#cab2d6","#6a3d9a"), drop=F)
   p = p + scale_fill_manual(values=c("#ff7f00", "#1f78b4","#33a02c","#e31a1c","#6a3d9a", "#fdbf6f", "#a6cee3", "#b2df8a", "#fb9a99", "#cab2d6"), drop=F)
   p = p + ggtitle(CNV)

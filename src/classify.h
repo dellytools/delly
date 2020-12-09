@@ -53,6 +53,7 @@ struct ClassifyConfig {
   int32_t qual;
   uint16_t ploidy;
   float pgerm;
+  float maxsd;
   std::string filter;
   std::set<std::string> tumorSet;
   std::set<std::string> controlSet;
@@ -212,7 +213,8 @@ classifyRun(TClassifyConfig const& c) {
       float cnsdval = sd;
       _remove_info_tag(hdr_out, rec, "CNSD");
       bcf_update_info_float(hdr_out, rec, "CNSD", &cnsdval, 1);
-
+      if (cnsdval > c.maxsd) continue;
+      
       // Re-compute CNLs
       std::vector<std::string> ftarr(bcf_hdr_nsamples(hdr));
       int32_t altqual = 0;
@@ -298,6 +300,7 @@ int classify(int argc, char **argv) {
   germline.add_options()
     ("ploidy,y", boost::program_options::value<uint16_t>(&c.ploidy)->default_value(2), "baseline ploidy")
     ("qual,q", boost::program_options::value<int32_t>(&c.qual)->default_value(50), "min. site quality")
+    ("maxsd,x", boost::program_options::value<float>(&c.maxsd)->default_value(0.15), "max. population SD")
     ;
 
   // Define hidden options
