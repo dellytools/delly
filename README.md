@@ -147,11 +147,7 @@ Germline CNV calling
 
 Delly uses GC and mappability fragment correction to call CNVs. This requires a [mappability map](https://gear.embl.de/data/delly/).
 
-* Call CNVs for each sample
-
-`delly cnv -o c1.bcf -g hg19.fa -m hg19.map input.bam`
-
-* Optional: Call CNVs for each sample and refine breakpoints using delly SV calls
+* Call CNVs for each sample and optionally refine breakpoints using delly SV calls
 
 `delly cnv -o c1.bcf -g hg19.fa -m hg19.map -l delly.sv.bcf input.bam`
 
