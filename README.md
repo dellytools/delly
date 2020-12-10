@@ -142,14 +142,18 @@ Plotting:
 
 `Rscript R/rd.R out.cov.gz segmentation.bed`
 
-Germline CNV calling (work-in-progress)
----------------------------------------
+Germline CNV calling
+--------------------
 
 Delly uses GC and mappability fragment correction to call CNVs. This requires a [mappability map](https://gear.embl.de/data/delly/).
 
 * Call CNVs for each sample
 
 `delly cnv -o c1.bcf -g hg19.fa -m hg19.map input.bam`
+
+* Optional: Call CNVs for each sample and refine breakpoints using delly SV calls
+
+`delly cnv -o c1.bcf -g hg19.fa -m hg19.map -l delly.sv.bcf input.bam`
 
 * Merge CNVs into a unified site list
 
@@ -174,8 +178,8 @@ Delly uses GC and mappability fragment correction to call CNVs. This requires a 
 `Rscript R/cnv.R plot.tsv`
 
 
-Somatic CNV calling (work-in-progress)
---------------------------------------
+Somatic CNV calling
+-------------------
 
 * For somatic CNV calling, delly first segments the tumor genome (`-u` is required). Depending on the coverage, tumor purity and ploidy you can adapt parameters `-z`, `-t` and `-x` which control the sensitivity of CNV detection.
 
