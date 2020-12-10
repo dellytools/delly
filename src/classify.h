@@ -184,7 +184,7 @@ classifyRun(TClassifyConfig const& c) {
       {
 	std::vector<int32_t> cncount(MAX_CN, 0);
 	{
-	  boost::accumulators::accumulator_set<double, boost::accumulators::features<boost::accumulators::tag::mean, boost::accumulators::tag::variance>> acc;
+	  boost::accumulators::accumulator_set<double, boost::accumulators::features<boost::accumulators::tag::mean, boost::accumulators::tag::variance> > acc;
 	  for(uint32_t k = 0; k < control.size(); ++k) acc(boost::math::round(control[k].first) - control[k].first);
 	  double cnshift = boost::accumulators::mean(acc);
 	  float cnshiftval = cnshift;
@@ -204,7 +204,7 @@ classifyRun(TClassifyConfig const& c) {
       }
 
       // Calculate SD
-      boost::accumulators::accumulator_set<double, boost::accumulators::features<boost::accumulators::tag::mean, boost::accumulators::tag::variance>> accLocal;
+      boost::accumulators::accumulator_set<double, boost::accumulators::features<boost::accumulators::tag::mean, boost::accumulators::tag::variance> > accLocal;
       for (int i = 0; i < bcf_hdr_nsamples(hdr); ++i) {
 	if (cnval[i] == cnmain) accLocal(rdcn[i]);
       }
