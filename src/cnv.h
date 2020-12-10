@@ -264,7 +264,7 @@ namespace torali
       cnvs[n].mappable = mp;
 
       // Estimate SD
-      boost::accumulators::accumulator_set<double, boost::accumulators::features<boost::accumulators::tag::mean, boost::accumulators::tag::variance>> acc;
+      boost::accumulators::accumulator_set<double, boost::accumulators::features<boost::accumulators::tag::mean, boost::accumulators::tag::variance> > acc;
       uint32_t wsz = winlen / 10;
       covsum = 0;
       expcov = 0;
@@ -372,8 +372,8 @@ namespace torali
 	    //for(uint32_t m = 0; m < suc.size(); ++m) std::cerr << sucp[m] << '\t' << suc[m] << std::endl;
 	    
 	    // Any shift in CN?
-	    boost::accumulators::accumulator_set<TCnVal, boost::accumulators::features<boost::accumulators::tag::mean, boost::accumulators::tag::variance>> accpre;
-	    boost::accumulators::accumulator_set<TCnVal, boost::accumulators::features<boost::accumulators::tag::mean, boost::accumulators::tag::variance>> accsuc;
+	    boost::accumulators::accumulator_set<TCnVal, boost::accumulators::features<boost::accumulators::tag::mean, boost::accumulators::tag::variance> > accpre;
+	    boost::accumulators::accumulator_set<TCnVal, boost::accumulators::features<boost::accumulators::tag::mean, boost::accumulators::tag::variance> > accsuc;
 	    for(uint32_t m = 0; m < pre.size(); ++m) accpre(pre[m]);
 	    for(uint32_t m = 0; m < suc.size(); ++m) accsuc(suc[m]);
 	    double diff = std::abs(boost::accumulators::mean(accsuc) - boost::accumulators::mean(accpre));
