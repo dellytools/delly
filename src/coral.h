@@ -289,7 +289,8 @@ namespace torali
 		    if (winlen == c.window_size) {
 		      obsexp /= (double) winlen;
 		      double count = ((double) covsum / obsexp ) * (double) c.window_size / (double) winlen;
-		      double cn = c.ploidy * covsum / expcov;
+		      double cn = c.ploidy;
+		      if (expcov > 0) cn = c.ploidy * covsum / expcov;
 		      dataOut << std::string(hdr->target_name[refIndex]) << "\t" << start << "\t" << (pos + 1) << "\t" << winlen << "\t" << count << "\t" << cn << std::endl;
 		      // reset
 		      covsum = 0;
@@ -344,7 +345,8 @@ namespace torali
 	      if (winlen >= c.fracWindow * (it->second - it->first)) {
 		obsexp /= (double) winlen;
 		double count = ((double) covsum / obsexp ) * (double) (it->second - it->first) / (double) winlen;
-		double cn = c.ploidy * covsum / expcov;
+		double cn = c.ploidy;
+		if (expcov > 0) cn = c.ploidy * covsum / expcov;
 		dataOut << std::string(hdr->target_name[refIndex]) << "\t" << it->first << "\t" << it->second << "\t" << winlen << "\t" << count << "\t" << cn << std::endl;
 	      } else {
 		dataOut << std::string(hdr->target_name[refIndex]) << "\t" << it->first << "\t" << it->second << "\tNA\tNA\tNA" << std::endl;
@@ -370,7 +372,8 @@ namespace torali
 	      if (winlen == c.window_size) {
 		obsexp /= (double) winlen;
 		double count = ((double) covsum / obsexp ) * (double) c.window_size / (double) winlen;
-		double cn = c.ploidy * covsum / expcov;
+		double cn = c.ploidy;
+		if (expcov > 0) cn = c.ploidy * covsum / expcov;
 		dataOut << std::string(hdr->target_name[refIndex]) << "\t" << start << "\t" << (pos + 1) << "\t" << winlen << "\t" << count << "\t" << cn << std::endl;
 		// reset
 		covsum = 0;
@@ -417,7 +420,8 @@ namespace torali
 	      if (winlen >= c.fracWindow * c.window_size) {
 		obsexp /= (double) winlen;
 		double count = ((double) covsum / obsexp ) * (double) c.window_size / (double) winlen;
-		double cn = c.ploidy * covsum / expcov;
+		double cn = c.ploidy;
+		if (expcov > 0) cn = c.ploidy * covsum / expcov;
 		dataOut << std::string(hdr->target_name[refIndex]) << "\t" << start << "\t" << (start + c.window_size) << "\t" << winlen << "\t" << count << "\t" << cn << std::endl;
 	      }
 	    }

@@ -258,7 +258,8 @@ namespace torali
 	}
 	++pos;
       }
-      double cn = c.ploidy * covsum / expcov;
+      double cn = c.ploidy;
+      if (expcov > 0) cn = c.ploidy * covsum / expcov;
       double mp = (double) winlen / (double) (cnvs[n].end - cnvs[n].start);
       cnvs[n].cn = cn;
       cnvs[n].mappable = mp;
@@ -276,7 +277,8 @@ namespace torali
 	  expcov += gcbias[gcContent[pos]].coverage;
 	  ++winlen;
 	  if (winlen % wsz == 0) {
-	    double cn = c.ploidy * covsum / expcov;
+	    double cn = c.ploidy;
+	    if (expcov > 0) cn = c.ploidy * covsum / expcov;
 	    acc(cn);
 	    covsum = 0;
 	    expcov = 0;
@@ -335,7 +337,8 @@ namespace torali
 	  }
 	  if (winlen == winsize[idx]) {
 	    // Full window
-	    cnvec.push_back((int32_t) boost::math::round(c.ploidy * covsum / expcov * 100.0));
+	    if (expcov > 0) cnvec.push_back((int32_t) boost::math::round(c.ploidy * covsum / expcov * 100.0));
+	    else cnvec.push_back((int32_t) boost::math::round(c.ploidy * 100.0));
 	    wpos.push_back(wstart);
 	  }
 	  wstart = pos;
@@ -457,7 +460,8 @@ namespace torali
 	++pos;
       }
       if ((estcnvstart != -1) && (estcnvend != -1) && (estcnvend - estcnvstart > 0)) {
-	double cn = c.ploidy * covsum / expcov;
+	double cn = c.ploidy;
+	if (expcov > 0) cn = c.ploidy * covsum / expcov;
 	double mp = (double) winlen / (double) (estcnvend - estcnvstart);
 	cnvs.push_back(CNV(refIndex, estcnvstart, estcnvend, cil, cih, cel, ceh, cn, mp));
 	//std::cerr << hdr->target_name[refIndex] << '\t' << estcnvstart << '\t' << estcnvend << '\t' << '(' << cil << ',' << cih << ')' << '\t' << '(' << cel << ',' << ceh << ')' << '\t' << cn << '\t' << mp << std::endl;
