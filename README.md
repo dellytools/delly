@@ -174,14 +174,14 @@ Delly uses GC and mappability fragment correction to call CNVs. This requires a 
 `Rscript R/cnv.R plot.tsv`
 
 
-Somatic CNV calling
--------------------
+Somatic copy-number alterations (SCNAs)
+---------------------------------------
 
-* For somatic CNV calling, delly first segments the tumor genome (`-u` is required). Depending on the coverage, tumor purity and ploidy you can adapt parameters `-z`, `-t` and `-x` which control the sensitivity of CNV detection.
+* For somatic copy-number alterations, delly first segments the tumor genome (`-u` is required). Depending on the coverage, tumor purity and heterogeneity you can adapt parameters `-z`, `-t` and `-x` which control the sensitivity of SCNA detection.
 
-`delly cnv -u -z 10000 -t 0.3 -x 3 -o tumor.bcf -c tumor.cov.gz -g hg19.fa -m hg19.map tumor.bam`
+`delly cnv -u -z 10000 -o tumor.bcf -c tumor.cov.gz -g hg19.fa -m hg19.map tumor.bam`
 
-* Then these tumor CNVs are genotyped in the control sample (`-u` is required).
+* Then these tumor SCNAs are genotyped in the control sample (`-u` is required).
 
 `delly cnv -u -v tumor.bcf -o control.bcf -g hg19.fa -m hg19.map control.bam`
 
@@ -193,7 +193,7 @@ Somatic CNV calling
 
 `delly classify -p -f somatic -o somatic.bcf -s samples.tsv tumor_control.bcf`
 
-* Optional: Plot the somatic CNVs using bcftools and R.
+* Optional: Plot the SCNAs using bcftools and R.
 
 `bcftools query -s tumor -f "%CHROM\t%POS\t%INFO/END\t%ID\t[%RDCN]\n" somatic.bcf > segmentation.bed`
 
