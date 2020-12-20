@@ -267,27 +267,33 @@ namespace torali
       // Estimate SD
       boost::accumulators::accumulator_set<double, boost::accumulators::features<boost::accumulators::tag::mean, boost::accumulators::tag::variance> > acc;
       uint32_t wsz = winlen / 10;
-      covsum = 0;
-      expcov = 0;
-      winlen = 0;
-      pos = cnvs[n].start;
-      while((pos < cnvs[n].end) && (pos < (int32_t) hdr->target_len[refIndex])) {
-	if ((gcContent[pos] > gcbound.first) && (gcContent[pos] < gcbound.second) && (uniqContent[pos] >= c.fragmentUnique * c.meanisize)) {
-	  covsum += cov[pos];
-	  expcov += gcbias[gcContent[pos]].coverage;
-	  ++winlen;
-	  if (winlen % wsz == 0) {
-	    double cn = c.ploidy;
-	    if (expcov > 0) cn = c.ploidy * covsum / expcov;
-	    acc(cn);
-	    covsum = 0;
-	    expcov = 0;
+      if (wsz > 1) {
+	covsum = 0;
+	expcov = 0;
+	winlen = 0;
+	pos = cnvs[n].start;
+	while((pos < cnvs[n].end) && (pos < (int32_t) hdr->target_len[refIndex])) {
+	  if ((gcContent[pos] > gcbound.first) && (gcContent[pos] < gcbound.second) && (uniqContent[pos] >= c.fragmentUnique * c.meanisize)) {
+	    covsum += cov[pos];
+	    expcov += gcbias[gcContent[pos]].coverage;
+	    ++winlen;
+	    if (winlen % wsz == 0) {
+	      double cn = c.ploidy;
+	      if (expcov > 0) cn = c.ploidy * covsum / expcov;
+	      acc(cn);
+	      covsum = 0;
+	      expcov = 0;
+	    }
 	  }
+	  ++pos;
 	}
-	++pos;
+	cnvs[n].sd = sqrt(boost::accumulators::variance(acc));
+	if (cnvs[n].sd < 0.1) cnvs[n].sd = 0.1;
+      } else {
+	// Invalid
+	cnvs[n].cn = -1;
+	cnvs[n].sd = 0.1;
       }
-      cnvs[n].sd = sqrt(boost::accumulators::variance(acc));
-      if (cnvs[n].sd < 0.1) cnvs[n].sd = 0.1;
     }
   }
   
@@ -625,6 +631,9 @@ namespace torali
       bcf1_t *rec = bcf_init();
       for(uint32_t i = 0; i < cnvs.size(); ++i) {
 	++show_progress;
+
+	// Invalid CNV?
+	if (cnvs[i].cn == -1) continue;
 
 	// Integer copy-number
 	int32_t absCN = (int32_t) boost::math::round(cnvs[i].cn);

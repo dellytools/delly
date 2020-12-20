@@ -51,7 +51,7 @@ namespace torali
     double sd;
 
 
-    CNV() : chr(0), start(0), end(0), ciposlow(0), ciposhigh(0), ciendlow(0), ciendhigh(0), qval(0), cn(2), mappable(0), sd(1) {}
+    CNV() : chr(0), start(0), end(0), ciposlow(0), ciposhigh(0), ciendlow(0), ciendhigh(0), qval(0), cn(-1), mappable(0), sd(1) {}
     CNV(int32_t const c, int32_t const s, int32_t const e, int32_t const cil, int32_t const cih, int32_t const cel, int32_t ceh, double const estcn, double const mp) : chr(c), start(s), end(e), ciposlow(cil), ciposhigh(cih), ciendlow(cel), ciendhigh(ceh), qval(0), cn(estcn), mappable(mp), sd(1) {}
   };
 
