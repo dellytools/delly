@@ -209,7 +209,7 @@ classifyRun(TClassifyConfig const& c) {
 	if (cnval[i] == cnmain) accLocal(rdcn[i]);
       }
       double sd = sqrt(boost::accumulators::variance(accLocal));
-      if (sd < 0.1) sd = 0.1;
+      if (sd < 0.01) sd = 0.01;
       float cnsdval = sd;
       _remove_info_tag(hdr_out, rec, "CNSD");
       bcf_update_info_float(hdr_out, rec, "CNSD", &cnsdval, 1);

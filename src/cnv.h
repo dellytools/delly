@@ -163,7 +163,7 @@ namespace torali
 	}
 	double postcndiff = std::abs((c.ploidy * precovsum / preexpcov) - (c.ploidy * succovsum / sucexpcov));
 	//std::cerr << cnvs[n-1].end << ',' << itbest->pos << ',' << precndiff << ',' << postcndiff << std::endl;
-	if (precndiff < postcndiff + c.cn_offset) {
+	if ((precndiff < postcndiff + c.cn_offset) && (std::abs(cnvs[n].start - itbest->pos) < 50000)) {
 	  // Accept new breakpoint
 	  cnvs[n-1].end = itbest->pos;
 	  cnvs[n].start = itbest->pos;
@@ -288,11 +288,11 @@ namespace torali
 	  ++pos;
 	}
 	cnvs[n].sd = sqrt(boost::accumulators::variance(acc));
-	if (cnvs[n].sd < 0.1) cnvs[n].sd = 0.1;
+	if (cnvs[n].sd < 0.01) cnvs[n].sd = 0.01;
       } else {
 	// Invalid
 	cnvs[n].cn = -1;
-	cnvs[n].sd = 0.1;
+	cnvs[n].sd = 0.01;
       }
     }
   }
