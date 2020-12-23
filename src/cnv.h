@@ -288,11 +288,11 @@ namespace torali
 	  ++pos;
 	}
 	cnvs[n].sd = sqrt(boost::accumulators::variance(acc));
-	if (cnvs[n].sd < 0.01) cnvs[n].sd = 0.01;
+	if (cnvs[n].sd < 0.025) cnvs[n].sd = 0.025;
       } else {
 	// Invalid
 	cnvs[n].cn = -1;
-	cnvs[n].sd = 0.01;
+	cnvs[n].sd = 0.025;
       }
     }
   }
