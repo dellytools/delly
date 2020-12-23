@@ -160,8 +160,11 @@ classifyRun(TClassifyConfig const& c) {
 	bool germcnv = false;
 	double highestprob = 0;
 	for(uint32_t k = 0; k < control.size(); ++k) {
-	  boost::math::normal s(control[k].first, control[k].second);
-	  double prob = boost::math::pdf(s, tumor[i].first);
+	  boost::math::normal s1(control[k].first, control[k].second);
+	  double prob1 = boost::math::pdf(s1, tumor[i].first);
+	  boost::math::normal s2(tumor[i].first, tumor[i].second);
+	  double prob2 = boost::math::pdf(s2, control[k].first);
+	  double prob = std::max(prob1, prob2);
 	  if (prob > c.pgerm) germcnv = true;
 	  else {
 	    if (prob > highestprob) highestprob = prob;
