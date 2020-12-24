@@ -295,7 +295,7 @@ int classify(int argc, char **argv) {
   boost::program_options::options_description somatic("Somatic options");
   somatic.add_options()
     ("samples,s", boost::program_options::value<boost::filesystem::path>(&c.samplefile), "Two-column sample file listing sample name and tumor or control")
-    ("pgerm,e", boost::program_options::value<float>(&c.pgerm)->default_value(0.01), "probability germline")
+    ("pgerm,e", boost::program_options::value<float>(&c.pgerm)->default_value(0.001), "probability germline")
     ;
 
   // Define germline options
