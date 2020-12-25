@@ -315,7 +315,7 @@ int classify(int argc, char **argv) {
   somatic.add_options()
     ("samples,s", boost::program_options::value<boost::filesystem::path>(&c.samplefile), "Two-column sample file listing sample name and tumor or control")
     ("pgerm,e", boost::program_options::value<float>(&c.pgerm)->default_value(0.001), "probability germline")
-    ("cn-offset,t", boost::program_options::value<float>(&c.cn_offset)->default_value(0.1), "min. CN offset")
+    ("cn-offset,t", boost::program_options::value<float>(&c.cn_offset)->default_value(0.2), "min. CN offset")
     ;
 
   // Define germline options
