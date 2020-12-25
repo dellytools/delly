@@ -54,6 +54,7 @@ struct ClassifyConfig {
   uint16_t ploidy;
   float pgerm;
   float maxsd;
+  float cn_offset;
   std::string filter;
   std::set<std::string> tumorSet;
   std::set<std::string> controlSet;
@@ -79,6 +80,8 @@ classifyRun(TClassifyConfig const& c) {
     bcf_hdr_append(hdr_out, "##INFO=<ID=SOMATIC,Number=0,Type=Flag,Description=\"Somatic copy-number variant.\">");
     bcf_hdr_remove(hdr_out, BCF_HL_INFO, "PGERM");
     bcf_hdr_append(hdr_out, "##INFO=<ID=PGERM,Number=1,Type=Float,Description=\"Probability of being germline.\">");
+    bcf_hdr_remove(hdr_out, BCF_HL_INFO, "CNDIFF");
+    bcf_hdr_append(hdr_out, "##INFO=<ID=CNDIFF,Number=1,Type=Float,Description=\"Absolute tumor-normal CN difference.\">");
   } else {
     bcf_hdr_remove(hdr_out, BCF_HL_INFO, "CNSHIFT");
     bcf_hdr_append(hdr_out, "##INFO=<ID=CNSHIFT,Number=1,Type=Float,Description=\"Estimated CN shift.\">");
@@ -154,11 +157,13 @@ classifyRun(TClassifyConfig const& c) {
     // Classify
     if (!germline) {
       // Somatic mode
+      double bestCnOffset = 0;
       bool somaticcnv = false;
-      double worstp = 0;
+      double lowestp = 1;
       for(uint32_t i = 0; i < tumor.size(); ++i) {
 	bool germcnv = false;
 	double highestprob = 0;
+	double tcnoffset = -1;
 	for(uint32_t k = 0; k < control.size(); ++k) {
 	  boost::math::normal s1(control[k].first, control[k].second);
 	  double prob1 = boost::math::pdf(s1, tumor[i].first);
@@ -167,20 +172,34 @@ classifyRun(TClassifyConfig const& c) {
 	  double prob = std::max(prob1, prob2);
 	  if (prob > c.pgerm) germcnv = true;
 	  else {
+	    // Among all controls, take highest p-value (most likely germline CNV)
 	    if (prob > highestprob) highestprob = prob;
 	  }
+	  double cndiff = std::abs(tumor[i].first - control[k].first);
+	  if (cndiff < c.cn_offset) germcnv = true;
+	  else {
+	    // Among all controls, take smallest CN difference
+	    if ((tcnoffset == -1) || (cndiff < tcnoffset)) tcnoffset = cndiff;
+	  }
 	}
+	// Among all tumors take best CN difference and lowest p-value
 	if (!germcnv) {
 	  somaticcnv = true;
-	  if (highestprob > worstp) worstp = highestprob;
+	  if ((highestprob < lowestp) && (tcnoffset > bestCnOffset)) {
+	    lowestp = highestprob;
+	    bestCnOffset = tcnoffset;
+	  }
 	}
       }
       if (!somaticcnv) continue;
       _remove_info_tag(hdr_out, rec, "SOMATIC");
       bcf_update_info_flag(hdr_out, rec, "SOMATIC", NULL, 1);
-      float pgerm = (float) worstp;
+      float pgerm = (float) lowestp;
       _remove_info_tag(hdr_out, rec, "PGERM");
       bcf_update_info_float(hdr_out, rec, "PGERM", &pgerm, 1);
+      float cndiv = (float) bestCnOffset;
+      _remove_info_tag(hdr_out, rec, "CNDIFF");
+      bcf_update_info_float(hdr_out, rec, "CNDIFF", &cndiv, 1);
     } else {
       // Correct CN shift
       int32_t cnmain = 0;
@@ -296,6 +315,7 @@ int classify(int argc, char **argv) {
   somatic.add_options()
     ("samples,s", boost::program_options::value<boost::filesystem::path>(&c.samplefile), "Two-column sample file listing sample name and tumor or control")
     ("pgerm,e", boost::program_options::value<float>(&c.pgerm)->default_value(0.001), "probability germline")
+    ("cn-offset,t", boost::program_options::value<float>(&c.cn_offset)->default_value(0.1), "min. CN offset")
     ;
 
   // Define germline options
