@@ -206,8 +206,13 @@ classifyRun(TClassifyConfig const& c) {
       {
 	std::vector<int32_t> cncount(MAX_CN, 0);
 	{
+	  bool validsite = true;
 	  boost::accumulators::accumulator_set<double, boost::accumulators::features<boost::accumulators::tag::mean, boost::accumulators::tag::variance> > acc;
-	  for(uint32_t k = 0; k < control.size(); ++k) acc(boost::math::round(control[k].first) - control[k].first);
+	  for(uint32_t k = 0; k < control.size(); ++k) {
+	    if ((boost::math::isinf(control[k].first)) || (boost::math::isnan(control[k].first))) validsite = false;
+	    else acc(boost::math::round(control[k].first) - control[k].first);
+	  }
+	  if (!validsite) continue;
 	  double cnshift = boost::accumulators::mean(acc);
 	  float cnshiftval = cnshift;
 	  _remove_info_tag(hdr_out, rec, "CNSHIFT");
