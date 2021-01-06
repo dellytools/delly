@@ -132,17 +132,20 @@ namespace torali
       double precndiff = std::abs((c.ploidy * precovsum / preexpcov) - (c.ploidy * succovsum / sucexpcov));
 
       // Intersect with delly SVs
-      int32_t searchWindow = std::max( std::max(1000, cnvs[n].start - cnvs[n].ciposlow), std::max(1000, cnvs[n].ciposhigh - cnvs[n].start));
       typename TSVs::const_iterator itbest = svbp[refIndex].end();
+      int32_t searchStart = std::max(0, std::min(cnvs[n-1].ciendlow, cnvs[n-1].end - 1000));
+      int32_t searchEnd = std::max(cnvs[n].ciposhigh, cnvs[n].start + 1000);
+      int32_t midpoint = (int32_t) ((cnvs[n-1].start + cnvs[n-1].end) / 2);
+      if (searchStart < midpoint) searchStart = midpoint;
+      midpoint = (int32_t) ((cnvs[n].start + cnvs[n].end) / 2);
+      if (searchEnd > midpoint) searchEnd = midpoint;
       // Current CNV start for this breakpoint
-      typename TSVs::const_iterator itsv = std::lower_bound(svbp[refIndex].begin(), svbp[refIndex].end(), SVBreakpoint(std::max(0, cnvs[n].start - searchWindow)), SortSVBreakpoint<SVBreakpoint>());
+      typename TSVs::const_iterator itsv = std::lower_bound(svbp[refIndex].begin(), svbp[refIndex].end(), SVBreakpoint(searchStart), SortSVBreakpoint<SVBreakpoint>());
       for(; itsv != svbp[refIndex].end(); ++itsv) {
-	if (itsv->pos - cnvs[n].start > searchWindow) break;
-	if (itsv->pos >= cnvs[n].end) continue;
-	if (itsv->pos <= cnvs[n-1].start) continue;
+	if (itsv->pos > searchEnd) break;
 	if ((itbest == svbp[refIndex].end()) || (itsv->qual > itbest->qual)) itbest = itsv;
       }
-      if ((itbest != svbp[refIndex].end()) && (itbest->qual > 50)) {
+      if ((itbest != svbp[refIndex].end()) && (itbest->qual >= 50)) {
 	// Check refined CNV
 	precovsum = 0;
 	preexpcov = 0;
