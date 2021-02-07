@@ -636,7 +636,7 @@ namespace torali
 	++show_progress;
 
 	// Invalid CNV?
-	if (cnvs[i].cn == -1) continue;
+	if ((!c.hasGenoFile) && (cnvs[i].cn == -1)) continue;
 
 	// Integer copy-number
 	int32_t absCN = (int32_t) boost::math::round(cnvs[i].cn);

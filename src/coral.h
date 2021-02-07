@@ -123,8 +123,8 @@ namespace torali
     faidx_t* faiRef = fai_load(c.genome.string().c_str());
     for(int32_t refIndex=0; refIndex < (int32_t) hdr->n_targets; ++refIndex) {
       ++show_progress;
-      if (chrNoData(c, refIndex, idx)) continue;
-
+      if ((!c.hasGenoFile) && (chrNoData(c, refIndex, idx))) continue;
+      
       // Check presence in mappability map
       std::string tname(hdr->target_name[refIndex]);
       int32_t seqlen = faidx_seq_len(faiMap, tname.c_str());
