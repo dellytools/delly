@@ -8,7 +8,8 @@ x = read.table(args[1], header=F)
 colnames(x)[1] = c("cnv")
 x = melt(x, id.vars=c("cnv"))
 x$cn = round(x$value)
-x[x$cn > 9,]$cn = 9
+if (sum(x$cn > 9)) { x[x$cn > 9,]$cn = 9; }
+
 x$cn = factor(x$cn, levels=0:9)
 nsamples = length(unique(x$variable))
 nbins = sqrt(nsamples)
