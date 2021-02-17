@@ -220,7 +220,7 @@ classifyRun(TClassifyConfig const& c) {
 	  for (int i = 0; i < bcf_hdr_nsamples(hdr); ++i) {
 	    rdcn[i] += cnshift;
 	    cnval[i] = boost::math::round(rdcn[i]);
-	    if (cnval[i] < MAX_CN) ++cncount[cnval[i]];
+	    if ((cnval[i] >= 0) && (cnval[i] < MAX_CN)) ++cncount[cnval[i]];
 	  }
 	}
 	
