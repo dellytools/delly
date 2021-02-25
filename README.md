@@ -223,7 +223,7 @@ There is a delly discussion group [delly-users](http://groups.google.com/d/forum
 * Docker/Singularity support?            
 There is a dockerized delly available [here](https://hub.docker.com/r/dellytools/delly/) and singularity containers (*.sif files) are part of the [delly release](https://github.com/dellytools/delly/releases).
 
-* How can I compute a mappability map?
+* How can I compute a mappability map?               
 A basic mappability map can be built using [dicey](https://github.com/gear-genomics/dicey), [samtools](https://github.com/samtools/samtools) and [bwa](https://github.com/lh3/bwa) with the below commands (as an example for the sacCer3 reference):
 ```
 dicey chop sacCer3.fa
