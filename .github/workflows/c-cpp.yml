@@ -15,5 +15,5 @@ jobs:
     - name: make
       run: |
         sudo apt-get update
-        sudo apt-get install -y libcurl4-gnutls-dev libhts-dev libhts2 libboost-date-time-dev libboost-program-options-dev libboost-system-dev libboost-filesystem-dev libboost-iostreams-dev
+        sudo apt-get install -y libcurl4-gnutls-dev libhts-dev libboost-date-time-dev libboost-program-options-dev libboost-system-dev libboost-filesystem-dev libboost-iostreams-dev
         make
