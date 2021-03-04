@@ -245,12 +245,18 @@ classifyRun(TClassifyConfig const& c) {
       // Re-compute CNLs
       std::vector<std::string> ftarr(bcf_hdr_nsamples(hdr));
       int32_t altqual = 0;
+      int32_t altcount = 0;
       for (int i = 0; i < bcf_hdr_nsamples(hdr); ++i) {
 	int32_t qval = _computeCNLs(c, rdcn[i], sd, cnl, gqval, i);
-	if (cnval[i] != c.ploidy) altqual += qval;
+	if (cnval[i] != c.ploidy) {
+	  altqual += qval;
+	  ++altcount;
+	}
 	if (gqval[i] < 15) ftarr[i] = "LowQual";
 	else ftarr[i] = "PASS";
       }
+      if (altcount == 0) continue;
+      altqual /= altcount;
       if (altqual < c.qual) continue;
       if (altqual > 10000) altqual = 10000;
       
