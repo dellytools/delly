@@ -144,7 +144,12 @@ classifyRun(TClassifyConfig const& c) {
     typedef std::vector<TCnSd> TSampleDist;
     TSampleDist control;
     TSampleDist tumor;
+    bool invalidCNV = false;
     for (int i = 0; i < bcf_hdr_nsamples(hdr); ++i) {
+      if ((!std::isfinite(rdcn[i])) || (rdcn[i] == -1)) {
+	invalidCNV = true;
+	break;
+      }
       if ((germline) || (c.controlSet.find(hdr->samples[i]) != c.controlSet.end())) {
 	// Control or population genomics
 	control.push_back(std::make_pair(rdcn[i], rdsd[i]));
@@ -153,6 +158,7 @@ classifyRun(TClassifyConfig const& c) {
 	tumor.push_back(std::make_pair(rdcn[i], rdsd[i]));
       }
     }
+    if (invalidCNV) continue;
 
     // Classify
     if (!germline) {
