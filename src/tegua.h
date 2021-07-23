@@ -241,7 +241,7 @@ namespace torali {
    boost::program_options::options_description cons("Consensus options");
    cons.add_options()
      ("max-reads,p", boost::program_options::value<uint32_t>(&c.maxReadPerSV)->default_value(5), "max. reads for consensus computation")
-     ("flank-size,f", boost::program_options::value<int32_t>(&c.minimumFlankSize)->default_value(400), "min. flank size")
+     ("flank-size,f", boost::program_options::value<int32_t>(&c.minimumFlankSize)->default_value(100), "min. flank size")
      ("flank-quality,a", boost::program_options::value<float>(&c.flankQuality)->default_value(0.9), "min. flank quality")
      ;     
    

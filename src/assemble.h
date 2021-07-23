@@ -84,8 +84,8 @@ namespace torali
 		for (int i = 0; i < rec->core.l_qseq; ++i) sequence[i] = "=ACMGRSVTWYHKDBN"[bam_seqi(seqptr, i)];
 		int32_t readlen = sequence.size();
 
-		// Extract subsequence
-		int32_t window = 2 * c.minimumFlankSize;
+		// Extract subsequence (otherwise MSA takes forever)
+		int32_t window = 1000;
 		int32_t sPos = srStore[seed][ri].sstart - window;
 		int32_t ePos = srStore[seed][ri].sstart + srStore[seed][ri].inslen + window;
 		if (rec->core.flag & BAM_FREVERSE) {
