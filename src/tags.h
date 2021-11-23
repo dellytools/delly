@@ -177,22 +177,12 @@ namespace torali {
   template<typename TBamRecord>
   inline uint8_t
   getSVType(TBamRecord const& al) {
-    if (al.flag & BAM_FREAD1) {
-      if (!(al.flag & BAM_FREVERSE)) {
-	if (!(al.flag & BAM_FMREVERSE)) return 0;
-	else return (al.pos < al.mpos) ? 2 : 3;
-      } else {
-	if (!(al.flag & BAM_FMREVERSE)) return (al.pos > al.mpos) ? 2 : 3;
-	else return 1;
-      }
+    if (!(al.flag & BAM_FREVERSE)) {
+      if (!(al.flag & BAM_FMREVERSE)) return 0;
+      else return (al.pos < al.mpos) ? 2 : 3;
     } else {
-      if (!(al.flag & BAM_FREVERSE)) {
-	if (!(al.flag & BAM_FMREVERSE)) return 0;
-	else return (al.pos < al.mpos) ? 2 : 3;
-      } else {
-	if (!(al.flag & BAM_FMREVERSE)) return (al.pos > al.mpos) ? 2 : 3;
-	else return 1;
-      }
+      if (!(al.flag & BAM_FMREVERSE)) return (al.pos > al.mpos) ? 2 : 3;
+      else return 1;
     }
   }
 
