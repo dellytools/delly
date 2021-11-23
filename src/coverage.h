@@ -25,10 +25,12 @@ namespace torali {
     int32_t bppos;
     int32_t svt;
     uint32_t id;
+    int32_t chr2;
+    int32_t otherBppos;
 
-    SpanPoint() : bppos(0), svt(0), id(0) {}
-    explicit SpanPoint(int32_t bp) : bppos(bp), svt(0), id(0) {}
-    SpanPoint(int32_t bp, int32_t s, uint32_t identifier) : bppos(bp), svt(s), id(identifier) {}
+    SpanPoint() : bppos(0), svt(0), id(0), chr2(0), otherBppos(0) {}
+    explicit SpanPoint(int32_t const bp) : bppos(bp), svt(0), id(0), chr2(0), otherBppos(0) {}
+    SpanPoint(int32_t const bp, int32_t const s, uint32_t const identifier, int32_t const tid, int32_t const obp) : bppos(bp), svt(s), id(identifier), chr2(tid), otherBppos(obp) {}
   };
   
   struct BpRegion {
@@ -380,11 +382,11 @@ namespace torali {
 	  if (itSV->peSupport == 0) continue;
 	  if ((itSV->chr == refIndex) && (itSV->svStart < (int32_t) hdr[file_c]->target_len[refIndex])) {
 	    spanBp[itSV->svStart] = 1;
-	    spanPoint.push_back(SpanPoint(itSV->svStart, itSV->svt, itSV->id));
+	    spanPoint.push_back(SpanPoint(itSV->svStart, itSV->svt, itSV->id, itSV->chr2, itSV->svEnd));
 	  }
 	  if ((itSV->chr2 == refIndex) && (itSV->svEnd < (int32_t) hdr[file_c]->target_len[refIndex])) {
 	    spanBp[itSV->svEnd] = 1;
-	    spanPoint.push_back(SpanPoint(itSV->svEnd, itSV->svt, itSV->id));
+	    spanPoint.push_back(SpanPoint(itSV->svEnd, itSV->svt, itSV->id, itSV->chr, itSV->svStart));
 	  }
 	}
 	std::sort(spanPoint.begin(), spanPoint.end(), SortBp<SpanPoint>());
@@ -656,22 +658,27 @@ namespace torali {
 		typename TSpanPoint::iterator itSpan = std::lower_bound(spanPoint.begin(), spanPoint.end(), SpanPoint(pbegin), SortBp<SpanPoint>());
 		for(; ((itSpan != spanPoint.end()) && (pend >= itSpan->bppos)); ++itSpan) {
 		  if (svt == itSpan->svt) {
-		    uint8_t* hpptr = bam_aux_get(rec, "HP");
+		    // Make sure, mate is correct
+		    if (rec->core.mtid == itSpan->chr2) {
+		      if (std::abs((int32_t) rec->core.mpos - itSpan->otherBppos) < sampleLib[file_c].maxNormalISize) {
+			uint8_t* hpptr = bam_aux_get(rec, "HP");
 #pragma omp critical
-		    {
-		      if (c.hasDumpFile) {
-			std::string svid(_addID(itSpan->svt));
-			std::string padNumber = boost::lexical_cast<std::string>(itSpan->id);
-			padNumber.insert(padNumber.begin(), 8 - padNumber.length(), '0');
-			svid += padNumber;
-			dumpOut << svid << "\t" << c.files[file_c].string() << "\t" << bam_get_qname(rec) << "\t" << hdr[file_c]->target_name[rec->core.tid] << "\t" << rec->core.pos << "\t" << hdr[file_c]->target_name[rec->core.mtid] << "\t" << rec->core.mpos << "\t" << (int32_t) rec->core.qual << "\tPE" << std::endl;
-		      }
-		      spanMap[file_c][itSpan->id].alt.push_back(pairQuality);
-		      if (hpptr) {
-			c.isHaplotagged = true;
-			int hap = bam_aux2i(hpptr);
-			if (hap == 1) ++spanMap[file_c][itSpan->id].alth1;
-			else ++spanMap[file_c][itSpan->id].alth2;
+			{
+			  if (c.hasDumpFile) {
+			    std::string svid(_addID(itSpan->svt));
+			    std::string padNumber = boost::lexical_cast<std::string>(itSpan->id);
+			    padNumber.insert(padNumber.begin(), 8 - padNumber.length(), '0');
+			    svid += padNumber;
+			    dumpOut << svid << "\t" << c.files[file_c].string() << "\t" << bam_get_qname(rec) << "\t" << hdr[file_c]->target_name[rec->core.tid] << "\t" << rec->core.pos << "\t" << hdr[file_c]->target_name[rec->core.mtid] << "\t" << rec->core.mpos << "\t" << (int32_t) rec->core.qual << "\tPE" << std::endl;
+			  }
+			  spanMap[file_c][itSpan->id].alt.push_back(pairQuality);
+			  if (hpptr) {
+			    c.isHaplotagged = true;
+			    int hap = bam_aux2i(hpptr);
+			    if (hap == 1) ++spanMap[file_c][itSpan->id].alth1;
+			    else ++spanMap[file_c][itSpan->id].alth2;
+			  }
+			}
 		      }
 		    }
 		  }
