@@ -621,7 +621,7 @@ namespace torali
 	      if ((rec->core.flag & BAM_FPAIRED) && !(rec->core.flag & BAM_FMUNMAP) && (rec->core.tid==rec->core.mtid)) {
 		if (processedNumPairs < maxNumAlignments) {
 		  vecISize.push_back(abs(rec->core.isize));
-		  if (getSVType(rec->core) == 2) ++rplus;
+		  if (getSVType(rec) == 2) ++rplus;
 		  else ++nonrplus;
 		  ++processedNumPairs;
 		}

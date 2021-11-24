@@ -599,7 +599,7 @@ namespace torali {
 	    if (sampleLib[file_c].median == 0) continue; // Single-end library or non-valid library
 
 	    // Normal spanning pair
-	    if ((!pairClip) && (getSVType(rec->core) == 2) && (outerISize >= sampleLib[file_c].minNormalISize) && (outerISize <= sampleLib[file_c].maxNormalISize) && (rec->core.tid==rec->core.mtid)) {
+	    if ((!pairClip) && (getSVType(rec) == 2) && (outerISize >= sampleLib[file_c].minNormalISize) && (outerISize <= sampleLib[file_c].maxNormalISize) && (rec->core.tid==rec->core.mtid)) {
 	      // Take X% of the outerisize as the spanned interval
 	      int32_t spanlen = 0.8 * outerISize;
 	      int32_t pbegin = std::min((int32_t) rec->core.pos, (int32_t) rec->core.mpos);
@@ -634,7 +634,7 @@ namespace torali {
 	    }
 	    
 	    // Abnormal spanning coverage
-	    if ((getSVType(rec->core) != 2) || (outerISize < sampleLib[file_c].minNormalISize) || (outerISize > sampleLib[file_c].maxNormalISize) || (rec->core.tid!=rec->core.mtid)) {
+	    if ((getSVType(rec) != 2) || (outerISize < sampleLib[file_c].minNormalISize) || (outerISize > sampleLib[file_c].maxNormalISize) || (rec->core.tid!=rec->core.mtid)) {
 	      // SV type
 	      int32_t svt = _isizeMappingPos(rec, sampleLib[file_c].maxISizeCutoff);
 	      if (svt == -1) continue;

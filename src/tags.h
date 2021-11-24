@@ -174,22 +174,21 @@ namespace torali {
   // 2: Deletion-type
   // 3: Duplication-type
 
-  template<typename TBamRecord>
   inline uint8_t
-  getSVType(TBamRecord const& al) {
-    if (!(al.flag & BAM_FREVERSE)) {
-      if (!(al.flag & BAM_FMREVERSE)) return (al.pos < al.mpos) ? 0 : 1;
-      else return (al.pos < al.mpos) ? 2 : 3;
+  getSVType(bam1_t* rec) {
+    if (!(rec->core.flag & BAM_FREVERSE)) {
+      if (!(rec->core.flag & BAM_FMREVERSE)) return 0;
+      else return (rec->core.pos < rec->core.mpos) ? 2 : 3;
     } else {
-      if (!(al.flag & BAM_FMREVERSE)) return (al.pos > al.mpos) ? 2 : 3;
-      else return (al.pos > al.mpos) ? 0 : 1;
+      if (!(rec->core.flag & BAM_FMREVERSE)) return (rec->core.pos > rec->core.mpos) ? 2 : 3;
+      else return 1;
     }
   }
 
   inline int32_t
   _isizeMappingPos(bam1_t* rec, int32_t isize) {
     if (_translocation(rec)) {
-      uint8_t orient = getSVType(rec->core);
+      uint8_t orient = getSVType(rec);
       if (orient == 0) return DELLY_SVT_TRANS + 0;
       else if (orient == 1) return DELLY_SVT_TRANS + 1;
       else {
@@ -204,7 +203,7 @@ namespace torali {
       }
     } else {
       if (rec->core.pos == rec->core.mpos) return -1; // No SV
-      uint8_t orient = getSVType(rec->core);
+      uint8_t orient = getSVType(rec);
       if (orient == 0) return 0;
       else if (orient == 1) return 1;
       else if (orient == 2) {

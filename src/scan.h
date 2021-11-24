@@ -190,7 +190,7 @@ namespace torali
 	if (rec->core.flag & (BAM_FSECONDARY | BAM_FQCFAIL | BAM_FDUP | BAM_FSUPPLEMENTARY | BAM_FUNMAP)) continue;
 	if ((rec->core.flag & BAM_FPAIRED) && ((rec->core.flag & BAM_FMUNMAP) || (rec->core.tid != rec->core.mtid))) continue;
 	if (rec->core.qual < c.minQual) continue;
-	if (getSVType(rec->core) != 2) continue;
+	if (getSVType(rec) != 2) continue;
 
 	int32_t midPoint = rec->core.pos + halfAlignmentLength(rec);
 	if (rec->core.flag & BAM_FPAIRED) {
