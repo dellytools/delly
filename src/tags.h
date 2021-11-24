@@ -178,11 +178,11 @@ namespace torali {
   inline uint8_t
   getSVType(TBamRecord const& al) {
     if (!(al.flag & BAM_FREVERSE)) {
-      if (!(al.flag & BAM_FMREVERSE)) return 0;
+      if (!(al.flag & BAM_FMREVERSE)) return (al.pos < al.mpos) ? 0 : 1;
       else return (al.pos < al.mpos) ? 2 : 3;
     } else {
       if (!(al.flag & BAM_FMREVERSE)) return (al.pos > al.mpos) ? 2 : 3;
-      else return 1;
+      else return (al.pos > al.mpos) ? 0 : 1;
     }
   }
 
