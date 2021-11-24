@@ -202,6 +202,9 @@ Somatic copy-number alterations (SCNAs)
 
 FAQ
 ---
+* Visualization of SVs      
+You may want to try out [wally](https://github.com/tobiasrausch/wally) to plot candidate structural variants. The paired-end coloring is explained in [wally's README](https://github.com/tobiasrausch/wally#paired-end-view) file.
+
 * What is the smallest SV size Delly can call?  
 This depends on the sharpness of the insert size distribution. For an insert size of 200-300bp with a 20-30bp standard deviation, Delly starts to call reliable SVs >=300bp. Delly also supports calling of small InDels using soft-clipped reads only, the smallest SV size called is 15bp.
 
