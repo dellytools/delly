@@ -33,6 +33,48 @@ namespace torali
   };
 
 
+  inline void
+  printAlignment(std::string const& query, std::string const& target, EdlibAlignMode const modeCode, EdlibAlignResult& align) {
+    int32_t tIdx = -1;
+    int32_t qIdx = -1;
+    if (modeCode == EDLIB_MODE_HW) {
+        tIdx = align.endLocations[0];
+        for (int32_t i = 0; i < align.alignmentLength; i++) {
+            if (align.alignment[i] != EDLIB_EDOP_INSERT) tIdx--;
+        }
+    }
+    for (int start = 0; start < align.alignmentLength; start += 50) {
+      std::cout << "T: ";
+      int32_t startTIdx = -1;
+      for (int32_t j = start; ((j < start + 50) && (j < align.alignmentLength)); ++j) {
+	if (align.alignment[j] == EDLIB_EDOP_INSERT) std::cout << "-";
+	else std::cout << target[++tIdx];
+	if (j == start) startTIdx = tIdx;
+      }
+      std::cout << " (" << std::max(startTIdx, 0) << " - " << tIdx << ")" << std::endl;
+
+      // match / mismatch
+      std::cout << ("   ");
+      for (int32_t j = start; j < start + 50 && j < align.alignmentLength; j++) {
+	if (align.alignment[j] == EDLIB_EDOP_MATCH) std::cout <<  "|";
+	else std::cout << " ";
+      }
+      std::cout << std::endl;
+
+      // query
+      std::cout << "Q: ";
+      int32_t startQIdx = qIdx;
+      for (int32_t j = start; j < start + 50 && j < align.alignmentLength; j++) {
+	if (align.alignment[j] == EDLIB_EDOP_DELETE) std::cout << "-";
+	else std::cout << query[++qIdx];
+	if (j == start) startQIdx = qIdx;
+      }
+      std::cout << " ("<< std::max(startQIdx, 0) << " - " << qIdx << ")" << std::endl;
+      std::cout << std::endl;
+    }
+  }
+  
+
   inline float
   percentIdentity(std::string const& s1, std::string const& s2, int32_t splitpos, int32_t window) {
     // Get window boundaries
@@ -419,14 +461,31 @@ namespace torali
 	      }
 	    
 	      // Compute alignment to alternative haplotype
+	      /*
 	      DnaScore<int> simple(c.aliscore.match, c.aliscore.mismatch, c.aliscore.mismatch, c.aliscore.mismatch);
 	      AlignConfig<true, false> semiglobal;
 	      double scoreAlt = needleBanded(gbp[svid].alt, subseq, semiglobal, simple);
 	      scoreAlt /= (double) (c.flankQuality * gbp[svid].alt.size() * simple.match + (1.0 - c.flankQuality) * gbp[svid].alt.size() * simple.mismatch);
+	      */
+
+	      double scoreAlt = (1.0 - c.flankQuality) * gbp[svid].alt.size();
+	      EdlibAlignResult altalign = edlibAlign(gbp[svid].alt.c_str(), gbp[svid].alt.size(), subseq.c_str(), subseq.size(), edlibNewAlignConfig(-1, EDLIB_MODE_HW, EDLIB_TASK_DISTANCE, NULL, 0));
+	      // Debug: requires EDLIB_TASK_PATH
+	      //printAlignment(gbp[svid].alt, subseq, EDLIB_MODE_HW, altalign);
+	      //if (altalign.status == EDLIB_STATUS_OK) std::cout << "ALT edit_distance = " << altalign.editDistance << ", expected = " << scoreAlt << std::endl;
+	      scoreAlt = scoreAlt / (double) altalign.editDistance;
+	      edlibFreeAlignResult(altalign);
 	    
 	      // Compute alignment to reference haplotype
-	      double scoreRef = needleBanded(gbp[svid].ref, subseq, semiglobal, simple);
-	      scoreRef /= (double) (c.flankQuality * gbp[svid].ref.size() * simple.match + (1.0 - c.flankQuality) * gbp[svid].ref.size() * simple.mismatch);
+	      //double scoreRef = needleBanded(gbp[svid].ref, subseq, semiglobal, simple);
+	      //scoreRef /= (double) (c.flankQuality * gbp[svid].ref.size() * simple.match + (1.0 - c.flankQuality) * gbp[svid].ref.size() * simple.mismatch);
+
+	      double scoreRef = (1.0 - c.flankQuality) * gbp[svid].ref.size();
+	      EdlibAlignResult refalign = edlibAlign(gbp[svid].ref.c_str(), gbp[svid].ref.size(), subseq.c_str(), subseq.size(), edlibNewAlignConfig(-1, EDLIB_MODE_HW, EDLIB_TASK_DISTANCE, NULL, 0));
+	      //printAlignment(gbp[svid].ref, subseq, EDLIB_MODE_HW, refalign);
+	      //if (refalign.status == EDLIB_STATUS_OK) std::cout << "REF edit_distance = " << refalign.editDistance << ", expected = " << scoreRef << std::endl;
+	      scoreRef = scoreRef / (double) refalign.editDistance;
+	      edlibFreeAlignResult(refalign);
 
 	      // Any confident alignment?
 	      if ((scoreRef > 1) || (scoreAlt > 1)) {

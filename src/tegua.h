@@ -21,6 +21,7 @@
 #include <htslib/vcf.h>
 #include <htslib/faidx.h>
 
+#include "edlib.h"
 #include "delly.h"
 #include "coverage.h"
 #include "genotype.h"
@@ -193,8 +194,8 @@ namespace torali {
    }
       
    // Reference SV Genotyping
-   //trackRef(c, svs, jctMap, rcMap);
-   genotypeLR(c, svs, srStore, jctMap, rcMap);
+   trackRef(c, svs, jctMap, rcMap);
+   //genotypeLR(c, svs, srStore, jctMap, rcMap);
 
    // VCF Output
    vcfOutput(c, svs, jctMap, rcMap, spanMap);
