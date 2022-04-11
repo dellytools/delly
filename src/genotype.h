@@ -43,6 +43,7 @@ namespace torali
             if (align.alignment[i] != EDLIB_EDOP_INSERT) tIdx--;
         }
     }
+    std::cout << std::endl;
     for (int start = 0; start < align.alignmentLength; start += 50) {
       std::cout << "T: ";
       int32_t startTIdx = -1;

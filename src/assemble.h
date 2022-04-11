@@ -4,6 +4,8 @@
 #include <boost/progress.hpp>
 
 #include <iostream>
+
+#include "edlib.h"
 #include "msa.h"
 #include "split.h"
 #include "gotoh.h"
@@ -22,11 +24,192 @@ namespace torali
   };
 
 
+  template<typename TAlign>
+  inline void
+  convertAlignment(std::string const& query, TAlign& align, EdlibAlignMode const modeCode, EdlibAlignResult& cigar) {
+    // Input alignment
+    TAlign alignIn;
+    alignIn.resize(boost::extents[align.shape()[0]][align.shape()[1]]);
+    for(uint32_t i = 0; i < align.shape()[0]; ++i) {
+      for(uint32_t j = 0; j < align.shape()[1]; ++j) {
+	alignIn[i][j] = align[i][j];
+      }
+    }
+	
+    // Create new alignment
+    uint32_t seqPos = alignIn.shape()[0];
+    align.resize(boost::extents[alignIn.shape()[0]+1][cigar.alignmentLength]);
+    int32_t tIdx = -1;
+    int32_t qIdx = -1;
+    if (modeCode == EDLIB_MODE_HW) {
+        tIdx = cigar.endLocations[0];
+        for (int32_t i = 0; i < cigar.alignmentLength; i++) {
+            if (cigar.alignment[i] != EDLIB_EDOP_INSERT) tIdx--;
+        }
+    }
+    // target
+    for (int32_t j = 0; j < cigar.alignmentLength; ++j) {
+      if (cigar.alignment[j] == EDLIB_EDOP_INSERT) {
+	for(uint32_t seqIdx = 0; seqIdx < seqPos; ++seqIdx) align[seqIdx][j] = '-';
+      } else {
+	++tIdx;
+	for(uint32_t seqIdx = 0; seqIdx < seqPos; ++seqIdx) align[seqIdx][j] = alignIn[seqIdx][tIdx];
+      }
+    }
+
+    // query
+    for (int32_t j = 0; j < cigar.alignmentLength; ++j) {
+      if (cigar.alignment[j] == EDLIB_EDOP_DELETE) align[seqPos][j] = '-';
+      else align[seqPos][j] = query[++qIdx];
+    }
+  }
+
+  
+  template<typename TAlign>
+  inline void
+  consensusEdlib(TAlign const& align, std::string& cons) {
+    typedef typename TAlign::index TAIndex;
+
+    cons.resize(align.shape()[1]);
+    for(TAIndex j = 0; j < (TAIndex) align.shape()[1]; ++j) {
+      std::vector<int32_t> count(5, 0); // ACGT-
+      for(TAIndex i = 0; i < (TAIndex) align.shape()[0]; ++i) {
+	if ((align[i][j] == 'A') || (align[i][j] == 'a')) ++count[0];
+	else if ((align[i][j] == 'C') || (align[i][j] == 'c')) ++count[1];
+	else if ((align[i][j] == 'G') || (align[i][j] == 'g')) ++count[2];
+	else if ((align[i][j] == 'T') || (align[i][j] == 't')) ++count[3];
+	else ++count[4];
+      }
+      uint32_t maxIdx = 0;
+      uint32_t sndIdx = 1;
+      if (count[maxIdx] < count[sndIdx]) {
+	maxIdx = 1;
+	sndIdx = 0;
+      }
+      for(uint32_t i = 2; i<5; ++i) {
+	if (count[i] > count[maxIdx]) {
+	  sndIdx = maxIdx;
+	  maxIdx = i;
+	}
+	else if (count[i] > count[sndIdx]) {
+	  sndIdx = i;
+	}
+      }
+      if (2 * count[sndIdx] < count[maxIdx]) {
+	switch (maxIdx) {
+	case 0: cons[j] = 'A'; break;
+	case 1: cons[j] = 'C'; break;
+	case 2: cons[j] = 'G'; break;
+	case 3: cons[j] = 'T'; break;
+	default: cons[j] = '-'; break;
+	}
+      } else {
+	uint32_t k1 = maxIdx;
+	uint32_t k2 = sndIdx;
+	if (k1 > k2) {
+	  k1 = sndIdx;
+	  k2 = maxIdx;
+	}
+	// ACGT-
+	if ((k1 == 0) && (k2 == 1)) cons[j] = 'M';
+	else if ((k1 == 0) && (k2 == 2)) cons[j] = 'R';
+	else if ((k1 == 0) && (k2 == 3)) cons[j] = 'W';
+	else if ((k1 == 0) && (k2 == 4)) cons[j] = 'B';
+	else if ((k1 == 1) && (k2 == 2)) cons[j] = 'S';
+	else if ((k1 == 1) && (k2 == 3)) cons[j] = 'Y';
+	else if ((k1 == 1) && (k2 == 4)) cons[j] = 'D';
+	else if ((k1 == 2) && (k2 == 3)) cons[j] = 'K';
+	else if ((k1 == 2) && (k2 == 4)) cons[j] = 'E';
+	else if ((k1 == 3) && (k2 == 4)) cons[j] = 'F';
+	else cons[j] = '-';
+      }
+    }
+  }
+  
+
+  template<typename TConfig, typename TSplitReadSet>
+  inline int
+  msaEdlib(TConfig const& c, TSplitReadSet const& sps, std::string& cs) {
+    // Pairwise scores
+    typedef std::vector<int32_t> TDistances;
+    std::vector<TDistances> dist(sps.size(), TDistances());
+    for(uint32_t i = 0; i < sps.size(); ++i) {
+      for(uint32_t j = i + 1; j < sps.size(); ++j) {
+	EdlibAlignResult align = edlibAlign(sps[i].c_str(), sps[i].size(), sps[j].c_str(), sps[j].size(), edlibNewAlignConfig(-1, EDLIB_MODE_NW, EDLIB_TASK_DISTANCE, NULL, 0));
+	dist[i].push_back(align.editDistance);
+	dist[j].push_back(align.editDistance);
+      }
+    }
+    // Median edit distance
+    std::vector<std::pair<int32_t, int32_t> > qscores;
+    for(uint32_t i = 0; i < sps.size(); ++i) {
+      std::sort(dist[i].begin(), dist[i].end());
+      qscores.push_back(std::make_pair(dist[i][dist[i].size()/2], i));
+    }
+    std::sort(qscores.begin(), qscores.end());
+
+    // Drop poorest 20% and order by centroid
+    std::vector<uint32_t> selectedIdx;
+    int32_t lastIdx = (int32_t) (0.8 * qscores.size());
+    if (lastIdx < 3) lastIdx = 3;
+    for(uint32_t i = 0; ((i < qscores.size()) && (i < lastIdx)); ++i) selectedIdx.push_back(qscores[i].second);
+    
+    // Extended IUPAC code
+    EdlibEqualityPair additionalEqualities[20] = {{'M', 'A'}, {'M', 'C'}, {'R', 'A'}, {'R', 'G'}, {'W', 'A'}, {'W', 'T'}, {'B', 'A'}, {'B', '-'}, {'S', 'C'}, {'S', 'G'}, {'Y', 'C'}, {'Y', 'T'}, {'D', 'C'}, {'D', '-'}, {'K', 'G'}, {'K', 'T'}, {'E', 'G'}, {'E', '-'}, {'F', 'T'}, {'F', '-'}};
+
+    // Incrementally align sequences    
+    typedef boost::multi_array<char, 2> TAlign;
+    TAlign align;
+    align.resize(boost::extents[1][sps[selectedIdx[0]].size()]);
+    uint32_t ind = 0;
+    for(typename std::string::const_iterator str = sps[selectedIdx[0]].begin(); str != sps[selectedIdx[0]].end(); ++str) align[0][ind++] = *str;
+    for(uint32_t i = 1; i < selectedIdx.size(); ++i) {
+      // Convert to consensus
+      std::string alignStr;
+      consensusEdlib(align, alignStr);
+      // Debug MSA
+      //std::cerr << "Input MSA" << std::endl;
+      //for(uint32_t i = 0; i<align.shape()[0]; ++i) {
+      //for(uint32_t j = 0; j<align.shape()[1]; ++j) std::cerr << align[i][j];
+      //std::cerr << std::endl;
+      //}
+      //std::cerr << alignStr << std::endl;
+
+      // Compute alignment
+      EdlibAlignResult cigar = edlibAlign(sps[selectedIdx[i]].c_str(), sps[selectedIdx[i]].size(), alignStr.c_str(), alignStr.size(), edlibNewAlignConfig(-1, EDLIB_MODE_HW, EDLIB_TASK_PATH, additionalEqualities, 20));
+      convertAlignment(sps[selectedIdx[i]], align, EDLIB_MODE_HW, cigar);
+      edlibFreeAlignResult(cigar);
+    }
+    
+    // Debug MSA
+    //std::cerr << "Output MSA" << std::endl;
+    //for(uint32_t i = 0; i<align.shape()[0]; ++i) {
+    //for(uint32_t j = 0; j<align.shape()[1]; ++j) std::cerr << align[i][j];
+    //std::cerr << std::endl;
+    //}
+
+    // Consensus
+    std::string gapped;
+    consensus(align, gapped, cs);
+    //std::cerr << "Consensus:" << std::endl;
+    //std::cerr << gapped << std::endl;
+
+    // Trim off 10% from either end
+    int32_t trim = (int32_t) (0.1 * cs.size());
+    int32_t len = (int32_t) (cs.size()) - 2 * trim;
+    if (len > 100) cs = cs.substr(trim, len);
+    
+    // Return split-read support
+    return align.shape()[0];
+  }
+
+
+  
   template<typename TConfig, typename TValidRegion, typename TSRStore>
   inline void
     assemble(TConfig const& c, TValidRegion const& validRegions, std::vector<StructuralVariantRecord>& svs, TSRStore& srStore) {
     // Sequence store
-    typedef std::set<std::string> TSequences;
+    typedef std::vector<std::string> TSequences;
     typedef std::vector<TSequences> TSVSequences;
     TSVSequences seqStore(svs.size(), TSequences());
 
@@ -59,7 +242,7 @@ namespace torali
       int32_t seqlen = -1;
       std::string tname(hdr->target_name[refIndex]);
       char* seq = faidx_fetch_seq(fai, tname.c_str(), 0, hdr->target_len[refIndex], &seqlen);
-    
+      
       // Collect reads from all samples
       for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
 	// Read alignments (full chromosome because primary alignments might be somewhere else)
@@ -100,7 +283,7 @@ namespace torali
 		  if ((svs[svid].svt == 5) || (svs[svid].svt == 6)) {
 		    if (svs[svid].chr == refIndex) reverseComplement(seqalign);
 		  }
-		  seqStore[svid].insert(seqalign);
+		  seqStore[svid].push_back(seqalign);
 
 		  // Enough split-reads?
 		  if ((!_translocation(svs[svid].svt)) && (svs[svid].chr == refIndex)) {
@@ -109,10 +292,11 @@ namespace torali
 		      if (seqStore[svid].size() > 1) {
 			//std::cerr << svs[svid].svStart << ',' << svs[svid].svEnd << ',' << svs[svid].svt << ',' << svid << " SV" << std::endl;
 			//for(typename TSequences::iterator it = seqStore[svid].begin(); it != seqStore[svid].end(); ++it) std::cerr << *it << std::endl;
-			msa(c, seqStore[svid], svs[svid].consensus);
+			msaEdlib(c, seqStore[svid], svs[svid].consensus);
 			//outputConsensus(hdr, svs[svid], svs[svid].consensus);
 			if ((svs[svid].svt == 1) || (svs[svid].svt == 5)) reverseComplement(svs[svid].consensus);
 			//std::cerr << svs[svid].consensus << std::endl;
+
 			if (alignConsensus(c, hdr, seq, NULL, svs[svid])) msaSuccess = true;
 			//std::cerr << msaSuccess << std::endl;
 		      }
