@@ -150,7 +150,7 @@ namespace torali
 
     // Drop poorest 20% and order by centroid
     std::vector<uint32_t> selectedIdx;
-    int32_t lastIdx = (int32_t) (0.8 * qscores.size());
+    uint32_t lastIdx = (uint32_t) (0.8 * qscores.size());
     if (lastIdx < 3) lastIdx = 3;
     for(uint32_t i = 0; ((i < qscores.size()) && (i < lastIdx)); ++i) selectedIdx.push_back(qscores[i].second);
     
@@ -190,7 +190,7 @@ namespace torali
 
     // Consensus
     std::string gapped;
-    consensus(align, gapped, cs);
+    consensus(c, align, gapped, cs);
     //std::cerr << "Consensus:" << std::endl;
     //std::cerr << gapped << std::endl;
 
@@ -292,6 +292,7 @@ namespace torali
 		      if (seqStore[svid].size() > 1) {
 			//std::cerr << svs[svid].svStart << ',' << svs[svid].svEnd << ',' << svs[svid].svt << ',' << svid << " SV" << std::endl;
 			//for(typename TSequences::iterator it = seqStore[svid].begin(); it != seqStore[svid].end(); ++it) std::cerr << *it << std::endl;
+
 			msaEdlib(c, seqStore[svid], svs[svid].consensus);
 			//outputConsensus(hdr, svs[svid], svs[svid].consensus);
 			if ((svs[svid].svt == 1) || (svs[svid].svt == 5)) reverseComplement(svs[svid].consensus);

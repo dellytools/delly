@@ -156,9 +156,9 @@ namespace torali {
   }
 
 
-  template<typename TAlign>
+  template<typename TConfig, typename TAlign>
   inline void
-  consensus(TAlign const& align, std::string& gapped, std::string& cs) {
+  consensus(TConfig const& c, TAlign const& align, std::string& gapped, std::string& cs) {
     typedef typename TAlign::index TAIndex;
 
     // Calculate coverage
@@ -182,7 +182,7 @@ namespace torali {
       }
     }
     
-    int covThreshold = 3;
+    int covThreshold = c.minCliqueSize;
     TAIndex j = 0;
     std::vector<char> cons(align.shape()[1], '-');
     for(typename TCoverage::const_iterator itCov = cov.begin(); itCov != cov.end(); ++itCov, ++j) {
@@ -222,11 +222,11 @@ namespace torali {
     }
   }
 
-  template<typename TAlign>
+  template<typename TConfig, typename TAlign>
   inline void
-  consensus(TAlign const& align, std::string& cs) {
+  consensus(TConfig const& c, TAlign const& align, std::string& cs) {
     std::string gapped;
-    consensus(align, gapped, cs);
+    consensus(c, align, gapped, cs);
     //std::cerr << "Consensus:" << std::endl;
     //std::cerr << gapped << std::endl;
     //std::cerr << cs << std::endl;
@@ -282,7 +282,7 @@ namespace torali {
     //sprealign(align);
 
     // Consensus calling
-    consensus(align, cs);
+    consensus(c, align, cs);
     
     // Return split-read support
     return align.shape()[0];
