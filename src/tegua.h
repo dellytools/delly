@@ -107,26 +107,23 @@ namespace torali {
      return 1;
    }
      
-   // SR Store
-   typedef std::vector<SeqSlice> TSvPosVector;
-   typedef boost::unordered_map<std::size_t, TSvPosVector> TReadSV;
-   TReadSV srStore;
-
-   // Identify SVs
-   if (srStore.empty()) {
+   // SV Discovery
+   if (svs.empty()) {
        
      // Structural Variant Candidates
      typedef std::vector<StructuralVariantRecord> TVariants;
      TVariants svc;
 
-     // Temporary split-read store
-     TReadSV tmpStore;
+     // Split-read store
+     typedef std::vector<SeqSlice> TSvPosVector;
+     typedef boost::unordered_map<std::size_t, TSvPosVector> TReadSV;
+     TReadSV srStore;
 
      // SV Discovery
-     _clusterSRReads(c, validRegions, svc, tmpStore);
+     _clusterSRReads(c, validRegions, svc, srStore);
 
      // Assemble
-     assemble(c, validRegions, svc, tmpStore);
+     assemble(c, validRegions, svc, srStore);
 
      // Sort SVs
      sort(svc.begin(), svc.end(), SortSVs<StructuralVariantRecord>());
@@ -153,17 +150,6 @@ namespace torali {
      for(typename TVariants::iterator svIt = svs.begin(); svIt != svs.end(); ++svIt, ++cliqueCount) {
        idmap.insert(std::make_pair(svIt->id, cliqueCount));
        svIt->id = cliqueCount;
-     }
-     for(typename TReadSV::iterator ts = tmpStore.begin(); ts != tmpStore.end(); ++ts) {
-       bool keep = false;
-       for(uint32_t idx = 0; idx < ts->second.size(); ++idx) {
-	 if (idmap.find(ts->second[idx].svid) == idmap.end()) ts->second[idx].svid = -1;
-	 else {
-	   ts->second[idx].svid = idmap.find(ts->second[idx].svid)->second;
-	   keep = true;
-	 }
-       }
-       if (keep) srStore.insert(*ts);
      }
      //outputStructuralVariants(c, svs);
    }
@@ -193,9 +179,8 @@ namespace torali {
      rcMap[file_c].resize(svs.size(), ReadCount());
    }
       
-   // Reference SV Genotyping
-   trackRef(c, svs, jctMap, rcMap);
-   //genotypeLR(c, svs, srStore, jctMap, rcMap);
+   // SV Genotyping
+   genotypeLR(c, svs, jctMap, rcMap);
 
    // VCF Output
    vcfOutput(c, svs, jctMap, rcMap, spanMap);
