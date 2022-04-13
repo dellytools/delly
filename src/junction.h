@@ -97,7 +97,25 @@ namespace torali
 	    // Same chr, same direction, opposing soft-clips
 	    if ((it->second[j].refidx == it->second[i].refidx) && (it->second[j].forward == it->second[i].forward) && (it->second[i].scleft != it->second[j].scleft)) {
 	      // Min. deletion size
-	      if ( (uint32_t) std::abs(it->second[j].refpos - it->second[i].refpos) > c.minRefSep) {
+	      int32_t dellen = 0;
+	      if (it->second[i].forward) {
+		if (!it->second[i].scleft) {
+		  if (it->second[i].refpos <= it->second[j].refpos) dellen = (it->second[j].refpos - it->second[i].refpos) - (it->second[j].seqpos - it->second[i].seqpos);
+		  else dellen = 0;
+		} else {
+		  if (it->second[i].refpos <= it->second[j].refpos) dellen = 0;
+		  else dellen = (it->second[i].refpos - it->second[j].refpos) + (it->second[j].seqpos - it->second[i].seqpos);
+		}
+	      } else {
+		if (it->second[i].scleft) {
+		  if (it->second[i].refpos <= it->second[j].refpos) dellen = 0;
+		  else dellen = (it->second[i].refpos - it->second[j].refpos) - (it->second[j].seqpos - it->second[i].seqpos);
+		} else {
+		  if (it->second[i].refpos <= it->second[j].refpos) dellen = (it->second[j].refpos - it->second[i].refpos) + (it->second[j].seqpos - it->second[i].seqpos); 
+		  else dellen = 0;
+		}
+	      }
+	      if (dellen > (int32_t) c.minRefSep) {
 		int32_t rst = it->second[i].rstart;
 		if (rst == -1) rst = it->second[j].rstart;
 		// Avg. qval
@@ -112,6 +130,7 @@ namespace torali
 		    br[2].push_back(SRBamRecord(it->second[j].refidx, it->second[j].refpos, it->second[i].refidx, it->second[i].refpos, rst, std::min(it->second[j].seqpos, it->second[i].seqpos), qval, std::abs(it->second[j].seqpos - it->second[i].seqpos), it->first));
 		  }
 		}
+		break; // Only report first SV split to avoid ambiguities
 	      }
 	    }
 	  }
@@ -203,16 +222,29 @@ namespace torali
 	      // Reference insertion footprint should be small
 	      if ( (uint32_t) std::abs(it->second[j].refpos - it->second[i].refpos) < c.maxReadSep) {
 		// Large separation in sequence space
-		if ((uint32_t) (it->second[j].seqpos - it->second[i].seqpos) > c.minRefSep) {
+		int32_t isizelen = 0;
+		if (it->second[i].forward) {
+		  if (!it->second[i].scleft) {
+		    if (it->second[i].refpos <= it->second[j].refpos) isizelen = (it->second[j].seqpos - it->second[i].seqpos) - (it->second[j].refpos - it->second[i].refpos);
+		    else isizelen = (it->second[j].seqpos - it->second[i].seqpos) + (it->second[i].refpos - it->second[j].refpos);
+		  } else isizelen = 0;
+		} else {
+		  if (it->second[i].scleft) {
+		    if (it->second[i].refpos <= it->second[j].refpos) isizelen = (it->second[j].seqpos - it->second[i].seqpos) + (it->second[j].refpos - it->second[i].refpos);
+		    else isizelen = (it->second[j].seqpos - it->second[i].seqpos) - (it->second[i].refpos - it->second[j].refpos);
+		  } else isizelen = 0;
+		}
+		if (isizelen > (int32_t) c.minRefSep) {
 		  int32_t rst = it->second[i].rstart;
 		  if (rst == -1) rst = it->second[j].rstart;
 		  // Avg. qval
 		  int32_t qval = (int32_t) (((int32_t) it->second[i].qual + (int32_t) it->second[j].qual) / 2);
 		  if (it->second[i].refpos <= it->second[j].refpos) {
-		    br[4].push_back(SRBamRecord(it->second[i].refidx, it->second[i].refpos, it->second[j].refidx, it->second[j].refpos, rst, std::min(it->second[j].seqpos, it->second[i].seqpos), qval, std::abs(it->second[j].seqpos - it->second[i].seqpos), it->first));
+		    br[4].push_back(SRBamRecord(it->second[i].refidx, it->second[i].refpos, it->second[j].refidx, it->second[j].refpos, rst, std::min(it->second[j].seqpos, it->second[i].seqpos), qval, isizelen, it->first));
 		  } else {
-		    br[4].push_back(SRBamRecord(it->second[j].refidx, it->second[j].refpos, it->second[i].refidx, it->second[i].refpos, rst, std::min(it->second[j].seqpos, it->second[i].seqpos), qval, std::abs(it->second[j].seqpos - it->second[i].seqpos), it->first));
+		    br[4].push_back(SRBamRecord(it->second[j].refidx, it->second[j].refpos, it->second[i].refidx, it->second[i].refpos, rst, std::min(it->second[j].seqpos, it->second[i].seqpos), qval, isizelen, it->first));
 		  }
+		  break; // Only report first SV split to avoid ambiguities
 		}
 	      }
 	    }

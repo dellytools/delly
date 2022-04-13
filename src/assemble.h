@@ -291,13 +291,8 @@ namespace torali
 		      bool msaSuccess = false;
 		      if (seqStore[svid].size() > 1) {
 			//std::cerr << svs[svid].svStart << ',' << svs[svid].svEnd << ',' << svs[svid].svt << ',' << svid << " SV" << std::endl;
-			//for(typename TSequences::iterator it = seqStore[svid].begin(); it != seqStore[svid].end(); ++it) std::cerr << *it << std::endl;
-
 			msaEdlib(c, seqStore[svid], svs[svid].consensus);
-			//outputConsensus(hdr, svs[svid], svs[svid].consensus);
 			if ((svs[svid].svt == 1) || (svs[svid].svt == 5)) reverseComplement(svs[svid].consensus);
-			//std::cerr << svs[svid].consensus << std::endl;
-
 			if (alignConsensus(c, hdr, seq, NULL, svs[svid])) msaSuccess = true;
 			//std::cerr << msaSuccess << std::endl;
 		      }
@@ -335,11 +330,8 @@ namespace torali
 		}
 	      }
 	      //std::cerr << svs[svid].svStart << ',' << svs[svid].svEnd << ',' << svs[svid].svt << ',' << svid << " SV" << std::endl;
-	      //for(typename TSequences::iterator it = seqStore[svid].begin(); it != seqStore[svid].end(); ++it) std::cerr << *it << std::endl;
 	      msa(c, seqStore[svid], svs[svid].consensus);
-	      //outputConsensus(hdr, svs[svid], svs[svid].consensus);
 	      if ((svs[svid].svt == 1) || (svs[svid].svt == 5)) reverseComplement(svs[svid].consensus);
-	      //std::cerr << "Consensus: " << svs[svid].consensus << std::endl;
 	      if (alignConsensus(c, hdr, seq, sndSeq, svs[svid])) msaSuccess = true;
 	      //std::cerr << msaSuccess << std::endl;
 	    }
