@@ -115,9 +115,11 @@ namespace torali {
      TVariants svc;
 
      // Split-read store
+     typedef std::pair<int32_t, std::size_t> TPosRead;
      typedef std::vector<SeqSlice> TSvPosVector;
-     typedef boost::unordered_map<std::size_t, TSvPosVector> TReadSV;
-     TReadSV srStore;
+     typedef boost::unordered_map<TPosRead, TSvPosVector> TPosReadSV;
+     typedef std::vector<TPosReadSV> TGenomicPosReadSV;
+     TGenomicPosReadSV srStore(c.nchr, TPosReadSV());
 
      // SV Discovery
      _clusterSRReads(c, validRegions, svc, srStore);
@@ -221,7 +223,7 @@ namespace torali {
      ("minclip,c", boost::program_options::value<uint32_t>(&c.minClip)->default_value(25), "min. clipping length")
      ("min-clique-size,z", boost::program_options::value<uint32_t>(&c.minCliqueSize)->default_value(3), "min. clique size")     
      ("minrefsep,m", boost::program_options::value<uint32_t>(&c.minRefSep)->default_value(30), "min. reference separation")
-     ("maxreadsep,n", boost::program_options::value<uint32_t>(&c.maxReadSep)->default_value(75), "max. read separation")
+     ("maxreadsep,n", boost::program_options::value<uint32_t>(&c.maxReadSep)->default_value(100), "max. read separation")
      ;
 
    boost::program_options::options_description cons("Consensus options");

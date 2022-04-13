@@ -208,6 +208,8 @@ namespace torali
   template<typename TConfig, typename TValidRegion, typename TSRStore>
   inline void
     assemble(TConfig const& c, TValidRegion const& validRegions, std::vector<StructuralVariantRecord>& svs, TSRStore& srStore) {
+    typedef typename TSRStore::value_type TPosReadSV;
+    
     // Sequence store
     typedef std::vector<std::string> TSequences;
     typedef std::vector<TSequences> TSVSequences;
@@ -237,11 +239,17 @@ namespace torali
     for(int32_t refIndex = 0; refIndex < hdr->n_targets; ++refIndex) {
       ++show_progress;
       if (validRegions[refIndex].empty()) continue;
+      if (srStore[refIndex].empty()) continue;
 
       // Load sequence
       int32_t seqlen = -1;
       std::string tname(hdr->target_name[refIndex]);
       char* seq = faidx_fetch_seq(fai, tname.c_str(), 0, hdr->target_len[refIndex], &seqlen);
+
+      // Collect all split-read pos
+      typedef boost::dynamic_bitset<> TBitSet;
+      TBitSet hits(hdr->target_len[refIndex]);
+      for(typename TPosReadSV::const_iterator it = srStore[refIndex].begin(); it != srStore[refIndex].end(); ++it) hits[it->first.first] = 1;
       
       // Collect reads from all samples
       for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
@@ -251,14 +259,13 @@ namespace torali
 	while (sam_itr_next(samfile[file_c], iter, rec) >= 0) {
 	  // Only primary alignments with the full sequence information
 	  if (rec->core.flag & (BAM_FQCFAIL | BAM_FDUP | BAM_FUNMAP | BAM_FSECONDARY | BAM_FSUPPLEMENTARY)) continue;
+	  if (!hits[rec->core.pos]) continue;
 
-	  std::size_t seed = hash_lr(rec);
-	  if (srStore.find(seed) != srStore.end()) {
-	    for(uint32_t ri = 0; ri < srStore[seed].size(); ++ri) {
-	      int32_t svid = srStore[seed][ri].svid;
-	      //std::cerr << svs[svid].svStart << ',' << svs[svid].svEnd << ',' << svs[svid].svt << ',' << svid << " SV" << std::endl;
-	      //std::cerr << seed << '\t' << srStore[seed][ri].svid << '\t' << srStore[seed][ri].sstart << '\t' << srStore[seed][ri].inslen << '\t' << sv[srStore[seed][ri].svid].srSupport << '\t' << sv[srStore[seed][ri].svid].svt << std::endl;
-
+	  std::size_t seed = hash_string(bam_get_qname(rec));
+	  if (srStore[refIndex].find(std::make_pair(rec->core.pos, seed)) != srStore[refIndex].end()) {
+	    for(uint32_t ri = 0; ri < srStore[refIndex][std::make_pair(rec->core.pos, seed)].size(); ++ri) {
+	      SeqSlice seqsl = srStore[refIndex][std::make_pair(rec->core.pos, seed)][ri];
+	      int32_t svid = seqsl.svid;
 	      if ((!svcons[svid]) && (seqStore[svid].size() < c.maxReadPerSV)) {
 		// Get sequence
 		std::string sequence;
@@ -269,11 +276,11 @@ namespace torali
 
 		// Extract subsequence (otherwise MSA takes forever)
 		int32_t window = 1000;
-		int32_t sPos = srStore[seed][ri].sstart - window;
-		int32_t ePos = srStore[seed][ri].sstart + srStore[seed][ri].inslen + window;
+		int32_t sPos = seqsl.sstart - window;
+		int32_t ePos = seqsl.sstart + seqsl.inslen + window;
 		if (rec->core.flag & BAM_FREVERSE) {
-		  sPos = (readlen - (srStore[seed][ri].sstart + srStore[seed][ri].inslen)) - window;
-		  ePos = (readlen - srStore[seed][ri].sstart) + window;
+		  sPos = (readlen - (seqsl.sstart + seqsl.inslen)) - window;
+		  ePos = (readlen - seqsl.sstart) + window;
 		}
 		if (sPos < 0) sPos = 0;
 		if (ePos > (int32_t) readlen) ePos = readlen;

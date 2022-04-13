@@ -85,12 +85,22 @@ namespace torali
     }
   };
 
+
+  inline int32_t
+  _selectReadStart(std::vector<Junction> const& jcvec) {
+    for(uint32_t i = 0; i < jcvec.size(); ++i) {
+      if (jcvec[i].rstart != -1) return jcvec[i].rstart;
+    }
+    return -1;
+  }  
+  
   // Deletion junctions
   template<typename TConfig, typename TReadBp>
   inline void
   selectDeletions(TConfig const& c, TReadBp const& readBp, std::vector<std::vector<SRBamRecord> >& br) {
     for(typename TReadBp::const_iterator it = readBp.begin(); it != readBp.end(); ++it) {
       if (it->second.size() > 1) {
+	int32_t rst = _selectReadStart(it->second);
 	for(uint32_t i = 0; i < it->second.size(); ++i) {
 	  for(uint32_t j = i+1; j < it->second.size(); ++j) {
 	    if ((uint32_t) (it->second[j].seqpos - it->second[i].seqpos) > c.maxReadSep) break;
@@ -116,8 +126,6 @@ namespace torali
 		}
 	      }
 	      if (dellen > (int32_t) c.minRefSep) {
-		int32_t rst = it->second[i].rstart;
-		if (rst == -1) rst = it->second[j].rstart;
 		// Avg. qval
 		int32_t qval = (int32_t) (((int32_t) it->second[i].qual + (int32_t) it->second[j].qual) / 2);
 		// Correct clipping architecture, note: soft-clipping of error-prone reads can lead to switching left/right breakpoints
@@ -146,6 +154,7 @@ namespace torali
   selectDuplications(TConfig const& c, TReadBp const& readBp, std::vector<std::vector<SRBamRecord> >& br) {
     for(typename TReadBp::const_iterator it = readBp.begin(); it != readBp.end(); ++it) {
       if (it->second.size() > 1) {
+	int32_t rst = _selectReadStart(it->second);
 	for(uint32_t i = 0; i < it->second.size(); ++i) {
 	  for(uint32_t j = i+1; j < it->second.size(); ++j) {
 	    if ((uint32_t) (it->second[j].seqpos - it->second[i].seqpos) > c.maxReadSep) break;
@@ -153,8 +162,6 @@ namespace torali
 	    if ((it->second[j].refidx == it->second[i].refidx) && (it->second[j].forward == it->second[i].forward) && (it->second[i].scleft != it->second[j].scleft)) {
 	      // Min. duplication size
 	      if ( (uint32_t) std::abs(it->second[j].refpos - it->second[i].refpos) > c.minRefSep) {
-		int32_t rst = it->second[i].rstart;
-		if (rst == -1) rst = it->second[j].rstart;
 		// Avg. qval
 		int32_t qval = (int32_t) (((int32_t) it->second[i].qual + (int32_t) it->second[j].qual) / 2);
 		// Correct clipping architecture, note: soft-clipping of error-prone reads can lead to switching left/right breakpoints
@@ -181,6 +188,7 @@ namespace torali
   selectInversions(TConfig const& c, TReadBp const& readBp, std::vector<std::vector<SRBamRecord> >& br) {
     for(typename TReadBp::const_iterator it = readBp.begin(); it != readBp.end(); ++it) {
       if (it->second.size() > 1) {
+	int32_t rst = _selectReadStart(it->second);
 	for(uint32_t i = 0; i < it->second.size(); ++i) {
 	  for(uint32_t j = i+1; j < it->second.size(); ++j) {
 	    if ((uint32_t) (it->second[j].seqpos - it->second[i].seqpos) > c.maxReadSep) break;
@@ -188,8 +196,6 @@ namespace torali
 	    if ((it->second[j].refidx == it->second[i].refidx) && (it->second[j].forward != it->second[i].forward) && (it->second[i].scleft == it->second[j].scleft)) {
 	      // Min. inversion size
 	      if ( (uint32_t) std::abs(it->second[j].refpos - it->second[i].refpos) > c.minRefSep) {
-		int32_t rst = it->second[i].rstart;
-		if (rst == -1) rst = it->second[j].rstart;
 		// Avg. qval
 		int32_t qval = (int32_t) (((int32_t) it->second[i].qual + (int32_t) it->second[j].qual) / 2);
 		if (it->second[i].refpos <= it->second[j].refpos) {
@@ -215,6 +221,7 @@ namespace torali
   selectInsertions(TConfig const& c, TReadBp const& readBp, std::vector<std::vector<SRBamRecord> >& br) {
     for(typename TReadBp::const_iterator it = readBp.begin(); it != readBp.end(); ++it) {
       if (it->second.size() > 1) {
+	int32_t rst = _selectReadStart(it->second);
 	for(uint32_t i = 0; i < it->second.size(); ++i) {
 	  for(uint32_t j = i+1; j < it->second.size(); ++j) {
 	    // Same chr, same direction, opposing soft-clips
@@ -235,8 +242,6 @@ namespace torali
 		  } else isizelen = 0;
 		}
 		if (isizelen > (int32_t) c.minRefSep) {
-		  int32_t rst = it->second[i].rstart;
-		  if (rst == -1) rst = it->second[j].rstart;
 		  // Avg. qval
 		  int32_t qval = (int32_t) (((int32_t) it->second[i].qual + (int32_t) it->second[j].qual) / 2);
 		  if (it->second[i].refpos <= it->second[j].refpos) {
@@ -261,6 +266,7 @@ namespace torali
   selectTranslocations(TConfig const& c, TReadBp const& readBp, std::vector<std::vector<SRBamRecord> >& br) {
     for(typename TReadBp::const_iterator it = readBp.begin(); it != readBp.end(); ++it) {
       if (it->second.size() > 1) {
+	int32_t rst = _selectReadStart(it->second);
 	for(uint32_t i = 0; i < it->second.size(); ++i) {
 	  for(uint32_t j = i+1; j < it->second.size(); ++j) {
 	    if ((uint32_t) (it->second[j].seqpos - it->second[i].seqpos) > c.maxReadSep) break;
@@ -272,8 +278,6 @@ namespace torali
 		chr1ev = i;
 		chr2ev = j;
 	      }
-	      int32_t rst = it->second[i].rstart;
-	      if (rst == -1) rst = it->second[j].rstart;
 	      // Avg. qval
 	      int32_t qval = (int32_t) (((int32_t) it->second[i].qual + (int32_t) it->second[j].qual) / 2);
 	      if (it->second[chr1ev].forward == it->second[chr2ev].forward) {
@@ -346,7 +350,7 @@ namespace torali
 	    if (rec->core.flag & (BAM_FQCFAIL | BAM_FDUP | BAM_FUNMAP)) continue;
 	    if ((rec->core.qual < c.minMapQual) || (rec->core.tid<0)) continue;
 
-	    std::size_t seed = hash_lr(rec);
+	    std::size_t seed = hash_string(bam_get_qname(rec));
 	    //std::cerr << bam_get_qname(rec) << '\t' << seed << std::endl;
 	    uint32_t rp = rec->core.pos; // reference pointer
 	    uint32_t sp = 0; // sequence pointer
@@ -480,7 +484,6 @@ namespace torali
   template<typename TConfig, typename TValidRegions, typename TSVs, typename TSRStore>
   inline void
   _clusterSRReads(TConfig const& c, TValidRegions const& validRegions, TSVs& svc, TSRStore& srStore) {
-    typedef typename TSRStore::mapped_type TSvPosVector;
     // Split-reads
     typedef std::vector<SRBamRecord> TSRBamRecord;
     typedef std::vector<TSRBamRecord> TSvtSRBamRecord;
@@ -504,13 +507,26 @@ namespace torali
       //outputStructuralVariants(c, svc, srBR, svt);
       
       // Track split-reads
+      samFile* samfile = sam_open(c.files[0].string().c_str(), "r");
+      bam_hdr_t* hdr = sam_hdr_read(samfile);
       for(uint32_t i = 0; i < srBR[svt].size(); ++i) {
 	// Read assigned?
-	if (srBR[svt][i].svid != -1) {
-	  if (srStore.find(srBR[svt][i].id) == srStore.end()) srStore.insert(std::make_pair(srBR[svt][i].id, TSvPosVector()));
-	  srStore[srBR[svt][i].id].push_back(SeqSlice(srBR[svt][i].svid, srBR[svt][i].sstart, srBR[svt][i].inslen, srBR[svt][i].qual));
+	if ((srBR[svt][i].svid != -1) && (srBR[svt][i].rstart != -1)) {
+	  if (srBR[svt][i].rstart < (int32_t) hdr->target_len[srBR[svt][i].chr]) {
+	    if (srStore[srBR[svt][i].chr].find(std::make_pair(srBR[svt][i].rstart, srBR[svt][i].id)) == srStore[srBR[svt][i].chr].end()) srStore[srBR[svt][i].chr].insert(std::make_pair(std::make_pair(srBR[svt][i].rstart, srBR[svt][i].id), std::vector<SeqSlice>()));
+	    srStore[srBR[svt][i].chr][std::make_pair(srBR[svt][i].rstart, srBR[svt][i].id)].push_back(SeqSlice(srBR[svt][i].svid, srBR[svt][i].sstart, srBR[svt][i].inslen, srBR[svt][i].qual));
+	  }
+	  if (srBR[svt][i].chr != srBR[svt][i].chr2) {
+	    // Unclear which chr was primary alignment so insert both if and only if rstart < reference length
+	    if (srBR[svt][i].rstart < (int32_t) hdr->target_len[srBR[svt][i].chr2]) {
+	      if (srStore[srBR[svt][i].chr2].find(std::make_pair(srBR[svt][i].rstart, srBR[svt][i].id)) == srStore[srBR[svt][i].chr2].end()) srStore[srBR[svt][i].chr2].insert(std::make_pair(std::make_pair(srBR[svt][i].rstart, srBR[svt][i].id), std::vector<SeqSlice>()));
+	      srStore[srBR[svt][i].chr2][std::make_pair(srBR[svt][i].rstart, srBR[svt][i].id)].push_back(SeqSlice(srBR[svt][i].svid, srBR[svt][i].sstart, srBR[svt][i].inslen, srBR[svt][i].qual));
+	    }
+	  }
 	}
       }
+      bam_hdr_destroy(hdr);
+      sam_close(samfile);
     }
   }
 
@@ -561,7 +577,7 @@ namespace torali
 	bam1_t* rec = bam_init1();
 	while (sam_itr_next(samfile[file_c], iter, rec) >= 0) {
 	  if (rec->core.flag & (BAM_FQCFAIL | BAM_FDUP | BAM_FUNMAP)) continue;
-	  std::size_t seed = hash_lr(rec);
+	  std::size_t seed = hash_string(bam_get_qname(rec));
 	  std::string qname = bam_get_qname(rec);
 	  if (hm.find(seed) == hm.end()) hm.insert(std::make_pair(seed, qname));
 	  else {
