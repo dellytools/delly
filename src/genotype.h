@@ -43,35 +43,35 @@ namespace torali
             if (align.alignment[i] != EDLIB_EDOP_INSERT) tIdx--;
         }
     }
-    std::cout << std::endl;
+    std::cerr << std::endl;
     for (int start = 0; start < align.alignmentLength; start += 50) {
-      std::cout << "T: ";
+      std::cerr << "T: ";
       int32_t startTIdx = -1;
       for (int32_t j = start; ((j < start + 50) && (j < align.alignmentLength)); ++j) {
-	if (align.alignment[j] == EDLIB_EDOP_INSERT) std::cout << "-";
-	else std::cout << target[++tIdx];
+	if (align.alignment[j] == EDLIB_EDOP_INSERT) std::cerr << "-";
+	else std::cerr << target[++tIdx];
 	if (j == start) startTIdx = tIdx;
       }
-      std::cout << " (" << std::max(startTIdx, 0) << " - " << tIdx << ")" << std::endl;
+      std::cerr << " (" << std::max(startTIdx, 0) << " - " << tIdx << ")" << std::endl;
 
       // match / mismatch
-      std::cout << ("   ");
+      std::cerr << ("   ");
       for (int32_t j = start; j < start + 50 && j < align.alignmentLength; j++) {
-	if (align.alignment[j] == EDLIB_EDOP_MATCH) std::cout <<  "|";
-	else std::cout << " ";
+	if (align.alignment[j] == EDLIB_EDOP_MATCH) std::cerr <<  "|";
+	else std::cerr << " ";
       }
-      std::cout << std::endl;
+      std::cerr << std::endl;
 
       // query
-      std::cout << "Q: ";
+      std::cerr << "Q: ";
       int32_t startQIdx = qIdx;
       for (int32_t j = start; j < start + 50 && j < align.alignmentLength; j++) {
-	if (align.alignment[j] == EDLIB_EDOP_DELETE) std::cout << "-";
-	else std::cout << query[++qIdx];
+	if (align.alignment[j] == EDLIB_EDOP_DELETE) std::cerr << "-";
+	else std::cerr << query[++qIdx];
 	if (j == start) startQIdx = qIdx;
       }
-      std::cout << " ("<< std::max(startQIdx, 0) << " - " << qIdx << ")" << std::endl;
-      std::cout << std::endl;
+      std::cerr << " ("<< std::max(startQIdx, 0) << " - " << qIdx << ")" << std::endl;
+      std::cerr << std::endl;
     }
   }
   
@@ -290,7 +290,7 @@ namespace torali
 	}
       }
       if (seq != NULL) free(seq);
-
+    
       // Genotype
       // Iterate samples
       for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
@@ -434,7 +434,9 @@ namespace torali
 		  subseq = sequence.substr(st, gbp[svid].svEndPrefix + gbp[svid].svEndSuffix + 2 * c.minimumFlankSize);
 		}
 	      }
-	    
+
+	      //std::cerr << ">" << svid << ',' << gbp[svid].svStart << ',' << gbp[svid].svEnd << std::endl;
+	      
 	      // Compute alignment to alternative haplotype
 	      /*
 	      DnaScore<int> simple(c.aliscore.match, c.aliscore.mismatch, c.aliscore.mismatch, c.aliscore.mismatch);
@@ -444,26 +446,31 @@ namespace torali
 	      */
 
 	      double scoreAlt = (1.0 - c.flankQuality) * gbp[svid].alt.size();
-	      EdlibAlignResult altalign = edlibAlign(gbp[svid].alt.c_str(), gbp[svid].alt.size(), subseq.c_str(), subseq.size(), edlibNewAlignConfig(-1, EDLIB_MODE_HW, EDLIB_TASK_DISTANCE, NULL, 0));
-	      // Debug: requires EDLIB_TASK_PATH
+	      EdlibAlignResult altalign;
+	      if (gbp[svid].alt.size() < subseq.size()) altalign = edlibAlign(gbp[svid].alt.c_str(), gbp[svid].alt.size(), subseq.c_str(), subseq.size(), edlibNewAlignConfig(-1, EDLIB_MODE_HW, EDLIB_TASK_DISTANCE, NULL, 0));
+	      else altalign = edlibAlign(subseq.c_str(), subseq.size(), gbp[svid].alt.c_str(), gbp[svid].alt.size(), edlibNewAlignConfig(-1, EDLIB_MODE_HW, EDLIB_TASK_DISTANCE, NULL, 0));
+	      // Debug: requires EDLIB_TASK_PATH otherwise EDLIB_TASK_DISTANCE
 	      //printAlignment(gbp[svid].alt, subseq, EDLIB_MODE_HW, altalign);
-	      //if (altalign.status == EDLIB_STATUS_OK) std::cout << "ALT edit_distance = " << altalign.editDistance << ", expected = " << scoreAlt << std::endl;
+	      //if (altalign.status == EDLIB_STATUS_OK) std::cerr << "ALT edit_distance = " << altalign.editDistance << ", expected = " << scoreAlt << ", altprobe = " << gbp[svid].alt.size() << ", queryprobe = " << subseq.size() << std::endl;
 	      scoreAlt = scoreAlt / (double) altalign.editDistance;
 	      edlibFreeAlignResult(altalign);
+
 	    
 	      // Compute alignment to reference haplotype
 	      //double scoreRef = needleBanded(gbp[svid].ref, subseq, semiglobal, simple);
 	      //scoreRef /= (double) (c.flankQuality * gbp[svid].ref.size() * simple.match + (1.0 - c.flankQuality) * gbp[svid].ref.size() * simple.mismatch);
 
 	      double scoreRef = (1.0 - c.flankQuality) * gbp[svid].ref.size();
-	      EdlibAlignResult refalign = edlibAlign(gbp[svid].ref.c_str(), gbp[svid].ref.size(), subseq.c_str(), subseq.size(), edlibNewAlignConfig(-1, EDLIB_MODE_HW, EDLIB_TASK_DISTANCE, NULL, 0));
+	      EdlibAlignResult refalign;
+	      if (gbp[svid].ref.size() < subseq.size()) refalign = edlibAlign(gbp[svid].ref.c_str(), gbp[svid].ref.size(), subseq.c_str(), subseq.size(), edlibNewAlignConfig(-1, EDLIB_MODE_HW, EDLIB_TASK_DISTANCE, NULL, 0));
+	      else refalign = edlibAlign(subseq.c_str(), subseq.size(), gbp[svid].ref.c_str(), gbp[svid].ref.size(), edlibNewAlignConfig(-1, EDLIB_MODE_HW, EDLIB_TASK_DISTANCE, NULL, 0));
 	      //printAlignment(gbp[svid].ref, subseq, EDLIB_MODE_HW, refalign);
-	      //if (refalign.status == EDLIB_STATUS_OK) std::cout << "REF edit_distance = " << refalign.editDistance << ", expected = " << scoreRef << std::endl;
+	      //if (refalign.status == EDLIB_STATUS_OK) std::cerr << "REF edit_distance = " << refalign.editDistance << ", expected = " << scoreRef << ", refprobe = " << gbp[svid].ref.size() << ", queryprobe = " << subseq.size() << std::endl;
 	      scoreRef = scoreRef / (double) refalign.editDistance;
 	      edlibFreeAlignResult(refalign);
 
 	      // Any confident alignment?
-	      if ((scoreRef > 1) || (scoreAlt > 1)) {
+	      if ((scoreRef > 0.8) || (scoreAlt > 0.8)) {
 		if (scoreRef > scoreAlt) {
 		  // Account for reference bias
 		  if (++refAlignedReadCount[file_c][svid] % 2) {
