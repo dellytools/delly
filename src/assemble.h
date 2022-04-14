@@ -138,6 +138,7 @@ namespace torali
 	EdlibAlignResult align = edlibAlign(sps[i].c_str(), sps[i].size(), sps[j].c_str(), sps[j].size(), edlibNewAlignConfig(-1, EDLIB_MODE_NW, EDLIB_TASK_DISTANCE, NULL, 0));
 	dist[i].push_back(align.editDistance);
 	dist[j].push_back(align.editDistance);
+	edlibFreeAlignResult(align);
       }
     }
     // Median edit distance
