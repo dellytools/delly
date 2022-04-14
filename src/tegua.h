@@ -145,14 +145,9 @@ namespace torali {
      // Sort
      sort(svs.begin(), svs.end(), SortSVs<StructuralVariantRecord>());
      
-     // Re-number SVs and update SR Store
-     typedef std::map<uint32_t, uint32_t> TIdMap;
-     TIdMap idmap;
+     // Re-number SVs
      uint32_t cliqueCount = 0;
-     for(typename TVariants::iterator svIt = svs.begin(); svIt != svs.end(); ++svIt, ++cliqueCount) {
-       idmap.insert(std::make_pair(svIt->id, cliqueCount));
-       svIt->id = cliqueCount;
-     }
+     for(typename TVariants::iterator svIt = svs.begin(); svIt != svs.end(); ++svIt, ++cliqueCount) svIt->id = cliqueCount;
      //outputStructuralVariants(c, svs);
    }
    // Clean-up
