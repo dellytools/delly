@@ -434,7 +434,26 @@ namespace torali
 		}
 	      }
 
+	      // Breakpoint should be in the middle, figure out direction
+	      int32_t primstart = (int) (0.2 * subseq.size());
+	      std::string primer = subseq.substr(primstart, primstart);
+	      std::string rprim = primer;
+	      reverseComplement(rprim);
+	      EdlibAlignResult primFwd = edlibAlign(primer.c_str(), primer.size(), gbp[svid].alt.c_str(), gbp[svid].alt.size(), edlibNewAlignConfig(-1, EDLIB_MODE_HW, EDLIB_TASK_DISTANCE, NULL, 0));
+	      EdlibAlignResult primRev = edlibAlign(rprim.c_str(), rprim.size(), gbp[svid].alt.c_str(), gbp[svid].alt.size(), edlibNewAlignConfig(-1, EDLIB_MODE_HW, EDLIB_TASK_DISTANCE, NULL, 0));
+	      if (2 * primFwd.editDistance < primRev.editDistance) {
+		// Nop
+	      } else if (2 * primRev.editDistance < primFwd.editDistance) {
+		reverseComplement(subseq);
+	      } else {
+		// Couldn't clearly anchor
+		continue;
+	      }
+	      edlibFreeAlignResult(primFwd);
+	      edlibFreeAlignResult(primRev);
+	      
 	      //std::cerr << ">" << svid << ',' << gbp[svid].svStart << ',' << gbp[svid].svEnd << ',' << gbp[svid].svt << std::endl;
+	      
 	      
 	      // Compute alignment to alternative haplotype
 	      double scoreAlt = (1.0 - c.flankQuality) * gbp[svid].alt.size();
