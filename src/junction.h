@@ -505,7 +505,6 @@ namespace torali
 
       // Debug
       //outputStructuralVariants(c, svc, srBR, svt);
-      
       // Track split-reads
       samFile* samfile = sam_open(c.files[0].string().c_str(), "r");
       bam_hdr_t* hdr = sam_hdr_read(samfile);
@@ -577,7 +576,7 @@ namespace torali
 	bam1_t* rec = bam_init1();
 	while (sam_itr_next(samfile[file_c], iter, rec) >= 0) {
 	  if (rec->core.flag & (BAM_FQCFAIL | BAM_FDUP | BAM_FUNMAP)) continue;
-	  std::size_t seed = hash_string(bam_get_qname(rec));
+	  std::size_t seed = hash_lr(rec);
 	  std::string qname = bam_get_qname(rec);
 	  if (hm.find(seed) == hm.end()) hm.insert(std::make_pair(seed, qname));
 	  else {

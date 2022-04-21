@@ -136,7 +136,7 @@ namespace torali {
        if ((svIter->srSupport == 0) && (svIter->peSupport == 0)) continue;
        // Duplicate?
        if (!svs.empty()) {
-	 if ((lastSV.chr == svIter->chr) && (lastSV.chr2 == svIter->chr2) && (std::abs(svIter->svStart - lastSV.svStart) < c.minRefSep) && (std::abs(svIter->svEnd - lastSV.svEnd) < c.minRefSep)) continue;
+	 if ((lastSV.chr == svIter->chr) && (lastSV.chr2 == svIter->chr2) && (lastSV.svt == svIter->svt) && (std::abs(svIter->svStart - lastSV.svStart) < c.minRefSep) && (std::abs(svIter->svEnd - lastSV.svEnd) < c.minRefSep)) continue;
        }
        lastSV = *svIter;
        svs.push_back(*svIter);

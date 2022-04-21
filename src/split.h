@@ -2,6 +2,7 @@
 #define SPLIT_H
 
 #include <iostream>
+#include "edlib.h"
 #include "gotoh.h"
 #include "needle.h"
 
@@ -429,7 +430,7 @@ namespace torali
 
   template<typename TConfig>
   inline bool
-  alignConsensus(TConfig const& c, bam_hdr_t* hdr, char const* seq, char const* sndSeq, StructuralVariantRecord& sv) {
+  alignConsensus(TConfig const& c, bam_hdr_t* hdr, char const* seq, char const* sndSeq, StructuralVariantRecord& sv, bool const realign) {
     if ( (int32_t) sv.consensus.size() < (2 * c.minimumFlankSize + sv.insLen)) return false;
     
     // Get reference slice
@@ -441,6 +442,18 @@ namespace torali
     if (bp.chr != bp.chr2) bp.part1 = _getSVRef(sndSeq, bp, bp.chr2, sv.svt);
     std::string svRefStr = _getSVRef(seq, bp, bp.chr, sv.svt);
 
+    // Realign?
+    if (realign) {
+      std::string revc = sv.consensus;
+      reverseComplement(revc);
+      EdlibAlignResult alignFwd = edlibAlign(sv.consensus.c_str(), sv.consensus.size(), svRefStr.c_str(), svRefStr.size(), edlibNewAlignConfig(-1, EDLIB_MODE_NW, EDLIB_TASK_DISTANCE, NULL, 0));
+      EdlibAlignResult alignRev = edlibAlign(revc.c_str(), revc.size(), svRefStr.c_str(), svRefStr.size(), edlibNewAlignConfig(-1, EDLIB_MODE_NW, EDLIB_TASK_DISTANCE, NULL, 0));
+      if (alignRev.editDistance < alignFwd.editDistance) sv.consensus = revc;
+      edlibFreeAlignResult(alignFwd);
+      edlibFreeAlignResult(alignRev);
+    }
+    
+    
     // Consensus to reference alignment
     typedef boost::multi_array<char, 2> TAlign;
     TAlign align;
@@ -504,6 +517,11 @@ namespace torali
     return true;
   }
 
+  template<typename TConfig>
+  inline bool
+  alignConsensus(TConfig const& c, bam_hdr_t* hdr, char const* seq, char const* sndSeq, StructuralVariantRecord& sv) {
+    return alignConsensus(c, hdr, seq, sndSeq, sv, false);
+  }
 
 
 }

@@ -195,7 +195,6 @@ namespace torali
       // Iterate all structural variants
       for(typename TSVs::iterator itSV = svs.begin(); itSV != svs.end(); ++itSV) {
 	if ((itSV->chr != refIndex) && (itSV->chr2 != refIndex)) continue;
-	if ((itSV->svt != 2) && (itSV->svt != 4)) continue;
 	
 	// Lazy loading of reference sequence
 	if (seq == NULL) {
@@ -253,7 +252,7 @@ namespace torali
 	  }
 	  
 	  // Debug consensus to reference alignment
-	  //std::cerr << "svid:" << itSV->id << ",consensus-to-reference-alignment" << std::endl;
+	  //std::cerr << "svid:" << itSV->id << "," << itSV->svStart << "," << itSV->svEnd << "," << itSV->svt << ",consensus-to-reference-alignment" << std::endl;
 	  //for(uint32_t i = 0; i<align.shape()[0]; ++i) {
 	  //if (i == 0) {
 	  //int32_t cpos = 0;
@@ -435,16 +434,9 @@ namespace torali
 		}
 	      }
 
-	      //std::cerr << ">" << svid << ',' << gbp[svid].svStart << ',' << gbp[svid].svEnd << std::endl;
+	      //std::cerr << ">" << svid << ',' << gbp[svid].svStart << ',' << gbp[svid].svEnd << ',' << gbp[svid].svt << std::endl;
 	      
 	      // Compute alignment to alternative haplotype
-	      /*
-	      DnaScore<int> simple(c.aliscore.match, c.aliscore.mismatch, c.aliscore.mismatch, c.aliscore.mismatch);
-	      AlignConfig<true, false> semiglobal;
-	      double scoreAlt = needleBanded(gbp[svid].alt, subseq, semiglobal, simple);
-	      scoreAlt /= (double) (c.flankQuality * gbp[svid].alt.size() * simple.match + (1.0 - c.flankQuality) * gbp[svid].alt.size() * simple.mismatch);
-	      */
-
 	      double scoreAlt = (1.0 - c.flankQuality) * gbp[svid].alt.size();
 	      EdlibAlignResult altalign;
 	      if (gbp[svid].alt.size() < subseq.size()) altalign = edlibAlign(gbp[svid].alt.c_str(), gbp[svid].alt.size(), subseq.c_str(), subseq.size(), edlibNewAlignConfig(-1, EDLIB_MODE_HW, EDLIB_TASK_DISTANCE, NULL, 0));
@@ -455,11 +447,7 @@ namespace torali
 	      scoreAlt = scoreAlt / (double) altalign.editDistance;
 	      edlibFreeAlignResult(altalign);
 
-	    
 	      // Compute alignment to reference haplotype
-	      //double scoreRef = needleBanded(gbp[svid].ref, subseq, semiglobal, simple);
-	      //scoreRef /= (double) (c.flankQuality * gbp[svid].ref.size() * simple.match + (1.0 - c.flankQuality) * gbp[svid].ref.size() * simple.mismatch);
-
 	      double scoreRef = (1.0 - c.flankQuality) * gbp[svid].ref.size();
 	      EdlibAlignResult refalign;
 	      if (gbp[svid].ref.size() < subseq.size()) refalign = edlibAlign(gbp[svid].ref.c_str(), gbp[svid].ref.size(), subseq.c_str(), subseq.size(), edlibNewAlignConfig(-1, EDLIB_MODE_HW, EDLIB_TASK_DISTANCE, NULL, 0));

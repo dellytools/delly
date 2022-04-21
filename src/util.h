@@ -260,7 +260,7 @@ namespace torali
   lastAlignedPosition(bam1_t const* rec) {
     return rec->core.pos + alignmentLength(rec);
   }
-
+  
   inline std::size_t hash_pair(bam1_t* rec) {
     std::size_t seed = hash_string(bam_get_qname(rec));
     boost::hash_combine(seed, rec->core.tid);
@@ -279,6 +279,14 @@ namespace torali
     return seed;
   }
 
+  inline std::size_t hash_lr(bam1_t* rec) {
+    boost::hash<std::string> string_hash;
+    std::string qname = bam_get_qname(rec);
+    std::size_t seed = hash_string(qname.c_str());
+    boost::hash_combine(seed, string_hash(qname));
+    return seed;
+  }
+  
   inline void
   reverseComplement(std::string& sequence) {
     std::string rev = boost::to_upper_copy(std::string(sequence.rbegin(), sequence.rend()));
