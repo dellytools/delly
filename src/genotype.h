@@ -18,6 +18,14 @@
 namespace torali
 {
 
+  struct Geno {
+    int32_t svid;
+    int32_t sp;
+    int32_t rp;
+    
+    Geno(int32_t const id, int32_t const s, int32_t const r) : svid(id), sp(s), rp(r) {}
+  };
+  
   inline void
   printAlignment(std::string const& query, std::string const& target, EdlibAlignMode const modeCode, EdlibAlignResult& align) {
     int32_t tIdx = -1;
@@ -299,9 +307,11 @@ namespace torali
   }
 
 
-  template<typename TConfig, typename TSVs, typename TReadCountMap>
+  template<typename TConfig, typename TSVs, typename TGenoMap, typename TReadCountMap>
   inline void
-  _fetchReads(TConfig const& c, std::vector<samFile*>& samfile, std::vector<hts_idx_t*>& idx, std::vector<bam_hdr_t*>& hdr, int32_t const file_c, TSVs& svs, std::map<std::size_t, int32_t>& genoMap, TReadCountMap& covMap) {
+  _fetchReads(TConfig const& c, std::vector<samFile*>& samfile, std::vector<hts_idx_t*>& idx, std::vector<bam_hdr_t*>& hdr, int32_t const file_c, TSVs& svs, TGenoMap& genoMap, TReadCountMap& covMap) {
+    typedef typename TGenoMap::mapped_type TGeno;
+    
     boost::posix_time::ptime noww = boost::posix_time::second_clock::local_time();
     std::cout << '[' << boost::posix_time::to_simple_string(noww) << "] " << "Select reads" << std::endl;
     boost::progress_display show_progress( hdr[file_c]->n_targets );
@@ -354,7 +364,9 @@ namespace torali
 		// Read long enough?
 		if (sp >= c.minimumFlankSize) {
 		  if (readlen >= c.minimumFlankSize + sp) {
-		    genoMap.insert(std::make_pair(seed, breakpoint[k]));
+		    if (genoMap.find(seed) == genoMap.end()) genoMap.insert(std::make_pair(seed, TGeno()));
+		    if (rec->core.flag & BAM_FREVERSE) genoMap[seed].push_back(Geno(breakpoint[k], (readlen - sp), rp));
+		    else genoMap[seed].push_back(Geno(breakpoint[k], sp, rp));
 		  }
 		}
 	      }
@@ -464,7 +476,7 @@ namespace torali
     for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
 
       // Identify reads required for genotyping
-      std::map<std::size_t, int32_t> genoMap;
+      std::map<std::size_t, std::vector<Geno> > genoMap;
       _fetchReads(c, samfile, idx, hdr, file_c, svs, genoMap, covMap);
 
       // Genotype SVs
@@ -487,75 +499,80 @@ namespace torali
 	    sequence.resize(rec->core.l_qseq);
 	    uint8_t* seqptr = bam_get_seq(rec);
 	    for (int i = 0; i < rec->core.l_qseq; ++i) sequence[i] = "=ACMGRSVTWYHKDBN"[bam_seqi(seqptr, i)];
+
+	    for(uint32_t k = 0; k < genoMap[seed].size(); ++k) {
+	      // Get SV id
+	      int32_t svid = genoMap[seed][k].svid;
+	      //std::cerr << svs[svid].svStart << "-" << svs[svid].svEnd << "," << svs[svid].svt << std::endl;
+	      //std::cerr << seed << "," << genoMap[seed][k].sp << "," << genoMap[seed][k].rp << std::endl;
+	      
+	      uint32_t maxGenoReadCount = 500;
+	      if ((jctMap[file_c][svid].ref.size() + jctMap[file_c][svid].alt.size()) >= maxGenoReadCount) continue;
 	    
-	    // Get SV id
-	    int32_t svid = genoMap[seed];
-	    uint32_t maxGenoReadCount = 500;
-	    if ((jctMap[file_c][svid].ref.size() + jctMap[file_c][svid].alt.size()) >= maxGenoReadCount) continue;
-	    
-	    // Reverse complement probes
-	    std::string revref = refseq[svid];
-	    std::string revalt = altseq[svid];
-	    reverseComplement(revref);
-	    reverseComplement(revalt);
-	    
-	    // Edit distances
-	    int32_t altFwd = _editDistanceHW(altseq[svid], sequence);
-	    int32_t altRev = _editDistanceHW(revalt, sequence);
-	    int32_t refFwd = _editDistanceHW(refseq[svid], sequence);
-	    int32_t refRev = _editDistanceHW(revref, sequence);
-	    double scoreAlt = (1.0 - c.flankQuality) * altseq[svid].size();
-	    double scoreRef = (1.0 - c.flankQuality) * refseq[svid].size();
-	    if (std::min(altFwd, refFwd) < std::min(altRev, refRev)) {
-	      scoreAlt = scoreAlt / (double) altFwd;
-	      scoreRef = scoreRef / (double) refFwd;
-	    } else {
-	      scoreAlt = scoreAlt / (double) altRev;
-	      scoreRef = scoreRef / (double) refRev;
-	    }
-	    
-	    // Any confident alignment?
-	    if ((scoreRef > 0.8) || (scoreAlt > 0.8)) {
-	      if (scoreRef > scoreAlt) {
-		// Account for reference bias
-		if (++refAlignedReadCount[file_c][svid] % 2) {
+	      // Reverse complement probes
+	      std::string revref = refseq[svid];
+	      std::string revalt = altseq[svid];
+	      reverseComplement(revref);
+	      reverseComplement(revalt);
+	      
+	      // Edit distances
+	      int32_t altFwd = _editDistanceHW(altseq[svid], sequence);
+	      int32_t altRev = _editDistanceHW(revalt, sequence);
+	      int32_t refFwd = _editDistanceHW(refseq[svid], sequence);
+	      int32_t refRev = _editDistanceHW(revref, sequence);
+	      double scoreAlt = (1.0 - c.flankQuality) * altseq[svid].size();
+	      double scoreRef = (1.0 - c.flankQuality) * refseq[svid].size();
+	      if (std::min(altFwd, refFwd) < std::min(altRev, refRev)) {
+		scoreAlt = scoreAlt / (double) altFwd;
+		scoreRef = scoreRef / (double) refFwd;
+	      } else {
+		scoreAlt = scoreAlt / (double) altRev;
+		scoreRef = scoreRef / (double) refRev;
+	      }
+	      
+	      // Any confident alignment?
+	      if ((scoreRef > 0.8) || (scoreAlt > 0.8)) {
+		if (scoreRef > scoreAlt) {
+		  // Account for reference bias
+		  if (++refAlignedReadCount[file_c][svid] % 2) {
+		    TQuality quality;
+		    quality.resize(rec->core.l_qseq);
+		    uint8_t* qualptr = bam_get_qual(rec);
+		    for (int i = 0; i < rec->core.l_qseq; ++i) quality[i] = qualptr[i];
+		    uint32_t rq = scoreRef * 35;
+		    if (rq >= c.minGenoQual) {
+		      uint8_t* hpptr = bam_aux_get(rec, "HP");
+		      jctMap[file_c][svid].ref.push_back((uint8_t) std::min(rq, (uint32_t) rec->core.qual));
+		      if (hpptr) {
+			c.isHaplotagged = true;
+			int hap = bam_aux2i(hpptr);
+			if (hap == 1) ++jctMap[file_c][svid].refh1;
+			else ++jctMap[file_c][svid].refh2;
+		      }
+		    }
+		  }
+		} else {
 		  TQuality quality;
 		  quality.resize(rec->core.l_qseq);
 		  uint8_t* qualptr = bam_get_qual(rec);
 		  for (int i = 0; i < rec->core.l_qseq; ++i) quality[i] = qualptr[i];
-		  uint32_t rq = scoreRef * 35;
-		  if (rq >= c.minGenoQual) {
+		  uint32_t aq = scoreAlt * 35;
+		  if (aq >= c.minGenoQual) {
 		    uint8_t* hpptr = bam_aux_get(rec, "HP");
-		    jctMap[file_c][svid].ref.push_back((uint8_t) std::min(rq, (uint32_t) rec->core.qual));
+		    if (c.hasDumpFile) {
+		      std::string svidStr(_addID(svs[svid].svt));
+		      std::string padNumber = boost::lexical_cast<std::string>(svid);
+		      padNumber.insert(padNumber.begin(), 8 - padNumber.length(), '0');
+		      svidStr += padNumber;
+		      dumpOut << svidStr << "\t" << c.files[file_c].string() << "\t" << bam_get_qname(rec) << "\t" << hdr[file_c]->target_name[rec->core.tid] << "\t" << rec->core.pos << "\t" << hdr[file_c]->target_name[rec->core.mtid] << "\t" << rec->core.mpos << "\t" << (int32_t) rec->core.qual << "\tSR" << std::endl;
+		    }
+		    jctMap[file_c][svid].alt.push_back((uint8_t) std::min(aq, (uint32_t) rec->core.qual));
 		    if (hpptr) {
 		      c.isHaplotagged = true;
 		      int hap = bam_aux2i(hpptr);
-		      if (hap == 1) ++jctMap[file_c][svid].refh1;
-		      else ++jctMap[file_c][svid].refh2;
+		      if (hap == 1) ++jctMap[file_c][svid].alth1;
+		      else ++jctMap[file_c][svid].alth2;
 		    }
-		  }
-		}
-	      } else {
-		TQuality quality;
-		quality.resize(rec->core.l_qseq);
-		uint8_t* qualptr = bam_get_qual(rec);
-		for (int i = 0; i < rec->core.l_qseq; ++i) quality[i] = qualptr[i];
-		uint32_t aq = scoreAlt * 35;
-		if (aq >= c.minGenoQual) {
-		  uint8_t* hpptr = bam_aux_get(rec, "HP");
-		  if (c.hasDumpFile) {
-		    std::string svidStr(_addID(svs[svid].svt));
-		    std::string padNumber = boost::lexical_cast<std::string>(svid);
-		    padNumber.insert(padNumber.begin(), 8 - padNumber.length(), '0');
-		    svidStr += padNumber;
-		    dumpOut << svidStr << "\t" << c.files[file_c].string() << "\t" << bam_get_qname(rec) << "\t" << hdr[file_c]->target_name[rec->core.tid] << "\t" << rec->core.pos << "\t" << hdr[file_c]->target_name[rec->core.mtid] << "\t" << rec->core.mpos << "\t" << (int32_t) rec->core.qual << "\tSR" << std::endl;
-		  }
-		  jctMap[file_c][svid].alt.push_back((uint8_t) std::min(aq, (uint32_t) rec->core.qual));
-		  if (hpptr) {
-		    c.isHaplotagged = true;
-		    int hap = bam_aux2i(hpptr);
-		    if (hap == 1) ++jctMap[file_c][svid].alth1;
-		    else ++jctMap[file_c][svid].alth2;
 		  }
 		}
 	      }
