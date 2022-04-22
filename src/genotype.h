@@ -130,32 +130,16 @@ namespace torali
   }
 
 
-  template<typename TConfig, typename TAlign>
+  template<typename TAlign>
   inline void
-  _trimAlignedSequences(TConfig const& c, TAlign const& align, AlignDescriptor const& ad, StructuralVariantRecord& sv, std::vector<std::string>& refseq, std::vector<std::string>& altseq) {
+  _trimAlignedSequences(TAlign const& align, StructuralVariantRecord& sv, std::vector<std::string>& refseq, std::vector<std::string>& altseq) {
     int32_t s = -1;
     int32_t e = -1;
-    int32_t cpos = 0;
-    int32_t rpos = 0;
-    int32_t startConsPos = 0;
-    int32_t startRefPos = 0;
-    int32_t endConsPos = 0;
-    int32_t endRefPos = 0;
     for(uint32_t j = 0; j<align.shape()[1]; ++j) {
       if (align[0][j] != '-') {
-	++cpos;
 	if (align[1][j] != '-') {
-	  ++rpos;
 	  if (s == -1) s = j;
 	  e = j + 1;
-	}
-	if (cpos == ad.cStart) {
-	  startConsPos = cpos;
-	  startRefPos = rpos;
-	}
-	if (cpos == ad.cEnd) {
-	  endConsPos = cpos;
-	  endRefPos = rpos;
 	}
       }
     }
@@ -165,35 +149,9 @@ namespace torali
       if (align[0][j] != '-') s0.push_back(align[0][j]);
       if (align[1][j] != '-') s1.push_back(align[1][j]);
     }
-    //if (startConsPos >= 5 * c.minimumFlankSize) {
-    //if ((int) (s0.size()) >= startConsPos + 5 * c.minimumFlankSize) {
-    //	if (startRefPos >= 5 * c.minimumFlankSize) {
-    //	  if ((int) (s1.size()) >= startRefPos + 5 * c.minimumFlankSize) {
-	    int32_t minsize = std::min(s0.size(), s1.size());
-	    //altseq[sv.id] = s0.substr(startConsPos - 5 * c.minimumFlankSize, 10 * c.minimumFlankSize);
-	    //refseq[sv.id] = s1.substr(startRefPos - 5 * c.minimumFlankSize, 10 * c.minimumFlankSize);
-	    altseq[sv.id] = s0.substr(0, minsize);
-	    refseq[sv.id] = s1.substr(0, minsize);
-	    //	  }
-	    //}
-	    // }
-	    // }
-    /*
-    if (sv.chr == sv.chr2) {
-      if (endConsPos >= c.minimumFlankSize) {
-	if ((int) (s0.size()) >= endConsPos + c.minimumFlankSize) {
-	  if (endRefPos >= c.minimumFlankSize) {
-	    if ((int) (s1.size()) >= endRefPos + c.minimumFlankSize) {
-	      int32_t pos = sv.svEnd;
-	      while ((bp[pos] != -1) && (pos + 1 < bp.size())) ++pos;
-	      bp[pos] = sv.id;
-	      //gbp.push_back(GenoProbe(sv.svEnd, sv.svt, sv.id, s0.substr(endConsPos - c.minimumFlankSize, 2 * c.minimumFlankSize), s1.substr(endRefPos - c.minimumFlankSize, 2 * c.minimumFlankSize)));
-	    }
-	  }
-	}
-      }
-    }
-    */
+    int32_t minsize = std::min(s0.size(), s1.size());
+    altseq[sv.id] = s0.substr(0, minsize);
+    refseq[sv.id] = s1.substr(0, minsize);
   }
 
   inline int32_t
@@ -300,7 +258,7 @@ namespace torali
 	  //std::cerr << std::endl;
 
 	  // Generate genotyping probes
-	  _trimAlignedSequences(c, align, ad, *itSV, refseq, altseq);
+	  _trimAlignedSequences(align, *itSV, refseq, altseq);
 	}
       }
       if (seq != NULL) free(seq);
@@ -328,7 +286,7 @@ namespace torali
       for(typename TSVs::iterator itSV = svs.begin(); itSV != svs.end(); ++itSV) {
 	if (itSV->chr != refIndex) continue;
 	int32_t pos = itSV->svStart;
-	while ((breakpoint[pos] != -1) && (pos + 1 < breakpoint.size())) ++pos;
+	while ((breakpoint[pos] != -1) && (pos + 1 < (int) breakpoint.size())) ++pos;
 	breakpoint[pos] = itSV->id;
       }	
       
@@ -366,8 +324,8 @@ namespace torali
 	    for(uint32_t k = std::max((int) (rpold - c.minRefSep), 0); (k < rp + c.minRefSep) && (k < breakpoint.size()); ++k) {
 	      if ((breakpoint[k] != -1) && (processed.find(breakpoint[k]) == processed.end())) {
 		// Read long enough?
-		if (sp >= c.minimumFlankSize) {
-		  if (readlen >= c.minimumFlankSize + sp) {
+		if ((int) sp >= c.minimumFlankSize) {
+		  if (readlen >= c.minimumFlankSize + (int) sp) {
 		    if (genoMap.find(seed) == genoMap.end()) genoMap.insert(std::make_pair(seed, TGeno()));
 		    if (rec->core.flag & BAM_FREVERSE) genoMap[seed].push_back(Geno(breakpoint[k], (readlen - sp), rp));
 		    else genoMap[seed].push_back(Geno(breakpoint[k], sp, rp));
@@ -492,13 +450,9 @@ namespace torali
 	  // Only primary alignments for full sequence
 	  if (rec->core.flag & (BAM_FQCFAIL | BAM_FDUP | BAM_FUNMAP | BAM_FSUPPLEMENTARY | BAM_FSECONDARY)) continue;
 	  std::size_t seed = hash_lr(rec);
-	  int32_t readlen = readLength(rec);
-	  
 	  if (genoMap.find(seed) != genoMap.end()) {
-	    // Get sequence
 	    std::string sequence;
 	    for(uint32_t k = 0; k < genoMap[seed].size(); ++k) {
-	      // Get SV id
 	      int32_t svid = genoMap[seed][k].svid;
 	      int32_t probelen = std::max(refseq[svid].size(), altseq[svid].size());
 	      if (genoMap[seed][k].sp < probelen) continue;
@@ -510,13 +464,11 @@ namespace torali
 		for (int i = 0; i < rec->core.l_qseq; ++i) sequence[i] = "=ACMGRSVTWYHKDBN"[bam_seqi(seqptr, i)];
 		if (rec->core.flag & BAM_FREVERSE) reverseComplement(sequence);
 	      }
-	      if (sequence.size() < genoMap[seed][k].sp + probelen) continue;
+	      if ((int) sequence.size() < genoMap[seed][k].sp + probelen) continue;
 
 	      //std::cerr << svs[svid].svStart << "-" << svs[svid].svEnd << "," << svs[svid].svt << std::endl;
 	      //std::cerr << seed << "," << genoMap[seed][k].sp << "," << genoMap[seed][k].rp << std::endl;
 	      //std::cerr << sequence.size() << ',' << probelen << std::endl;
-
-
 	      std::string subseq = sequence.substr(genoMap[seed][k].sp - probelen, 2 * probelen);
 	      
 	      uint32_t maxGenoReadCount = 500;
