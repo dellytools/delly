@@ -165,16 +165,19 @@ namespace torali
       if (align[0][j] != '-') s0.push_back(align[0][j]);
       if (align[1][j] != '-') s1.push_back(align[1][j]);
     }
-    if (startConsPos >= c.minimumFlankSize) {
-      if ((int) (s0.size()) >= startConsPos + c.minimumFlankSize) {
-	if (startRefPos >= c.minimumFlankSize) {
-	  if ((int) (s1.size()) >= startRefPos + c.minimumFlankSize) {
-	    altseq[sv.id] = s0.substr(startConsPos - c.minimumFlankSize, 2 * c.minimumFlankSize);
-	    refseq[sv.id] = s1.substr(startRefPos - c.minimumFlankSize, 2 * c.minimumFlankSize);
-	  }
-	}
-      }
-    }
+    //if (startConsPos >= 5 * c.minimumFlankSize) {
+    //if ((int) (s0.size()) >= startConsPos + 5 * c.minimumFlankSize) {
+    //	if (startRefPos >= 5 * c.minimumFlankSize) {
+    //	  if ((int) (s1.size()) >= startRefPos + 5 * c.minimumFlankSize) {
+	    int32_t minsize = std::min(s0.size(), s1.size());
+	    //altseq[sv.id] = s0.substr(startConsPos - 5 * c.minimumFlankSize, 10 * c.minimumFlankSize);
+	    //refseq[sv.id] = s1.substr(startRefPos - 5 * c.minimumFlankSize, 10 * c.minimumFlankSize);
+	    altseq[sv.id] = s0.substr(0, minsize);
+	    refseq[sv.id] = s1.substr(0, minsize);
+	    //	  }
+	    //}
+	    // }
+	    // }
     /*
     if (sv.chr == sv.chr2) {
       if (endConsPos >= c.minimumFlankSize) {
@@ -489,24 +492,32 @@ namespace torali
 	  // Only primary alignments for full sequence
 	  if (rec->core.flag & (BAM_FQCFAIL | BAM_FDUP | BAM_FUNMAP | BAM_FSUPPLEMENTARY | BAM_FSECONDARY)) continue;
 	  std::size_t seed = hash_lr(rec);
+	  int32_t readlen = readLength(rec);
 	  
 	  if (genoMap.find(seed) != genoMap.end()) {
 	    // Get sequence
 	    std::string sequence;
-	    sequence.resize(rec->core.l_qseq);
-	    uint8_t* seqptr = bam_get_seq(rec);
-	    for (int i = 0; i < rec->core.l_qseq; ++i) sequence[i] = "=ACMGRSVTWYHKDBN"[bam_seqi(seqptr, i)];
-	    if (rec->core.flag & BAM_FREVERSE) reverseComplement(sequence);
-
-	    
 	    for(uint32_t k = 0; k < genoMap[seed].size(); ++k) {
 	      // Get SV id
 	      int32_t svid = genoMap[seed][k].svid;
+	      int32_t probelen = std::max(refseq[svid].size(), altseq[svid].size());
+	      if (genoMap[seed][k].sp < probelen) continue;
+	      
+	      // Lazy-loading of sequence
+	      if (sequence.empty()) {
+		sequence.resize(rec->core.l_qseq);
+		uint8_t* seqptr = bam_get_seq(rec);
+		for (int i = 0; i < rec->core.l_qseq; ++i) sequence[i] = "=ACMGRSVTWYHKDBN"[bam_seqi(seqptr, i)];
+		if (rec->core.flag & BAM_FREVERSE) reverseComplement(sequence);
+	      }
+	      if (sequence.size() < genoMap[seed][k].sp + probelen) continue;
+
 	      //std::cerr << svs[svid].svStart << "-" << svs[svid].svEnd << "," << svs[svid].svt << std::endl;
 	      //std::cerr << seed << "," << genoMap[seed][k].sp << "," << genoMap[seed][k].rp << std::endl;
-	      if (genoMap[seed][k].sp < 2 * c.minimumFlankSize) continue;
-	      if (sequence.size() < genoMap[seed][k].sp + 2 * c.minimumFlankSize) continue;
-	      std::string subseq = sequence.substr(genoMap[seed][k].sp - 2 * c.minimumFlankSize, 4 * c.minimumFlankSize);
+	      //std::cerr << sequence.size() << ',' << probelen << std::endl;
+
+
+	      std::string subseq = sequence.substr(genoMap[seed][k].sp - probelen, 2 * probelen);
 	      
 	      uint32_t maxGenoReadCount = 500;
 	      if ((jctMap[file_c][svid].ref.size() + jctMap[file_c][svid].alt.size()) >= maxGenoReadCount) continue;
