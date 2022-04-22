@@ -18,19 +18,6 @@
 namespace torali
 {
 
-  struct Geno {
-    int32_t svStart;
-    int32_t svEnd;
-    int32_t svt;
-    std::string refStart;
-    std::string altStart;
-    std::string refEnd;
-    std::string altEnd;
-
-    Geno() : svStart(-1), svEnd(-1), svt(-1) {}
-  };
-
-
   inline void
   printAlignment(std::string const& query, std::string const& target, EdlibAlignMode const modeCode, EdlibAlignResult& align) {
     int32_t tIdx = -1;
@@ -136,8 +123,8 @@ namespace torali
 
 
   template<typename TConfig, typename TAlign>
-  inline bool
-  _trimAlignedSequences(TConfig const& c, TAlign const& align, AlignDescriptor const& ad, Geno& gbp) {
+  inline void
+  _trimAlignedSequences(TConfig const& c, TAlign const& align, AlignDescriptor const& ad, StructuralVariantRecord& sv, std::vector<int32_t>& bp, std::vector<std::string>& refseq, std::vector<std::string>& altseq) {
     int32_t s = -1;
     int32_t e = -1;
     int32_t cpos = 0;
@@ -170,23 +157,35 @@ namespace torali
       if (align[0][j] != '-') s0.push_back(align[0][j]);
       if (align[1][j] != '-') s1.push_back(align[1][j]);
     }
-    if (gbp.svStart != -1) {
-      if (startConsPos < c.minimumFlankSize) return false;
-      if ((int) (s0.size()) < startConsPos + c.minimumFlankSize) return false;
-      if (startRefPos < c.minimumFlankSize) return false;
-      if ((int) (s1.size()) < startRefPos + c.minimumFlankSize) return false;
-      gbp.altStart = s0.substr(startConsPos - c.minimumFlankSize, 2 * c.minimumFlankSize);
-      gbp.refStart = s1.substr(startRefPos - c.minimumFlankSize, 2 * c.minimumFlankSize);
+    if (startConsPos >= c.minimumFlankSize) {
+      if ((int) (s0.size()) >= startConsPos + c.minimumFlankSize) {
+	if (startRefPos >= c.minimumFlankSize) {
+	  if ((int) (s1.size()) >= startRefPos + c.minimumFlankSize) {
+	    int32_t pos = sv.svStart;
+	    while ((bp[pos] != -1) && (pos + 1 < bp.size())) ++pos;
+	    bp[pos] = sv.id;
+	    altseq[sv.id] = s0.substr(startConsPos - c.minimumFlankSize, 2 * c.minimumFlankSize);
+	    refseq[sv.id] = s1.substr(startRefPos - c.minimumFlankSize, 2 * c.minimumFlankSize);
+	  }
+	}
+      }
     }
-    if (gbp.svEnd != -1) {
-      if (endConsPos < c.minimumFlankSize) return false;
-      if ((int) (s0.size()) < endConsPos + c.minimumFlankSize) return false;
-      if (endRefPos < c.minimumFlankSize) return false;
-      if ((int) (s1.size()) < endRefPos + c.minimumFlankSize) return false;
-      gbp.altEnd = s0.substr(endConsPos - c.minimumFlankSize, 2 * c.minimumFlankSize);
-      gbp.refEnd = s1.substr(endRefPos - c.minimumFlankSize, 2 * c.minimumFlankSize);
+    /*
+    if (sv.chr == sv.chr2) {
+      if (endConsPos >= c.minimumFlankSize) {
+	if ((int) (s0.size()) >= endConsPos + c.minimumFlankSize) {
+	  if (endRefPos >= c.minimumFlankSize) {
+	    if ((int) (s1.size()) >= endRefPos + c.minimumFlankSize) {
+	      int32_t pos = sv.svEnd;
+	      while ((bp[pos] != -1) && (pos + 1 < bp.size())) ++pos;
+	      bp[pos] = sv.id;
+	      //gbp.push_back(GenoProbe(sv.svEnd, sv.svt, sv.id, s0.substr(endConsPos - c.minimumFlankSize, 2 * c.minimumFlankSize), s1.substr(endRefPos - c.minimumFlankSize, 2 * c.minimumFlankSize)));
+	    }
+	  }
+	}
+      }
     }
-    return true;
+    */
   }
 
   inline int32_t
@@ -247,14 +246,15 @@ namespace torali
 
     // Iterate chromosomes
     std::vector<std::string> refProbes(svs.size());
+    std::vector<std::string> refseq(svs.size());
+    std::vector<std::string> altseq(svs.size());
     faidx_t* fai = fai_load(c.genome.string().c_str());
     for(int32_t refIndex=0; refIndex < (int32_t) hdr[0]->n_targets; ++refIndex) {
       ++show_progress;
       char* seq = NULL;
 
       // Reference and consensus probes for this chromosome
-      typedef std::vector<Geno> TGenoRegion;
-      TGenoRegion gbp(svs.size(), Geno());
+      std::vector<int32_t> breakpoint(hdr[0]->target_len[refIndex], -1);
       
       // Iterate all structural variants
       for(typename TSVs::iterator itSV = svs.begin(); itSV != svs.end(); ++itSV) {
@@ -333,15 +333,12 @@ namespace torali
 	  //}
 	  //std::cerr << std::endl;
 
-	  // Trim aligned sequences
-	  gbp[itSV->id].svStart = itSV->svStart;
-	  if (itSV->chr2 == refIndex) gbp[itSV->id].svEnd = itSV->svEnd;
-	  gbp[itSV->id].svt = itSV->svt;
-	  if (!_trimAlignedSequences(c, align, ad, gbp[itSV->id])) continue;
+	  // Generate genotyping probes
+	  _trimAlignedSequences(c, align, ad, *itSV, breakpoint, refseq, altseq);
 	}
       }
       if (seq != NULL) free(seq);
-    
+
       // Genotype
       // Iterate samples
       for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
@@ -360,135 +357,94 @@ namespace torali
 	typedef std::vector<TMaxCoverage> TBpCoverage;
 	TBpCoverage covBases(hdr[file_c]->target_len[refIndex], 0);
 
-	// Flag breakpoints
-	typedef std::set<int32_t> TIdSet;
-	typedef std::map<uint32_t, TIdSet> TBpToIdMap;
-	TBpToIdMap bpid;
-	typedef boost::dynamic_bitset<> TBitSet;
-	TBitSet bpOccupied(hdr[file_c]->target_len[refIndex], false);
-	for(uint32_t i = 0; i < gbp.size(); ++i) {
-	  if (gbp[i].svStart != -1) {
-	    bpOccupied[gbp[i].svStart] = 1;
-	    if (bpid.find(gbp[i].svStart) == bpid.end()) bpid.insert(std::make_pair(gbp[i].svStart, TIdSet()));
-	    bpid[gbp[i].svStart].insert(i);
-	  }
-	  if (gbp[i].svEnd != -1) {
-	    bpOccupied[gbp[i].svEnd] = 1;
-	    if (bpid.find(gbp[i].svEnd) == bpid.end()) bpid.insert(std::make_pair(gbp[i].svEnd, TIdSet()));
-	    bpid[gbp[i].svEnd].insert(i);
-	  }
-	}
+	// Collect reads for genotyping
+	std::map<std::size_t, int32_t> genoMap;
+	{
+	  hts_itr_t* iter = sam_itr_queryi(idx[file_c], refIndex, 0, hdr[file_c]->target_len[refIndex]);
+	  bam1_t* rec = bam_init1();
+	  while (sam_itr_next(samfile[file_c], iter, rec) >= 0) {
+	    if (rec->core.flag & (BAM_FSECONDARY | BAM_FQCFAIL | BAM_FDUP | BAM_FUNMAP)) continue;
+	    if ((rec->core.qual < c.minMapQual) || (rec->core.tid<0)) continue;
 
-	// Count reads
-	hts_itr_t* iter = sam_itr_queryi(idx[file_c], refIndex, 0, hdr[file_c]->target_len[refIndex]);
-	bam1_t* rec = bam_init1();
-	while (sam_itr_next(samfile[file_c], iter, rec) >= 0) {
-	  // Genotyping only primary alignments
-	  if (rec->core.flag & (BAM_FSECONDARY | BAM_FQCFAIL | BAM_FDUP | BAM_FSUPPLEMENTARY | BAM_FUNMAP)) continue;
-	  
-	  // Read length
-	  int32_t readlen = readLength(rec);
+	    std::size_t seed = hash_lr(rec);
+	    int32_t readlen = readLength(rec);
+	    
+	    // Reference and sequence pointer
+	    uint32_t rp = rec->core.pos; // reference pointer
+	    uint32_t sp = 0; // sequence pointer
 
-	  // Reference and sequence pointer
-	  uint32_t rp = rec->core.pos; // reference pointer
-	  uint32_t sp = 0; // sequence pointer
-
-	  // All SV hits
-	  typedef std::pair<int32_t, int32_t> TRefSeq;
-	  typedef std::map<int32_t, TRefSeq> TSVSeqHit;
-	  TSVSeqHit genoMap;
-
-	  // Parse the CIGAR
-	  uint32_t* cigar = bam_get_cigar(rec);
-	  for (std::size_t i = 0; i < rec->core.n_cigar; ++i) {
-	    if ((bam_cigar_op(cigar[i]) == BAM_CMATCH) || (bam_cigar_op(cigar[i]) == BAM_CEQUAL) || (bam_cigar_op(cigar[i]) == BAM_CDIFF)) {
-	      // Fetch reference alignments
-	      for(uint32_t k = 0; k < bam_cigar_oplen(cigar[i]); ++k) {
-		if ((rp < hdr[file_c]->target_len[refIndex]) && (covBases[rp] < maxCoverage - 1)) ++covBases[rp];
-		if (bpOccupied[rp]) {
-		  for(typename TIdSet::const_iterator it = bpid[rp].begin(); it != bpid[rp].end(); ++it) {
-		    // Ensure fwd alignment and each SV only once
-		    if (genoMap.find(*it) == genoMap.end()) {
-		      if (rec->core.flag & BAM_FREVERSE) genoMap.insert(std::make_pair(*it, std::make_pair(rp, readlen - sp)));
-		      else genoMap.insert(std::make_pair(*it, std::make_pair(rp, sp)));
+	    // Parse the CIGAR
+	    uint32_t* cigar = bam_get_cigar(rec);
+	    for (std::size_t i = 0; i < rec->core.n_cigar; ++i) {
+	      if ((bam_cigar_op(cigar[i]) == BAM_CMATCH) || (bam_cigar_op(cigar[i]) == BAM_CEQUAL) || (bam_cigar_op(cigar[i]) == BAM_CDIFF)) {
+		int32_t rpold = rp;
+		for(uint32_t k = 0; k < bam_cigar_oplen(cigar[i]); ++k) {
+		  if ((rp < hdr[file_c]->target_len[refIndex]) && (covBases[rp] < maxCoverage - 1)) ++covBases[rp];
+		  ++rp;
+		  ++sp;
+		}
+		for(uint32_t k = std::max((int) (rpold - c.minRefSep), 0); (k < rp + c.minRefSep) && (k < breakpoint.size()); ++k) {
+		  if (breakpoint[k] != -1) {
+		    // Read long enough?
+		    if (sp >= c.minimumFlankSize) {
+		      if (readlen >= c.minimumFlankSize + sp) {
+			genoMap.insert(std::make_pair(seed, breakpoint[k]));
+		      }
 		    }
 		  }
 		}
-		++sp;
-		++rp;
+	      } else if (bam_cigar_op(cigar[i]) == BAM_CDEL) {
+		rp += bam_cigar_oplen(cigar[i]);
+	      } else if (bam_cigar_op(cigar[i]) == BAM_CINS) {
+		sp += bam_cigar_oplen(cigar[i]);
+	      } else if (bam_cigar_op(cigar[i]) == BAM_CREF_SKIP) {
+		rp += bam_cigar_oplen(cigar[i]);
+	      } else if ((bam_cigar_op(cigar[i]) == BAM_CSOFT_CLIP) || (bam_cigar_op(cigar[i]) == BAM_CHARD_CLIP)) {
+		sp += bam_cigar_oplen(cigar[i]);
+	      } else {
+		std::cerr << "Unknown Cigar options" << std::endl;
 	      }
-	    } else if ((bam_cigar_op(cigar[i]) == BAM_CDEL) || (bam_cigar_op(cigar[i]) == BAM_CREF_SKIP)) {
-	      for(uint32_t k = 0; k < bam_cigar_oplen(cigar[i]); ++k) {
-		if (bpOccupied[rp]) {
-		  for(typename TIdSet::const_iterator it = bpid[rp].begin(); it != bpid[rp].end(); ++it) {
-		    // Ensure fwd alignment and each SV only once
-		    if (genoMap.find(*it) == genoMap.end()) {
-		      if (rec->core.flag & BAM_FREVERSE) genoMap.insert(std::make_pair(*it, std::make_pair(rp, readlen - sp)));
-		      else genoMap.insert(std::make_pair(*it, std::make_pair(rp, sp)));
-		    }
-		  }
-		}
-		++rp;
-	      }
-	    } else if (bam_cigar_op(cigar[i]) == BAM_CINS) {
-	      sp += bam_cigar_oplen(cigar[i]);
-	    } else if (bam_cigar_op(cigar[i]) == BAM_CSOFT_CLIP) {
-	      sp += bam_cigar_oplen(cigar[i]);
-	    } else if (bam_cigar_op(cigar[i]) == BAM_CHARD_CLIP) {
-	      // Do nothing
-	    } else {
-	      std::cerr << "Unknown Cigar options" << std::endl;
 	    }
 	  }
+	  // Clean-up
+	  bam_destroy1(rec);
+	  hts_itr_destroy(iter);
+	}
 
-	  // Read for genotyping?
-	  if (!genoMap.empty()) {
-	    // Get sequence
-	    std::string sequence;
-	    sequence.resize(rec->core.l_qseq);
-	    uint8_t* seqptr = bam_get_seq(rec);
-	    for (int i = 0; i < rec->core.l_qseq; ++i) sequence[i] = "=ACMGRSVTWYHKDBN"[bam_seqi(seqptr, i)];
+	// Genotype reads
+	{
+	  hts_itr_t* iter = sam_itr_queryi(idx[file_c], refIndex, 0, hdr[file_c]->target_len[refIndex]);
+	  bam1_t* rec = bam_init1();
+	  while (sam_itr_next(samfile[file_c], iter, rec) >= 0) {
+	    // Only primary alignments for full sequence
+	    if (rec->core.flag & (BAM_FQCFAIL | BAM_FDUP | BAM_FUNMAP | BAM_FSUPPLEMENTARY | BAM_FSECONDARY)) continue;
+	    std::size_t seed = hash_lr(rec);
 
-	    // Genotype all SVs covered by this read
-	    for(typename TSVSeqHit::iterator git = genoMap.begin(); git != genoMap.end(); ++git) {
-	      int32_t svid = git->first;
+	    if (genoMap.find(seed) != genoMap.end()) {
+	      // Get sequence
+	      std::string sequence;
+	      sequence.resize(rec->core.l_qseq);
+	      uint8_t* seqptr = bam_get_seq(rec);
+	      for (int i = 0; i < rec->core.l_qseq; ++i) sequence[i] = "=ACMGRSVTWYHKDBN"[bam_seqi(seqptr, i)];
+
+	      // Get SV id
+	      int32_t svid = genoMap[seed];
 	      uint32_t maxGenoReadCount = 500;
 	      if ((jctMap[file_c][svid].ref.size() + jctMap[file_c][svid].alt.size()) >= maxGenoReadCount) continue;
-	      
-	      int32_t rpHit = git->second.first;
-	      int32_t spHit = git->second.second;
-
-	      // Read long enough?
-	      if (spHit < c.minimumFlankSize) continue;
-	      if (readlen < c.minimumFlankSize + spHit) continue;
-	      
-	      //std::cerr << ">" << svid << ',' << gbp[svid].svStart << ',' << gbp[svid].svEnd << ',' << gbp[svid].svt << std::endl;
-	      std::string refseq;
-	      std::string altseq;
-	      if (rpHit == gbp[svid].svStart) {
-		refseq = gbp[svid].refStart;
-		altseq = gbp[svid].altStart;
-	      } else if (rpHit == gbp[svid].svEnd) {
-		refseq = gbp[svid].refEnd;
-		altseq = gbp[svid].altEnd;
-	      } else {
-		std::cerr << "Error: Unclear reference hit!" << std::endl;
-		exit(-1);
-	      }
 
 	      // Reverse complement probes
-	      std::string revref = refseq;
-	      std::string revalt = altseq;
+	      std::string revref = refseq[svid];
+	      std::string revalt = altseq[svid];
 	      reverseComplement(revref);
 	      reverseComplement(revalt);
 
 	      // Edit distances
-	      int32_t altFwd = _editDistanceHW(altseq, sequence);
+	      int32_t altFwd = _editDistanceHW(altseq[svid], sequence);
 	      int32_t altRev = _editDistanceHW(revalt, sequence);
-	      int32_t refFwd = _editDistanceHW(refseq, sequence);
+	      int32_t refFwd = _editDistanceHW(refseq[svid], sequence);
 	      int32_t refRev = _editDistanceHW(revref, sequence);
-	      double scoreAlt = (1.0 - c.flankQuality) * altseq.size();
-	      double scoreRef = (1.0 - c.flankQuality) * refseq.size();
+	      double scoreAlt = (1.0 - c.flankQuality) * altseq[svid].size();
+	      double scoreRef = (1.0 - c.flankQuality) * refseq[svid].size();
 	      if (std::min(altFwd, refFwd) < std::min(altRev, refRev)) {
 		scoreAlt = scoreAlt / (double) altFwd;
 		scoreRef = scoreRef / (double) refFwd;
@@ -527,7 +483,8 @@ namespace torali
 		  if (aq >= c.minGenoQual) {
 		    uint8_t* hpptr = bam_aux_get(rec, "HP");
 		    if (c.hasDumpFile) {
-		      std::string svidStr(_addID(gbp[svid].svt));
+		      //std::string svidStr(_addID(gbp[svid].svt));
+		      std::string svidStr(_addID(svs[svid].svt));
 		      std::string padNumber = boost::lexical_cast<std::string>(svid);
 		      padNumber.insert(padNumber.begin(), 8 - padNumber.length(), '0');
 		      svidStr += padNumber;
@@ -545,10 +502,10 @@ namespace torali
 	      }
 	    }
 	  }
+	  // Clean-up
+	  bam_destroy1(rec);
+	  hts_itr_destroy(iter);
 	}
-	// Clean-up
-	bam_destroy1(rec);
-	hts_itr_destroy(iter);
       
 	// Assign SV support
 	for(uint32_t i = 0; i < svs.size(); ++i) {
