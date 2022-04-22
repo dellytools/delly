@@ -19,17 +19,15 @@ namespace torali
 {
 
   struct Geno {
-    int32_t svStartPrefix;
-    int32_t svStartSuffix;
-    int32_t svEndPrefix;
-    int32_t svEndSuffix;
     int32_t svStart;
     int32_t svEnd;
     int32_t svt;
-    std::string ref;
-    std::string alt;
+    std::string refStart;
+    std::string altStart;
+    std::string refEnd;
+    std::string altEnd;
 
-    Geno() : svStartPrefix(-1), svStartSuffix(-1), svEndPrefix(-1), svEndSuffix(-1), svStart(-1), svEnd(-1), svt(-1) {}
+    Geno() : svStart(-1), svEnd(-1), svt(-1) {}
   };
 
 
@@ -136,6 +134,72 @@ namespace torali
     return std::min(leftPerc, rightPerc); 
   }
 
+
+  template<typename TConfig, typename TAlign>
+  inline bool
+  _trimAlignedSequences(TConfig const& c, TAlign const& align, AlignDescriptor const& ad, Geno& gbp) {
+    int32_t s = -1;
+    int32_t e = -1;
+    int32_t cpos = 0;
+    int32_t rpos = 0;
+    int32_t startConsPos = 0;
+    int32_t startRefPos = 0;
+    int32_t endConsPos = 0;
+    int32_t endRefPos = 0;
+    for(uint32_t j = 0; j<align.shape()[1]; ++j) {
+      if (align[0][j] != '-') {
+	++cpos;
+	if (align[1][j] != '-') {
+	  ++rpos;
+	  if (s == -1) s = j;
+	  e = j + 1;
+	}
+	if (cpos == ad.cStart) {
+	  startConsPos = cpos;
+	  startRefPos = rpos;
+	}
+	if (cpos == ad.cEnd) {
+	  endConsPos = cpos;
+	  endRefPos = rpos;
+	}
+      }
+    }
+    std::string s0;
+    std::string s1;
+    for(int32_t j = s; j < e; ++j) {
+      if (align[0][j] != '-') s0.push_back(align[0][j]);
+      if (align[1][j] != '-') s1.push_back(align[1][j]);
+    }
+    if (gbp.svStart != -1) {
+      if (startConsPos < c.minimumFlankSize) return false;
+      if ((int) (s0.size()) < startConsPos + c.minimumFlankSize) return false;
+      if (startRefPos < c.minimumFlankSize) return false;
+      if ((int) (s1.size()) < startRefPos + c.minimumFlankSize) return false;
+      gbp.altStart = s0.substr(startConsPos - c.minimumFlankSize, 2 * c.minimumFlankSize);
+      gbp.refStart = s1.substr(startRefPos - c.minimumFlankSize, 2 * c.minimumFlankSize);
+    }
+    if (gbp.svEnd != -1) {
+      if (endConsPos < c.minimumFlankSize) return false;
+      if ((int) (s0.size()) < endConsPos + c.minimumFlankSize) return false;
+      if (endRefPos < c.minimumFlankSize) return false;
+      if ((int) (s1.size()) < endRefPos + c.minimumFlankSize) return false;
+      gbp.altEnd = s0.substr(endConsPos - c.minimumFlankSize, 2 * c.minimumFlankSize);
+      gbp.refEnd = s1.substr(endRefPos - c.minimumFlankSize, 2 * c.minimumFlankSize);
+    }
+    return true;
+  }
+
+  inline int32_t
+  _editDistanceHW(std::string const& query, std::string const& target) {
+    EdlibAlignResult align = edlibAlign(query.c_str(), query.size(), target.c_str(), target.size(), edlibNewAlignConfig(-1, EDLIB_MODE_HW, EDLIB_TASK_DISTANCE, NULL, 0));
+    // Debug: requires EDLIB_TASK_PATH otherwise EDLIB_TASK_DISTANCE
+    //printAlignment(query, target, EDLIB_MODE_HW, align);
+    int32_t ed = align.editDistance;
+    edlibFreeAlignResult(align);
+    return ed;
+  }
+
+  
   template<typename TConfig, typename TJunctionMap, typename TReadCountMap>
   inline void
   genotypeLR(TConfig& c, std::vector<StructuralVariantRecord>& svs, TJunctionMap& jctMap, TReadCountMap& covMap) {
@@ -270,22 +334,10 @@ namespace torali
 	  //std::cerr << std::endl;
 
 	  // Trim aligned sequences
-	  std::string altSeq;
-	  std::string refSeq;
-	  int32_t leadCrop = _trimAlignedSequences(align, altSeq, refSeq);
-
-	  // Allele-tagging probes
-	  gbp[itSV->id].svStartPrefix = std::max(ad.cStart - leadCrop, 0);
-	  gbp[itSV->id].svStartSuffix = std::max((int32_t) altSeq.size() - gbp[itSV->id].svStartPrefix, 0);
 	  gbp[itSV->id].svStart = itSV->svStart;
-	  if (itSV->chr2 == refIndex) {
-	    gbp[itSV->id].svEndPrefix = std::max(ad.cEnd - leadCrop, 0);
-	    gbp[itSV->id].svEndSuffix = std::max((int32_t) altSeq.size() - gbp[itSV->id].svEndPrefix, 0);
-	    gbp[itSV->id].svEnd = itSV->svEnd;
-	  }
-	  gbp[itSV->id].ref = refSeq;
-	  gbp[itSV->id].alt = altSeq;
+	  if (itSV->chr2 == refIndex) gbp[itSV->id].svEnd = itSV->svEnd;
 	  gbp[itSV->id].svt = itSV->svt;
+	  if (!_trimAlignedSequences(c, align, ad, gbp[itSV->id])) continue;
 	}
       }
       if (seq != NULL) free(seq);
@@ -406,75 +458,44 @@ namespace torali
 	      int32_t rpHit = git->second.first;
 	      int32_t spHit = git->second.second;
 
-	      // Require spanning reads
-	      std::string subseq;
-	      if (rpHit == gbp[svid].svStart) {
-		if (rec->core.flag & BAM_FREVERSE) {
-		  if (spHit < gbp[svid].svStartSuffix) continue;
-		  if (readlen < gbp[svid].svStartPrefix + spHit) continue;
-		  int32_t st = std::max((readlen - spHit) - gbp[svid].svStartPrefix - c.minimumFlankSize, 0);
-		  subseq = sequence.substr(st, gbp[svid].svStartPrefix + gbp[svid].svStartSuffix + 2 * c.minimumFlankSize);
-		} else {
-		  if (spHit < gbp[svid].svStartPrefix) continue;
-		  if (readlen < gbp[svid].svStartSuffix + spHit) continue;
-		  int32_t st = std::max(spHit - gbp[svid].svStartPrefix - c.minimumFlankSize, 0);
-		  subseq = sequence.substr(st, gbp[svid].svStartPrefix + gbp[svid].svStartSuffix + 2 * c.minimumFlankSize);
-		}
-	      } else {
-		if (rec->core.flag & BAM_FREVERSE) {
-		  if (spHit < gbp[svid].svEndSuffix) continue;
-		  if (readlen < gbp[svid].svEndPrefix + spHit) continue;
-		  int32_t st = std::max((readlen - spHit) - gbp[svid].svEndPrefix - c.minimumFlankSize, 0);
-		  subseq = sequence.substr(st, gbp[svid].svEndPrefix + gbp[svid].svEndSuffix + 2 * c.minimumFlankSize);
-		} else {
-		  if (spHit < gbp[svid].svEndPrefix) continue;
-		  if (readlen < gbp[svid].svEndSuffix + spHit) continue;
-		  int32_t st = std::max(spHit - gbp[svid].svEndPrefix - c.minimumFlankSize, 0);
-		  subseq = sequence.substr(st, gbp[svid].svEndPrefix + gbp[svid].svEndSuffix + 2 * c.minimumFlankSize);
-		}
-	      }
-
-	      // Breakpoint should be in the middle, figure out direction
-	      int32_t primstart = (int) (0.2 * subseq.size());
-	      std::string primer = subseq.substr(primstart, primstart);
-	      std::string rprim = primer;
-	      reverseComplement(rprim);
-	      EdlibAlignResult primFwd = edlibAlign(primer.c_str(), primer.size(), gbp[svid].alt.c_str(), gbp[svid].alt.size(), edlibNewAlignConfig(-1, EDLIB_MODE_HW, EDLIB_TASK_DISTANCE, NULL, 0));
-	      EdlibAlignResult primRev = edlibAlign(rprim.c_str(), rprim.size(), gbp[svid].alt.c_str(), gbp[svid].alt.size(), edlibNewAlignConfig(-1, EDLIB_MODE_HW, EDLIB_TASK_DISTANCE, NULL, 0));
-	      if (2 * primFwd.editDistance < primRev.editDistance) {
-		// Nop
-	      } else if (2 * primRev.editDistance < primFwd.editDistance) {
-		reverseComplement(subseq);
-	      } else {
-		// Couldn't clearly anchor
-		continue;
-	      }
-	      edlibFreeAlignResult(primFwd);
-	      edlibFreeAlignResult(primRev);
+	      // Read long enough?
+	      if (spHit < c.minimumFlankSize) continue;
+	      if (readlen < c.minimumFlankSize + spHit) continue;
 	      
 	      //std::cerr << ">" << svid << ',' << gbp[svid].svStart << ',' << gbp[svid].svEnd << ',' << gbp[svid].svt << std::endl;
-	      
-	      
-	      // Compute alignment to alternative haplotype
-	      double scoreAlt = (1.0 - c.flankQuality) * gbp[svid].alt.size();
-	      EdlibAlignResult altalign;
-	      if (gbp[svid].alt.size() < subseq.size()) altalign = edlibAlign(gbp[svid].alt.c_str(), gbp[svid].alt.size(), subseq.c_str(), subseq.size(), edlibNewAlignConfig(-1, EDLIB_MODE_HW, EDLIB_TASK_DISTANCE, NULL, 0));
-	      else altalign = edlibAlign(subseq.c_str(), subseq.size(), gbp[svid].alt.c_str(), gbp[svid].alt.size(), edlibNewAlignConfig(-1, EDLIB_MODE_HW, EDLIB_TASK_DISTANCE, NULL, 0));
-	      // Debug: requires EDLIB_TASK_PATH otherwise EDLIB_TASK_DISTANCE
-	      //printAlignment(gbp[svid].alt, subseq, EDLIB_MODE_HW, altalign);
-	      //if (altalign.status == EDLIB_STATUS_OK) std::cerr << "ALT edit_distance = " << altalign.editDistance << ", expected = " << scoreAlt << ", altprobe = " << gbp[svid].alt.size() << ", queryprobe = " << subseq.size() << std::endl;
-	      scoreAlt = scoreAlt / (double) altalign.editDistance;
-	      edlibFreeAlignResult(altalign);
+	      std::string refseq;
+	      std::string altseq;
+	      if (rpHit == gbp[svid].svStart) {
+		refseq = gbp[svid].refStart;
+		altseq = gbp[svid].altStart;
+	      } else if (rpHit == gbp[svid].svEnd) {
+		refseq = gbp[svid].refEnd;
+		altseq = gbp[svid].altEnd;
+	      } else {
+		std::cerr << "Error: Unclear reference hit!" << std::endl;
+		exit(-1);
+	      }
 
-	      // Compute alignment to reference haplotype
-	      double scoreRef = (1.0 - c.flankQuality) * gbp[svid].ref.size();
-	      EdlibAlignResult refalign;
-	      if (gbp[svid].ref.size() < subseq.size()) refalign = edlibAlign(gbp[svid].ref.c_str(), gbp[svid].ref.size(), subseq.c_str(), subseq.size(), edlibNewAlignConfig(-1, EDLIB_MODE_HW, EDLIB_TASK_DISTANCE, NULL, 0));
-	      else refalign = edlibAlign(subseq.c_str(), subseq.size(), gbp[svid].ref.c_str(), gbp[svid].ref.size(), edlibNewAlignConfig(-1, EDLIB_MODE_HW, EDLIB_TASK_DISTANCE, NULL, 0));
-	      //printAlignment(gbp[svid].ref, subseq, EDLIB_MODE_HW, refalign);
-	      //if (refalign.status == EDLIB_STATUS_OK) std::cerr << "REF edit_distance = " << refalign.editDistance << ", expected = " << scoreRef << ", refprobe = " << gbp[svid].ref.size() << ", queryprobe = " << subseq.size() << std::endl;
-	      scoreRef = scoreRef / (double) refalign.editDistance;
-	      edlibFreeAlignResult(refalign);
+	      // Reverse complement probes
+	      std::string revref = refseq;
+	      std::string revalt = altseq;
+	      reverseComplement(revref);
+	      reverseComplement(revalt);
+
+	      // Edit distances
+	      int32_t altFwd = _editDistanceHW(altseq, sequence);
+	      int32_t altRev = _editDistanceHW(revalt, sequence);
+	      int32_t refFwd = _editDistanceHW(refseq, sequence);
+	      int32_t refRev = _editDistanceHW(revref, sequence);
+	      double scoreAlt = (1.0 - c.flankQuality) * altseq.size();
+	      double scoreRef = (1.0 - c.flankQuality) * refseq.size();
+	      if (std::min(altFwd, refFwd) < std::min(altRev, refRev)) {
+		scoreAlt = scoreAlt / (double) altFwd;
+		scoreRef = scoreRef / (double) refFwd;
+	      } else {
+		scoreAlt = scoreAlt / (double) altRev;
+		scoreRef = scoreRef / (double) refRev;
+	      }
 
 	      // Any confident alignment?
 	      if ((scoreRef > 0.8) || (scoreAlt > 0.8)) {

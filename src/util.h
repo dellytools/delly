@@ -679,31 +679,6 @@ namespace torali
   }
 
 
-  template<typename TAlign>
-  inline uint32_t
-  _trimAlignedSequences(TAlign const& align, std::string& s0, std::string& s1) {
-    int32_t s = -1;
-    int32_t e = -1;
-    uint32_t leadCrop = 0;
-    for(uint32_t j = 0; j<align.shape()[1]; ++j) {
-      if (align[0][j] != '-') {
-	if (align[1][j] != '-') {
-	  if (s == -1) s = j;
-	  e = j + 1;
-	}
-	if (s == -1) ++leadCrop;
-      }
-    }
-    s0.clear();
-    s1.clear();
-    for(int32_t j = s; j < e; ++j) {
-      if (align[0][j] != '-') s0.push_back(align[0][j]);
-      if (align[1][j] != '-') s1.push_back(align[1][j]);
-    }
-    return leadCrop;
-  }
-
-
 }
 
 #endif
