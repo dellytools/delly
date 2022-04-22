@@ -350,6 +350,7 @@ namespace torali
 	uint32_t sp = 0; // sequence pointer
 	  
 	// Parse the CIGAR
+	std::set<int32_t> processed;
 	uint32_t* cigar = bam_get_cigar(rec);
 	for (std::size_t i = 0; i < rec->core.n_cigar; ++i) {
 	  if ((bam_cigar_op(cigar[i]) == BAM_CMATCH) || (bam_cigar_op(cigar[i]) == BAM_CEQUAL) || (bam_cigar_op(cigar[i]) == BAM_CDIFF)) {
@@ -360,13 +361,14 @@ namespace torali
 	      ++sp;
 	    }
 	    for(uint32_t k = std::max((int) (rpold - c.minRefSep), 0); (k < rp + c.minRefSep) && (k < breakpoint.size()); ++k) {
-	      if (breakpoint[k] != -1) {
+	      if ((breakpoint[k] != -1) && (processed.find(breakpoint[k]) == processed.end())) {
 		// Read long enough?
 		if (sp >= c.minimumFlankSize) {
 		  if (readlen >= c.minimumFlankSize + sp) {
 		    if (genoMap.find(seed) == genoMap.end()) genoMap.insert(std::make_pair(seed, TGeno()));
 		    if (rec->core.flag & BAM_FREVERSE) genoMap[seed].push_back(Geno(breakpoint[k], (readlen - sp), rp));
 		    else genoMap[seed].push_back(Geno(breakpoint[k], sp, rp));
+		    processed.insert(breakpoint[k]);
 		  }
 		}
 	      }
@@ -453,11 +455,6 @@ namespace torali
     std::vector<std::string> altseq(svs.size());
     _generateProbes(c, hdr[0], svs, refseq, altseq);
 
-    // Parse genome chr-by-chr
-    boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
-    std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "SV annotation" << std::endl;
-    boost::progress_display show_progress( hdr[0]->n_targets );
-    
     // Ref aligned reads
     typedef std::vector<uint32_t> TRefAlignCount;
     typedef std::vector<TRefAlignCount> TFileRefAlignCount;
@@ -499,12 +496,17 @@ namespace torali
 	    sequence.resize(rec->core.l_qseq);
 	    uint8_t* seqptr = bam_get_seq(rec);
 	    for (int i = 0; i < rec->core.l_qseq; ++i) sequence[i] = "=ACMGRSVTWYHKDBN"[bam_seqi(seqptr, i)];
+	    if (rec->core.flag & BAM_FREVERSE) reverseComplement(sequence);
 
+	    
 	    for(uint32_t k = 0; k < genoMap[seed].size(); ++k) {
 	      // Get SV id
 	      int32_t svid = genoMap[seed][k].svid;
 	      //std::cerr << svs[svid].svStart << "-" << svs[svid].svEnd << "," << svs[svid].svt << std::endl;
 	      //std::cerr << seed << "," << genoMap[seed][k].sp << "," << genoMap[seed][k].rp << std::endl;
+	      if (genoMap[seed][k].sp < 2 * c.minimumFlankSize) continue;
+	      if (sequence.size() < genoMap[seed][k].sp + 2 * c.minimumFlankSize) continue;
+	      std::string subseq = sequence.substr(genoMap[seed][k].sp - 2 * c.minimumFlankSize, 4 * c.minimumFlankSize);
 	      
 	      uint32_t maxGenoReadCount = 500;
 	      if ((jctMap[file_c][svid].ref.size() + jctMap[file_c][svid].alt.size()) >= maxGenoReadCount) continue;
@@ -516,10 +518,10 @@ namespace torali
 	      reverseComplement(revalt);
 	      
 	      // Edit distances
-	      int32_t altFwd = _editDistanceHW(altseq[svid], sequence);
-	      int32_t altRev = _editDistanceHW(revalt, sequence);
-	      int32_t refFwd = _editDistanceHW(refseq[svid], sequence);
-	      int32_t refRev = _editDistanceHW(revref, sequence);
+	      int32_t altFwd = _editDistanceHW(altseq[svid], subseq);
+	      int32_t altRev = _editDistanceHW(revalt, subseq);
+	      int32_t refFwd = _editDistanceHW(refseq[svid], subseq);
+	      int32_t refRev = _editDistanceHW(revref, subseq);
 	      double scoreAlt = (1.0 - c.flankQuality) * altseq[svid].size();
 	      double scoreRef = (1.0 - c.flankQuality) * refseq[svid].size();
 	      if (std::min(altFwd, refFwd) < std::min(altRev, refRev)) {

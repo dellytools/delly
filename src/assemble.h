@@ -299,7 +299,7 @@ namespace torali
 	      int32_t svid = seqsl.svid;
 	      if ((!svcons[svid]) && (seqStore[svid].size() < c.maxReadPerSV)) {
 		// Extract subsequence (otherwise MSA takes forever)
-		int32_t window = 1000;
+		int32_t window = 1000; // MSA should be larger
 		int32_t sPos = seqsl.sstart - window;
 		int32_t ePos = seqsl.sstart + seqsl.inslen + window;
 		if (rec->core.flag & BAM_FREVERSE) {
