@@ -201,7 +201,7 @@ namespace torali
 	if ((itSV->chr != itSV->chr2) && (itSV->chr2 == refIndex)) {
 	  Breakpoint bp(*itSV);
 	  _initBreakpoint(hdr, bp, (int32_t) itSV->consensus.size(), itSV->svt);
-	  refProbes[itSV->id] = _getSVRef(seq, bp, refIndex, itSV->svt);
+	  refProbes[itSV->id] = _getSVRef(c, seq, bp, refIndex, itSV->svt);
 	}
 	if (itSV->chr == refIndex) {
 	  Breakpoint bp(*itSV);
@@ -210,7 +210,7 @@ namespace torali
 	    int32_t bufferSpace = std::max((int32_t) ((itSV->consensus.size() - itSV->insLen) / 3), c.minimumFlankSize);
 	    _initBreakpoint(hdr, bp, bufferSpace, itSV->svt);
 	  } else _initBreakpoint(hdr, bp, (int32_t) itSV->consensus.size(), itSV->svt);
-	  std::string svRefStr = _getSVRef(seq, bp, refIndex, itSV->svt);
+	  std::string svRefStr = _getSVRef(c, seq, bp, refIndex, itSV->svt);
 	  
 	  // Find breakpoint to reference
 	  TAlign align;

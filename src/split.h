@@ -122,10 +122,9 @@ namespace torali
     return false;
   }
 
-  // Deletions
-  template<typename TSeq, typename TSVRecord, typename TRef>
+  template<typename TConfig, typename TSeq, typename TSVRecord, typename TRef>
   inline std::string
-  _getSVRef(TSeq const* const ref, TSVRecord const& svRec, TRef const refIndex, int32_t const svt) {
+  _getSVRef(TConfig const& c, TSeq const* const ref, TSVRecord const& svRec, TRef const refIndex, int32_t const svt) {
     if (_translocation(svt)) {
       uint8_t ct = _getSpanOrientation(svt);
       if (svRec.chr==refIndex) {
@@ -169,7 +168,7 @@ namespace torali
       }
     } else {
       if (svt == 2) {
-	if (svRec.svEnd - svRec.svStart <= DELLY_CHOP_REFSIZE) return boost::to_upper_copy(std::string(ref + svRec.svStartBeg, ref + svRec.svEndEnd));
+	if (svRec.svEnd - svRec.svStart <= c.indelsize) return boost::to_upper_copy(std::string(ref + svRec.svStartBeg, ref + svRec.svEndEnd));
 	else return boost::to_upper_copy(std::string(ref + svRec.svStartBeg, ref + svRec.svStartEnd)) + boost::to_upper_copy(std::string(ref + svRec.svEndBeg, ref + svRec.svEndEnd));
       } else if (svt == 4) {
 	return boost::to_upper_copy(std::string(ref + svRec.svStartBeg, ref + svRec.svEndEnd));
@@ -213,9 +212,9 @@ namespace torali
   }
 
 
-  template<typename TString, typename TSvRecord, typename TAlignDescriptor, typename TPosition>
+  template<typename TConfig, typename TString, typename TSvRecord, typename TAlignDescriptor, typename TPosition>
   inline bool
-  _coordTransform(TString const& ref, TSvRecord const& sv, TAlignDescriptor const& ad, TPosition& finalGapStart, TPosition& finalGapEnd, int32_t svt) {
+  _coordTransform(TConfig const& c, TString const& ref, TSvRecord const& sv, TAlignDescriptor const& ad, TPosition& finalGapStart, TPosition& finalGapEnd, int32_t svt) {
     if (_translocation(svt)) {
       uint8_t ct = _getSpanOrientation(svt);
       if (ct == 0) {
@@ -242,7 +241,7 @@ namespace torali
       return true;
     } else {
       if (svt == 2) {
-	if (sv.svEnd - sv.svStart > DELLY_CHOP_REFSIZE) {
+	if (sv.svEnd - sv.svStart > c.indelsize) {
 	  int32_t annealed = sv.svStartEnd - sv.svStartBeg;
 	  if ((ad.rStart >= annealed) || (ad.rEnd < annealed)) return false;
 	  finalGapStart = sv.svStartBeg + ad.rStart;
@@ -439,8 +438,8 @@ namespace torali
       int32_t bufferSpace = std::max((int32_t) ((sv.consensus.size() - sv.insLen) / 3), c.minimumFlankSize);
       _initBreakpoint(hdr, bp, bufferSpace, sv.svt);
     } else _initBreakpoint(hdr, bp, sv.consensus.size(), sv.svt);
-    if (bp.chr != bp.chr2) bp.part1 = _getSVRef(sndSeq, bp, bp.chr2, sv.svt);
-    std::string svRefStr = _getSVRef(seq, bp, bp.chr, sv.svt);
+    if (bp.chr != bp.chr2) bp.part1 = _getSVRef(c, sndSeq, bp, bp.chr2, sv.svt);
+    std::string svRefStr = _getSVRef(c, seq, bp, bp.chr, sv.svt);
 
     // Realign?
     if (realign) {
@@ -475,7 +474,7 @@ namespace torali
     // Get the start and end of the structural variant
     unsigned int finalGapStart = 0;
     unsigned int finalGapEnd = 0;
-    if (!_coordTransform(svRefStr, bp, ad, finalGapStart, finalGapEnd, sv.svt)) return false;
+    if (!_coordTransform(c, svRefStr, bp, ad, finalGapStart, finalGapEnd, sv.svt)) return false;
     
     sv.precise=true;
     sv.svStart=finalGapStart;

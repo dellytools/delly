@@ -7,10 +7,6 @@ namespace torali {
   #define DELLY_SVT_TRANS 5
   #endif
 
-  #ifndef DELLY_CHOP_REFSIZE
-  #define DELLY_CHOP_REFSIZE 1000
-  #endif
-
   #ifndef DELLY_OUTOFBAND
   #define DELLY_OUTOFBAND -99999999
   #endif

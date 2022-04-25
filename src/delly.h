@@ -392,7 +392,7 @@ namespace torali
     c.aliscore = DnaScore<int>(5, -4, -10, -1);
     c.flankQuality = 0.95;
     c.minimumFlankSize = 13;
-    c.indelsize = 500;
+    c.indelsize = 1000;
     return dellyRun(c);
   }
 
