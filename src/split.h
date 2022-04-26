@@ -488,31 +488,6 @@ namespace torali
     sv.ciendlow = -ci_wiggle;
     sv.ciendhigh = ci_wiggle;
 
-    if (c.islr) {
-      // Set alleles
-      sv.alleles = _addAlleles(boost::to_upper_copy(std::string(seq + sv.svStart - 1, seq + sv.svStart)), std::string(hdr->target_name[sv.chr2]), sv, sv.svt);
-    
-      // Get exact alleles for INS and DEL                                                                         
-      if ((sv.svt == 2) || (sv.svt == 4)) {
-	std::string refVCF;
-	std::string altVCF;
-	int32_t cpos = 0;
-	bool inSV = false;
-	for(uint32_t j = 0; j<align.shape()[1]; ++j) {
-	  if (align[0][j] != '-') {
-	    ++cpos;
-	    if (cpos == ad.cStart) inSV = true;
-	    else if (cpos == ad.cEnd) inSV = false;
-	  }
-	  if (inSV) {
-	    if (align[0][j] != '-') altVCF += align[0][j];
-	    if (align[1][j] != '-') refVCF += align[1][j];
-	  }
-	}
-	sv.alleles = _addAlleles(refVCF, altVCF);
-      }
-    }
-
     return true;
   }
 

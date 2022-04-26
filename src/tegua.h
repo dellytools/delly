@@ -35,7 +35,6 @@ namespace torali {
 
 
   struct TeguaConfig {
-    bool islr;
     bool hasDumpFile;
     bool hasExcludeFile;
     bool isHaplotagged;
@@ -197,7 +196,6 @@ namespace torali {
  int tegua(int argc, char **argv) {
    TeguaConfig c;
    c.isHaplotagged = false;
-   c.islr = true;
    
    // Parameter
    std::string svtype;

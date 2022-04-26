@@ -220,23 +220,25 @@ namespace torali
 	  if (!_findSplit(c, itSV->consensus, svRefStr, align, ad, itSV->svt)) continue;
 
 	  // Get exact alleles for INS and DEL
-	  if ((itSV->svt == 2) || (itSV->svt == 4)) {
-	    std::string refVCF;
-	    std::string altVCF;
-	    int32_t cpos = 0;
-	    bool inSV = false;
-	    for(uint32_t j = 0; j<align.shape()[1]; ++j) {
-	      if (align[0][j] != '-') {
-		++cpos;
-		if (cpos == ad.cStart) inSV = true;
-	  	else if (cpos == ad.cEnd) inSV = false;
+	  if (itSV->svEnd - itSV->svStart <= c.indelsize) {
+	    if ((itSV->svt == 2) || (itSV->svt == 4)) {
+	      std::string refVCF;
+	      std::string altVCF;
+	      int32_t cpos = 0;
+	      bool inSV = false;
+	      for(uint32_t j = 0; j<align.shape()[1]; ++j) {
+		if (align[0][j] != '-') {
+		  ++cpos;
+		  if (cpos == ad.cStart) inSV = true;
+		  else if (cpos == ad.cEnd) inSV = false;
+		}
+		if (inSV) {
+		  if (align[0][j] != '-') altVCF += align[0][j];
+		  if (align[1][j] != '-') refVCF += align[1][j];
+		}
 	      }
-	      if (inSV) {
-		if (align[0][j] != '-') altVCF += align[0][j];
-		if (align[1][j] != '-') refVCF += align[1][j];
-	      }
+	      itSV->alleles = _addAlleles(refVCF, altVCF);
 	    }
-	    itSV->alleles = _addAlleles(refVCF, altVCF);
 	  }
 	  
 	  // Debug consensus to reference alignment

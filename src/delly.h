@@ -50,7 +50,6 @@ namespace torali
 
   // Config arguments
   struct Config {
-    bool islr;
     uint16_t minMapQual;
     uint16_t minTraQual;
     uint16_t minGenoQual;
@@ -201,7 +200,6 @@ namespace torali
     Config c;
     c.isHaplotagged = false;
     c.madNormalCutoff = 5;
-    c.islr = false;
     
     // Define generic options
     std::string svtype;
