@@ -336,6 +336,7 @@ namespace torali {
      hts_idx_destroy(idx);
      sam_close(samfile);
    }
+   checkSampleNames(c);
 
    // Check exclude file
    if (vm.count("exclude")) {

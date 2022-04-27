@@ -432,7 +432,7 @@ namespace torali
       dumpOut << "#svid\tbam\tqname\tchr\tpos\tmatechr\tmatepos\tmapq\ttype" << std::endl;
     }
 
-    // Iterate samples
+#pragma omp parallel for default(shared)    
     for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
 
       // Identify reads required for genotyping
@@ -508,7 +508,10 @@ namespace torali
 		    for (int i = 0; i < rec->core.l_qseq; ++i) quality[i] = qualptr[i];
 		    uint32_t rq = scoreRef * 35;
 		    if (rq >= c.minGenoQual) {
-		      jctMap[file_c][svid].ref.push_back((uint8_t) std::min(rq, (uint32_t) rec->core.qual));
+#pragma omp critical
+		      {
+			jctMap[file_c][svid].ref.push_back((uint8_t) std::min(rq, (uint32_t) rec->core.qual));
+		      }
 		    }
 		  }
 		} else {
@@ -518,14 +521,17 @@ namespace torali
 		  for (int i = 0; i < rec->core.l_qseq; ++i) quality[i] = qualptr[i];
 		  uint32_t aq = scoreAlt * 35;
 		  if (aq >= c.minGenoQual) {
-		    if (c.hasDumpFile) {
-		      std::string svidStr(_addID(svs[svid].svt));
-		      std::string padNumber = boost::lexical_cast<std::string>(svid);
-		      padNumber.insert(padNumber.begin(), 8 - padNumber.length(), '0');
-		      svidStr += padNumber;
-		      dumpOut << svidStr << "\t" << c.files[file_c].string() << "\t" << bam_get_qname(rec) << "\t" << hdr[file_c]->target_name[rec->core.tid] << "\t" << rec->core.pos << "\t" << hdr[file_c]->target_name[rec->core.mtid] << "\t" << rec->core.mpos << "\t" << (int32_t) rec->core.qual << "\tSR" << std::endl;
+#pragma omp critical
+		    {
+		      if (c.hasDumpFile) {
+			std::string svidStr(_addID(svs[svid].svt));
+			std::string padNumber = boost::lexical_cast<std::string>(svid);
+			padNumber.insert(padNumber.begin(), 8 - padNumber.length(), '0');
+			svidStr += padNumber;
+			dumpOut << svidStr << "\t" << c.files[file_c].string() << "\t" << bam_get_qname(rec) << "\t" << hdr[file_c]->target_name[rec->core.tid] << "\t" << rec->core.pos << "\t" << hdr[file_c]->target_name[rec->core.mtid] << "\t" << rec->core.mpos << "\t" << (int32_t) rec->core.qual << "\tSR" << std::endl;
+		      }
+		      jctMap[file_c][svid].alt.push_back((uint8_t) std::min(aq, (uint32_t) rec->core.qual));
 		    }
-		    jctMap[file_c][svid].alt.push_back((uint8_t) std::min(aq, (uint32_t) rec->core.qual));
 		  }
 		}
 	      }

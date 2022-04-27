@@ -331,15 +331,7 @@ namespace torali
       hts_idx_destroy(idx);
       sam_close(samfile);
     }
-    {
-      std::set<std::string> snames;
-      for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
-	if (snames.find(c.sampleName[file_c]) != snames.end()) {
-	  std::cerr << "Error: Duplicate sample names: " << c.sampleName[file_c] << std::endl;
-	  return 1;
-	} else snames.insert(c.sampleName[file_c]);
-      }
-    }
+    checkSampleNames(c);
     
     // Check exclude file
     if (vm.count("exclude")) {

@@ -77,6 +77,21 @@ namespace torali
   };
 
 
+  template<typename TConfig>
+  inline void
+  checkSampleNames(TConfig& c) {
+    uint32_t ucount = 0;
+    std::set<std::string> snames;
+    for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
+      while (snames.find(c.sampleName[file_c]) != snames.end()) {
+	std::cerr << "Warning: Duplicate sample names: " << c.sampleName[file_c] << std::endl;
+	c.sampleName[file_c] += "_" + boost::lexical_cast<std::string>(ucount++);
+	std::cerr << "Warning: Changing sample name to " << c.sampleName[file_c] << std::endl;
+      }
+      snames.insert(c.sampleName[file_c]);
+    }
+  }
+
   inline bool
   nContent(std::string const& s) {
     for(uint32_t i = 0; i < s.size(); ++i) {
