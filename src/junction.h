@@ -350,7 +350,7 @@ namespace torali
 	    if (rec->core.flag & (BAM_FQCFAIL | BAM_FDUP | BAM_FUNMAP)) continue;
 	    if ((rec->core.qual < c.minMapQual) || (rec->core.tid<0)) continue;
 
-	    std::size_t seed = hash_string(bam_get_qname(rec));
+	    std::size_t seed = hash_lr(rec);
 	    //std::cerr << bam_get_qname(rec) << '\t' << seed << std::endl;
 	    uint32_t rp = rec->core.pos; // reference pointer
 	    uint32_t sp = 0; // sequence pointer

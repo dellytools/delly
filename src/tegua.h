@@ -37,6 +37,7 @@ namespace torali {
   struct TeguaConfig {
     bool hasDumpFile;
     bool hasExcludeFile;
+    bool hasVcfFile;
     bool isHaplotagged;
     bool svtcmd;
     uint16_t minMapQual;
@@ -56,6 +57,7 @@ namespace torali {
     DnaScore<int> aliscore;
     boost::filesystem::path dumpfile;
     boost::filesystem::path outfile;
+    boost::filesystem::path vcffile;
     std::vector<boost::filesystem::path> files;
     boost::filesystem::path genome;
     boost::filesystem::path exclude;
@@ -108,7 +110,7 @@ namespace torali {
    }
      
    // SV Discovery
-   if (svs.empty()) {
+   if (!c.hasVcfFile) {
        
      // Structural Variant Candidates
      typedef std::vector<StructuralVariantRecord> TVariants;
@@ -149,7 +151,7 @@ namespace torali {
      uint32_t cliqueCount = 0;
      for(typename TVariants::iterator svIt = svs.begin(); svIt != svs.end(); ++svIt, ++cliqueCount) svIt->id = cliqueCount;
      //outputStructuralVariants(c, svs);
-   }
+   } else vcfParse(c, hdr, svs);
    // Clean-up
    bam_hdr_destroy(hdr);
    sam_close(samfile);
@@ -230,6 +232,7 @@ namespace torali {
    
    boost::program_options::options_description geno("Genotyping options");
    geno.add_options()
+     ("vcffile,v", boost::program_options::value<boost::filesystem::path>(&c.vcffile), "input VCF/BCF file for genotyping")
      ("geno-qual,u", boost::program_options::value<uint16_t>(&c.minGenoQual)->default_value(5), "min. mapping quality for genotyping")
      ("dump,d", boost::program_options::value<boost::filesystem::path>(&c.dumpfile), "gzipped output file for SV-reads")
      ;
@@ -344,6 +347,27 @@ namespace torali {
      }
      c.hasExcludeFile = true;
    } else c.hasExcludeFile = false;
+
+   // Check input VCF file
+   if (vm.count("vcffile")) {
+     if (!(boost::filesystem::exists(c.vcffile) && boost::filesystem::is_regular_file(c.vcffile) && boost::filesystem::file_size(c.vcffile))) {
+       std::cerr << "Input VCF/BCF file is missing: " << c.vcffile.string() << std::endl;
+       return 1;
+     }
+     htsFile* ifile = bcf_open(c.vcffile.string().c_str(), "r");
+     if (ifile == NULL) {
+       std::cerr << "Fail to open file " << c.vcffile.string() << std::endl;
+       return 1;
+     }
+     bcf_hdr_t* hdr = bcf_hdr_read(ifile);
+     if (hdr == NULL) {
+       std::cerr << "Fail to open index file " << c.vcffile.string() << std::endl;
+       return 1;
+     }
+     bcf_hdr_destroy(hdr);
+     bcf_close(ifile);
+     c.hasVcfFile = true;
+   } else c.hasVcfFile = false;
    
    // Check output directory
    if (!_outfileValid(c.outfile)) return 1;

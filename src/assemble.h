@@ -284,7 +284,7 @@ namespace torali
 	  if (rec->core.flag & (BAM_FQCFAIL | BAM_FDUP | BAM_FUNMAP | BAM_FSECONDARY | BAM_FSUPPLEMENTARY)) continue;
 	  if (!hits[rec->core.pos]) continue;
 
-	  std::size_t seed = hash_string(bam_get_qname(rec));
+	  std::size_t seed = hash_lr(rec);
 	  if (srStore[refIndex].find(std::make_pair(rec->core.pos, seed)) != srStore[refIndex].end()) {
 	    // Get sequence
 	    std::string sequence;
