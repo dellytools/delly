@@ -56,26 +56,14 @@ namespace torali {
   };
   
   struct SpanningCount {
-    int32_t refh1;
-    int32_t refh2;
-    int32_t alth1;
-    int32_t alth2;
     std::vector<uint8_t> ref;
     std::vector<uint8_t> alt;
-
-    SpanningCount() : refh1(0), refh2(0), alth1(0), alth2(0) {}
   };
 
   
   struct JunctionCount {
-    int32_t refh1;
-    int32_t refh2;
-    int32_t alth1;
-    int32_t alth2;
     std::vector<uint8_t> ref;
     std::vector<uint8_t> alt;
-
-    JunctionCount() : refh1(0), refh2(0), alth1(0), alth2(0) {}
   };
 
   template<typename TAlign, typename TQualities>
@@ -495,16 +483,9 @@ namespace torali {
 			for (int i = 0; i < rec->core.l_qseq; ++i) quality[i] = qualptr[i];
 			uint32_t rq = _getAlignmentQual(alignRef, quality);
 			if (rq >= c.minGenoQual) {
-			  uint8_t* hpptr = bam_aux_get(rec, "HP");
 #pragma omp critical
 			  {
 			    countMap[file_c][itBp->id].ref.push_back((uint8_t) std::min(rq, (uint32_t) rec->core.qual));
-			    if (hpptr) {
-			      c.isHaplotagged = true;
-			      int hap = bam_aux2i(hpptr);
-			      if (hap == 1) ++countMap[file_c][itBp->id].refh1;
-			      else ++countMap[file_c][itBp->id].refh2;
-			    }
 			  }
 			}
 		      }
@@ -515,7 +496,6 @@ namespace torali {
 		      for (int i = 0; i < rec->core.l_qseq; ++i) quality[i] = qualptr[i];
 		      uint32_t aq = _getAlignmentQual(alignAlt, quality);
 		      if (aq >= c.minGenoQual) {
-			uint8_t* hpptr = bam_aux_get(rec, "HP");
 #pragma omp critical
 			{
 			  if (c.hasDumpFile) {
@@ -526,12 +506,6 @@ namespace torali {
 			    dumpOut << svid << "\t" << c.files[file_c].string() << "\t" << bam_get_qname(rec) << "\t" << hdr[file_c]->target_name[rec->core.tid] << "\t" << rec->core.pos << "\t" << hdr[file_c]->target_name[rec->core.mtid] << "\t" << rec->core.mpos << "\t" << (int32_t) rec->core.qual << "\tSR" << std::endl;
 			  }
 			  countMap[file_c][itBp->id].alt.push_back((uint8_t) std::min(aq, (uint32_t) rec->core.qual));
-			  if (hpptr) {
-			    c.isHaplotagged = true;
-			    int hap = bam_aux2i(hpptr);
-			    if (hap == 1) ++countMap[file_c][itBp->id].alth1;
-			    else ++countMap[file_c][itBp->id].alth2;
-			  }
 			}
 		      }
 		    }
@@ -617,16 +591,9 @@ namespace torali {
 		for(; ((itSpan != spanPoint.end()) && (st + spanlen >= itSpan->bppos)); ++itSpan) {
 		  // Account for reference bias
 		  if (++refAlignedSpanCount[file_c][itSpan->id] % 2) {
-		    uint8_t* hpptr = bam_aux_get(rec, "HP");
 #pragma omp critical
 		    {
 		      spanMap[file_c][itSpan->id].ref.push_back(pairQuality);
-		      if (hpptr) {
-			c.isHaplotagged = true;
-			int hap = bam_aux2i(hpptr);
-			if (hap == 1) ++spanMap[file_c][itSpan->id].refh1;
-			else ++spanMap[file_c][itSpan->id].refh2;
-		      }
 		    }
 		  }
 		}
@@ -661,7 +628,6 @@ namespace torali {
 		    // Make sure, mate is correct
 		    if (rec->core.mtid == itSpan->chr2) {
 		      if (std::abs((int32_t) rec->core.mpos - itSpan->otherBppos) < sampleLib[file_c].maxNormalISize) {
-			uint8_t* hpptr = bam_aux_get(rec, "HP");
 #pragma omp critical
 			{
 			  if (c.hasDumpFile) {
@@ -672,12 +638,6 @@ namespace torali {
 			    dumpOut << svid << "\t" << c.files[file_c].string() << "\t" << bam_get_qname(rec) << "\t" << hdr[file_c]->target_name[rec->core.tid] << "\t" << rec->core.pos << "\t" << hdr[file_c]->target_name[rec->core.mtid] << "\t" << rec->core.mpos << "\t" << (int32_t) rec->core.qual << "\tPE" << std::endl;
 			  }
 			  spanMap[file_c][itSpan->id].alt.push_back(pairQuality);
-			  if (hpptr) {
-			    c.isHaplotagged = true;
-			    int hap = bam_aux2i(hpptr);
-			    if (hap == 1) ++spanMap[file_c][itSpan->id].alth1;
-			    else ++spanMap[file_c][itSpan->id].alth2;
-			  }
 			}
 		      }
 		    }

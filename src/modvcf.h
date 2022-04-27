@@ -456,20 +456,9 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
   bcf_hdr_append(hdr, "##FORMAT=<ID=RDCN,Number=1,Type=Integer,Description=\"Read-depth based copy-number estimate for autosomal sites\">");
   bcf_hdr_append(hdr, "##FORMAT=<ID=DR,Number=1,Type=Integer,Description=\"# high-quality reference pairs\">");
   bcf_hdr_append(hdr, "##FORMAT=<ID=DV,Number=1,Type=Integer,Description=\"# high-quality variant pairs\">");
-  if (c.isHaplotagged) {
-    bcf_hdr_append(hdr, "##FORMAT=<ID=HP1DR,Number=1,Type=Integer,Description=\"# high-quality reference pairs on haplotype 1\">");
-    bcf_hdr_append(hdr, "##FORMAT=<ID=HP2DR,Number=1,Type=Integer,Description=\"# high-quality reference pairs on haplotype 2\">");
-    bcf_hdr_append(hdr, "##FORMAT=<ID=HP1DV,Number=1,Type=Integer,Description=\"# high-quality variant pairs on haplotype 1\">");
-    bcf_hdr_append(hdr, "##FORMAT=<ID=HP2DV,Number=1,Type=Integer,Description=\"# high-quality variant pairs on haplotype 2\">");
-  }
   bcf_hdr_append(hdr, "##FORMAT=<ID=RR,Number=1,Type=Integer,Description=\"# high-quality reference junction reads\">");
   bcf_hdr_append(hdr, "##FORMAT=<ID=RV,Number=1,Type=Integer,Description=\"# high-quality variant junction reads\">");
-  if (c.isHaplotagged) {
-    bcf_hdr_append(hdr, "##FORMAT=<ID=HP1RR,Number=1,Type=Integer,Description=\"# high-quality reference junction reads on haplotype 1\">");
-    bcf_hdr_append(hdr, "##FORMAT=<ID=HP2RR,Number=1,Type=Integer,Description=\"# high-quality reference junction reads on haplotype 2\">");
-    bcf_hdr_append(hdr, "##FORMAT=<ID=HP1RV,Number=1,Type=Integer,Description=\"# high-quality variant junction reads on haplotype 1\">");
-    bcf_hdr_append(hdr, "##FORMAT=<ID=HP2RV,Number=1,Type=Integer,Description=\"# high-quality variant junction reads on haplotype 2\">");
-  }
+
   // Add reference
   std::string refloc("##reference=");
   refloc += c.genome.string();
@@ -494,16 +483,8 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
     int32_t *cnest = (int*) malloc(bcf_hdr_nsamples(hdr) * sizeof(int));
     int32_t *drcount = (int*) malloc(bcf_hdr_nsamples(hdr) * sizeof(int));
     int32_t *dvcount = (int*) malloc(bcf_hdr_nsamples(hdr) * sizeof(int));
-    int32_t *hp1drcount = (int*) malloc(bcf_hdr_nsamples(hdr) * sizeof(int));
-    int32_t *hp2drcount = (int*) malloc(bcf_hdr_nsamples(hdr) * sizeof(int));
-    int32_t *hp1dvcount = (int*) malloc(bcf_hdr_nsamples(hdr) * sizeof(int));
-    int32_t *hp2dvcount = (int*) malloc(bcf_hdr_nsamples(hdr) * sizeof(int));
     int32_t *rrcount = (int*) malloc(bcf_hdr_nsamples(hdr) * sizeof(int));
     int32_t *rvcount = (int*) malloc(bcf_hdr_nsamples(hdr) * sizeof(int));
-    int32_t *hp1rrcount = (int*) malloc(bcf_hdr_nsamples(hdr) * sizeof(int));
-    int32_t *hp2rrcount = (int*) malloc(bcf_hdr_nsamples(hdr) * sizeof(int));
-    int32_t *hp1rvcount = (int*) malloc(bcf_hdr_nsamples(hdr) * sizeof(int));
-    int32_t *hp2rvcount = (int*) malloc(bcf_hdr_nsamples(hdr) * sizeof(int));
     int32_t *gqval = (int*) malloc(bcf_hdr_nsamples(hdr) * sizeof(int));
     std::vector<std::string> ftarr;
     ftarr.resize(bcf_hdr_nsamples(hdr));
@@ -605,36 +586,12 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
 	cnest[file_c] = 0;
 	drcount[file_c] = 0;
 	dvcount[file_c] = 0;
-	if (c.isHaplotagged) {
-	  hp1drcount[file_c] = 0;
-	  hp2drcount[file_c] = 0;
-	  hp1dvcount[file_c] = 0;
-	  hp2dvcount[file_c] = 0;
-	}
 	rrcount[file_c] = 0;
 	rvcount[file_c] = 0;
-	if (c.isHaplotagged) {
-	  hp1rrcount[file_c] = 0;
-	  hp2rrcount[file_c] = 0;
-	  hp1rvcount[file_c] = 0;
-	  hp2rvcount[file_c] = 0;
-	}
 	drcount[file_c] = spanCountMap[file_c][svIter->id].ref.size();
 	dvcount[file_c] = spanCountMap[file_c][svIter->id].alt.size();
-	if (c.isHaplotagged) {
-	  hp1drcount[file_c] = spanCountMap[file_c][svIter->id].refh1;
-	  hp2drcount[file_c] = spanCountMap[file_c][svIter->id].refh2;
-	  hp1dvcount[file_c] = spanCountMap[file_c][svIter->id].alth1;
-	  hp2dvcount[file_c] = spanCountMap[file_c][svIter->id].alth2;
-	}
 	rrcount[file_c] = jctCountMap[file_c][svIter->id].ref.size();
 	rvcount[file_c] = jctCountMap[file_c][svIter->id].alt.size();
-	if (c.isHaplotagged) {
-	  hp1rrcount[file_c] = jctCountMap[file_c][svIter->id].refh1;
-	  hp2rrcount[file_c] = jctCountMap[file_c][svIter->id].refh2;
-	  hp1rvcount[file_c] = jctCountMap[file_c][svIter->id].alth1;
-	  hp2rvcount[file_c] = jctCountMap[file_c][svIter->id].alth2;
-	}
 	
 	// Compute GLs
 	if (svIter->precise) _computeGLs(bl, jctCountMap[file_c][svIter->id].ref, jctCountMap[file_c][svIter->id].alt, gls, gqval, gts, file_c);
@@ -668,20 +625,8 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
       bcf_update_format_int32(hdr, rec, "RDCN", cnest, bcf_hdr_nsamples(hdr));
       bcf_update_format_int32(hdr, rec, "DR", drcount, bcf_hdr_nsamples(hdr));
       bcf_update_format_int32(hdr, rec, "DV", dvcount, bcf_hdr_nsamples(hdr));
-      if (c.isHaplotagged) {
-	bcf_update_format_int32(hdr, rec, "HP1DR", hp1drcount, bcf_hdr_nsamples(hdr));
-	bcf_update_format_int32(hdr, rec, "HP2DR", hp2drcount, bcf_hdr_nsamples(hdr));
-	bcf_update_format_int32(hdr, rec, "HP1DV", hp1dvcount, bcf_hdr_nsamples(hdr));
-	bcf_update_format_int32(hdr, rec, "HP2DV", hp2dvcount, bcf_hdr_nsamples(hdr));
-      }
       bcf_update_format_int32(hdr, rec, "RR", rrcount, bcf_hdr_nsamples(hdr));
       bcf_update_format_int32(hdr, rec, "RV", rvcount, bcf_hdr_nsamples(hdr));
-      if (c.isHaplotagged) {
-	bcf_update_format_int32(hdr, rec, "HP1RR", hp1rrcount, bcf_hdr_nsamples(hdr));
-	bcf_update_format_int32(hdr, rec, "HP2RR", hp2rrcount, bcf_hdr_nsamples(hdr));
-	bcf_update_format_int32(hdr, rec, "HP1RV", hp1rvcount, bcf_hdr_nsamples(hdr));
-	bcf_update_format_int32(hdr, rec, "HP2RV", hp2rvcount, bcf_hdr_nsamples(hdr));
-      }
       bcf_write1(fp, hdr, rec);
       bcf_clear1(rec);
     }
@@ -696,16 +641,8 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
     free(cnest);
     free(drcount);
     free(dvcount);
-    free(hp1drcount);
-    free(hp2drcount);
-    free(hp1dvcount);
-    free(hp2dvcount);
     free(rrcount);
     free(rvcount);
-    free(hp1rrcount);
-    free(hp2rrcount);
-    free(hp1rvcount);
-    free(hp2rvcount);
     free(gqval);
   }
 

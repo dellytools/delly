@@ -67,7 +67,6 @@ namespace torali
     float flankQuality;
     bool hasExcludeFile;
     bool hasVcfFile;
-    bool isHaplotagged;
     bool hasDumpFile;
     bool svtcmd;
     std::set<int32_t> svtset;
@@ -198,7 +197,6 @@ namespace torali
 
   int delly(int argc, char **argv) {
     Config c;
-    c.isHaplotagged = false;
     c.madNormalCutoff = 5;
     
     // Define generic options

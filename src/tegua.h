@@ -38,7 +38,6 @@ namespace torali {
     bool hasDumpFile;
     bool hasExcludeFile;
     bool hasVcfFile;
-    bool isHaplotagged;
     bool svtcmd;
     uint16_t minMapQual;
     uint16_t minGenoQual;
@@ -197,7 +196,6 @@ namespace torali {
 
  int tegua(int argc, char **argv) {
    TeguaConfig c;
-   c.isHaplotagged = false;
    
    // Parameter
    std::string svtype;

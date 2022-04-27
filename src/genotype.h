@@ -508,14 +508,7 @@ namespace torali
 		    for (int i = 0; i < rec->core.l_qseq; ++i) quality[i] = qualptr[i];
 		    uint32_t rq = scoreRef * 35;
 		    if (rq >= c.minGenoQual) {
-		      uint8_t* hpptr = bam_aux_get(rec, "HP");
 		      jctMap[file_c][svid].ref.push_back((uint8_t) std::min(rq, (uint32_t) rec->core.qual));
-		      if (hpptr) {
-			c.isHaplotagged = true;
-			int hap = bam_aux2i(hpptr);
-			if (hap == 1) ++jctMap[file_c][svid].refh1;
-			else ++jctMap[file_c][svid].refh2;
-		      }
 		    }
 		  }
 		} else {
@@ -525,7 +518,6 @@ namespace torali
 		  for (int i = 0; i < rec->core.l_qseq; ++i) quality[i] = qualptr[i];
 		  uint32_t aq = scoreAlt * 35;
 		  if (aq >= c.minGenoQual) {
-		    uint8_t* hpptr = bam_aux_get(rec, "HP");
 		    if (c.hasDumpFile) {
 		      std::string svidStr(_addID(svs[svid].svt));
 		      std::string padNumber = boost::lexical_cast<std::string>(svid);
@@ -534,12 +526,6 @@ namespace torali
 		      dumpOut << svidStr << "\t" << c.files[file_c].string() << "\t" << bam_get_qname(rec) << "\t" << hdr[file_c]->target_name[rec->core.tid] << "\t" << rec->core.pos << "\t" << hdr[file_c]->target_name[rec->core.mtid] << "\t" << rec->core.mpos << "\t" << (int32_t) rec->core.qual << "\tSR" << std::endl;
 		    }
 		    jctMap[file_c][svid].alt.push_back((uint8_t) std::min(aq, (uint32_t) rec->core.qual));
-		    if (hpptr) {
-		      c.isHaplotagged = true;
-		      int hap = bam_aux2i(hpptr);
-		      if (hap == 1) ++jctMap[file_c][svid].alth1;
-		      else ++jctMap[file_c][svid].alth2;
-		    }
 		  }
 		}
 	      }
