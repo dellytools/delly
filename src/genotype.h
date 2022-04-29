@@ -436,7 +436,7 @@ namespace torali
     if (c.hasDumpFile) {
       dumpOut.push(boost::iostreams::gzip_compressor());
       dumpOut.push(boost::iostreams::file_sink(c.dumpfile.string().c_str(), std::ios_base::out | std::ios_base::binary));
-      dumpOut << "#svid\tbam\tqname\tchr\tpos\tmatechr\tmatepos\tmapq\ttype" << std::endl;
+      dumpOut << "#svid\tbam\tqname\tchr\tpos\tsubsequence\tmapq\ttype" << std::endl;
     }
 
 #pragma omp parallel for default(shared)    
@@ -535,7 +535,7 @@ namespace torali
 			std::string padNumber = boost::lexical_cast<std::string>(svid);
 			padNumber.insert(padNumber.begin(), 8 - padNumber.length(), '0');
 			svidStr += padNumber;
-			dumpOut << svidStr << "\t" << c.files[file_c].string() << "\t" << bam_get_qname(rec) << "\t" << hdr[file_c]->target_name[rec->core.tid] << "\t" << rec->core.pos << "\t" << hdr[file_c]->target_name[rec->core.mtid] << "\t" << rec->core.mpos << "\t" << (int32_t) rec->core.qual << "\tSR" << std::endl;
+			dumpOut << svidStr << "\t" << c.files[file_c].string() << "\t" << bam_get_qname(rec) << "\t" << hdr[file_c]->target_name[rec->core.tid] << "\t" << rec->core.pos << "\t" << subseq << "\t" << (int32_t) rec->core.qual << "\tSR" << std::endl;
 		      }
 		      jctMap[file_c][svid].alt.push_back((uint8_t) std::min(aq, (uint32_t) rec->core.qual));
 		    }
