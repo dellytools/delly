@@ -150,8 +150,14 @@ namespace torali
       if (align[1][j] != '-') s1.push_back(align[1][j]);
     }
     int32_t minsize = std::min(s0.size(), s1.size());
-    altseq[sv.id] = s0.substr(0, minsize);
-    refseq[sv.id] = s1.substr(0, minsize);
+    if (sv.svt == 8) {
+      // Breakpoint is at the end
+      altseq[sv.id] = s0.substr(s0.size() - minsize, minsize);
+      refseq[sv.id] = s1.substr(s1.size() - minsize, minsize);
+    } else {
+      altseq[sv.id] = s0.substr(0, minsize);
+      refseq[sv.id] = s1.substr(0, minsize);
+    }
   }
 
   inline int32_t
@@ -288,6 +294,7 @@ namespace torali
       for(typename TSVs::iterator itSV = svs.begin(); itSV != svs.end(); ++itSV) {
 	if (itSV->chr != refIndex) continue;
 	int32_t pos = itSV->svStart;
+	if (itSV->svt == 3) pos = itSV->svEnd; // for duplications the end region is first in the refprobe
 	while ((breakpoint[pos] != -1) && (pos + 1 < (int) breakpoint.size())) ++pos;
 	breakpoint[pos] = itSV->id;
       }	
