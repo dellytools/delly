@@ -705,6 +705,26 @@ namespace torali
       typedef std::vector<TWindowCounts> TGenomicWindowCounts;
       TGenomicWindowCounts scanCounts(c.nchr, TWindowCounts());
       scan(c, li, scanCounts);
+
+      // Check coverage
+      {
+	std::vector<uint32_t> sampleScanVec;
+	for(uint32_t i = 0; i < scanCounts.size(); ++i) {
+	  for(uint32_t j = 0; j < scanCounts[i].size(); ++j) {
+	    sampleScanVec.push_back(scanCounts[i][j].cov);
+	  }
+	  if (sampleScanVec.size() > 1000000) break;
+	}
+	std::sort(sampleScanVec.begin(), sampleScanVec.end());
+	if (sampleScanVec.empty()) {
+	  std::cerr << "Not enough windows!" << std::endl;
+	  return 1;
+	}
+	if (sampleScanVec[sampleScanVec.size()/2] < 5) {
+	  std::cerr << "Please increase the window size. Coverage is too low!" << std::endl;
+	  return 1;
+	}
+      }
     
       // Select stable windows
       selectWindows(c, scanCounts);
