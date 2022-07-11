@@ -20,6 +20,7 @@
 #include "merge.h"
 #include "tegua.h"
 #include "coral.h"
+#include "asmode.h"
 
 using namespace torali;
 
@@ -36,6 +37,9 @@ displayUsage() {
   std::cout << "Long-read SV calling:" << std::endl;
   std::cout << "    lr           long-read SV discovery" << std::endl;
   std::cout << std::endl;
+  //std::cout << "Assembly-based SV calling:" << std::endl;
+  //std::cout << "    asm          assembly SV discovery" << std::endl;
+  //std::cout << std::endl;
   std::cout << "Copy-number variant calling:" << std::endl;
   std::cout << "    cnv          discover and genotype copy-number variants" << std::endl;
   std::cout << "    classify     classify somatic or germline copy-number variants" << std::endl;
@@ -74,6 +78,9 @@ int main(int argc, char **argv) {
     }
     else if ((std::string(argv[1]) == "lr")) {
       return tegua(argc-1,argv+1);
+    }
+    else if ((std::string(argv[1]) == "asm")) {
+      return asmode(argc-1,argv+1);
     }
     else if ((std::string(argv[1]) == "cnv")) {
       return coral(argc-1,argv+1);
