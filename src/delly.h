@@ -58,6 +58,7 @@ namespace torali
     int32_t nchr;
     int32_t minimumFlankSize;
     int32_t indelsize;
+    int32_t maxInsertionSize;
     uint32_t graphPruning;
     uint32_t minRefSep;
     uint32_t maxReadSep;
@@ -381,6 +382,7 @@ namespace torali
     c.flankQuality = 0.95;
     c.minimumFlankSize = 13;
     c.indelsize = 1000;
+    c.maxInsertionSize = 200;
     return dellyRun(c);
   }
 

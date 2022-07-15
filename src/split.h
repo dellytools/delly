@@ -440,7 +440,7 @@ namespace torali
     } else _initBreakpoint(hdr, bp, sv.consensus.size(), sv.svt);
     if (bp.chr != bp.chr2) bp.part1 = _getSVRef(c, sndSeq, bp, bp.chr2, sv.svt);
     std::string svRefStr = _getSVRef(c, seq, bp, bp.chr, sv.svt);
-
+    
     // Realign?
     if (realign) {
       std::string revc = sv.consensus;

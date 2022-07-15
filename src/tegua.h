@@ -50,6 +50,7 @@ namespace torali {
     int32_t nchr;
     int32_t minimumFlankSize;
     int32_t indelsize;
+    int32_t maxInsertionSize;
     float indelExtension;
     float flankQuality;
     std::set<int32_t> svtset;
@@ -226,6 +227,7 @@ namespace torali {
      ("flank-size,f", boost::program_options::value<int32_t>(&c.minimumFlankSize)->default_value(100), "min. flank size")
      ("flank-quality,a", boost::program_options::value<float>(&c.flankQuality)->default_value(0.9), "min. flank quality")
      ("indel-size,i", boost::program_options::value<int32_t>(&c.indelsize)->default_value(10000), "use exact alleles for InDels <10kbp")
+     ("max-isize,r", boost::program_options::value<int32_t>(&c.maxInsertionSize)->default_value(10000), "max. insertion size")
      ;     
    
    boost::program_options::options_description geno("Genotyping options");

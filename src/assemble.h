@@ -309,7 +309,7 @@ namespace torali
 		if (sPos < 0) sPos = 0;
 		if (ePos > (int32_t) readlen) ePos = readlen;
 		// Min. seq length and max insertion size, 10kbp?
-		if (((ePos - sPos) > window) && ((ePos - sPos) <= (10000 + window))) {
+		if (((ePos - sPos) > window) && ((ePos - sPos) <= (c.maxInsertionSize + window))) {
 		  std::string seqalign = sequence.substr(sPos, (ePos - sPos));
 		  seqStore[svid].push_back(seqalign);
 

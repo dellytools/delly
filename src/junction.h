@@ -241,7 +241,7 @@ namespace torali
 		    else isizelen = (it->second[j].seqpos - it->second[i].seqpos) - (it->second[i].refpos - it->second[j].refpos);
 		  } else isizelen = 0;
 		}
-		if (isizelen > (int32_t) c.minRefSep) {
+		if ((isizelen > (int32_t) c.minRefSep) && (isizelen < (int32_t) c.maxInsertionSize)) {
 		  // Avg. qval
 		  int32_t qval = (int32_t) (((int32_t) it->second[i].qual + (int32_t) it->second[j].qual) / 2);
 		  if (it->second[i].refpos <= it->second[j].refpos) {
