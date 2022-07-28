@@ -314,7 +314,7 @@ namespace torali
 
 	std::size_t seed = hash_lr(rec);
 	int32_t readlen = readLength(rec);
-	  
+	
 	// Reference and sequence pointer
 	uint32_t rp = rec->core.pos; // reference pointer
 	uint32_t sp = 0; // sequence pointer

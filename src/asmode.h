@@ -58,8 +58,6 @@ namespace torali {
     std::vector<std::string> sampleName;
   };
 
-
-
   template<typename TConfig, typename TSRStore>
   inline void
   verifySplit(TConfig const& c, std::vector<StructuralVariantRecord>& svs, TSRStore& srStore) {
