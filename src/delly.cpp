@@ -21,6 +21,7 @@
 #include "tegua.h"
 #include "coral.h"
 #include "asmode.h"
+#include "dpe.h"
 
 using namespace torali;
 
@@ -43,6 +44,9 @@ displayUsage() {
   std::cerr << "Copy-number variant calling:" << std::endl;
   std::cerr << "    cnv          discover and genotype copy-number variants" << std::endl;
   std::cerr << "    classify     classify somatic or germline copy-number variants" << std::endl;
+  //std::cerr << "Deprecated:" << std::endl;
+  //std::cerr << "    dpe          double paired-end signatures" << std::endl;
+  //std::cerr << std::endl;
   std::cerr << std::endl;
   std::cerr << std::endl;
 }
@@ -81,6 +85,9 @@ int main(int argc, char **argv) {
     }
     else if ((std::string(argv[1]) == "asm")) {
       return asmode(argc-1,argv+1);
+    }
+    else if ((std::string(argv[1]) == "dpe")) {
+      return dpe(argc-1,argv+1);
     }
     else if ((std::string(argv[1]) == "cnv")) {
       return coral(argc-1,argv+1);
