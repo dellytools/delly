@@ -209,7 +209,7 @@ namespace torali {
      ("technology,y", boost::program_options::value<std::string>(&mode)->default_value("ont"), "seq. technology [pb, ont]")
      ("genome,g", boost::program_options::value<boost::filesystem::path>(&c.genome), "genome fasta file")
      ("exclude,x", boost::program_options::value<boost::filesystem::path>(&c.exclude), "file with regions to exclude")
-     ("outfile,o", boost::program_options::value<boost::filesystem::path>(&c.outfile)->default_value("sv.bcf"), "SV BCF output file")
+     ("outfile,o", boost::program_options::value<boost::filesystem::path>(&c.outfile), "BCF output file")
      ;
    
    boost::program_options::options_description disc("Discovery options");
@@ -369,9 +369,14 @@ namespace torali {
      bcf_close(ifile);
      c.hasVcfFile = true;
    } else c.hasVcfFile = false;
-   
-   // Check output directory
-   if (!_outfileValid(c.outfile)) return 1;
+
+   // Check outfile
+   if (!vm.count("outfile")) c.outfile = "-";
+   else {
+     if (c.outfile.string() != "-") {
+       if (!_outfileValid(c.outfile)) return 1;
+     }
+   }
 
    // Show cmd
    boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
