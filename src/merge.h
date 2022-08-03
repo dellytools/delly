@@ -250,7 +250,9 @@ void _outputSelectedIntervals(MergeConfig& c, TGenomeIntervals const& iSelected,
   std::cerr << '[' << boost::posix_time::to_simple_string(now) << "] " << "Filtering SVs" << std::endl;
 
   // Open output VCF file
-  htsFile *fp = hts_open(c.outfile.string().c_str(), "wb");
+  std::string fmtout = "wb";
+  if (c.outfile.string() == "-") fmtout = "w";
+  htsFile *fp = hts_open(c.outfile.string().c_str(), fmtout.c_str());
   bcf_hdr_t *hdr_out = bcf_hdr_init("w");
 
   // Write VCF header
@@ -547,7 +549,7 @@ void _outputSelectedIntervals(MergeConfig& c, TGenomeIntervals const& iSelected,
   hts_close(fp);
 
   // Build index
-  bcf_index_build(c.outfile.string().c_str(), 14);
+  if (c.outfile.string() != "-") bcf_index_build(c.outfile.string().c_str(), 14);
 }
 
 
@@ -561,7 +563,9 @@ void _outputSelectedIntervals(MergeConfig& c, TGenomeIntervals const& iSelected,
     std::cerr << '[' << boost::posix_time::to_simple_string(now) << "] " << "Filtering SVs" << std::endl;
 
     // Open output VCF file
-    htsFile *fp = hts_open(c.outfile.string().c_str(), "wb");
+    std::string fmtout = "wb";
+    if (c.outfile.string() == "-") fmtout = "w";
+    htsFile *fp = hts_open(c.outfile.string().c_str(), fmtout.c_str());
     bcf_hdr_t *hdr_out = bcf_hdr_init("w");
 
     // Write VCF header
@@ -757,7 +761,7 @@ void _outputSelectedIntervals(MergeConfig& c, TGenomeIntervals const& iSelected,
     hts_close(fp);
 
     // Build index
-    bcf_index_build(c.outfile.string().c_str(), 14);
+    if (c.outfile.string() != "-") bcf_index_build(c.outfile.string().c_str(), 14);
   }
 
 inline void
@@ -789,7 +793,9 @@ mergeBCFs(MergeConfig& c, std::vector<boost::filesystem::path> const& cts) {
   }
 
   // Open output VCF file
-  htsFile *fp = hts_open(c.outfile.string().c_str(), "wb");
+  std::string fmtout = "wb";
+  if (c.outfile.string() == "-") fmtout = "w";
+  htsFile *fp = hts_open(c.outfile.string().c_str(), fmtout.c_str());
   bcf_hdr_t *hdr_out = bcf_hdr_dup(hdr[0]);
   if (bcf_hdr_write(fp, hdr_out) != 0) std::cerr << "Error: Failed to write BCF header!" << std::endl;
 
@@ -826,7 +832,7 @@ mergeBCFs(MergeConfig& c, std::vector<boost::filesystem::path> const& cts) {
   hts_close(fp);
 
   // Build index
-  bcf_index_build(c.outfile.string().c_str(), 14);
+  if (c.outfile.string() != "-") bcf_index_build(c.outfile.string().c_str(), 14);
 
   // End
   now = boost::posix_time::second_clock::local_time();
@@ -888,7 +894,7 @@ int merge(int argc, char **argv) {
   boost::program_options::options_description generic("Generic options");
   generic.add_options()
     ("help,?", "show help message")
-    ("outfile,o", boost::program_options::value<boost::filesystem::path>(&c.outfile)->default_value("sv.bcf"), "Merged SV BCF output file")
+    ("outfile,o", boost::program_options::value<boost::filesystem::path>(&c.outfile), "Merged SV BCF output file")
     ("chunks,u", boost::program_options::value<uint32_t>(&c.chunksize)->default_value(500), "max. chunk size to merge groups of BCF files")
     ("vaf,a", boost::program_options::value<float>(&c.vaf)->default_value(0.15), "min. fractional ALT support")
     ("coverage,v", boost::program_options::value<uint32_t>(&c.coverage)->default_value(10), "min. coverage")
@@ -945,8 +951,13 @@ int merge(int argc, char **argv) {
   else c.cnvMode = false;
 
   // Check output files
-  if (!_outfileValid(c.outfile)) return 1;
-  if (!_outfileValid(boost::filesystem::path(c.outfile.string() + ".csi"))) return 1;
+  if (!vm.count("outfile")) c.outfile = "-";
+  else {
+    if (c.outfile.string() != "-") {
+      if (!_outfileValid(c.outfile)) return 1;
+      if (!_outfileValid(boost::filesystem::path(c.outfile.string() + ".csi"))) return 1;
+    }
+  }
 
   // Show cmd
   boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
