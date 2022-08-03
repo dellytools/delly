@@ -57,6 +57,18 @@ You can also specify an output file in [BCF](http://samtools.github.io/bcftools/
 `bcftools view delly.bcf > delly.vcf`
 
 
+Example
+-------
+
+A small example is included for short-read, long-read and copy-number variant calling.
+
+`delly call -g example/ref.fa example/sr.bam > sr.vcf`
+
+`delly lr -g example/ref.fa example/lr.bam > lr.vcf`
+
+`delly cnv -g example/ref.fa -m example/map.fa.gz example/sr.bam > cnv.vcf`
+
+
 Somatic SV calling
 ------------------
 
