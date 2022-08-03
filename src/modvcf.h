@@ -409,8 +409,9 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
   bam_hdr_t* bamhd = sam_hdr_read(samfile);
 
   // Output all structural variants
-  //htsFile *fp = hts_open(c.outfile.string().c_str(), "wb");
-  htsFile *fp = hts_open(c.outfile.string().c_str(), "w");
+  std::string fmtout = "wb";
+  if (c.outfile.string() == "-") fmtout = "w";
+  htsFile *fp = hts_open(c.outfile.string().c_str(), fmtout.c_str());
   bcf_hdr_t *hdr = bcf_hdr_init("w");
 
   // Print vcf header
@@ -652,9 +653,9 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
   hts_close(fp);
 
   // Build index
-  //bcf_index_build(c.outfile.string().c_str(), 14);
+  if (c.outfile.string() != "-") bcf_index_build(c.outfile.string().c_str(), 14);
 }
- 
+
 
 }
 
