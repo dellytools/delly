@@ -3,7 +3,6 @@
 
 #include <boost/filesystem.hpp>
 #include <boost/multi_array.hpp>
-#include <boost/progress.hpp>
 #include <boost/date_time/posix_time/posix_time.hpp>
 #include <boost/unordered_map.hpp>
 #include <boost/algorithm/string.hpp>

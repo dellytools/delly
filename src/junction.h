@@ -9,7 +9,6 @@
 #include <boost/iostreams/copy.hpp>
 #include <boost/iostreams/filter/gzip.hpp>
 #include <boost/iostreams/device/file.hpp>
-#include <boost/progress.hpp>
 
 #include <htslib/sam.h>
 
@@ -331,11 +330,9 @@ namespace torali
     // Parse genome chr-by-chr
     boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
     std::cerr << '[' << boost::posix_time::to_simple_string(now) << "] " << "Split-read scanning" << std::endl;
-    boost::progress_display show_progress( hdr->n_targets );
 
     // Iterate chromosomes
     for(int32_t refIndex=0; refIndex < (int32_t) hdr->n_targets; ++refIndex) {
-      ++show_progress;
       if (validRegions[refIndex].empty()) continue;
 
       // Collect reads from all samples

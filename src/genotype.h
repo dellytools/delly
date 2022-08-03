@@ -9,7 +9,6 @@
 #include <boost/iostreams/copy.hpp>
 #include <boost/iostreams/filter/gzip.hpp>
 #include <boost/iostreams/device/file.hpp>
-#include <boost/progress.hpp>
 
 #include <htslib/sam.h>
 
@@ -178,12 +177,10 @@ namespace torali
     // Preprocess REF and ALT
     boost::posix_time::ptime noww = boost::posix_time::second_clock::local_time();
     std::cerr << '[' << boost::posix_time::to_simple_string(noww) << "] " << "Generate REF and ALT probes" << std::endl;
-    boost::progress_display show_progress( hdr->n_targets );
     
     std::vector<std::string> refProbes(svs.size());
     faidx_t* fai = fai_load(c.genome.string().c_str());
     for(int32_t refIndex=0; refIndex < (int32_t) hdr->n_targets; ++refIndex) {
-      ++show_progress;
       char* seq = NULL;
 
       // Iterate all structural variants
@@ -283,11 +280,9 @@ namespace torali
     
     boost::posix_time::ptime noww = boost::posix_time::second_clock::local_time();
     std::cerr << '[' << boost::posix_time::to_simple_string(noww) << "] " << "Select reads" << std::endl;
-    boost::progress_display show_progress( hdr[file_c]->n_targets );
     
     // Iterate chromosomes
     for(int32_t refIndex=0; refIndex < (int32_t) hdr[file_c]->n_targets; ++refIndex) {
-      ++show_progress;
       
       // Fetch breakpoints
       std::vector<int32_t> breakpoint(hdr[file_c]->target_len[refIndex], -1);
@@ -449,10 +444,8 @@ namespace torali
       // Genotype SVs
       boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
       std::cerr << '[' << boost::posix_time::to_simple_string(now) << "] " << "Align to REF and ALT" << std::endl;
-      boost::progress_display show_progress( hdr[file_c]->n_targets );
 
       for(int32_t refIndex=0; refIndex < (int32_t) hdr[file_c]->n_targets; ++refIndex) {
-	++show_progress;
 	hts_itr_t* iter = sam_itr_queryi(idx[file_c], refIndex, 0, hdr[file_c]->target_len[refIndex]);
 	bam1_t* rec = bam_init1();
 	while (sam_itr_next(samfile[file_c], iter, rec) >= 0) {

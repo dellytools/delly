@@ -21,7 +21,6 @@
 #include <boost/icl/interval_map.hpp>
 #include <boost/filesystem.hpp>
 #include <boost/tokenizer.hpp>
-#include <boost/progress.hpp>
 
 #include <htslib/sam.h>
 #include <htslib/vcf.h>

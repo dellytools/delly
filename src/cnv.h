@@ -3,7 +3,6 @@
 
 #include <boost/filesystem.hpp>
 #include <boost/multi_array.hpp>
-#include <boost/progress.hpp>
 #include <boost/date_time/posix_time/posix_time.hpp>
 #include <boost/unordered_map.hpp>
 #include <boost/algorithm/string.hpp>
@@ -630,11 +629,8 @@ namespace torali
       // Iterate all structural variants
       now = boost::posix_time::second_clock::local_time();
       std::cerr << '[' << boost::posix_time::to_simple_string(now) << "] " << "Genotyping" << std::endl;
-      boost::progress_display show_progress( cnvs.size() );
       bcf1_t *rec = bcf_init();
       for(uint32_t i = 0; i < cnvs.size(); ++i) {
-	++show_progress;
-
 	// Invalid CNV?
 	if ((!c.hasGenoFile) && (cnvs[i].cn == -1)) continue;
 

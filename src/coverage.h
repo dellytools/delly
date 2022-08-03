@@ -9,7 +9,6 @@
 #include <boost/iostreams/filtering_stream.hpp>
 #include <boost/iostreams/filter/zlib.hpp>
 #include <boost/iostreams/filter/gzip.hpp>
-#include <boost/progress.hpp>
 
 #include <htslib/sam.h>
 
@@ -140,12 +139,10 @@ namespace torali {
     // Preprocess REF and ALT
     boost::posix_time::ptime noww = boost::posix_time::second_clock::local_time();
     std::cerr << '[' << boost::posix_time::to_simple_string(noww) << "] " << "Generate REF and ALT probes" << std::endl;
-    boost::progress_display show_progresss( hdr->n_targets );
 
     TProbes refProbes(svs.size());
     faidx_t* fai = fai_load(c.genome.string().c_str());
     for(int32_t refIndex=0; refIndex < (int32_t) hdr->n_targets; ++refIndex) {
-      ++show_progresss;
       char* seq = NULL;
 
       // Iterate all structural variants
@@ -297,7 +294,6 @@ namespace torali {
     // Iterate all samples
     boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
     std::cerr << '[' << boost::posix_time::to_simple_string(now) << "] " << "SV annotation" << std::endl;
-    boost::progress_display show_progress( totalTarget );
 
     
     typedef std::vector<uint32_t> TRefAlignCount;
@@ -329,7 +325,6 @@ namespace torali {
       
       // Iterate chromosomes
       for(int32_t refIndex=0; refIndex < (int32_t) hdr[file_c]->n_targets; ++refIndex) {
-	++show_progress;
       
 	// Any SV breakpoints on this chromosome?
 	if (!svOnChr[refIndex]) continue;

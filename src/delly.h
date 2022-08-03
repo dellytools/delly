@@ -23,7 +23,6 @@
 #include <boost/filesystem/path.hpp>
 #include <boost/filesystem/fstream.hpp>
 #include <boost/filesystem.hpp>
-#include <boost/progress.hpp>
 
 #include <htslib/faidx.h>
 #include <htslib/vcf.h>
@@ -208,7 +207,7 @@ namespace torali
       ("svtype,t", boost::program_options::value<std::string>(&svtype)->default_value("ALL"), "SV type to compute [DEL, INS, DUP, INV, BND, ALL]")
       ("genome,g", boost::program_options::value<boost::filesystem::path>(&c.genome), "genome fasta file")
       ("exclude,x", boost::program_options::value<boost::filesystem::path>(&c.exclude), "file with regions to exclude")
-      ("outfile,o", boost::program_options::value<boost::filesystem::path>(&c.outfile)->default_value("sv.bcf"), "SV BCF output file")
+      ("outfile,o", boost::program_options::value<boost::filesystem::path>(&c.outfile), "BCF output file")
       ;
     
     boost::program_options::options_description disc("Discovery options");
@@ -248,7 +247,6 @@ namespace torali
     boost::program_options::variables_map vm;
     boost::program_options::store(boost::program_options::command_line_parser(argc, argv).options(cmdline_options).positional(pos_args).run(), vm);
     boost::program_options::notify(vm);
-    
 
     // Check command line arguments
     if ((vm.count("help")) || (!vm.count("input-file")) || (!vm.count("genome"))) { 
@@ -257,7 +255,7 @@ namespace torali
       std::cerr << visible_options << "\n";
       return 0;
     }
-    
+
     // SV types to compute?
     _svTypesToCompute(c, svtype, vm.count("svtype"));
     
@@ -364,8 +362,13 @@ namespace torali
       c.hasVcfFile = true;
     } else c.hasVcfFile = false;
     
-    // Check output directory
-    if (!_outfileValid(c.outfile)) return 1;
+    // Check outfile
+    if (!vm.count("outfile")) c.outfile = "-";
+    else {
+      if (c.outfile.string() != "-") {
+	if (!_outfileValid(c.outfile)) return 1;
+      }
+    }
     
     // Show cmd
     boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();

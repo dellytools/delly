@@ -8,7 +8,6 @@
 #include <boost/unordered_map.hpp>
 #include <boost/date_time/posix_time/posix_time.hpp>
 #include <boost/date_time/gregorian/gregorian.hpp>
-#include <boost/progress.hpp>
 
 #include <htslib/sam.h>
 
@@ -113,13 +112,11 @@ namespace torali
     // Parse BAM file
     boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
     std::cerr << '[' << boost::posix_time::to_simple_string(now) << "] " << "Scanning Windows" << std::endl;
-    boost::progress_display show_progress( hdr->n_targets );
 
     // Iterate chromosomes
     uint64_t totalCov = 0;
     faidx_t* faiMap = fai_load(c.mapFile.string().c_str());
     for(int32_t refIndex=0; refIndex < (int32_t) hdr->n_targets; ++refIndex) {
-      ++show_progress;
       if (chrNoData(c, refIndex, idx)) continue;
       // Exclude small chromosomes
       if ((hdr->target_len[refIndex] < c.minChrLen) && (totalCov > 1000000)) continue;

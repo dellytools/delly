@@ -22,7 +22,6 @@
 #include <boost/icl/split_interval_map.hpp>
 #include <boost/filesystem.hpp>
 #include <boost/tokenizer.hpp>
-#include <boost/progress.hpp>
 
 #include <htslib/faidx.h>
 #include <htslib/vcf.h>
@@ -96,7 +95,6 @@ namespace torali
 
     boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
     std::cerr << '[' << boost::posix_time::to_simple_string(now) << "] " << "Searching complex SVs" << std::endl;
-    boost::progress_display show_progress( nseq );
     
     // Open output file
     htsFile *ofile = hts_open(c.outfile.string().c_str(), "wb");
@@ -117,8 +115,6 @@ namespace torali
     
     // Parse BCF
     for(int32_t refIndex = 0; refIndex < nseq; ++refIndex) {
-      ++show_progress;
-    
       // Fetch SVs on this chromosome
       int32_t maxCTs = 5;
       typedef std::vector<SVCarrier> TSVCarrier;

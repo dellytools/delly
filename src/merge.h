@@ -24,7 +24,6 @@
 #include <boost/icl/interval_map.hpp>
 #include <boost/filesystem.hpp>
 #include <boost/tokenizer.hpp>
-#include <boost/progress.hpp>
 #include <htslib/sam.h>
 #include <htslib/vcf.h>
 
@@ -91,12 +90,10 @@ void _fillIntervalMap(MergeConfig const& c, TGenomeIntervals& iScore, TContigMap
 
   boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
   std::cerr << '[' << boost::posix_time::to_simple_string(now) << "] " << "Reading input VCF/BCF files" << std::endl;
-  boost::progress_display show_progress( c.files.size() );
 
 
   boost::unordered_map<int32_t, std::string> refmap;
   for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
-    ++show_progress;
     htsFile* ifile = bcf_open(c.files[file_c].string().c_str(), "r");
     bcf_hdr_t* hdr = bcf_hdr_read(ifile);
     bcf1_t* rec = bcf_init();
@@ -212,11 +209,9 @@ void _processIntervalMap(MergeConfig const& c, TGenomeIntervals const& iScore, T
 
   boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
   std::cerr << '[' << boost::posix_time::to_simple_string(now) << "] " << "Merging SVs" << std::endl;
-  boost::progress_display show_progress( iScore.size() );
 
   unsigned int seqId = 0;
   for(typename TGenomeIntervals::const_iterator iG = iScore.begin(); iG != iScore.end(); ++iG, ++seqId) {
-    ++show_progress;
     typedef std::vector<bool> TIntervalSelector;
     TIntervalSelector keepInterval;
     keepInterval.resize(iG->size(), true);
@@ -769,7 +764,6 @@ inline void
 mergeBCFs(MergeConfig& c, std::vector<boost::filesystem::path> const& cts) {
   boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
   std::cerr << '[' << boost::posix_time::to_simple_string(now) << "] " << "Merging SV types" << std::endl;
-  boost::progress_display show_progress( 1 );
 
   // Parse temporary input VCF files
   typedef std::vector<htsFile*> THtsFile;
@@ -819,7 +813,6 @@ mergeBCFs(MergeConfig& c, std::vector<boost::filesystem::path> const& cts) {
       eof[idx] = true;
     }
   }
-  ++show_progress;
   
   // Clean-up
   for(unsigned int file_c = 0; file_c < cts.size(); ++file_c) {

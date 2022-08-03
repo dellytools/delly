@@ -21,7 +21,6 @@
 #include <boost/tokenizer.hpp>
 #include <boost/functional/hash.hpp>
 #include <boost/filesystem.hpp>
-#include <boost/progress.hpp>
 
 #include <htslib/faidx.h>
 #include <htslib/vcf.h>
@@ -77,11 +76,9 @@ namespace torali
     // Parse BAM
     boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
     std::cerr << '[' << boost::posix_time::to_simple_string(now) << "] " << "Split-read assembly" << std::endl;
-    boost::progress_display show_progress( 2 * hdr->n_targets );
 
     faidx_t* fai = fai_load(c.genome.string().c_str());
     for(int32_t refIndex = 0; refIndex < hdr->n_targets; ++refIndex) {
-      ++show_progress;
       if (validRegions[refIndex].empty()) continue;
       if (srStore[refIndex].empty()) continue;
 
@@ -188,7 +185,6 @@ namespace torali
 
     // Process translocations
     for(int32_t refIndex2 = 0; refIndex2 < hdr->n_targets; ++refIndex2) {
-      ++show_progress;
       if (validRegions[refIndex2].empty()) continue;
       char* sndSeq = NULL;
       for(int32_t refIndex = refIndex2 + 1; refIndex < hdr->n_targets; ++refIndex) {
@@ -275,7 +271,6 @@ namespace torali
     // Parse genome, process chromosome by chromosome
     boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
     std::cerr << '[' << boost::posix_time::to_simple_string(now) << "] " << "Paired-end and split-read scanning" << std::endl;
-    boost::progress_display show_progress( c.files.size() * hdr->n_targets );
     // Iterate all samples
 #pragma omp parallel for default(shared)
     for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
@@ -291,7 +286,6 @@ namespace torali
       
       // Iterate all chromosomes for that sample
       for(int32_t refIndex=0; refIndex < (int32_t) hdr->n_targets; ++refIndex) {
-	++show_progress;
 
 	// Any data?
 	if (validRegions[refIndex].empty()) continue;
@@ -442,9 +436,7 @@ namespace torali
     // Cluster split-read records
     now = boost::posix_time::second_clock::local_time();
     std::cerr << '[' << boost::posix_time::to_simple_string(now) << "] " << "Split-read clustering" << std::endl;
-    boost::progress_display spSR( srBR.size() );
     for(uint32_t svt = 0; svt < srBR.size(); ++svt) {
-      ++spSR;
       if ((c.svtcmd) && (c.svtset.find(svt) == c.svtset.end())) continue;
       if (srBR[svt].empty()) continue;
       
@@ -461,12 +453,10 @@ namespace torali
     // Cluster paired-end records
     now = boost::posix_time::second_clock::local_time();
     std::cerr << '[' << boost::posix_time::to_simple_string(now) << "] " << "Paired-end clustering" << std::endl;
-    boost::progress_display spPE( bamRecord.size() );
 
     // Maximum variability in insert size
     int32_t varisize = getVariability(c, sampleLib);      
     for(int32_t svt = 0; svt < (int32_t) bamRecord.size(); ++svt) {
-      ++spPE;
       if ((c.svtcmd) && (c.svtset.find(svt) == c.svtset.end())) continue;
       if (bamRecord[svt].empty()) continue;
 	

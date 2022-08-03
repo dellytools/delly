@@ -9,7 +9,6 @@
 #include <boost/date_time/posix_time/posix_time.hpp>
 #include <boost/date_time/gregorian/gregorian.hpp>
 #include <boost/math/special_functions/round.hpp>
-#include <boost/progress.hpp>
 
 #include <htslib/sam.h>
 #include <htslib/faidx.h>
@@ -92,7 +91,6 @@ namespace torali
     // Parse BAM file
     boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
     std::cerr << '[' << boost::posix_time::to_simple_string(now) << "] " << "Count fragments" << std::endl;
-    boost::progress_display show_progress( hdr->n_targets );
 
     // Open output files
     boost::iostreams::filtering_ostream dataOut;
@@ -122,7 +120,6 @@ namespace torali
     faidx_t* faiMap = fai_load(c.mapFile.string().c_str());
     faidx_t* faiRef = fai_load(c.genome.string().c_str());
     for(int32_t refIndex=0; refIndex < (int32_t) hdr->n_targets; ++refIndex) {
-      ++show_progress;
       if ((!c.hasGenoFile) && (chrNoData(c, refIndex, idx))) continue;
       
       // Check presence in mappability map

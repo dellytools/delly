@@ -85,12 +85,9 @@ namespace torali {
     {
       boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
       std::cerr << '[' << boost::posix_time::to_simple_string(now) << "] " << "Contig alignment (phase 1)" << std::endl;
-      boost::progress_display show_progress( hdr->n_targets );
       
       faidx_t* fai = fai_load(c.genome.string().c_str());
       for(int32_t refIndex = 0; refIndex < hdr->n_targets; ++refIndex) {
-	++show_progress;
-	
 	// Load sequence
 	int32_t seqlen = -1;
 	std::string tname(hdr->target_name[refIndex]);
@@ -163,11 +160,9 @@ namespace torali {
     // Handle left-overs and translocations
     boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
     std::cerr << '[' << boost::posix_time::to_simple_string(now) << "] " << "Contig alignment (phase 2)" << std::endl;
-    boost::progress_display show_progress( hdr->n_targets );
     
     faidx_t* fai = fai_load(c.genome.string().c_str());
     for(int32_t refIndex = 0; refIndex < hdr->n_targets; ++refIndex) {
-      ++show_progress;
       char* seq = NULL;
       for(int32_t refIndex2 = 0; refIndex2 <= refIndex; ++refIndex2) {
 	char* sndSeq = NULL;

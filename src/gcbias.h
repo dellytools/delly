@@ -10,7 +10,6 @@
 #include <boost/date_time/gregorian/gregorian.hpp>
 #include <boost/tuple/tuple.hpp>
 #include <boost/filesystem.hpp>
-#include <boost/progress.hpp>
 #include <boost/dynamic_bitset.hpp>
 
 #include <htslib/faidx.h>
@@ -130,12 +129,10 @@ namespace torali
     // Parse bam (contig by contig)
     boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
     std::cerr << '[' << boost::posix_time::to_simple_string(now) << "] " << "Estimate GC bias" << std::endl;
-    boost::progress_display show_progress( hdr->n_targets );
 
     faidx_t* faiMap = fai_load(c.mapFile.string().c_str());
     faidx_t* faiRef = fai_load(c.genome.string().c_str());
     for (int refIndex = 0; refIndex < hdr->n_targets; ++refIndex) {
-      ++show_progress;
       if (scanCounts[refIndex].empty()) continue;
 
       // Bin map

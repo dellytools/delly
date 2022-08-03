@@ -1,8 +1,6 @@
 #ifndef MODVCF_H
 #define MODVCF_H
 
-#include <boost/progress.hpp>
-
 #include <htslib/sam.h>
 #include <htslib/vcf.h>
 
@@ -411,7 +409,8 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
   bam_hdr_t* bamhd = sam_hdr_read(samfile);
 
   // Output all structural variants
-  htsFile *fp = hts_open(c.outfile.string().c_str(), "wb");
+  //htsFile *fp = hts_open(c.outfile.string().c_str(), "wb");
+  htsFile *fp = hts_open(c.outfile.string().c_str(), "w");
   bcf_hdr_t *hdr = bcf_hdr_init("w");
 
   // Print vcf header
@@ -493,10 +492,8 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
     typedef std::vector<TStructuralVariantRecord> TSVs;
     now = boost::posix_time::second_clock::local_time();
     std::cerr << '[' << boost::posix_time::to_simple_string(now) << "] " << "Genotyping" << std::endl;
-    boost::progress_display show_progress( svs.size() );
     bcf1_t *rec = bcf_init();
     for(typename TSVs::const_iterator svIter = svs.begin(); svIter!=svs.end(); ++svIter) {
-      ++show_progress;
       if ((svIter->srSupport == 0) && (svIter->peSupport == 0)) continue;
       
       // Output main vcf fields
@@ -655,7 +652,7 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
   hts_close(fp);
 
   // Build index
-  bcf_index_build(c.outfile.string().c_str(), 14);
+  //bcf_index_build(c.outfile.string().c_str(), 14);
 }
  
 
