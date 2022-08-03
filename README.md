@@ -12,13 +12,12 @@
 [![GitHub license](https://img.shields.io/badge/License-BSD%203--Clause-blue.svg)](https://github.com/dellytools/delly/blob/main/LICENSE)
 [![GitHub Releases](https://img.shields.io/github/release/dellytools/delly.svg)](https://github.com/dellytools/delly/releases)
 
-Delly is an integrated structural variant (SV) prediction method that can discover, genotype and visualize deletions, tandem duplications, inversions and translocations at single-nucleotide resolution in short-read massively parallel sequencing data. It uses paired-ends, split-reads and read-depth to sensitively and accurately delineate genomic rearrangements throughout the genome. Structural variants can be annotated using [Delly-sansa](https://github.com/dellytools/sansa) and visualized using [Delly-maze](https://github.com/dellytools/maze) or [Delly-suave](https://github.com/dellytools/suave).
-
+Delly is an integrated structural variant (SV) prediction method that can discover, genotype and visualize deletions, tandem duplications, inversions and translocations at single-nucleotide resolution in short-read and long-read massively parallel sequencing data. It uses paired-ends, split-reads and read-depth to sensitively and accurately delineate genomic rearrangements throughout the genome.
 
 Installing Delly
 ----------------
 
-The easiest way to get Delly is to download a statically linked binary or the singularity container (SIF file) from the [Delly github release page](https://github.com/dellytools/delly/releases/). Alternatively, you can download Delly from [Bioconda](https://anaconda.org/bioconda/delly). You can also build Delly from source using a recursive clone and make. 
+Delly is available as a [statically linked binary](https://github.com/dellytools/delly/releases/), a [singularity container (SIF file)](https://github.com/dellytools/delly/releases/), a [docker container](https://hub.docker.com/r/dellytools/delly/) or via [Bioconda](https://anaconda.org/bioconda/delly). You can also build Delly from source using a recursive clone and make. 
 
 `git clone --recursive https://github.com/dellytools/delly.git`
 
@@ -26,8 +25,7 @@ The easiest way to get Delly is to download a statically linked binary or the si
 
 `make all`
 
-There is a Delly discussion group [delly-users](http://groups.google.com/d/forum/delly-users) for usage and installation questions and a dockerized [delly](https://hub.docker.com/r/dellytools/delly/).
-
+There is a Delly discussion group [delly-users](http://groups.google.com/d/forum/delly-users) for usage and installation questions.
 
 
 Delly multi-threading mode
@@ -46,10 +44,15 @@ Delly primarily parallelizes on the sample level. Hence, OMP_NUM_THREADS should 
 Running Delly
 -------------
 
-Delly needs a sorted, indexed and duplicate marked bam file for every input sample. An indexed reference genome is required to identify split-reads. The output is in [BCF](http://samtools.github.io/bcftools/) format with a csi index. Delly supports germline and somatic SV discovery, genotyping and filtering. Because of that, Delly has been modularized and common workflows for germline and somatic SV calling are outlined below. If you do need VCF output you need a recent version of [BCFtools](http://samtools.github.io/bcftools/) for file conversion
-.
+Delly needs a sorted, indexed and duplicate marked bam file for every input sample.
+An indexed reference genome is required to identify split-reads.
+Common workflows for germline and somatic SV calling are outlined below.
 
-`delly call -x hg19.excl -o delly.bcf -g hg19.fa input.bam`
+`delly call -g hg19.fa input.bam > delly.vcf`
+
+You can also specify an output file in [BCF](http://samtools.github.io/bcftools/) format.
+
+`delly call -o delly.bcf -g hg19.fa input.bam`
 
 `bcftools view delly.bcf > delly.vcf`
 
@@ -104,11 +107,11 @@ Germline SV calling
 Delly for long reads from PacBio or ONT
 ---------------------------------------
 
-Delly also has a long-read (lr) SV discovery mode.
+Delly also supports long-reads for SV discovery.
 
-`delly lr -y ont -g hg19.fa -x hg19.excl input.bam`
+`delly lr -y ont -o delly.bcf -g hg19.fa input.bam`
 
-`delly lr -y pb -g hg19.fa -x hg19.excl input.bam`
+`delly lr -y pb -o delly.bcf -g hg19.fa input.bam`
 
 
 Read-depth profiles
@@ -206,16 +209,16 @@ FAQ
 You may want to try out [wally](https://github.com/tobiasrausch/wally) to plot candidate structural variants. The paired-end coloring is explained in [wally's README](https://github.com/tobiasrausch/wally#paired-end-view) file.
 
 * What is the smallest SV size Delly can call?  
-This depends on the sharpness of the insert size distribution. For an insert size of 200-300bp with a 20-30bp standard deviation, Delly starts to call reliable SVs >=300bp. Delly also supports calling of small InDels using soft-clipped reads only, the smallest SV size called is 15bp.
+For short-reads, this depends on the sharpness of the insert size distribution. For an insert size of 200-300bp with a 20-30bp standard deviation, Delly starts to call reliable SVs >=300bp. Delly also supports calling of small InDels using soft-clipped reads only, the smallest SV size called is 15bp. For long-reads, delly calls SVs >=30bp.
 
 * Can Delly be used on a non-diploid genome?  
 Yes and no. The SV site discovery works for any ploidy. However, Delly's genotyping model assumes diploidy (hom. reference, het. and hom. alternative). The CNV calling allows to set the baseline ploidy on the command-line.
 
 * Delly is running too slowly what can I do?    
-You should exclude telomere and centromere regions and also all unplaced contigs. Delly ships with such an exclude list for human and mouse samples. In addition, you can filter input reads more stringently using -q 20 and -s 15. Lastly, `-z` can be set to 5 for high-coverage data.
+You should exclude telomere and centromere regions and also all unplaced contigs (`-x` command-line option). In addition, you can filter input reads more stringently using -q 20 and -s 15. Lastly, `-z` can be set to 5 for high-coverage data.
 
 * Are non-unique alignments, multi-mappings and/or multiple split-read alignments allowed?  
-Delly expects two alignment records in the bam file for every paired-end, one for the first and one for the second read. Multiple split-read alignment records of a given read are allowed if and only if one of them is a primary alignment whereas all others are marked as secondary or supplementary (flag 0x0100 or flag 0x0800). This is the default for bwa mem.
+Delly expects two alignment records in the bam file for every paired-end, one for the first and one for the second read. Multiple split-read alignment records of a given read are allowed if and only if one of them is a primary alignment whereas all others are marked as secondary or supplementary. This is the default for bwa, minimap2 and many other aligners.
 
 * What pre-processing of bam files is required?    
 Bam files need to be sorted, indexed and ideally duplicate marked.
@@ -224,7 +227,7 @@ Bam files need to be sorted, indexed and ideally duplicate marked.
 There is a delly discussion group [delly-users](http://groups.google.com/d/forum/delly-users).
 
 * Docker/Singularity support?            
-There is a dockerized delly available [here](https://hub.docker.com/r/dellytools/delly/) and singularity containers (*.sif files) are part of the [delly release](https://github.com/dellytools/delly/releases).
+There is a delly [docker container](https://hub.docker.com/r/dellytools/delly/) and [singularity container (*.sif file)](https://github.com/dellytools/delly/releases) available.
 
 * How can I compute a mappability map?               
 A basic mappability map can be built using [dicey](https://github.com/gear-genomics/dicey), [samtools](https://github.com/samtools/samtools) and [bwa](https://github.com/lh3/bwa) with the below commands (as an example for the sacCer3 reference):
