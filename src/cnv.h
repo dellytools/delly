@@ -629,7 +629,7 @@ namespace torali
     
       // Iterate all structural variants
       now = boost::posix_time::second_clock::local_time();
-      std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Genotyping" << std::endl;
+      std::cerr << '[' << boost::posix_time::to_simple_string(now) << "] " << "Genotyping" << std::endl;
       boost::progress_display show_progress( cnvs.size() );
       bcf1_t *rec = bcf_init();
       for(uint32_t i = 0; i < cnvs.size(); ++i) {

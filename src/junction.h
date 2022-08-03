@@ -330,7 +330,7 @@ namespace torali
     
     // Parse genome chr-by-chr
     boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
-    std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Split-read scanning" << std::endl;
+    std::cerr << '[' << boost::posix_time::to_simple_string(now) << "] " << "Split-read scanning" << std::endl;
     boost::progress_display show_progress( hdr->n_targets );
 
     // Iterate chromosomes

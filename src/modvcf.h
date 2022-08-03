@@ -492,7 +492,7 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
     // Iterate all structural variants
     typedef std::vector<TStructuralVariantRecord> TSVs;
     now = boost::posix_time::second_clock::local_time();
-    std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Genotyping" << std::endl;
+    std::cerr << '[' << boost::posix_time::to_simple_string(now) << "] " << "Genotyping" << std::endl;
     boost::progress_display show_progress( svs.size() );
     bcf1_t *rec = bcf_init();
     for(typename TSVs::const_iterator svIter = svs.begin(); svIter!=svs.end(); ++svIter) {

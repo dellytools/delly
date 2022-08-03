@@ -95,7 +95,7 @@ dpeRun(DoublePEConfig const& c)
   const char** seqnames = bcf_hdr_seqnames(hdr, &nseq);
 
   boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
-  std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Searching complex SVs" << std::endl;
+  std::cerr << '[' << boost::posix_time::to_simple_string(now) << "] " << "Searching complex SVs" << std::endl;
   boost::progress_display show_progress( nseq );
 
   // Open output file
@@ -281,7 +281,7 @@ dpeRun(DoublePEConfig const& c)
 
   
   now = boost::posix_time::second_clock::local_time();
-  std::cout << '[' << boost::posix_time::to_simple_string(now) << "] Done." << std::endl;;
+  std::cerr << '[' << boost::posix_time::to_simple_string(now) << "] Done." << std::endl;;
   return 0;
 }
 
@@ -327,8 +327,8 @@ int main(int argc, char **argv) {
     } else if (vm.count("license")) {
       bsd();
     } else {
-      std::cout << "Usage: " << argv[0] << " [OPTIONS] <deldup.bcf>" << std::endl;
-      std::cout << visible_options << "\n"; 
+      std::cerr << "Usage: " << argv[0] << " [OPTIONS] <deldup.bcf>" << std::endl;
+      std::cerr << visible_options << "\n"; 
     }
     return 1; 
   }
@@ -361,9 +361,9 @@ int main(int argc, char **argv) {
   
   // Show cmd
   boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
-  std::cout << '[' << boost::posix_time::to_simple_string(now) << "] ";
-  for(int i=0; i<argc; ++i) { std::cout << argv[i] << ' '; }
-  std::cout << std::endl;
+  std::cerr << '[' << boost::posix_time::to_simple_string(now) << "] ";
+  for(int i=0; i<argc; ++i) { std::cerr << argv[i] << ' '; }
+  std::cerr << std::endl;
  
   // Run coverage annotation
   return dpeRun(c);

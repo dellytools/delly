@@ -91,7 +91,7 @@ namespace torali
 
     // Parse BAM file
     boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
-    std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Count fragments" << std::endl;
+    std::cerr << '[' << boost::posix_time::to_simple_string(now) << "] " << "Count fragments" << std::endl;
     boost::progress_display show_progress( hdr->n_targets );
 
     // Open output files
@@ -516,18 +516,18 @@ namespace torali
 
     // Check command line arguments
     if ((vm.count("help")) || (!vm.count("input-file")) || (!vm.count("genome")) || (!vm.count("mappability"))) {
-      std::cout << std::endl;
-      std::cout << "Usage: delly " << argv[0] << " [OPTIONS] -g <genome.fa> -m <genome.map> <aligned.bam>" << std::endl;
-      std::cout << visible_options << "\n";
+      std::cerr << std::endl;
+      std::cerr << "Usage: delly " << argv[0] << " [OPTIONS] -g <genome.fa> -m <genome.map> <aligned.bam>" << std::endl;
+      std::cerr << visible_options << "\n";
       return 1;
     }
 
     // Show cmd
     boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
-    std::cout << '[' << boost::posix_time::to_simple_string(now) << "] ";
-    std::cout << "delly ";
-    for(int i=0; i<argc; ++i) { std::cout << argv[i] << ' '; }
-    std::cout << std::endl;
+    std::cerr << '[' << boost::posix_time::to_simple_string(now) << "] ";
+    std::cerr << "delly ";
+    for(int i=0; i<argc; ++i) { std::cerr << argv[i] << ' '; }
+    std::cerr << std::endl;
 
     // Stats file
     if (vm.count("statsfile")) c.hasStatsFile = true;
@@ -771,7 +771,7 @@ namespace torali
 
     // Done
     now = boost::posix_time::second_clock::local_time();
-    std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Done." << std::endl;
+    std::cerr << '[' << boost::posix_time::to_simple_string(now) << "] " << "Done." << std::endl;
 
     return 0;
   }

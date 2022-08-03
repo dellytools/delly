@@ -27,24 +27,24 @@ using namespace torali;
 
 inline void
 displayUsage() {
-  std::cout << "Usage: delly <command> <arguments>" << std::endl;
-  std::cout << std::endl;
-  std::cout << "Short-read SV calling:" << std::endl;
-  std::cout << "    call         discover and genotype structural variants" << std::endl;
-  std::cout << "    merge        merge structural variants across VCF/BCF files and within a single VCF/BCF file" << std::endl;
-  std::cout << "    filter       filter somatic or germline structural variants" << std::endl;
-  std::cout << std::endl;
-  std::cout << "Long-read SV calling:" << std::endl;
-  std::cout << "    lr           long-read SV discovery" << std::endl;
-  std::cout << std::endl;
-  //std::cout << "Assembly-based SV calling:" << std::endl;
-  //std::cout << "    asm          assembly SV discovery" << std::endl;
-  //std::cout << std::endl;
-  std::cout << "Copy-number variant calling:" << std::endl;
-  std::cout << "    cnv          discover and genotype copy-number variants" << std::endl;
-  std::cout << "    classify     classify somatic or germline copy-number variants" << std::endl;
-  std::cout << std::endl;
-  std::cout << std::endl;
+  std::cerr << "Usage: delly <command> <arguments>" << std::endl;
+  std::cerr << std::endl;
+  std::cerr << "Short-read SV calling:" << std::endl;
+  std::cerr << "    call         discover and genotype structural variants" << std::endl;
+  std::cerr << "    merge        merge structural variants across VCF/BCF files and within a single VCF/BCF file" << std::endl;
+  std::cerr << "    filter       filter somatic or germline structural variants" << std::endl;
+  std::cerr << std::endl;
+  std::cerr << "Long-read SV calling:" << std::endl;
+  std::cerr << "    lr           long-read SV discovery" << std::endl;
+  std::cerr << std::endl;
+  //std::cerr << "Assembly-based SV calling:" << std::endl;
+  //std::cerr << "    asm          assembly SV discovery" << std::endl;
+  //std::cerr << std::endl;
+  std::cerr << "Copy-number variant calling:" << std::endl;
+  std::cerr << "    cnv          discover and genotype copy-number variants" << std::endl;
+  std::cerr << "    classify     classify somatic or germline copy-number variants" << std::endl;
+  std::cerr << std::endl;
+  std::cerr << std::endl;
 }
 
 int main(int argc, char **argv) {
@@ -55,9 +55,9 @@ int main(int argc, char **argv) {
     }
 
     if ((std::string(argv[1]) == "version") || (std::string(argv[1]) == "--version") || (std::string(argv[1]) == "--version-only") || (std::string(argv[1]) == "-v")) {
-      std::cout << "Delly version: v" << dellyVersionNumber << std::endl;
-      std::cout << " using Boost: v" << BOOST_VERSION / 100000 << "." << BOOST_VERSION / 100 % 1000 << "." << BOOST_VERSION % 100 << std::endl;
-      std::cout << " using HTSlib: v" << hts_version() << std::endl;
+      std::cerr << "Delly version: v" << dellyVersionNumber << std::endl;
+      std::cerr << " using Boost: v" << BOOST_VERSION / 100000 << "." << BOOST_VERSION / 100 % 1000 << "." << BOOST_VERSION % 100 << std::endl;
+      std::cerr << " using HTSlib: v" << hts_version() << std::endl;
       return 0;
     }
     else if ((std::string(argv[1]) == "help") || (std::string(argv[1]) == "--help") || (std::string(argv[1]) == "-h") || (std::string(argv[1]) == "-?")) {

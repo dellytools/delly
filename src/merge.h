@@ -90,7 +90,7 @@ void _fillIntervalMap(MergeConfig const& c, TGenomeIntervals& iScore, TContigMap
   typedef typename TIntervalScores::value_type IntervalScore;
 
   boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
-  std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Reading input VCF/BCF files" << std::endl;
+  std::cerr << '[' << boost::posix_time::to_simple_string(now) << "] " << "Reading input VCF/BCF files" << std::endl;
   boost::progress_display show_progress( c.files.size() );
 
 
@@ -211,7 +211,7 @@ void _processIntervalMap(MergeConfig const& c, TGenomeIntervals const& iScore, T
   typedef typename TIntervalScores::value_type IntervalScore;
 
   boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
-  std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Merging SVs" << std::endl;
+  std::cerr << '[' << boost::posix_time::to_simple_string(now) << "] " << "Merging SVs" << std::endl;
   boost::progress_display show_progress( iScore.size() );
 
   unsigned int seqId = 0;
@@ -252,7 +252,7 @@ void _outputSelectedIntervals(MergeConfig& c, TGenomeIntervals const& iSelected,
   typedef typename TIntervalScores::value_type IntervalScore;
 
   boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
-  std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Filtering SVs" << std::endl;
+  std::cerr << '[' << boost::posix_time::to_simple_string(now) << "] " << "Filtering SVs" << std::endl;
 
   // Open output VCF file
   htsFile *fp = hts_open(c.outfile.string().c_str(), "wb");
@@ -563,7 +563,7 @@ void _outputSelectedIntervals(MergeConfig& c, TGenomeIntervals const& iSelected,
     typedef typename TIntervalScores::value_type IntervalScore;
 
     boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
-    std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Filtering SVs" << std::endl;
+    std::cerr << '[' << boost::posix_time::to_simple_string(now) << "] " << "Filtering SVs" << std::endl;
 
     // Open output VCF file
     htsFile *fp = hts_open(c.outfile.string().c_str(), "wb");
@@ -768,7 +768,7 @@ void _outputSelectedIntervals(MergeConfig& c, TGenomeIntervals const& iSelected,
 inline void
 mergeBCFs(MergeConfig& c, std::vector<boost::filesystem::path> const& cts) {
   boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
-  std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Merging SV types" << std::endl;
+  std::cerr << '[' << boost::posix_time::to_simple_string(now) << "] " << "Merging SV types" << std::endl;
   boost::progress_display show_progress( 1 );
 
   // Parse temporary input VCF files
@@ -837,7 +837,7 @@ mergeBCFs(MergeConfig& c, std::vector<boost::filesystem::path> const& cts) {
 
   // End
   now = boost::posix_time::second_clock::local_time();
-  std::cout << '[' << boost::posix_time::to_simple_string(now) << "] Done." << std::endl;
+  std::cerr << '[' << boost::posix_time::to_simple_string(now) << "] Done." << std::endl;
 }
 
 inline int
@@ -882,7 +882,7 @@ mergeRun(MergeConfig& c, int32_t const svt) {
 
   // End
   boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
-  std::cout << '[' << boost::posix_time::to_simple_string(now) << "] Done." << std::endl;
+  std::cerr << '[' << boost::posix_time::to_simple_string(now) << "] Done." << std::endl;
 
   return 0;
 }
@@ -933,9 +933,9 @@ int merge(int argc, char **argv) {
 
   // Check command line arguments
   if ((vm.count("help")) || (!vm.count("input-file"))) { 
-    std::cout << std::endl;
-    std::cout << "Usage: delly " << argv[0] << " [OPTIONS] [<sample1.bcf> <sample2.bcf> ... | <list_of_bcf_files.txt>]" << std::endl;
-    std::cout << visible_options << "\n"; 
+    std::cerr << std::endl;
+    std::cerr << "Usage: delly " << argv[0] << " [OPTIONS] [<sample1.bcf> <sample2.bcf> ... | <list_of_bcf_files.txt>]" << std::endl;
+    std::cerr << visible_options << "\n"; 
     return 0; 
   }
 
@@ -957,10 +957,10 @@ int merge(int argc, char **argv) {
 
   // Show cmd
   boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
-  std::cout << '[' << boost::posix_time::to_simple_string(now) << "] ";
-  std::cout << "delly ";
-  for(int i=0; i<argc; ++i) { std::cout << argv[i] << ' '; }
-  std::cout << std::endl;
+  std::cerr << '[' << boost::posix_time::to_simple_string(now) << "] ";
+  std::cerr << "delly ";
+  for(int i=0; i<argc; ++i) { std::cerr << argv[i] << ' '; }
+  std::cerr << std::endl;
 
   // Check chunksize
   if (c.chunksize < 100) c.chunksize = 100;
@@ -977,7 +977,7 @@ int merge(int argc, char **argv) {
       bcf_hdr_t* header = NULL;
       header = bcf_hdr_read(inf);
       if (header == NULL) {
-	std::cout << "Assuming input is a list of BCF files" << std::endl;
+	std::cerr << "Assuming input is a list of BCF files" << std::endl;
 	std::string fname = c.files[0].string();
 	c.files.clear();
 	std::ifstream lf(fname.c_str());

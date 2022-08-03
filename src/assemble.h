@@ -255,7 +255,7 @@ namespace torali
 
     // Parse BAM
     boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
-    std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Split-read assembly" << std::endl;
+    std::cerr << '[' << boost::posix_time::to_simple_string(now) << "] " << "Split-read assembly" << std::endl;
     boost::progress_display show_progress( hdr->n_targets );
 
     faidx_t* fai = fai_load(c.genome.string().c_str());

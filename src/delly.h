@@ -180,9 +180,9 @@ namespace torali
     
     // Output library statistics
     boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
-    std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Sample statistics" << std::endl;
+    std::cerr << '[' << boost::posix_time::to_simple_string(now) << "] " << "Sample statistics" << std::endl;
     for(uint32_t file_c = 0; file_c < c.files.size(); ++file_c) {
-      std::cout << "Sample:" << c.sampleName[file_c] << ",ReadSize=" << sampleLib[file_c].rs << ",Median=" << sampleLib[file_c].median << ",MAD=" << sampleLib[file_c].mad << ",UniqueDiscordantPairs=" << sampleLib[file_c].abnormal_pairs << std::endl;
+      std::cerr << "Sample:" << c.sampleName[file_c] << ",ReadSize=" << sampleLib[file_c].rs << ",Median=" << sampleLib[file_c].median << ",MAD=" << sampleLib[file_c].mad << ",UniqueDiscordantPairs=" << sampleLib[file_c].abnormal_pairs << std::endl;
     }
     
 #ifdef PROFILE
@@ -191,7 +191,7 @@ namespace torali
   
     // End
     now = boost::posix_time::second_clock::local_time();
-    std::cout << '[' << boost::posix_time::to_simple_string(now) << "] Done." << std::endl;;
+    std::cerr << '[' << boost::posix_time::to_simple_string(now) << "] Done." << std::endl;;
     return 0;
   }
 
@@ -252,9 +252,9 @@ namespace torali
 
     // Check command line arguments
     if ((vm.count("help")) || (!vm.count("input-file")) || (!vm.count("genome"))) { 
-      std::cout << std::endl;
-      std::cout << "Usage: delly " << argv[0] << " [OPTIONS] -g <ref.fa> <sample1.sort.bam> <sample2.sort.bam> ..." << std::endl;
-      std::cout << visible_options << "\n";
+      std::cerr << std::endl;
+      std::cerr << "Usage: delly " << argv[0] << " [OPTIONS] -g <ref.fa> <sample1.sort.bam> <sample2.sort.bam> ..." << std::endl;
+      std::cerr << visible_options << "\n";
       return 0;
     }
     
@@ -369,10 +369,10 @@ namespace torali
     
     // Show cmd
     boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
-    std::cout << '[' << boost::posix_time::to_simple_string(now) << "] ";
-    std::cout << "delly ";
-    for(int i=0; i<argc; ++i) { std::cout << argv[i] << ' '; }
-    std::cout << std::endl;
+    std::cerr << '[' << boost::posix_time::to_simple_string(now) << "] ";
+    std::cerr << "delly ";
+    for(int i=0; i<argc; ++i) { std::cerr << argv[i] << ' '; }
+    std::cerr << std::endl;
     
     // Always ignore reads of mapping quality <5 for genotyping, otherwise het. is more likely!
     if (c.minGenoQual<5) c.minGenoQual=5;

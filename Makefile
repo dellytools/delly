@@ -60,9 +60,6 @@ all:   	$(TARGETS)
 src/delly: ${SUBMODULES} $(SOURCES)
 	$(CXX) $(CXXFLAGS) $@.cpp src/edlib.cpp -o $@ $(LDFLAGS)
 
-src/dpe: ${SUBMODULES} $(SOURCES)
-	$(CXX) $(CXXFLAGS) $@.cpp -o $@ $(LDFLAGS)
-
 install: ${BUILT_PROGRAMS}
 	mkdir -p ${bindir}
 	install -p ${BUILT_PROGRAMS} ${bindir}

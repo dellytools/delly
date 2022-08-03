@@ -177,7 +177,7 @@ namespace torali
     
     // Preprocess REF and ALT
     boost::posix_time::ptime noww = boost::posix_time::second_clock::local_time();
-    std::cout << '[' << boost::posix_time::to_simple_string(noww) << "] " << "Generate REF and ALT probes" << std::endl;
+    std::cerr << '[' << boost::posix_time::to_simple_string(noww) << "] " << "Generate REF and ALT probes" << std::endl;
     boost::progress_display show_progress( hdr->n_targets );
     
     std::vector<std::string> refProbes(svs.size());
@@ -282,7 +282,7 @@ namespace torali
     typedef typename TGenoMap::mapped_type TGeno;
     
     boost::posix_time::ptime noww = boost::posix_time::second_clock::local_time();
-    std::cout << '[' << boost::posix_time::to_simple_string(noww) << "] " << "Select reads" << std::endl;
+    std::cerr << '[' << boost::posix_time::to_simple_string(noww) << "] " << "Select reads" << std::endl;
     boost::progress_display show_progress( hdr[file_c]->n_targets );
     
     // Iterate chromosomes
@@ -448,7 +448,7 @@ namespace torali
 
       // Genotype SVs
       boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
-      std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Align to REF and ALT" << std::endl;
+      std::cerr << '[' << boost::posix_time::to_simple_string(now) << "] " << "Align to REF and ALT" << std::endl;
       boost::progress_display show_progress( hdr[file_c]->n_targets );
 
       for(int32_t refIndex=0; refIndex < (int32_t) hdr[file_c]->n_targets; ++refIndex) {

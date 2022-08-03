@@ -129,7 +129,7 @@ namespace torali
 
     // Parse bam (contig by contig)
     boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
-    std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Estimate GC bias" << std::endl;
+    std::cerr << '[' << boost::posix_time::to_simple_string(now) << "] " << "Estimate GC bias" << std::endl;
     boost::progress_display show_progress( hdr->n_targets );
 
     faidx_t* faiMap = fai_load(c.mapFile.string().c_str());

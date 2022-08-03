@@ -139,7 +139,7 @@ namespace torali {
 
     // Preprocess REF and ALT
     boost::posix_time::ptime noww = boost::posix_time::second_clock::local_time();
-    std::cout << '[' << boost::posix_time::to_simple_string(noww) << "] " << "Generate REF and ALT probes" << std::endl;
+    std::cerr << '[' << boost::posix_time::to_simple_string(noww) << "] " << "Generate REF and ALT probes" << std::endl;
     boost::progress_display show_progresss( hdr->n_targets );
 
     TProbes refProbes(svs.size());
@@ -296,7 +296,7 @@ namespace torali {
     
     // Iterate all samples
     boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
-    std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "SV annotation" << std::endl;
+    std::cerr << '[' << boost::posix_time::to_simple_string(now) << "] " << "SV annotation" << std::endl;
     boost::progress_display show_progress( totalTarget );
 
     

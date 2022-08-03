@@ -112,7 +112,7 @@ namespace torali
     
     // Parse BAM file
     boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
-    std::cout << '[' << boost::posix_time::to_simple_string(now) << "] " << "Scanning Windows" << std::endl;
+    std::cerr << '[' << boost::posix_time::to_simple_string(now) << "] " << "Scanning Windows" << std::endl;
     boost::progress_display show_progress( hdr->n_targets );
 
     // Iterate chromosomes
