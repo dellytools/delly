@@ -572,7 +572,9 @@ namespace torali
     bam_hdr_t* bamhd = sam_hdr_read(samfile);
 
     // Output all copy-number variants
-    htsFile *fp = hts_open(c.cnvfile.string().c_str(), "wb");
+    std::string fmtout = "wb";
+    if (c.outfile.string() == "-") fmtout = "w";
+    htsFile *fp = hts_open(c.outfile.string().c_str(), fmtout.c_str());
     bcf_hdr_t *hdr = bcf_hdr_init("w");
 
     // Print vcf header
@@ -720,7 +722,7 @@ namespace torali
     hts_close(fp);
     
     // Build index
-    bcf_index_build(c.cnvfile.string().c_str(), 14);
+    if (c.outfile.string() != "-") bcf_index_build(c.outfile.string().c_str(), 14);
   }
  
 

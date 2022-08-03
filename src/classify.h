@@ -72,7 +72,9 @@ classifyRun(TClassifyConfig const& c) {
   bcf_hdr_t* hdr = bcf_hdr_read(ifile);
 
   // Open output VCF file
-  htsFile *ofile = hts_open(c.outfile.string().c_str(), "wb");
+  std::string fmtout = "wb";
+  if (c.outfile.string() == "-") fmtout = "w";
+  htsFile *ofile = hts_open(c.outfile.string().c_str(), fmtout.c_str());
   bcf_hdr_t *hdr_out = bcf_hdr_dup(hdr);
   if (c.filter == "somatic") {
     bcf_hdr_remove(hdr_out, BCF_HL_INFO, "SOMATIC");
@@ -298,7 +300,7 @@ classifyRun(TClassifyConfig const& c) {
   hts_close(ofile);
 
   // Build index
-  bcf_index_build(c.outfile.string().c_str(), 14);
+  if (c.outfile.string() != "-") bcf_index_build(c.outfile.string().c_str(), 14);
 
   // Close VCF
   bcf_hdr_destroy(hdr);
@@ -320,7 +322,7 @@ int classify(int argc, char **argv) {
   generic.add_options()
     ("help,?", "show help message")
     ("filter,f", boost::program_options::value<std::string>(&c.filter)->default_value("somatic"), "Filter mode (somatic, germline)")
-    ("outfile,o", boost::program_options::value<boost::filesystem::path>(&c.outfile)->default_value("cnv.bcf"), "Filtered CNV BCF output file")
+    ("outfile,o", boost::program_options::value<boost::filesystem::path>(&c.outfile), "Filtered CNV BCF output file")
     ("minsize,m", boost::program_options::value<int32_t>(&c.minsize)->default_value(1000), "min. CNV size")
     ("maxsize,n", boost::program_options::value<int32_t>(&c.maxsize)->default_value(500000000), "max. CNV size")
     ("pass,p", "Filter sites for PASS")
@@ -471,6 +473,14 @@ int classify(int argc, char **argv) {
     if (bcfidx) hts_idx_destroy(bcfidx);
     if (tbx) tbx_destroy(tbx);
     bcf_close(ifile);
+  }
+
+  // Check outfile
+  if (!vm.count("outfile")) c.outfile = "-";
+  else {
+    if (c.outfile.string() != "-") {
+      if (!_outfileValid(c.outfile)) return 1;
+    }
   }
 
   // Show cmd

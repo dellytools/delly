@@ -51,7 +51,7 @@ namespace torali
     std::string sampleName;
     boost::filesystem::path vcffile;
     boost::filesystem::path genofile;
-    boost::filesystem::path cnvfile;
+    boost::filesystem::path outfile;
     boost::filesystem::path covfile;
     boost::filesystem::path genome;
     boost::filesystem::path statsFile;
@@ -94,9 +94,11 @@ namespace torali
 
     // Open output files
     boost::iostreams::filtering_ostream dataOut;
-    dataOut.push(boost::iostreams::gzip_compressor());
-    dataOut.push(boost::iostreams::file_sink(c.covfile.c_str(), std::ios_base::out | std::ios_base::binary));
-    dataOut << "chr\tstart\tend\t" << c.sampleName << "_mappable\t" << c.sampleName << "_counts\t" << c.sampleName << "_CN" << std::endl;
+    if (!c.covfile.empty()) {
+      dataOut.push(boost::iostreams::gzip_compressor());
+      dataOut.push(boost::iostreams::file_sink(c.covfile.c_str(), std::ios_base::out | std::ios_base::binary));
+      dataOut << "chr\tstart\tend\t" << c.sampleName << "_mappable\t" << c.sampleName << "_counts\t" << c.sampleName << "_CN" << std::endl;
+    }
 
     // CNVs
     std::vector<CNV> cnvs;
@@ -288,7 +290,7 @@ namespace torali
 		      double count = ((double) covsum / obsexp ) * (double) c.window_size / (double) winlen;
 		      double cn = c.ploidy;
 		      if (expcov > 0) cn = c.ploidy * covsum / expcov;
-		      dataOut << std::string(hdr->target_name[refIndex]) << "\t" << start << "\t" << (pos + 1) << "\t" << winlen << "\t" << count << "\t" << cn << std::endl;
+		      if (!c.covfile.empty()) dataOut << std::string(hdr->target_name[refIndex]) << "\t" << start << "\t" << (pos + 1) << "\t" << winlen << "\t" << count << "\t" << cn << std::endl;
 		      // reset
 		      covsum = 0;
 		      expcov = 0;
@@ -344,9 +346,9 @@ namespace torali
 		double count = ((double) covsum / obsexp ) * (double) (it->second - it->first) / (double) winlen;
 		double cn = c.ploidy;
 		if (expcov > 0) cn = c.ploidy * covsum / expcov;
-		dataOut << std::string(hdr->target_name[refIndex]) << "\t" << it->first << "\t" << it->second << "\t" << winlen << "\t" << count << "\t" << cn << std::endl;
+		if (!c.covfile.empty()) dataOut << std::string(hdr->target_name[refIndex]) << "\t" << it->first << "\t" << it->second << "\t" << winlen << "\t" << count << "\t" << cn << std::endl;
 	      } else {
-		dataOut << std::string(hdr->target_name[refIndex]) << "\t" << it->first << "\t" << it->second << "\tNA\tNA\tNA" << std::endl;
+		if (!c.covfile.empty()) dataOut << std::string(hdr->target_name[refIndex]) << "\t" << it->first << "\t" << it->second << "\tNA\tNA\tNA" << std::endl;
 	      }
 	    }
 	  }
@@ -371,7 +373,7 @@ namespace torali
 		double count = ((double) covsum / obsexp ) * (double) c.window_size / (double) winlen;
 		double cn = c.ploidy;
 		if (expcov > 0) cn = c.ploidy * covsum / expcov;
-		dataOut << std::string(hdr->target_name[refIndex]) << "\t" << start << "\t" << (pos + 1) << "\t" << winlen << "\t" << count << "\t" << cn << std::endl;
+		if (!c.covfile.empty()) dataOut << std::string(hdr->target_name[refIndex]) << "\t" << start << "\t" << (pos + 1) << "\t" << winlen << "\t" << count << "\t" << cn << std::endl;
 		// reset
 		covsum = 0;
 		expcov = 0;
@@ -419,7 +421,7 @@ namespace torali
 		double count = ((double) covsum / obsexp ) * (double) c.window_size / (double) winlen;
 		double cn = c.ploidy;
 		if (expcov > 0) cn = c.ploidy * covsum / expcov;
-		dataOut << std::string(hdr->target_name[refIndex]) << "\t" << start << "\t" << (start + c.window_size) << "\t" << winlen << "\t" << count << "\t" << cn << std::endl;
+		if (!c.covfile.empty()) dataOut << std::string(hdr->target_name[refIndex]) << "\t" << start << "\t" << (start + c.window_size) << "\t" << winlen << "\t" << count << "\t" << cn << std::endl;
 	      }
 	    }
 	  }
@@ -439,8 +441,10 @@ namespace torali
     bam_hdr_destroy(hdr);
     hts_idx_destroy(idx);
     sam_close(samfile);
-    dataOut.pop();
-    dataOut.pop();
+    if (!c.covfile.empty()) {
+      dataOut.pop();
+      dataOut.pop();
+    }
     
     return 0;
   }
@@ -457,8 +461,8 @@ namespace torali
       ("quality,q", boost::program_options::value<uint16_t>(&c.minQual)->default_value(10), "min. mapping quality")
       ("mappability,m", boost::program_options::value<boost::filesystem::path>(&c.mapFile), "input mappability map")
       ("ploidy,y", boost::program_options::value<uint16_t>(&c.ploidy)->default_value(2), "baseline ploidy")
-      ("outfile,o", boost::program_options::value<boost::filesystem::path>(&c.cnvfile)->default_value("cnv.bcf"), "output CNV file")
-      ("covfile,c", boost::program_options::value<boost::filesystem::path>(&c.covfile)->default_value("cov.gz"), "output coverage file")
+      ("outfile,o", boost::program_options::value<boost::filesystem::path>(&c.outfile), "BCF output file")
+      ("covfile,c", boost::program_options::value<boost::filesystem::path>(&c.covfile), "gzipped coverage file")
       ;
 
     boost::program_options::options_description cnv("CNV calling");
@@ -596,6 +600,14 @@ namespace torali
       bcf_close(ifile);
       c.hasVcfFile = true;
     } else c.hasVcfFile = false;
+
+    // Check outfile
+    if (!vm.count("outfile")) c.outfile = "-";
+    else {
+      if (c.outfile.string() != "-") {
+	if (!_outfileValid(c.outfile)) return 1;
+      }
+    }
     
     // Check bam file
     LibraryInfo li;

@@ -367,7 +367,7 @@ namespace torali {
      ("help,?", "show help message")
      ("svtype,t", boost::program_options::value<std::string>(&svtype)->default_value("ALL"), "SV type to compute [DEL, INS, DUP, INV, BND, ALL]")
      ("genome,g", boost::program_options::value<boost::filesystem::path>(&c.genome), "genome fasta file")
-     ("outfile,o", boost::program_options::value<boost::filesystem::path>(&c.outfile)->default_value("sv.bcf"), "SV BCF output file")
+     ("outfile,o", boost::program_options::value<boost::filesystem::path>(&c.outfile), "SV BCF output file")
      ;
    
    boost::program_options::options_description disc("Discovery options");
@@ -509,8 +509,13 @@ namespace torali {
      c.hasVcfFile = true;
    } else c.hasVcfFile = false;
    
-   // Check output directory
-   if (!_outfileValid(c.outfile)) return 1;
+   // Check outfile
+   if (!vm.count("outfile")) c.outfile = "-";
+   else {
+     if (c.outfile.string() != "-") {
+       if (!_outfileValid(c.outfile)) return 1;
+     }
+   }
 
    // Show cmd
    boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();

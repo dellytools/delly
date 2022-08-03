@@ -97,7 +97,9 @@ namespace torali
     std::cerr << '[' << boost::posix_time::to_simple_string(now) << "] " << "Searching complex SVs" << std::endl;
     
     // Open output file
-    htsFile *ofile = hts_open(c.outfile.string().c_str(), "wb");
+    std::string fmtout = "wb";
+    if (c.outfile.string() == "-") fmtout = "w";
+    htsFile *ofile = hts_open(c.outfile.string().c_str(), fmtout.c_str());
     bcf_hdr_t *hdr_out = bcf_hdr_dup(hdr);
     bcf_hdr_remove(hdr_out, BCF_HL_INFO, "LINKID");
     bcf_hdr_append(hdr_out, "##INFO=<ID=LINKID,Number=2,Type=String,Description=\"Linked paired-end IDs.\">");
@@ -261,7 +263,7 @@ namespace torali
     hts_close(ofile);
     
     // Build index
-    bcf_index_build(c.outfile.string().c_str(), 14);
+    if (c.outfile.string() != "-") bcf_index_build(c.outfile.string().c_str(), 14);
     
     // Clean-up
     if (svend != NULL) free(svend);
@@ -292,7 +294,7 @@ namespace torali
       ("help,?", "show help message")
       ("svsize,s", boost::program_options::value<int32_t>(&c.svsize)->default_value(50000), "max. SV size")
       ("carconc,c", boost::program_options::value<float>(&c.carconc)->default_value(0.75), "min. carrier concordance")
-      ("outfile,f", boost::program_options::value<boost::filesystem::path>(&c.outfile)->default_value("complexSV.bcf"), "complex SV output file")
+      ("outfile,f", boost::program_options::value<boost::filesystem::path>(&c.outfile), "complex SV output file")
       ;
     
     // Define hidden options
@@ -353,6 +355,14 @@ namespace torali
       bcf_hdr_destroy(hdr);
       hts_idx_destroy(bcfidx);
       bcf_close(ifile);
+    }
+
+    // Check outfile
+    if (!vm.count("outfile")) c.outfile = "-";
+    else {
+      if (c.outfile.string() != "-") {
+	if (!_outfileValid(c.outfile)) return 1;
+      }
     }
   
     // Show cmd
