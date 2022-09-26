@@ -362,7 +362,7 @@ namespace torali
 	      // SV type	      
 	      int32_t svt = _isizeMappingPos(rec, sampleLib[file_c].maxISizeCutoff);
 	      if (svt == -1) continue;
-	      if ((c.svtcmd) && (c.svtset.find(svt) == c.svtset.end())) continue;
+	      if ((!c.svtset.empty()) && (c.svtset.find(svt) == c.svtset.end())) continue;
 
 	      // Check library-specific insert size for deletions
 	      if ((svt == 2) && (sampleLib[file_c].maxISizeCutoff > std::abs(rec->core.isize))) continue;
@@ -422,11 +422,11 @@ namespace torali
       // Collect split-read SVs
 #pragma omp critical
       {
-	if ((!c.svtcmd) || (c.svtset.find(2) != c.svtset.end())) selectDeletions(c, readBp, srBR);
-	if ((!c.svtcmd) || (c.svtset.find(3) != c.svtset.end())) selectDuplications(c, readBp, srBR);
-	if ((!c.svtcmd) || (c.svtset.find(0) != c.svtset.end()) || (c.svtset.find(1) != c.svtset.end())) selectInversions(c, readBp, srBR);
-	if ((!c.svtcmd) || (c.svtset.find(4) != c.svtset.end())) selectInsertions(c, readBp, srBR);
-	if ((!c.svtcmd) || (c.svtset.find(DELLY_SVT_TRANS) != c.svtset.end()) || (c.svtset.find(DELLY_SVT_TRANS + 1) != c.svtset.end()) || (c.svtset.find(DELLY_SVT_TRANS + 2) != c.svtset.end()) || (c.svtset.find(DELLY_SVT_TRANS + 3) != c.svtset.end())) selectTranslocations(c, readBp, srBR);
+	if ((c.svtset.empty()) || (c.svtset.find(2) != c.svtset.end())) selectDeletions(c, readBp, srBR);
+	if ((c.svtset.empty()) || (c.svtset.find(3) != c.svtset.end())) selectDuplications(c, readBp, srBR);
+	if ((c.svtset.empty()) || (c.svtset.find(0) != c.svtset.end()) || (c.svtset.find(1) != c.svtset.end())) selectInversions(c, readBp, srBR);
+	if ((c.svtset.empty()) || (c.svtset.find(4) != c.svtset.end())) selectInsertions(c, readBp, srBR);
+	if ((c.svtset.empty()) || (c.svtset.find(DELLY_SVT_TRANS) != c.svtset.end()) || (c.svtset.find(DELLY_SVT_TRANS + 1) != c.svtset.end()) || (c.svtset.find(DELLY_SVT_TRANS + 2) != c.svtset.end()) || (c.svtset.find(DELLY_SVT_TRANS + 3) != c.svtset.end())) selectTranslocations(c, readBp, srBR);
       }
     }
 
@@ -437,7 +437,7 @@ namespace torali
     now = boost::posix_time::second_clock::local_time();
     std::cerr << '[' << boost::posix_time::to_simple_string(now) << "] " << "Split-read clustering" << std::endl;
     for(uint32_t svt = 0; svt < srBR.size(); ++svt) {
-      if ((c.svtcmd) && (c.svtset.find(svt) == c.svtset.end())) continue;
+      if ((!c.svtset.empty()) && (c.svtset.find(svt) == c.svtset.end())) continue;
       if (srBR[svt].empty()) continue;
       
       // Sort
@@ -457,7 +457,7 @@ namespace torali
     // Maximum variability in insert size
     int32_t varisize = getVariability(c, sampleLib);      
     for(int32_t svt = 0; svt < (int32_t) bamRecord.size(); ++svt) {
-      if ((c.svtcmd) && (c.svtset.find(svt) == c.svtset.end())) continue;
+      if ((!c.svtset.empty()) && (c.svtset.find(svt) == c.svtset.end())) continue;
       if (bamRecord[svt].empty()) continue;
 	
       // Sort BAM records according to position

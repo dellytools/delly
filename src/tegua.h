@@ -38,7 +38,6 @@ namespace torali {
     bool hasDumpFile;
     bool hasExcludeFile;
     bool hasVcfFile;
-    bool svtcmd;
     uint16_t minMapQual;
     uint16_t minGenoQual;
     uint32_t minClip;
@@ -268,7 +267,10 @@ namespace torali {
    _alignmentScore(c, scoring);
    
    // SV types to compute?
-   _svTypesToCompute(c, svtype, vm.count("svtype"));
+   if (!_svTypesToCompute(c, svtype)) {
+     std::cerr << "Please specify a valid SV type, i.e., -t INV or -t DEL,INV without spaces." << std::endl;
+     return 1;
+   }
 
    // Dump reads
    if (vm.count("dump")) c.hasDumpFile = true;

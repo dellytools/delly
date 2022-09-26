@@ -208,41 +208,46 @@ namespace torali
   }
 
   template<typename TConfig>
-  inline void
-    _svTypesToCompute(TConfig& c, std::string const& svtype, bool const specified) {
-    c.svtcmd = false;
-    if (specified) {
-      c.svtcmd = true;
-      if (svtype == "DEL") {
-	c.svtset.insert(2);
-      } else if (svtype == "INS") {
-	c.svtset.insert(4);
-      } else if (svtype == "DUP") {
-	c.svtset.insert(3);
-      } else if (svtype == "INV") {
-	c.svtset.insert(0);
-	c.svtset.insert(1);
-      } else if (svtype == "INV_3to3") {
-	c.svtset.insert(0);
-      } else if (svtype == "INV_5to5") {
-	c.svtset.insert(1);
-      } else if (svtype == "BND") {
-	c.svtset.insert(DELLY_SVT_TRANS + 0);
-	c.svtset.insert(DELLY_SVT_TRANS + 1);
-	c.svtset.insert(DELLY_SVT_TRANS + 2);
-	c.svtset.insert(DELLY_SVT_TRANS + 3);
-      } else if (svtype == "BND_3to3") {
-	c.svtset.insert(DELLY_SVT_TRANS + 0);
-      } else if (svtype == "BND_5to5") {
-	c.svtset.insert(DELLY_SVT_TRANS + 1);
-      } else if (svtype == "BND_3to5") {
-	c.svtset.insert(DELLY_SVT_TRANS + 2);
-      } else if (svtype == "BND_5to3") {
-	c.svtset.insert(DELLY_SVT_TRANS + 3);
-      } else {
-	c.svtcmd = false;
+  inline bool
+    _svTypesToCompute(TConfig& c, std::string const& svtype) {
+    if (svtype == "ALL") return true;
+    else {
+      typedef boost::tokenizer< boost::char_separator<char> > Tokenizer;
+      boost::char_separator<char> sep(",");
+      Tokenizer tokens(svtype, sep);
+      for(Tokenizer::iterator tokIter = tokens.begin(); tokIter!=tokens.end(); ++tokIter) {
+	if (*tokIter == "DEL") {
+	  c.svtset.insert(2);
+	} else if (*tokIter == "INS") {
+	  c.svtset.insert(4);
+	} else if (*tokIter == "DUP") {
+	  c.svtset.insert(3);
+	} else if (*tokIter == "INV") {
+	  c.svtset.insert(0);
+	  c.svtset.insert(1);
+	} else if (*tokIter == "INV_3to3") {
+	  c.svtset.insert(0);
+	} else if (*tokIter == "INV_5to5") {
+	  c.svtset.insert(1);
+	} else if (*tokIter == "BND") {
+	  c.svtset.insert(DELLY_SVT_TRANS + 0);
+	  c.svtset.insert(DELLY_SVT_TRANS + 1);
+	  c.svtset.insert(DELLY_SVT_TRANS + 2);
+	  c.svtset.insert(DELLY_SVT_TRANS + 3);
+	} else if (*tokIter == "BND_3to3") {
+	  c.svtset.insert(DELLY_SVT_TRANS + 0);
+	} else if (*tokIter == "BND_5to5") {
+	  c.svtset.insert(DELLY_SVT_TRANS + 1);
+	} else if (*tokIter == "BND_3to5") {
+	  c.svtset.insert(DELLY_SVT_TRANS + 2);
+	} else if (*tokIter == "BND_5to3") {
+	  c.svtset.insert(DELLY_SVT_TRANS + 3);
+	} else {
+	  return false;
+	}
       }
     }
+    return true;    
   }
 
   inline uint32_t sequenceLength(bam1_t const* rec) {

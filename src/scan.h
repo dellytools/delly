@@ -95,7 +95,7 @@ namespace torali
       for (int32_t refIndex = 0; refIndex < hdr->n_targets; ++refIndex) {
 	for(typename TChrIntervals::iterator it = scanRegions[refIndex].begin(); it != scanRegions[refIndex].end(); ++it) {
 	  if (it->lower() < it->upper()) {
-	    if ((it->lower() >= 0) && (it->upper() < hdr->target_len[refIndex])) {
+	    if (it->upper() < hdr->target_len[refIndex]) {
 	      ScanWindow sw;
 	      sw.start = it->lower();
 	      sw.end = it->upper();

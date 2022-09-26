@@ -68,7 +68,6 @@ namespace torali
     bool hasExcludeFile;
     bool hasVcfFile;
     bool hasDumpFile;
-    bool svtcmd;
     std::set<int32_t> svtset;
     DnaScore<int> aliscore;
     boost::filesystem::path outfile;
@@ -257,7 +256,13 @@ namespace torali
     }
 
     // SV types to compute?
-    _svTypesToCompute(c, svtype, vm.count("svtype"));
+    if (!_svTypesToCompute(c, svtype)) {
+      std::cerr << "Please specify a valid SV type, i.e., -t INV or -t DEL,INV without spaces." << std::endl;
+      return 1;
+    }
+    //typedef std::set<int32_t> TSvSetTmp;
+    //for(typename TSvSetTmp::iterator itst = c.svtset.begin(); itst!=c.svtset.end(); ++itst) std::cerr << *itst << std::endl;
+    //std::cerr << c.svtset.size() << std::endl;
     
     // Dump PE and SR support?
     if (vm.count("dump")) c.hasDumpFile = true;
