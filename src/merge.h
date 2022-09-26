@@ -1,6 +1,8 @@
 #ifndef MERGE_H
 #define MERGE_H
 
+#define BOOST_UUID_RANDOM_PROVIDER_FORCE_POSIX
+
 #include <iostream>
 #include <fstream>
 #include <boost/unordered_map.hpp>
