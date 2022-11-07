@@ -48,6 +48,7 @@ struct FilterConfig {
   int32_t minsize;
   int32_t maxsize;
   int32_t coverage;
+  int32_t qualthres;
   float ratiogeno;
   float altaf;
   float controlcont;
@@ -134,7 +135,7 @@ filterRun(TFilterConfig const& c) {
     if (svend != NULL) svlen = *svend - rec->pos;
     int32_t inslenVal = 0;
     if (bcf_get_info_int32(hdr, rec, "INSLEN", &inslen, &ninslen) > 0) inslenVal = *inslen;
-    if ((pass) && ((std::string(svt) == "BND") || ((std::string(svt) == "INS") && (inslenVal >= c.minsize) && (inslenVal <= c.maxsize)) || ((std::string(svt) != "BND") && (std::string(svt) != "INS") && (svlen >= c.minsize) && (svlen <= c.maxsize)))) {
+    if ((rec->qual >= c.qualthres) && (pass) && ((std::string(svt) == "BND") || ((std::string(svt) == "INS") && (inslenVal >= c.minsize) && (inslenVal <= c.maxsize)) || ((std::string(svt) != "BND") && (std::string(svt) != "INS") && (svlen >= c.minsize) && (svlen <= c.maxsize)))) {
       // Check genotypes
       bcf_unpack(rec, BCF_UN_ALL);
       bool precise = false;
@@ -299,6 +300,7 @@ int filter(int argc, char **argv) {
     ("help,?", "show help message")
     ("filter,f", boost::program_options::value<std::string>(&c.filter)->default_value("somatic"), "Filter mode (somatic, germline)")
     ("outfile,o", boost::program_options::value<boost::filesystem::path>(&c.outfile), "Filtered SV BCF output file")
+    ("quality,y", boost::program_options::value<int32_t>(&c.qualthres)->default_value(300), "min. SV site quality")
     ("altaf,a", boost::program_options::value<float>(&c.altaf)->default_value(0.2), "min. fractional ALT support")
     ("minsize,m", boost::program_options::value<int32_t>(&c.minsize)->default_value(0), "min. SV size")
     ("maxsize,n", boost::program_options::value<int32_t>(&c.maxsize)->default_value(500000000), "max. SV size")
