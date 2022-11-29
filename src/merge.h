@@ -49,6 +49,7 @@ struct MergeConfig {
   uint32_t minsize;
   uint32_t maxsize;
   uint32_t coverage;
+  int32_t qualthres;
   float recoverlap;
   float vaf;
   boost::filesystem::path outfile;
@@ -145,6 +146,9 @@ void _fillIntervalMap(MergeConfig const& c, TGenomeIntervals& iScore, TContigMap
       if (bcf_get_info_flag(hdr, rec, "PRECISE", 0, 0) > 0) precise=true;
       if ((c.filterForPrecise) && (!precise)) continue;
 
+      // Quality threshold
+      if (rec->qual < c.qualthres) continue;
+      
       // Variant allele frequency filter
       if ((c.vaf > 0) || (c.coverage > 0)) {
 	float maxvaf = 0;
@@ -389,7 +393,7 @@ void _outputSelectedIntervals(MergeConfig& c, TGenomeIntervals const& iSelected,
       if ((c.filterForPrecise) && (!precise)) passPrecise = false;
 
       // Check PASS and precise
-      if ((passPrecise) && (pass)) {
+      if ((rec[idx]->qual >= c.qualthres) && (passPrecise) && (pass)) {
 	// Correct size
 	std::string chrName(bcf_hdr_id2name(hdr[idx], rec[idx]->rid));
 	uint32_t tid = cMap[chrName];
@@ -664,7 +668,7 @@ void _outputSelectedIntervals(MergeConfig& c, TGenomeIntervals const& iSelected,
 	if ((c.filterForPrecise) && (!precise)) passPrecise = false;
 
 	// Check PASS and precise
-	if ((passPrecise) && (pass)) {
+	if ((rec[idx]->qual >= c.qualthres) && (passPrecise) && (pass)) {
 	  // Correct size
 	  std::string chrName(bcf_hdr_id2name(hdr[idx], rec[idx]->rid));
 	  uint32_t tid = cMap[chrName];
@@ -897,6 +901,7 @@ int merge(int argc, char **argv) {
   generic.add_options()
     ("help,?", "show help message")
     ("outfile,o", boost::program_options::value<boost::filesystem::path>(&c.outfile), "Merged SV BCF output file")
+    ("quality,y", boost::program_options::value<int32_t>(&c.qualthres)->default_value(300), "min. SV site quality")
     ("chunks,u", boost::program_options::value<uint32_t>(&c.chunksize)->default_value(500), "max. chunk size to merge groups of BCF files")
     ("vaf,a", boost::program_options::value<float>(&c.vaf)->default_value(0.15), "min. fractional ALT support")
     ("coverage,v", boost::program_options::value<uint32_t>(&c.coverage)->default_value(10), "min. coverage")
