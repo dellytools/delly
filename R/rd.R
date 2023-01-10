@@ -34,6 +34,7 @@ if (nrow(seg)) { p = p + geom_segment(data=seg, aes(x=start, y=cn, xend=end, yen
 p = p + facet_grid(. ~ chr, scales="free_x", space="free_x")
 p = p + ylim(0, maxCN)
 p = p + theme(axis.text.x = element_text(angle=45, hjust=1))
+p = p + ggtitle(args[1])
 ggsave(p, file="plot.wholegenome.png", width=24, height=6)
 print(warnings())
 
