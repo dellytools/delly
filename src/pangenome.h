@@ -1,5 +1,5 @@
-#ifndef TEGUA_H
-#define TEGUA_H
+#ifndef PANGENOME_H
+#define PANGENOME_H
 
 #include <boost/unordered_map.hpp>
 #include <boost/date_time/posix_time/posix_time.hpp>
@@ -34,9 +34,8 @@
 namespace torali {
 
 
-  struct TeguaConfig {
+  struct GraphConfig {
     bool hasDumpFile;
-    bool hasExcludeFile;
     bool hasVcfFile;
     uint16_t minMapQual;
     uint16_t minGenoQual;
@@ -63,15 +62,15 @@ namespace torali {
     std::vector<std::string> sampleName;
   };
   
-
  template<typename TConfig>
  inline int32_t
- runTegua(TConfig& c) {
+ runGraph(TConfig& c) {
 
 #ifdef PROFILE
    ProfilerStart("delly.prof");
 #endif
 
+   /*
    // Structural Variants
    typedef std::vector<StructuralVariantRecord> TVariants;
    TVariants svs;
@@ -166,6 +165,8 @@ namespace torali {
    // VCF Output
    vcfOutput(c, svs, jctMap, rcMap, spanMap);
 
+   */
+   
 #ifdef PROFILE
    ProfilerStop();
 #endif
@@ -177,8 +178,8 @@ namespace torali {
    return 0;
  }
 
- int tegua(int argc, char **argv) {
-   TeguaConfig c;
+ int pg(int argc, char **argv) {
+   GraphConfig c;
    
    // Parameter
    std::string svtype;
@@ -190,7 +191,6 @@ namespace torali {
      ("svtype,t", boost::program_options::value<std::string>(&svtype)->default_value("ALL"), "SV type to compute [DEL, INS, DUP, INV, BND, ALL]")
      ("technology,y", boost::program_options::value<std::string>(&mode)->default_value("ont"), "seq. technology [pb, ont]")
      ("genome,g", boost::program_options::value<boost::filesystem::path>(&c.genome), "genome fasta file")
-     ("exclude,x", boost::program_options::value<boost::filesystem::path>(&c.exclude), "file with regions to exclude")
      ("outfile,o", boost::program_options::value<boost::filesystem::path>(&c.outfile), "BCF output file")
      ;
    
@@ -198,8 +198,9 @@ namespace torali {
    disc.add_options()
      ("mapqual,q", boost::program_options::value<uint16_t>(&c.minMapQual)->default_value(10), "min. mapping quality")
      ("minclip,c", boost::program_options::value<uint32_t>(&c.minClip)->default_value(25), "min. clipping length")
-     ("min-clique-size,z", boost::program_options::value<uint32_t>(&c.minCliqueSize)->default_value(3), "min. clique size")     
-     ("minrefsep,m", boost::program_options::value<uint32_t>(&c.minRefSep)->default_value(30), "min. reference separation")
+     ("min-clique-size,z", boost::program_options::value<uint32_t>(&c.minCliqueSize)->default_value(3), "min. clique size")
+     ("extension,e", boost::program_options::value<float>(&c.indelExtension)->default_value(0.5), "indel extension penalty")
+     ("minrefsep,m", boost::program_options::value<uint32_t>(&c.minRefSep)->default_value(30), "min. graph separation")
      ("maxreadsep,n", boost::program_options::value<uint32_t>(&c.maxReadSep)->default_value(100), "max. read separation")
      ;
 
@@ -208,7 +209,6 @@ namespace torali {
      ("max-reads,p", boost::program_options::value<uint32_t>(&c.maxReadPerSV)->default_value(15), "max. reads for consensus computation")
      ("flank-size,f", boost::program_options::value<int32_t>(&c.minimumFlankSize)->default_value(100), "min. flank size")
      ("flank-quality,a", boost::program_options::value<float>(&c.flankQuality)->default_value(0.9), "min. flank quality")
-     ("indel-size,i", boost::program_options::value<int32_t>(&c.indelsize)->default_value(10000), "use exact alleles for InDels <10kbp")
      ("max-isize,r", boost::program_options::value<int32_t>(&c.maxInsertionSize)->default_value(10000), "max. insertion size")
      ;     
    
@@ -223,7 +223,6 @@ namespace torali {
    hidden.add_options()
      ("input-file", boost::program_options::value< std::vector<boost::filesystem::path> >(&c.files), "input file")
      ("pruning,j", boost::program_options::value<uint32_t>(&c.graphPruning)->default_value(1000), "graph pruning cutoff")
-     ("extension,e", boost::program_options::value<float>(&c.indelExtension)->default_value(0.5), "enforce indel extension")
      ("scoring,s", boost::program_options::value<std::string>(&scoring)->default_value("3,-2,-3,-1"), "alignment scoring")
      ;
    
@@ -241,7 +240,7 @@ namespace torali {
    // Check command line arguments
    if ((vm.count("help")) || (!vm.count("input-file")) || (!vm.count("genome"))) {
      std::cerr << std::endl;
-     std::cerr << "Usage: delly " << argv[0] << " [OPTIONS] -g <ref.fa> <sample1.sort.bam> <sample2.sort.bam> ..." << std::endl;
+     std::cerr << "Usage: delly " << argv[0] << " [OPTIONS] -g <pan-genome.gfa.gz> <sample1.gaf.gz> <sample2.gaf.gz> ..." << std::endl;
      std::cerr << visible_options << "\n";
      return 0;
    }
@@ -264,17 +263,8 @@ namespace torali {
 
    // Check reference
    if (!(boost::filesystem::exists(c.genome) && boost::filesystem::is_regular_file(c.genome) && boost::filesystem::file_size(c.genome))) {
-     std::cerr << "Reference file is missing: " << c.genome.string() << std::endl;
+     std::cerr << "Pan-genome graph is missing: " << c.genome.string() << std::endl;
      return 1;
-   } else {
-     faidx_t* fai = fai_load(c.genome.string().c_str());
-     if (fai == NULL) {
-       if (fai_build(c.genome.string().c_str()) == -1) {
-	 std::cerr << "Fail to open genome fai index for " << c.genome.string() << std::endl;
-	 return 1;
-       } else fai = fai_load(c.genome.string().c_str());
-     }
-     fai_destroy(fai);
    }
    
    // Check input files
@@ -282,57 +272,12 @@ namespace torali {
    c.nchr = 0;
    for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
      if (!(boost::filesystem::exists(c.files[file_c]) && boost::filesystem::is_regular_file(c.files[file_c]) && boost::filesystem::file_size(c.files[file_c]))) {
-       std::cerr << "Alignment file is missing: " << c.files[file_c].string() << std::endl;
+       std::cerr << "Graph alignment file is missing: " << c.files[file_c].string() << std::endl;
        return 1;
      }
-     samFile* samfile = sam_open(c.files[file_c].string().c_str(), "r");
-     if (samfile == NULL) {
-       std::cerr << "Fail to open file " << c.files[file_c].string() << std::endl;
-       return 1;
-     }
-     hts_idx_t* idx = sam_index_load(samfile, c.files[file_c].string().c_str());
-     if (idx == NULL) {
-       std::cerr << "Fail to open index for " << c.files[file_c].string() << std::endl;
-       return 1;
-     }
-     bam_hdr_t* hdr = sam_hdr_read(samfile);
-     if (hdr == NULL) {
-       std::cerr << "Fail to open header for " << c.files[file_c].string() << std::endl;
-       return 1;
-     }
-     if (!c.nchr) c.nchr = hdr->n_targets;
-     else {
-       if (c.nchr != hdr->n_targets) {
-	 std::cerr << "BAM files have different number of chromosomes!" << std::endl;
-	 return 1;
-       }
-     }
-     faidx_t* fai = fai_load(c.genome.string().c_str());
-     for(int32_t refIndex=0; refIndex < hdr->n_targets; ++refIndex) {
-       std::string tname(hdr->target_name[refIndex]);
-       if (!faidx_has_seq(fai, tname.c_str())) {
-	 std::cerr << "BAM file chromosome " << hdr->target_name[refIndex] << " is NOT present in your reference file " << c.genome.string() << std::endl;
-	 return 1;
-       }
-     }
-     fai_destroy(fai);
-     std::string sampleName = "unknown";
-     getSMTag(std::string(hdr->text), c.files[file_c].stem().string(), sampleName);
-     c.sampleName[file_c] = sampleName;
-     bam_hdr_destroy(hdr);
-     hts_idx_destroy(idx);
-     sam_close(samfile);
+     c.sampleName[file_c] = c.files[file_c].stem().string();
    }
    checkSampleNames(c);
-
-   // Check exclude file
-   if (vm.count("exclude")) {
-     if (!(boost::filesystem::exists(c.exclude) && boost::filesystem::is_regular_file(c.exclude) && boost::filesystem::file_size(c.exclude))) {
-       std::cerr << "Exclude file is missing: " << c.exclude.string() << std::endl;
-       return 1;
-     }
-     c.hasExcludeFile = true;
-   } else c.hasExcludeFile = false;
 
    // Check input VCF file
    if (vm.count("vcffile")) {
@@ -370,10 +315,8 @@ namespace torali {
    for(int i=0; i<argc; ++i) { std::cerr << argv[i] << ' '; }
    std::cerr << std::endl;
    
-   // Run Tegua
-   if (mode == "pb") c.indelExtension = 0.7;
-   else if (mode == "ont") c.indelExtension = 0.5;
-   return runTegua(c);
+   // Run pan-genome SV discovery
+   return runGraph(c);
  }
 
 }

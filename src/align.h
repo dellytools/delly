@@ -235,6 +235,22 @@ namespace torali
     }
   }
 
+  template<typename TConfig>
+  inline void
+  _alignmentScore(TConfig& c, std::string const& scoring) {
+    typedef boost::tokenizer< boost::char_separator<char> > Tokenizer;
+    boost::char_separator<char> sep(",\t ");
+    Tokenizer tokens(scoring, sep);
+    Tokenizer::iterator tokIter = tokens.begin();
+    int32_t match = boost::lexical_cast<int32_t>(*tokIter++);
+    int32_t mismatch = boost::lexical_cast<int32_t>(*tokIter++);
+    int32_t go = boost::lexical_cast<int32_t>(*tokIter++);
+    int32_t ge = boost::lexical_cast<int32_t>(*tokIter++);
+    c.aliscore = DnaScore<int>(match, mismatch, go, ge);
+    //std::cerr << c.aliscore.match << ',' << c.aliscore.mismatch << ',' << c.aliscore.go << ',' << c.aliscore.ge << std::endl;
+    return;
+  }
+
 }
 
 #endif

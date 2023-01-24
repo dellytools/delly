@@ -23,6 +23,7 @@
 #include "coral.h"
 #include "asmode.h"
 #include "dpe.h"
+#include "pangenome.h"
 
 using namespace torali;
 
@@ -39,6 +40,9 @@ displayUsage() {
   std::cerr << "Long-read SV calling:" << std::endl;
   std::cerr << "    lr           long-read SV discovery" << std::endl;
   std::cerr << std::endl;
+  //std::cerr << "Pan-genome based SV calling:" << std::endl;
+  //std::cerr << "    pg           pan-genome SV discovery" << std::endl;
+  //std::cerr << std::endl;
   //std::cerr << "Assembly-based SV calling:" << std::endl;
   //std::cerr << "    asm          assembly SV discovery" << std::endl;
   //std::cerr << std::endl;
@@ -86,6 +90,9 @@ int main(int argc, char **argv) {
     }
     else if ((std::string(argv[1]) == "asm")) {
       return asmode(argc-1,argv+1);
+    }
+    else if ((std::string(argv[1]) == "pg")) {
+      return pg(argc-1,argv+1);
     }
     else if ((std::string(argv[1]) == "dpe")) {
       return dpe(argc-1,argv+1);
