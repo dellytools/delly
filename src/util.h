@@ -178,6 +178,19 @@ namespace torali
     else return "NtoN";
   }
 
+  inline bool
+  is_gz(boost::filesystem::path const& f) {
+    std::ifstream bfile(f.string().c_str(), std::ios_base::binary | std::ios::ate);
+    bfile.seekg(0, std::ios::beg);
+    char byte1;
+    bfile.read(&byte1, 1);
+    char byte2;
+    bfile.read(&byte2, 1);
+    bfile.close();
+    if ((byte1 == '\x1F') && (byte2 == '\x8B')) return true;
+    else return false;
+  }
+
   // Output directory/file checks
   inline bool
   _outfileValid(boost::filesystem::path const& outfile) {
@@ -302,6 +315,13 @@ namespace torali
   inline std::size_t hash_lr(bam1_t* rec) {
     boost::hash<std::string> string_hash;
     std::string qname = bam_get_qname(rec);
+    std::size_t seed = hash_string(qname.c_str());
+    boost::hash_combine(seed, string_hash(qname));
+    return seed;
+  }
+
+  inline std::size_t hash_lr(std::string const& qname) {
+    boost::hash<std::string> string_hash;
     std::size_t seed = hash_string(qname.c_str());
     boost::hash_combine(seed, string_hash(qname));
     return seed;

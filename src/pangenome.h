@@ -30,6 +30,8 @@
 #include "cluster.h"
 #include "assemble.h"
 #include "modvcf.h"
+#include "gfa.h"
+#include "gaf.h"
 
 namespace torali {
 
@@ -55,6 +57,7 @@ namespace torali {
     DnaScore<int> aliscore;
     boost::filesystem::path dumpfile;
     boost::filesystem::path outfile;
+    boost::filesystem::path seqfile;
     boost::filesystem::path vcffile;
     std::vector<boost::filesystem::path> files;
     boost::filesystem::path genome;
@@ -70,26 +73,10 @@ namespace torali {
    ProfilerStart("delly.prof");
 #endif
 
-   /*
    // Structural Variants
    typedef std::vector<StructuralVariantRecord> TVariants;
    TVariants svs;
 
-   // Open header
-   samFile* samfile = sam_open(c.files[0].string().c_str(), "r");
-   bam_hdr_t* hdr = sam_hdr_read(samfile);
-
-   // Exclude intervals
-   typedef boost::icl::interval_set<uint32_t> TChrIntervals;
-   typedef std::vector<TChrIntervals> TRegionsGenome;
-   TRegionsGenome validRegions;
-   if (!_parseExcludeIntervals(c, hdr, validRegions)) {
-     std::cerr << "Delly couldn't parse exclude intervals!" << std::endl;
-     bam_hdr_destroy(hdr);
-     sam_close(samfile);
-     return 1;
-   }
-     
    // SV Discovery
    if (!c.hasVcfFile) {
        
@@ -104,9 +91,16 @@ namespace torali {
      typedef std::vector<TPosReadSV> TGenomicPosReadSV;
      TGenomicPosReadSV srStore(c.nchr, TPosReadSV());
 
+     // Load pan-genome graph
+     std::cerr << '[' << boost::posix_time::to_simple_string(boost::posix_time::second_clock::local_time()) << "] Load pan-genome graph" << std::endl;
+     Graph g;
+     parseGfa(c, g, false);
+     
      // SV Discovery
-     _clusterSRReads(c, validRegions, svc, srStore);
+     std::cerr << '[' << boost::posix_time::to_simple_string(boost::posix_time::second_clock::local_time()) << "] SV discovery" << std::endl;
+     parseGaf(c, g);
 
+     /*
      // Assemble
      assemble(c, validRegions, svc, srStore);
 
@@ -132,7 +126,12 @@ namespace torali {
      uint32_t cliqueCount = 0;
      for(typename TVariants::iterator svIt = svs.begin(); svIt != svs.end(); ++svIt, ++cliqueCount) svIt->id = cliqueCount;
      //outputStructuralVariants(c, svs);
-   } else vcfParse(c, hdr, svs);
+     */
+   } else {
+     //vcfParse(c, hdr, svs);
+   }
+
+   /*
    // Clean-up
    bam_hdr_destroy(hdr);
    sam_close(samfile);
