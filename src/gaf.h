@@ -158,41 +158,6 @@ namespace torali
   }
   
 			    
-  template<typename TConfig>
-  inline bool
-  parseGaf(TConfig const& c, Graph const& g) {
-
-    // Iterate graph alignments
-    for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
-      
-      // Open GAF
-      std::ifstream gafFile;
-      boost::iostreams::filtering_streambuf<boost::iostreams::input> dataIn;
-      if (is_gz(c.files[file_c])) {
-	gafFile.open(c.files[file_c].string().c_str(), std::ios_base::in | std::ios_base::binary);
-	dataIn.push(boost::iostreams::gzip_decompressor(), 16*1024);
-      } else gafFile.open(c.files[file_c].string().c_str(), std::ios_base::in);
-      dataIn.push(gafFile);
-
-      // Parse GAF
-      std::istream instream(&dataIn);
-      bool parseAR = true;
-      while (parseAR) {
-	AlignRecord ar;
-	if (parseAlignRecord(instream, g, ar)) {
-	  std::cerr << ar.seed << ',' << ar.qlen << ',' << ar.qstart << ',' << ar.qend << ',' << ar.strand << ',' << ar.plen << ',' << ar.pstart << ',' << ar.pend << ',' << ar.matches << ',' << ar.alignlen << ',' << ar.mapq << std::endl;
-	} else parseAR = false;
-      }
-      
-      // Close file
-      dataIn.pop();
-      if (is_gz(c.files[file_c])) dataIn.pop();
-      gafFile.close();
-    }
-      
-    return true;
-  }
-
 }
 
 #endif

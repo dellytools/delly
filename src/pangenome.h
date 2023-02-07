@@ -64,6 +64,260 @@ namespace torali {
     boost::filesystem::path exclude;
     std::vector<std::string> sampleName;
   };
+
+  template<typename TReadBp>
+  inline void
+  _insertGraphJunction(TReadBp& readBp, std::size_t const seed, AlignRecord const& ar, uint32_t const pathidx, int32_t const rp, int32_t const sp, bool const scleft) {
+    bool fw = ar.path[pathidx].first;
+    int32_t readStart = ar.pstart; // Not needed I think
+    typedef typename TReadBp::mapped_type TJunctionVector;
+    typename TReadBp::iterator it = readBp.find(seed);
+    if (sp <= ar.qlen) {
+      if (!fw) {
+	if (it != readBp.end()) it->second.push_back(Junction(fw, scleft, ar.path[pathidx].second, readStart, rp, ar.qlen - sp, ar.mapq));
+	else readBp.insert(std::make_pair(seed, TJunctionVector(1, Junction(fw, scleft, ar.path[pathidx].second, readStart, rp, ar.qlen - sp, ar.mapq))));
+      } else {
+	if (it != readBp.end()) it->second.push_back(Junction(fw, scleft, ar.path[pathidx].second, readStart, rp, sp, ar.mapq));
+	else readBp.insert(std::make_pair(seed, TJunctionVector(1, Junction(fw, scleft, ar.path[pathidx].second, readStart, rp, sp, ar.mapq))));
+      }
+    }
+  }
+
+
+  
+  template<typename TConfig, typename TReadBp>
+  inline bool
+  findGraphJunctions(TConfig& c, Graph const& g, TReadBp& readBp) {
+    // Vertex map
+    std::vector<std::string> idSegment(g.smap.size());
+    for(typename Graph::TSegmentIdMap::const_iterator it = g.smap.begin(); it != g.smap.end(); ++it) idSegment[it->second] = it->first;
+
+    // Iterate graph alignments
+    for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
+      
+      // Open GAF
+      std::ifstream gafFile;
+      boost::iostreams::filtering_streambuf<boost::iostreams::input> dataIn;
+      if (is_gz(c.files[file_c])) {
+	gafFile.open(c.files[file_c].string().c_str(), std::ios_base::in | std::ios_base::binary);
+	dataIn.push(boost::iostreams::gzip_decompressor(), 16*1024);
+      } else gafFile.open(c.files[file_c].string().c_str(), std::ios_base::in);
+      dataIn.push(gafFile);
+
+      // Parse GAF
+      std::istream instream(&dataIn);
+      bool parseAR = true;
+      while (parseAR) {
+	AlignRecord ar;
+	std::string qname;
+	if (parseAlignRecord(instream, g, ar, qname)) {
+	  if (ar.mapq < c.minMapQual) continue;
+
+	  // Iterate path alignments
+	  uint32_t refstart = 0;
+	  for(uint32_t pi = 0; pi < ar.path.size(); ++pi) {
+	    // Vertex coordinates
+	    std::string seqname = idSegment[ar.path[pi].second];
+	    uint32_t seqlen = g.segments[ar.path[pi].second].len;
+	    uint32_t pstart = 0;
+	    uint32_t plen = seqlen;
+	    if (pi == 0) {
+	      plen -= ar.pstart;
+	      if (ar.path[pi].first) pstart = ar.pstart;
+	    }
+	    if (pi + 1 == ar.path.size()) {
+	      plen = ar.pend - ar.pstart - refstart;
+	      if (!ar.path[pi].first) {
+		if (pi == 0) pstart = seqlen - ar.pend;
+		else pstart = ar.pstart + refstart + seqlen - ar.pend;
+	      }
+	    }
+
+	    // Compute local alignment end
+	    uint32_t refend = refstart + plen;
+	    uint32_t rp = 0;  // Reference pointer
+	    uint32_t srpend = 0; // Segment reference pointer
+	    for (uint32_t i = 0; i < ar.cigarop.size(); ++i) {
+	      if ((ar.cigarop[i] == BAM_CMATCH) || (ar.cigarop[i] == BAM_CEQUAL) || (ar.cigarop[i] == BAM_CDIFF)) {
+		for(uint32_t k = 0; k < ar.cigarlen[i]; ++k, ++rp) {
+		  if ((rp >= refstart) && (rp < refend)) ++srpend;
+		}
+	      }
+	      else if (ar.cigarop[i] == BAM_CDEL) {
+		for(uint32_t k = 0; k < ar.cigarlen[i]; ++k, ++rp) {
+		  if ((rp >= refstart) && (rp < refend)) ++srpend;
+		}
+	      }
+	    }
+	    
+	    // Parse CIGAR
+	    rp = 0;  // Reference pointer
+	    uint32_t srp = 0;
+	    uint32_t sp = ar.qstart;
+	    for (uint32_t i = 0; i < ar.cigarop.size(); ++i) {
+	      if ((ar.cigarop[i] == BAM_CMATCH) || (ar.cigarop[i] == BAM_CEQUAL) || (ar.cigarop[i] == BAM_CDIFF)) {
+		for(uint32_t k = 0; k < ar.cigarlen[i]; ++k, ++sp, ++rp) {
+		  if ((rp >= refstart) && (rp < refend)) ++srp;
+		}
+	      }
+	      else if (ar.cigarop[i] == BAM_CDEL) {
+		// Insert start-junction
+		if (ar.cigarlen[i] > c.minRefSep) {
+		  if ((rp >= refstart) && (rp < refend)) {
+		    int32_t locbeg = pstart + 1 + srp;
+		    if (!ar.path[pi].first) locbeg = pstart + 1 + (srpend - srp - ar.cigarlen[i]);
+		    if ((locbeg > 0) && (locbeg < (int32_t) seqlen)) {
+		      //std::cerr << seqname << '\t' << locbeg << "\tRead\t" << qname << '\t' << ar.seed << '\t' << ar.qlen << "\tPath\t" << pi << '\t' << (int32_t) ar.path[pi].first << '\t' << ar.pstart << "\tReadBp\t" << sp << '\t' << ar.cigarlen[i] << std::endl;
+		      _insertGraphJunction(readBp, ar.seed, ar, pi, locbeg, sp, false);
+		    }
+		  }
+		}
+		// Adjust segment reference pointer for deletion
+		for(uint32_t k = 0; k < ar.cigarlen[i]; ++k, ++rp) {
+		  if ((rp >= refstart) && (rp < refend)) ++srp;
+		}
+		// Insert end-junction
+		if (ar.cigarlen[i] > c.minRefSep) {
+		  if ((rp >= refstart) && (rp < refend)) {
+		    int32_t locbeg = pstart + 1 + srp;
+		    if (!ar.path[pi].first) locbeg = pstart + 1 + (srpend - srp) + ar.cigarlen[i];
+		    if ((locbeg > 0) && (locbeg < (int32_t) seqlen)) {
+		      //std::cerr << seqname << '\t' << locbeg << "\tRead\t" << qname << '\t' << ar.seed << '\t' << ar.qlen << "\tPath\t" << pi << '\t' << (int32_t) ar.path[pi].first << '\t' << ar.pstart << "\tReadBp\t" << sp << '\t' << ar.cigarlen[i] << std::endl;
+		      _insertGraphJunction(readBp, ar.seed, ar, pi, locbeg, sp, true);
+		    }
+		  }
+		}
+	      }
+	      else if (ar.cigarop[i] == BAM_CINS) {
+		sp += ar.cigarlen[i];
+	      }
+	      else {
+		std::cerr << "Warning: Unknown Cigar option " << ar.cigarop[i] << std::endl;
+		return false;
+	      }
+	    }
+	
+	    // Next segment
+	    refstart = refend;
+	  }
+	  
+	  //std::cerr << ar.seed << ',' << ar.qlen << ',' << ar.qstart << ',' << ar.qend << ',' << ar.strand << ',' << ar.plen << ',' << ar.pstart << ',' << ar.pend << ',' << ar.matches << ',' << ar.alignlen << ',' << ar.mapq << std::endl;
+	} else parseAR = false;
+      }
+
+      // Sort junctions
+      for(typename TReadBp::iterator it = readBp.begin(); it != readBp.end(); ++it) {
+	std::sort(it->second.begin(), it->second.end(), SortJunction<Junction>());
+      }
+      
+      // Close file
+      dataIn.pop();
+      if (is_gz(c.files[file_c])) dataIn.pop();
+      gafFile.close();
+    }
+      
+    return true;
+  }
+
+  template<typename TConfig, typename TSvtSRBamRecord>
+  inline void
+  _findGraphSRBreakpoints(TConfig const& c, Graph const& g, TSvtSRBamRecord& srBR) {
+    // Breakpoints
+    typedef std::vector<Junction> TJunctionVector;
+    typedef std::map<std::size_t, TJunctionVector> TReadBp;
+    TReadBp readBp;
+    findGraphJunctions(c, g, readBp);
+    fetchSVs(c, readBp, srBR);
+  }
+
+
+  template<typename TConfig>
+  inline void
+  outputGraphSRBamRecords(TConfig const& c, Graph const& g, std::vector<std::vector<SRBamRecord> > const& br) {
+    // Vertex map
+    std::vector<std::string> idSegment(g.smap.size());
+    for(typename Graph::TSegmentIdMap::const_iterator it = g.smap.begin(); it != g.smap.end(); ++it) idSegment[it->second] = it->first;
+    
+    // Header
+    std::cerr << "id\tsegment1\tpos1\tsegment2\tpos2\tsvtype\tct\tqual\tinslen" << std::endl;
+    
+    // SVs
+    for(uint32_t svt = 0; svt < br.size(); ++svt) {
+      for(uint32_t i = 0; i < br[svt].size(); ++i) {
+	std::cerr << br[svt][i].id << '\t' << idSegment[br[svt][i].chr] << '\t' << br[svt][i].pos << '\t' << idSegment[br[svt][i].chr2] << '\t' << br[svt][i].pos2 << '\t' << _addID(svt) << '\t' << _addOrientation(svt) << '\t' << br[svt][i].qual << '\t' << br[svt][i].inslen << std::endl;
+      }
+    }
+  }
+
+
+
+
+  template<typename TConfig, typename TSvtSRBamRecord>  
+  inline void
+  outputGraphStructuralVariants(TConfig const& c, Graph const& g, std::vector<StructuralVariantRecord> const& svs, TSvtSRBamRecord const& srBR, int32_t const svt) {
+    // Header
+    std::cerr << "segment1\tpos1\tsegment2\tpos2\tsvtype\tct\tpeSupport\tsrSupport" << std::endl;
+    
+    // Hash reads
+    typedef std::map<std::size_t, std::string> THashMap;
+    THashMap hm;
+    for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
+
+      // Open GAF
+      std::ifstream gafFile;
+      boost::iostreams::filtering_streambuf<boost::iostreams::input> dataIn;
+      if (is_gz(c.files[file_c])) {
+	gafFile.open(c.files[file_c].string().c_str(), std::ios_base::in | std::ios_base::binary);
+	dataIn.push(boost::iostreams::gzip_decompressor(), 16*1024);
+      } else gafFile.open(c.files[file_c].string().c_str(), std::ios_base::in);
+      dataIn.push(gafFile);
+
+      // Parse GAF
+      std::istream instream(&dataIn);
+      bool parseAR = true;
+      while (parseAR) {
+	AlignRecord ar;
+	std::string qname;
+	if (parseAlignRecord(instream, g, ar, qname)) {
+	  if (hm.find(ar.seed) == hm.end()) hm.insert(std::make_pair(ar.seed, qname));
+	  else {
+	    if (hm[ar.seed] != qname) {
+	      std::cerr << "Warning: Hash collision! " << ar.seed << ',' << hm[ar.seed] << ',' << qname << std::endl;
+	    }
+	  }
+	} else parseAR = false;
+      }
+
+      // Close file
+      dataIn.pop();
+      if (is_gz(c.files[file_c])) dataIn.pop();
+      gafFile.close();
+
+      // Track split-reads
+      typedef std::vector<std::string> TReadNameVector;
+      typedef std::vector<TReadNameVector> TSVReadNames;
+      TSVReadNames svReadNames(svs.size(), TReadNameVector());
+      for(uint32_t i = 0; i < srBR[svt].size(); ++i) {
+	if (srBR[svt][i].svid != -1) {
+	  svReadNames[srBR[svt][i].svid].push_back(hm[srBR[svt][i].id]);
+	}
+      }
+      hm.clear();
+
+      // Vertex map
+      std::vector<std::string> idSegment(g.smap.size());
+      for(typename Graph::TSegmentIdMap::const_iterator it = g.smap.begin(); it != g.smap.end(); ++it) idSegment[it->second] = it->first;
+  
+      // SVs
+      for(uint32_t i = 0; i < svs.size(); ++i) {
+	if (svs[i].svt != svt) continue;
+	std::cerr << idSegment[svs[i].chr] << '\t' << svs[i].svStart << '\t' << idSegment[svs[i].chr2] << '\t' << svs[i].svEnd << '\t' << _addID(svs[i].svt) << '\t' << _addOrientation(svs[i].svt) << '\t' << svs[i].peSupport << '\t' << svs[i].srSupport << '\t';
+	for(uint32_t k = 0; k < svReadNames[svs[i].id].size(); ++k) std::cerr << svReadNames[svs[i].id][k] << ',';
+	std::cerr << std::endl;
+      }
+    }
+  }
+
   
  template<typename TConfig>
  inline int32_t
@@ -95,10 +349,32 @@ namespace torali {
      std::cerr << '[' << boost::posix_time::to_simple_string(boost::posix_time::second_clock::local_time()) << "] Load pan-genome graph" << std::endl;
      Graph g;
      parseGfa(c, g, false);
+     c.nchr = g.smap.size();
      
-     // SV Discovery
+     // Split-reads
      std::cerr << '[' << boost::posix_time::to_simple_string(boost::posix_time::second_clock::local_time()) << "] SV discovery" << std::endl;
-     parseGaf(c, g);
+     typedef std::vector<SRBamRecord> TSRBamRecord;
+     typedef std::vector<TSRBamRecord> TSvtSRBamRecord;
+     TSvtSRBamRecord srBR(2 * DELLY_SVT_TRANS, TSRBamRecord());
+     _findGraphSRBreakpoints(c, g, srBR);
+
+     // Debug
+     //outputGraphSRBamRecords(c, g, srBR);
+
+     // Cluster BAM records
+     for(uint32_t svt = 0; svt < srBR.size(); ++svt) {
+       if (srBR[svt].empty()) continue;
+
+       // Sort
+       std::sort(srBR[svt].begin(), srBR[svt].end(), SortSRBamRecord<SRBamRecord>());
+
+       // Cluster
+       cluster(c, srBR[svt], svc, c.maxReadSep, svt);
+
+       // Debug
+       outputGraphStructuralVariants(c, g, svc, srBR, svt);
+     }
+       
 
      /*
      // Assemble
@@ -268,7 +544,6 @@ namespace torali {
    
    // Check input files
    c.sampleName.resize(c.files.size());
-   c.nchr = 0;
    for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
      if (!(boost::filesystem::exists(c.files[file_c]) && boost::filesystem::is_regular_file(c.files[file_c]) && boost::filesystem::file_size(c.files[file_c]))) {
        std::cerr << "Graph alignment file is missing: " << c.files[file_c].string() << std::endl;
