@@ -58,6 +58,7 @@ namespace torali {
     boost::filesystem::path dumpfile;
     boost::filesystem::path outfile;
     boost::filesystem::path seqfile;
+    boost::filesystem::path fastqfile;
     boost::filesystem::path vcffile;
     std::vector<boost::filesystem::path> files;
     boost::filesystem::path genome;
@@ -68,21 +69,16 @@ namespace torali {
   template<typename TReadBp>
   inline void
   _insertGraphJunction(TReadBp& readBp, std::size_t const seed, AlignRecord const& ar, uint32_t const pathidx, int32_t const rp, int32_t const sp, bool const scleft) {
-    bool fw = ar.path[pathidx].first;
-    int32_t readStart = ar.pstart; // Not needed I think
     typedef typename TReadBp::mapped_type TJunctionVector;
-    typename TReadBp::iterator it = readBp.find(seed);
+
+    bool fw = ar.path[pathidx].first;
+    int32_t readStart = ar.qstart; // Query start (not needed)
     if (sp <= ar.qlen) {
-      if (!fw) {
-	if (it != readBp.end()) it->second.push_back(Junction(fw, scleft, ar.path[pathidx].second, readStart, rp, ar.qlen - sp, ar.mapq));
-	else readBp.insert(std::make_pair(seed, TJunctionVector(1, Junction(fw, scleft, ar.path[pathidx].second, readStart, rp, ar.qlen - sp, ar.mapq))));
-      } else {
-	if (it != readBp.end()) it->second.push_back(Junction(fw, scleft, ar.path[pathidx].second, readStart, rp, sp, ar.mapq));
-	else readBp.insert(std::make_pair(seed, TJunctionVector(1, Junction(fw, scleft, ar.path[pathidx].second, readStart, rp, sp, ar.mapq))));
-      }
+      typename TReadBp::iterator it = readBp.find(seed);
+      if (it != readBp.end()) it->second.push_back(Junction(fw, scleft, ar.path[pathidx].second, readStart, rp, sp, ar.mapq));
+      else readBp.insert(std::make_pair(seed, TJunctionVector(1, Junction(fw, scleft, ar.path[pathidx].second, readStart, rp, sp, ar.mapq))));
     }
   }
-
 
   
   template<typename TConfig, typename TReadBp>
@@ -318,11 +314,204 @@ namespace torali {
     }
   }
 
+  template<typename TConfig, typename TSRStore>
+  inline void
+  _clusterGraphSRReads(TConfig c, Graph const& g, std::vector<StructuralVariantRecord>& svc, TSRStore& srStore) {
+    // Split-reads
+    std::cerr << '[' << boost::posix_time::to_simple_string(boost::posix_time::second_clock::local_time()) << "] SV discovery" << std::endl;
+    typedef std::vector<SRBamRecord> TSRBamRecord;
+    typedef std::vector<TSRBamRecord> TSvtSRBamRecord;
+    TSvtSRBamRecord srBR(2 * DELLY_SVT_TRANS, TSRBamRecord());
+    _findGraphSRBreakpoints(c, g, srBR);
+
+    // Debug
+    //outputGraphSRBamRecords(c, g, srBR);
+
+    // Cluster BAM records
+    std::cerr << '[' << boost::posix_time::to_simple_string(boost::posix_time::second_clock::local_time()) << "] Cluster SVs" << std::endl;
+    for(uint32_t svt = 0; svt < srBR.size(); ++svt) {
+      if (srBR[svt].empty()) continue;
+
+      // Sort
+      std::sort(srBR[svt].begin(), srBR[svt].end(), SortSRBamRecord<SRBamRecord>());
+
+      // Cluster
+      cluster(c, srBR[svt], svc, c.maxReadSep, svt);
+
+      // Debug
+      //outputGraphStructuralVariants(c, g, svc, srBR, svt);
+      
+      // Track split-reads
+      for(uint32_t i = 0; i < srBR[svt].size(); ++i) {
+	// Read assigned?
+	if ((srBR[svt][i].svid != -1) && (srBR[svt][i].rstart != -1)) {
+	  if (srStore.find(srBR[svt][i].id) == srStore.end()) srStore.insert(std::make_pair(srBR[svt][i].id, std::vector<SeqSlice>()));
+	  srStore[srBR[svt][i].id].push_back(SeqSlice(srBR[svt][i].svid, srBR[svt][i].sstart, srBR[svt][i].inslen, srBR[svt][i].qual));
+	}
+      }
+    }
+  }
+
+
+  template<typename TConfig, typename TSRStore>
+  inline void
+  assembleGraph(TConfig const& c, Graph const& g, std::vector<StructuralVariantRecord>& svs, TSRStore& srStore) {
+    // Assembly
+    boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
+    std::cerr << '[' << boost::posix_time::to_simple_string(now) << "] " << "Split-read assembly" << std::endl;
+    
+    // Sequence store
+    typedef std::vector<std::string> TSequences;
+    typedef std::vector<TSequences> TSVSequences;
+    TSVSequences seqStore(svs.size(), TSequences());
+
+    // SV consensus done
+    std::vector<bool> svcons(svs.size(), false);
+
+    // Vertex map
+    std::vector<std::string> idSegment(g.smap.size());
+    for(typename Graph::TSegmentIdMap::const_iterator it = g.smap.begin(); it != g.smap.end(); ++it) idSegment[it->second] = it->first;
+
+    // Load FASTQ
+    std::ifstream fqfile;
+    boost::iostreams::filtering_streambuf<boost::iostreams::input> dataIn;
+    if (is_gz(c.fastqfile)) {
+      fqfile.open(c.fastqfile.string().c_str(), std::ios_base::in | std::ios_base::binary);
+      dataIn.push(boost::iostreams::gzip_decompressor(), 16*1024);
+    } else fqfile.open(c.fastqfile.string().c_str(), std::ios_base::in);
+    dataIn.push(fqfile);
+    std::istream instream(&dataIn);
+    std::string gline;
+    uint64_t lnum = 0;
+    std::string qname;
+    std::string sequence;
+    bool validRec = true;
+    while(std::getline(instream, gline)) {
+      if (lnum % 2 == 0) {
+	// FASTA or FASTQ
+	if ((gline[0] == '>') || (gline[0] == '@')) {
+	  validRec = true;
+	  qname = gline.substr(1);
+	} else validRec = false;
+      } else if (lnum % 2 == 1) {
+	if (validRec) {
+	  std::size_t seed = hash_lr(qname);
+	  if (srStore.find(seed) != srStore.end()) {
+	    sequence = gline;
+	    int32_t readlen = sequence.size();
+
+	    // Iterate all spanned SVs
+	    for(uint32_t ri = 0; ri < srStore[seed].size(); ++ri) {
+	      SeqSlice seqsl = srStore[seed][ri];
+	      int32_t svid = seqsl.svid;
+
+	      // Debug SV read
+	      //std::cerr << "SV:" << svid << '\t' << idSegment[svs[svid].chr] << '\t' << svs[svid].svStart << '\t' << idSegment[svs[svid].chr2] << '\t' << svs[svid].svEnd << '\t' << _addID(svs[svid].svt) << '\t' << _addOrientation(svs[svid].svt) << '\t' << svs[svid].srSupport << '\t' << qname << '\t' << seqsl.sstart << '\t' << sequence.substr(std::max(0, seqsl.sstart - 20), (std::min(seqsl.sstart + seqsl.inslen + 20, readlen) - std::max(0, seqsl.sstart - 20))) << std::endl;
+
+	      
+	      if ((!svcons[svid]) && (seqStore[svid].size() < c.maxReadPerSV)) {
+		// Extract subsequence (otherwise MSA takes forever)
+		int32_t window = 1000; // MSA should be larger
+		int32_t sPos = seqsl.sstart - window;
+		int32_t ePos = seqsl.sstart + seqsl.inslen + window;
+		if (sPos < 0) sPos = 0;
+		if (ePos > (int32_t) readlen) ePos = readlen;
+		// Min. seq length and max insertion size, 10kbp?
+		if (((ePos - sPos) > window) && ((ePos - sPos) <= (c.maxInsertionSize + window))) {
+		  std::string seqalign = sequence.substr(sPos, (ePos - sPos));
+		  seqStore[svid].push_back(seqalign);
+
+		  // Enough split-reads?
+		  if ((seqStore[svid].size() == c.maxReadPerSV) || ((int32_t) seqStore[svid].size() == svs[svid].srSupport)) {
+		    bool msaSuccess = false;
+		    if (seqStore[svid].size() > 1) {
+		      //std::cerr << "SV:" << svid << '\t' << idSegment[svs[svid].chr] << '\t' << svs[svid].svStart << '\t' << idSegment[svs[svid].chr2] << '\t' << svs[svid].svEnd << '\t' << _addID(svs[svid].svt) << '\t' << _addOrientation(svs[svid].svt) << '\t' << svs[svid].srSupport << std::endl;
+		      msaEdlib(c, seqStore[svid], svs[svid].consensus);
+		      
+		      //if (alignConsensus(c, hdr, seq, NULL, svs[svid], true)) msaSuccess = true;
+		      //std::cerr << msaSuccess << std::endl;
+		    }
+		    if (!msaSuccess) {
+		      svs[svid].consensus = "";
+		      svs[svid].srSupport = 0;
+		      svs[svid].srAlignQuality = 0;
+		    }
+		    seqStore[svid].clear();
+		    svcons[svid] = true;
+		  }
+		}
+	      }
+	    }
+	  }
+	}
+      }
+      ++lnum;
+    }
+    // Clean-up
+    dataIn.pop();
+    if (is_gz(c.fastqfile)) dataIn.pop();
+    fqfile.close();
+    
+    /*
+      // Handle left-overs and translocations
+      for(int32_t refIndex2 = 0; refIndex2 <= refIndex; ++refIndex2) {
+	char* sndSeq = NULL;
+	for(uint32_t svid = 0; svid < svcons.size(); ++svid) {
+	  if (!svcons[svid]) {
+	    if (seqStore[svid].size() > 1) {
+	      bool computeMSA = false;
+	      if (_translocation(svs[svid].svt)) {
+		if ((refIndex2 != refIndex) && (svs[svid].chr == refIndex) && (svs[svid].chr2 == refIndex2)) {
+		  computeMSA = true;
+		  // Lazy loading of references
+		  if (sndSeq == NULL) {
+		    int32_t seqlen = -1;
+		    std::string tname(hdr->target_name[refIndex2]);
+		    sndSeq = faidx_fetch_seq(fai, tname.c_str(), 0, hdr->target_len[refIndex2], &seqlen);
+		  }
+		}
+	      } else {
+		if ((refIndex2 == refIndex) && (svs[svid].chr == refIndex) && (svs[svid].chr2 == refIndex2)) computeMSA = true;
+	      }
+	      if (computeMSA) {
+		bool msaSuccess = false;
+		//std::cerr << svs[svid].svStart << ',' << svs[svid].svEnd << ',' << svs[svid].svt << ',' << svid << " SV" << std::endl;
+		msaEdlib(c, seqStore[svid], svs[svid].consensus);
+		if (alignConsensus(c, hdr, seq, sndSeq, svs[svid], true)) msaSuccess = true;
+		//std::cerr << msaSuccess << std::endl;
+		if (!msaSuccess) {
+		  svs[svid].consensus = "";
+		  svs[svid].srSupport = 0;
+		  svs[svid].srAlignQuality = 0;
+		}
+		seqStore[svid].clear();
+		svcons[svid] = true;
+	      }
+	    }
+	  }
+	}
+	if (sndSeq != NULL) free(sndSeq);
+      }
+      // Clean-up
+      if (seq != NULL) free(seq);
+    }
+	    */
+	    
+    // Clean-up unfinished SVs
+    for(uint32_t svid = 0; svid < svcons.size(); ++svid) {
+      if (!svcons[svid]) {
+	//std::cerr << "Missing: " << svid << ',' << svs[svid].svt << std::endl;
+	svs[svid].consensus = "";
+	svs[svid].srSupport = 0;
+	svs[svid].srAlignQuality = 0;
+      }
+    }
+  }
+
   
  template<typename TConfig>
  inline int32_t
  runGraph(TConfig& c) {
-
 #ifdef PROFILE
    ProfilerStart("delly.prof");
 #endif
@@ -338,48 +527,24 @@ namespace torali {
      typedef std::vector<StructuralVariantRecord> TVariants;
      TVariants svc;
 
-     // Split-read store
-     typedef std::pair<int32_t, std::size_t> TPosRead;
-     typedef std::vector<SeqSlice> TSvPosVector;
-     typedef boost::unordered_map<TPosRead, TSvPosVector> TPosReadSV;
-     typedef std::vector<TPosReadSV> TGenomicPosReadSV;
-     TGenomicPosReadSV srStore(c.nchr, TPosReadSV());
-
      // Load pan-genome graph
      std::cerr << '[' << boost::posix_time::to_simple_string(boost::posix_time::second_clock::local_time()) << "] Load pan-genome graph" << std::endl;
      Graph g;
      parseGfa(c, g, false);
      c.nchr = g.smap.size();
-     
-     // Split-reads
-     std::cerr << '[' << boost::posix_time::to_simple_string(boost::posix_time::second_clock::local_time()) << "] SV discovery" << std::endl;
-     typedef std::vector<SRBamRecord> TSRBamRecord;
-     typedef std::vector<TSRBamRecord> TSvtSRBamRecord;
-     TSvtSRBamRecord srBR(2 * DELLY_SVT_TRANS, TSRBamRecord());
-     _findGraphSRBreakpoints(c, g, srBR);
 
-     // Debug
-     //outputGraphSRBamRecords(c, g, srBR);
+     // Split-read store
+     typedef std::vector<SeqSlice> TSvPosVector;
+     typedef boost::unordered_map<std::size_t, TSvPosVector> TReadSV;
+     TReadSV srStore;
 
-     // Cluster BAM records
-     for(uint32_t svt = 0; svt < srBR.size(); ++svt) {
-       if (srBR[svt].empty()) continue;
+     // SV Discovery
+     _clusterGraphSRReads(c, g, svc, srStore);
 
-       // Sort
-       std::sort(srBR[svt].begin(), srBR[svt].end(), SortSRBamRecord<SRBamRecord>());
-
-       // Cluster
-       cluster(c, srBR[svt], svc, c.maxReadSep, svt);
-
-       // Debug
-       outputGraphStructuralVariants(c, g, svc, srBR, svt);
-     }
-       
+     // Assemble
+     assembleGraph(c, g, svc, srStore);
 
      /*
-     // Assemble
-     assemble(c, validRegions, svc, srStore);
-
      // Sort SVs
      sort(svc.begin(), svc.end(), SortSVs<StructuralVariantRecord>());
       
@@ -466,6 +631,7 @@ namespace torali {
      ("svtype,t", boost::program_options::value<std::string>(&svtype)->default_value("ALL"), "SV type to compute [DEL, INS, DUP, INV, BND, ALL]")
      ("technology,y", boost::program_options::value<std::string>(&mode)->default_value("ont"), "seq. technology [pb, ont]")
      ("genome,g", boost::program_options::value<boost::filesystem::path>(&c.genome), "genome fasta file")
+     ("fastq,x", boost::program_options::value<boost::filesystem::path>(&c.fastqfile), "input FASTA/FASTQ file")
      ("outfile,o", boost::program_options::value<boost::filesystem::path>(&c.outfile), "BCF output file")
      ;
    
