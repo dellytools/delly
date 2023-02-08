@@ -530,22 +530,55 @@ namespace torali
   template<typename TConfig>
   inline void
   outputSRBamRecords(TConfig const& c, std::vector<std::vector<SRBamRecord> > const& br) {
-    samFile* samfile = sam_open(c.files[0].string().c_str(), "r");
-    hts_set_fai_filename(samfile, c.genome.string().c_str());
-    bam_hdr_t* hdr = sam_hdr_read(samfile);
-
     // Header
     std::cerr << "id\tchr1\tpos1\tchr2\tpos2\tsvtype\tct\tqual\tinslen" << std::endl;
+
+    // Hash reads
+    typedef std::map<std::size_t, std::string> THashMap;
+    THashMap hm;
+    typedef std::vector<samFile*> TSamFile;
+    typedef std::vector<hts_idx_t*> TIndex;
+    TSamFile samfile(c.files.size());
+    TIndex idx(c.files.size());
+    for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
+      samfile[file_c] = sam_open(c.files[file_c].string().c_str(), "r");
+      hts_set_fai_filename(samfile[file_c], c.genome.string().c_str());
+      idx[file_c] = sam_index_load(samfile[file_c], c.files[file_c].string().c_str());
+    }
+    bam_hdr_t* hdr = sam_hdr_read(samfile[0]);
+    for(int32_t refIndex = 0; refIndex < hdr->n_targets; ++refIndex) {
+      for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
+	hts_itr_t* iter = sam_itr_queryi(idx[file_c], refIndex, 0, hdr->target_len[refIndex]);
+	bam1_t* rec = bam_init1();
+	while (sam_itr_next(samfile[file_c], iter, rec) >= 0) {
+	  if (rec->core.flag & (BAM_FQCFAIL | BAM_FDUP | BAM_FUNMAP)) continue;
+	  std::size_t seed = hash_lr(rec);
+	  std::string qname = bam_get_qname(rec);
+	  if (hm.find(seed) == hm.end()) hm.insert(std::make_pair(seed, qname));
+	  else {
+	    if (hm[seed] != qname) {
+	      std::cerr << "Warning: Hash collision! " << seed << ',' << hm[seed] << ',' << qname << std::endl;
+	    }
+	  }
+	}
+	bam_destroy1(rec);
+	hts_itr_destroy(iter);
+      }
+    }
     
     // SVs
     for(uint32_t svt = 0; svt < br.size(); ++svt) {
       for(uint32_t i = 0; i < br[svt].size(); ++i) {
-	std::cerr << br[svt][i].id << '\t' << hdr->target_name[br[svt][i].chr] << '\t' << br[svt][i].pos << '\t' << hdr->target_name[br[svt][i].chr2] << '\t' << br[svt][i].pos2 << '\t' << _addID(svt) << '\t' << _addOrientation(svt) << '\t' << br[svt][i].qual << '\t' << br[svt][i].inslen << std::endl;
+	std::cerr << hm[br[svt][i].id] << '\t' << br[svt][i].id << '\t' << hdr->target_name[br[svt][i].chr] << '\t' << br[svt][i].pos << '\t' << hdr->target_name[br[svt][i].chr2] << '\t' << br[svt][i].pos2 << '\t' << _addID(svt) << '\t' << _addOrientation(svt) << '\t' << br[svt][i].qual << '\t' << br[svt][i].inslen << std::endl;
       }
     }
+
     // Clean-up
     bam_hdr_destroy(hdr);
-    sam_close(samfile);
+    for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
+      hts_idx_destroy(idx[file_c]);
+      sam_close(samfile[file_c]);
+    }
   }
 
   template<typename TConfig, typename TSvtSRBamRecord>

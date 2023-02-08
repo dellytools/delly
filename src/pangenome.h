@@ -185,7 +185,29 @@ namespace torali {
 		}
 	      }
 	      else if (ar.cigarop[i] == BAM_CINS) {
+		// Insert start-junction
+		if (ar.cigarlen[i] > c.minRefSep) {
+		  if ((rp >= refstart) && (rp < refend)) {
+		    int32_t locbeg = pstart + 1 + srp;
+		    if (!ar.path[pi].first) locbeg = pstart + 1 + (srpend - srp);
+		    if ((locbeg > 0) && (locbeg < (int32_t) seqlen)) {
+		      std::cerr << seqname << '\t' << locbeg << "\tRead\t" << qname << '\t' << ar.seed << '\t' << ar.qlen << "\tPath\t" << pi << '\t' << (int32_t) ar.path[pi].first << '\t' << ar.pstart << "\tReadBp\t" << sp << '\t' << ar.cigarlen[i] << std::endl;
+		      _insertGraphJunction(readBp, ar.seed, ar, pi, locbeg, sp, !ar.path[pi].first);
+		    }
+		  }
+		}
 		sp += ar.cigarlen[i];
+		// Insert end-junction
+		if (ar.cigarlen[i] > c.minRefSep) {
+		  if ((rp >= refstart) && (rp < refend)) {
+		    int32_t locbeg = pstart + 1 + srp;
+		    if (!ar.path[pi].first) locbeg = pstart + 1 + (srpend - srp);
+		    if ((locbeg > 0) && (locbeg < (int32_t) seqlen)) {
+		      std::cerr << seqname << '\t' << locbeg << "\tRead\t" << qname << '\t' << ar.seed << '\t' << ar.qlen << "\tPath\t" << pi << '\t' << (int32_t) ar.path[pi].first << '\t' << ar.pstart << "\tReadBp\t" << sp << '\t' << ar.cigarlen[i] << std::endl;
+		      _insertGraphJunction(readBp, ar.seed, ar, pi, locbeg, sp, ar.path[pi].first);
+		    }
+		  }
+		}
 	      }
 	      else {
 		std::cerr << "Warning: Unknown Cigar option " << ar.cigarop[i] << std::endl;
@@ -233,6 +255,42 @@ namespace torali {
     // Vertex map
     std::vector<std::string> idSegment(g.smap.size());
     for(typename Graph::TSegmentIdMap::const_iterator it = g.smap.begin(); it != g.smap.end(); ++it) idSegment[it->second] = it->first;
+
+    // Hash reads
+    typedef std::map<std::size_t, std::string> THashMap;
+    THashMap hm;
+    for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
+
+      // Open GAF
+      std::ifstream gafFile;
+      boost::iostreams::filtering_streambuf<boost::iostreams::input> dataIn;
+      if (is_gz(c.files[file_c])) {
+	gafFile.open(c.files[file_c].string().c_str(), std::ios_base::in | std::ios_base::binary);
+	dataIn.push(boost::iostreams::gzip_decompressor(), 16*1024);
+      } else gafFile.open(c.files[file_c].string().c_str(), std::ios_base::in);
+      dataIn.push(gafFile);
+
+      // Parse GAF
+      std::istream instream(&dataIn);
+      bool parseAR = true;
+      while (parseAR) {
+	AlignRecord ar;
+	std::string qname;
+	if (parseAlignRecord(instream, g, ar, qname)) {
+	  if (hm.find(ar.seed) == hm.end()) hm.insert(std::make_pair(ar.seed, qname));
+	  else {
+	    if (hm[ar.seed] != qname) {
+	      std::cerr << "Warning: Hash collision! " << ar.seed << ',' << hm[ar.seed] << ',' << qname << std::endl;
+	    }
+	  }
+	} else parseAR = false;
+      }
+
+      // Close file
+      dataIn.pop();
+      if (is_gz(c.files[file_c])) dataIn.pop();
+      gafFile.close();
+    }
     
     // Header
     std::cerr << "id\tsegment1\tpos1\tsegment2\tpos2\tsvtype\tct\tqual\tinslen" << std::endl;
@@ -240,7 +298,7 @@ namespace torali {
     // SVs
     for(uint32_t svt = 0; svt < br.size(); ++svt) {
       for(uint32_t i = 0; i < br[svt].size(); ++i) {
-	std::cerr << br[svt][i].id << '\t' << idSegment[br[svt][i].chr] << '\t' << br[svt][i].pos << '\t' << idSegment[br[svt][i].chr2] << '\t' << br[svt][i].pos2 << '\t' << _addID(svt) << '\t' << _addOrientation(svt) << '\t' << br[svt][i].qual << '\t' << br[svt][i].inslen << std::endl;
+	std::cerr << hm[br[svt][i].id] << '\t' << br[svt][i].id << '\t' << idSegment[br[svt][i].chr] << '\t' << br[svt][i].pos << '\t' << idSegment[br[svt][i].chr2] << '\t' << br[svt][i].pos2 << '\t' << _addID(svt) << '\t' << _addOrientation(svt) << '\t' << br[svt][i].qual << '\t' << br[svt][i].inslen << std::endl;
       }
     }
   }
@@ -325,7 +383,7 @@ namespace torali {
     _findGraphSRBreakpoints(c, g, srBR);
 
     // Debug
-    //outputGraphSRBamRecords(c, g, srBR);
+    outputGraphSRBamRecords(c, g, srBR);
 
     // Cluster BAM records
     std::cerr << '[' << boost::posix_time::to_simple_string(boost::posix_time::second_clock::local_time()) << "] Cluster SVs" << std::endl;
@@ -339,7 +397,7 @@ namespace torali {
       cluster(c, srBR[svt], svc, c.maxReadSep, svt);
 
       // Debug
-      //outputGraphStructuralVariants(c, g, svc, srBR, svt);
+      outputGraphStructuralVariants(c, g, svc, srBR, svt);
       
       // Track split-reads
       for(uint32_t i = 0; i < srBR[svt].size(); ++i) {
