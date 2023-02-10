@@ -324,8 +324,6 @@ namespace torali {
   }
 
 
-
-
   template<typename TConfig, typename TSvtSRBamRecord>  
   inline void
   outputGraphStructuralVariants(TConfig const& c, Graph const& g, std::vector<StructuralVariantRecord> const& svs, TSvtSRBamRecord const& srBR, int32_t const svt) {
@@ -389,6 +387,25 @@ namespace torali {
 	for(uint32_t k = 0; k < svReadNames[svs[i].id].size(); ++k) std::cerr << svReadNames[svs[i].id][k] << ',';
 	std::cerr << std::endl;
       }
+    }
+  }
+
+  inline void
+  outputGraphStructuralVariants(Graph const& g, std::vector<StructuralVariantRecord> const& svs) {
+    // Header
+    std::cerr << "segment1\tpos1\tsegment2\tpos2\tid\tsvtype\tct\tpeSupport\tsrSupport\tconsensus" << std::endl;
+
+    // Vertex map
+    std::vector<std::string> idSegment(g.smap.size());
+    for(typename Graph::TSegmentIdMap::const_iterator it = g.smap.begin(); it != g.smap.end(); ++it) idSegment[it->second] = it->first;
+    
+    // SVs
+    for(uint32_t i = 0; i < svs.size(); ++i) {
+      std::string idname(_addID(svs[i].svt));
+      std::string padNumber = boost::lexical_cast<std::string>(i);
+      padNumber.insert(padNumber.begin(), 8 - padNumber.length(), '0');
+      idname += padNumber;
+      std::cerr << idSegment[svs[i].chr] << '\t' << svs[i].svStart << '\t' << idSegment[svs[i].chr2] << '\t' << svs[i].svEnd << '\t' << idname << '\t' << _addID(svs[i].svt) << '\t' << _addOrientation(svs[i].svt) << '\t' << svs[i].peSupport << '\t' << svs[i].srSupport << '\t' << svs[i].consensus << std::endl;
     }
   }
 
@@ -501,23 +518,15 @@ namespace torali {
 
 		  // Enough split-reads?
 		  if ((seqStore[svid].size() == c.maxReadPerSV) || ((int32_t) seqStore[svid].size() == svs[svid].srSupport)) {
-		    bool msaSuccess = false;
 		    if (seqStore[svid].size() > 1) {
-		      //std::cerr << "SV:" << svid << '\t' << idSegment[svs[svid].chr] << '\t' << svs[svid].svStart << '\t' << idSegment[svs[svid].chr2] << '\t' << svs[svid].svEnd << '\t' << _addID(svs[svid].svt) << '\t' << _addOrientation(svs[svid].svt) << '\t' << svs[svid].srSupport << std::endl;
 		      msaEdlib(c, seqStore[svid], svs[svid].consensus);
-		      msaSuccess = true;
-		      
-		      //if (alignConsensus(c, hdr, seq, NULL, svs[svid], true)) msaSuccess = true;
-		      std::string idname(_addID(svs[svid].svt));
-		      std::string padNumber = boost::lexical_cast<std::string>(svid);
-		      padNumber.insert(padNumber.begin(), 8 - padNumber.length(), '0');
-		      idname += padNumber;
-		      std::cerr << "SV\t" << idname << '\t' << idSegment[svs[svid].chr] << '\t' << svs[svid].svStart << '\t' << idSegment[svs[svid].chr2] << '\t' << svs[svid].svEnd << '\t' << _addID(svs[svid].svt) << '\t' << _addOrientation(svs[svid].svt) << '\t' << svs[svid].srSupport << '\t' << svs[svid].consensus << std::endl;
-		    }
-		    if (!msaSuccess) {
-		      svs[svid].consensus = "";
-		      svs[svid].srSupport = 0;
-		      svs[svid].srAlignQuality = 0;
+
+		      // Debug
+		      //std::string idname(_addID(svs[svid].svt));
+		      //std::string padNumber = boost::lexical_cast<std::string>(svid);
+		      //padNumber.insert(padNumber.begin(), 8 - padNumber.length(), '0');
+		      //idname += padNumber;
+		      //std::cerr << "SV\t" << idname << '\t' << idSegment[svs[svid].chr] << '\t' << svs[svid].svStart << '\t' << idSegment[svs[svid].chr2] << '\t' << svs[svid].svEnd << '\t' << _addID(svs[svid].svt) << '\t' << _addOrientation(svs[svid].svt) << '\t' << svs[svid].srSupport << '\t' << svs[svid].consensus << std::endl;
 		    }
 		    seqStore[svid].clear();
 		    svcons[svid] = true;
@@ -534,52 +543,16 @@ namespace torali {
     dataIn.pop();
     if (is_gz(c.fastqfile)) dataIn.pop();
     fqfile.close();
-    
-    /*
-      // Handle left-overs and translocations
-      for(int32_t refIndex2 = 0; refIndex2 <= refIndex; ++refIndex2) {
-	char* sndSeq = NULL;
-	for(uint32_t svid = 0; svid < svcons.size(); ++svid) {
-	  if (!svcons[svid]) {
-	    if (seqStore[svid].size() > 1) {
-	      bool computeMSA = false;
-	      if (_translocation(svs[svid].svt)) {
-		if ((refIndex2 != refIndex) && (svs[svid].chr == refIndex) && (svs[svid].chr2 == refIndex2)) {
-		  computeMSA = true;
-		  // Lazy loading of references
-		  if (sndSeq == NULL) {
-		    int32_t seqlen = -1;
-		    std::string tname(hdr->target_name[refIndex2]);
-		    sndSeq = faidx_fetch_seq(fai, tname.c_str(), 0, hdr->target_len[refIndex2], &seqlen);
-		  }
-		}
-	      } else {
-		if ((refIndex2 == refIndex) && (svs[svid].chr == refIndex) && (svs[svid].chr2 == refIndex2)) computeMSA = true;
-	      }
-	      if (computeMSA) {
-		bool msaSuccess = false;
-		//std::cerr << svs[svid].svStart << ',' << svs[svid].svEnd << ',' << svs[svid].svt << ',' << svid << " SV" << std::endl;
-		msaEdlib(c, seqStore[svid], svs[svid].consensus);
-		if (alignConsensus(c, hdr, seq, sndSeq, svs[svid], true)) msaSuccess = true;
-		//std::cerr << msaSuccess << std::endl;
-		if (!msaSuccess) {
-		  svs[svid].consensus = "";
-		  svs[svid].srSupport = 0;
-		  svs[svid].srAlignQuality = 0;
-		}
-		seqStore[svid].clear();
-		svcons[svid] = true;
-	      }
-	    }
-	  }
-	}
-	if (sndSeq != NULL) free(sndSeq);
+
+    // Handle left-overs
+    for(uint32_t svid = 0; svid < svcons.size(); ++svid) {
+      if (!svcons[svid]) {
+	if (seqStore[svid].size() > 1) msaEdlib(c, seqStore[svid], svs[svid].consensus);
+	seqStore[svid].clear();
+	svcons[svid] = true;
       }
-      // Clean-up
-      if (seq != NULL) free(seq);
     }
-	    */
-	    
+    
     // Clean-up unfinished SVs
     for(uint32_t svid = 0; svid < svcons.size(); ++svid) {
       if (!svcons[svid]) {
@@ -627,7 +600,8 @@ namespace torali {
      // Assemble
      assembleGraph(c, g, svc, srStore);
 
-     /*
+     // ToDo: Check assemblies
+     
      // Sort SVs
      sort(svc.begin(), svc.end(), SortSVs<StructuralVariantRecord>());
       
@@ -649,17 +623,12 @@ namespace torali {
      // Re-number SVs
      uint32_t cliqueCount = 0;
      for(typename TVariants::iterator svIt = svs.begin(); svIt != svs.end(); ++svIt, ++cliqueCount) svIt->id = cliqueCount;
-     //outputStructuralVariants(c, svs);
-     */
+     outputGraphStructuralVariants(g, svs);
    } else {
+     // ToDo: Parse VCF
      //vcfParse(c, hdr, svs);
    }
 
-   /*
-   // Clean-up
-   bam_hdr_destroy(hdr);
-   sam_close(samfile);
-   
    // Annotate junction reads
    typedef std::vector<JunctionCount> TSVJunctionMap;
    typedef std::vector<TSVJunctionMap> TSampleSVJunctionMap;
@@ -682,13 +651,11 @@ namespace torali {
      rcMap[file_c].resize(svs.size(), ReadCount());
    }
       
-   // SV Genotyping
-   genotypeLR(c, svs, jctMap, rcMap);
+   // ToDo: SV Genotyping
+   //genotypeLR(c, svs, jctMap, rcMap);
 
    // VCF Output
-   vcfOutput(c, svs, jctMap, rcMap, spanMap);
-
-   */
+   //vcfOutput(c, svs, jctMap, rcMap, spanMap);
    
 #ifdef PROFILE
    ProfilerStop();
