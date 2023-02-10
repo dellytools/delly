@@ -150,6 +150,17 @@ namespace torali {
 	    rp = 0;  // Reference pointer
 	    uint32_t srp = 0;
 	    uint32_t sp = ar.qstart;
+
+	    // Leading junction
+	    if ((pi == 0) && (sp > c.minRefSep)) {
+	      int32_t locbeg = pstart + 1 + srp;
+	      if (!ar.path[pi].first) locbeg = pstart + 1 + (srpend - srp);
+	      if ((locbeg > 0) && (locbeg < (int32_t) seqlen)) {
+		//std::cerr << seqname << '\t' << locbeg << "\tRead\t" << qname << '\t' << ar.seed << '\t' << ar.qlen << "\tPath\t" << pi << '\t' << (int32_t) ar.path[pi].first << '\t' << ar.pstart << "\tReadBp\t" << sp << std::endl;
+		_insertGraphJunction(readBp, ar.seed, ar, pi, locbeg, sp, !ar.path[pi].first);
+	      }
+	    }
+	    // Internal junctions
 	    for (uint32_t i = 0; i < ar.cigarop.size(); ++i) {
 	      if ((ar.cigarop[i] == BAM_CMATCH) || (ar.cigarop[i] == BAM_CEQUAL) || (ar.cigarop[i] == BAM_CDIFF)) {
 		for(uint32_t k = 0; k < ar.cigarlen[i]; ++k, ++sp, ++rp) {
@@ -214,7 +225,16 @@ namespace torali {
 		return false;
 	      }
 	    }
-	
+	    // Trailing junction
+	    if ((pi + 1 == ar.path.size()) && ((int32_t) (sp + c.minRefSep) < ar.qlen)) {
+	      int32_t locbeg = pstart + 1 + srp;
+	      if (!ar.path[pi].first) locbeg = pstart + 1 + (srpend - srp);
+	      if ((locbeg > 0) && (locbeg < (int32_t) seqlen)) {
+		//std::cerr << seqname << '\t' << locbeg << "\tRead\t" << qname << '\t' << ar.seed << '\t' << ar.qlen << "\tPath\t" << pi << '\t' << (int32_t) ar.path[pi].first << '\t' << ar.pstart << "\tReadBp\t" << sp << std::endl;
+		_insertGraphJunction(readBp, ar.seed, ar, pi, locbeg, sp, ar.path[pi].first);
+	      }
+	    }
+	  
 	    // Next segment
 	    refstart = refend;
 	  }
@@ -383,7 +403,7 @@ namespace torali {
     _findGraphSRBreakpoints(c, g, srBR);
 
     // Debug
-    outputGraphSRBamRecords(c, g, srBR);
+    //outputGraphSRBamRecords(c, g, srBR);
 
     // Cluster BAM records
     std::cerr << '[' << boost::posix_time::to_simple_string(boost::posix_time::second_clock::local_time()) << "] Cluster SVs" << std::endl;
@@ -397,7 +417,7 @@ namespace torali {
       cluster(c, srBR[svt], svc, c.maxReadSep, svt);
 
       // Debug
-      outputGraphStructuralVariants(c, g, svc, srBR, svt);
+      //outputGraphStructuralVariants(c, g, svc, srBR, svt);
       
       // Track split-reads
       for(uint32_t i = 0; i < srBR[svt].size(); ++i) {
@@ -485,9 +505,14 @@ namespace torali {
 		    if (seqStore[svid].size() > 1) {
 		      //std::cerr << "SV:" << svid << '\t' << idSegment[svs[svid].chr] << '\t' << svs[svid].svStart << '\t' << idSegment[svs[svid].chr2] << '\t' << svs[svid].svEnd << '\t' << _addID(svs[svid].svt) << '\t' << _addOrientation(svs[svid].svt) << '\t' << svs[svid].srSupport << std::endl;
 		      msaEdlib(c, seqStore[svid], svs[svid].consensus);
+		      msaSuccess = true;
 		      
 		      //if (alignConsensus(c, hdr, seq, NULL, svs[svid], true)) msaSuccess = true;
-		      //std::cerr << msaSuccess << std::endl;
+		      std::string idname(_addID(svs[svid].svt));
+		      std::string padNumber = boost::lexical_cast<std::string>(svid);
+		      padNumber.insert(padNumber.begin(), 8 - padNumber.length(), '0');
+		      idname += padNumber;
+		      std::cerr << "SV\t" << idname << '\t' << idSegment[svs[svid].chr] << '\t' << svs[svid].svStart << '\t' << idSegment[svs[svid].chr2] << '\t' << svs[svid].svEnd << '\t' << _addID(svs[svid].svt) << '\t' << _addOrientation(svs[svid].svt) << '\t' << svs[svid].srSupport << '\t' << svs[svid].consensus << std::endl;
 		    }
 		    if (!msaSuccess) {
 		      svs[svid].consensus = "";
