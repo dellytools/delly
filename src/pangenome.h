@@ -564,6 +564,18 @@ namespace torali {
     }
   }
 
+  template<typename TConfig>
+  inline void
+  alignToGraph(TConfig const& c, Graph const& g, std::vector<StructuralVariantRecord>& svs) {
+    // Vertex map
+    std::vector<std::string> idSegment(g.smap.size());
+    for(typename Graph::TSegmentIdMap::const_iterator it = g.smap.begin(); it != g.smap.end(); ++it) idSegment[it->second] = it->first;
+
+    // Fetch sequences
+    
+    
+  }
+  
   
  template<typename TConfig>
  inline int32_t
@@ -599,12 +611,14 @@ namespace torali {
 
      // Assemble
      assembleGraph(c, g, svc, srStore);
+     srStore.clear();
 
-     // ToDo: Check assemblies
-     
      // Sort SVs
      sort(svc.begin(), svc.end(), SortSVs<StructuralVariantRecord>());
-      
+           
+     // Consensus alignment
+     alignToGraph(c, g, svc);
+     
      // Keep assembled SVs only
      StructuralVariantRecord lastSV;
      for(typename TVariants::iterator svIter = svc.begin(); svIter != svc.end(); ++svIter) {
