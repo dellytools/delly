@@ -57,7 +57,6 @@ namespace torali {
     DnaScore<int> aliscore;
     boost::filesystem::path dumpfile;
     boost::filesystem::path outfile;
-    boost::filesystem::path seqfile;
     boost::filesystem::path fastqfile;
     boost::filesystem::path vcffile;
     std::vector<boost::filesystem::path> files;
@@ -114,7 +113,7 @@ namespace torali {
 	  for(uint32_t pi = 0; pi < ar.path.size(); ++pi) {
 	    // Vertex coordinates
 	    std::string seqname = idSegment[ar.path[pi].second];
-	    uint32_t seqlen = g.segments[ar.path[pi].second].len;
+	    uint32_t seqlen = g.nodelen(ar.path[pi].second);
 	    uint32_t pstart = 0;
 	    uint32_t plen = seqlen;
 	    if (pi == 0) {
@@ -566,14 +565,62 @@ namespace torali {
 
   template<typename TConfig>
   inline void
-  alignToGraph(TConfig const& c, Graph const& g, std::vector<StructuralVariantRecord>& svs) {
-    // Vertex map
-    std::vector<std::string> idSegment(g.smap.size());
-    for(typename Graph::TSegmentIdMap::const_iterator it = g.smap.begin(); it != g.smap.end(); ++it) idSegment[it->second] = it->first;
-
-    // Fetch sequences
-    
-    
+  alignToGraph(TConfig const& c, Graph& g, std::vector<StructuralVariantRecord>& svs) {
+    // Generate pairwise alignment
+    for(uint32_t svid = 0; svid < svs.size(); ++svid) {
+      std::cerr << "SV:" << svs[svid].svStart << ',' << svs[svid].svEnd << '\t' << svs[svid].svt << ',' << svs[svid].consensus.size() << std::endl;
+      bool validConsensusAlignment = false;
+      AlignDescriptor ad;
+      if ( (int32_t) svs[svid].consensus.size() >= (2 * c.minimumFlankSize + svs[svid].insLen)) {
+	if (svs[svid].svt == 2) { 	// Deletion
+	  uint32_t svsize = svs[svid].svEnd - svs[svid].svStart;
+	  if (svsize < svs[svid].consensus.size()) {
+	    int32_t startpos = svs[svid].svStart - svs[svid].consensus.size();
+	    if (startpos < 0) startpos = 0;
+	    int32_t endpos = svs[svid].svEnd + svs[svid].consensus.size();
+	    if (endpos > (int) g.nodelen(svs[svid].chr)) endpos = g.nodelen(svs[svid].chr);
+	    std::string svRefStr = g.nodeseq(svs[svid].chr).substr(startpos, (endpos - startpos));
+	    if (_alignConsensus(c, svs[svid].consensus, svRefStr, svs[svid].svt, ad, true)) {
+	      validConsensusAlignment = true;
+	      std::cerr << "Valid alignment" << std::endl;
+	    }
+	  } else {
+	    int32_t startpos1 = svs[svid].svStart - svs[svid].consensus.size();
+	    if (startpos1 < 0) startpos1 = 0;
+	    int32_t endpos1 = svs[svid].svStart + svs[svid].consensus.size();
+	    if (endpos1 > (int) g.nodelen(svs[svid].chr)) endpos1 = g.nodelen(svs[svid].chr);
+	    std::string svRefStr = g.nodeseq(svs[svid].chr).substr(startpos1, (endpos1 - startpos1));
+	    int32_t startpos2 = svs[svid].svEnd - svs[svid].consensus.size();
+	    if (startpos2 < 0) startpos2 = 0;
+	    int32_t endpos2 = svs[svid].svEnd + svs[svid].consensus.size();
+	    if (endpos2 > (int) g.nodelen(svs[svid].chr)) endpos2 = g.nodelen(svs[svid].chr);
+	    svRefStr += g.nodeseq(svs[svid].chr).substr(startpos2, (endpos2 - startpos2));
+	    if (_alignConsensus(c, svs[svid].consensus, svRefStr, svs[svid].svt, ad, true)) {
+	      validConsensusAlignment = true;
+	      std::cerr << "Valid alignment" << std::endl;
+	    }	    
+	  }
+	}
+      }
+      if (!validConsensusAlignment) {
+	// Requires path alignments
+	//svs[svid].consensus = "";
+	//svs[svid].srSupport = 0;
+	//svs[svid].srAlignQuality = 0;
+      } else {
+	svs[svid].precise = true;
+	//sv.svStart=finalGapStart;
+	//sv.svEnd=finalGapEnd;
+	svs[svid].srAlignQuality = ad.percId;
+	svs[svid].insLen=ad.cEnd - ad.cStart - 1;
+	svs[svid].homLen=std::max(0, ad.homLeft + ad.homRight - 2);
+	int32_t ci_wiggle = std::max(ad.homLeft, ad.homRight);
+	svs[svid].ciposlow = -ci_wiggle;
+	svs[svid].ciposhigh = ci_wiggle;
+	svs[svid].ciendlow = -ci_wiggle;
+	svs[svid].ciendhigh = ci_wiggle;
+      }
+    }
   }
   
   
@@ -598,7 +645,7 @@ namespace torali {
      // Load pan-genome graph
      std::cerr << '[' << boost::posix_time::to_simple_string(boost::posix_time::second_clock::local_time()) << "] Load pan-genome graph" << std::endl;
      Graph g;
-     parseGfa(c, g, false);
+     parseGfa(c, g);
      c.nchr = g.smap.size();
 
      // Split-read store
@@ -743,9 +790,9 @@ namespace torali {
    boost::program_options::notify(vm);
    
    // Check command line arguments
-   if ((vm.count("help")) || (!vm.count("input-file")) || (!vm.count("genome"))) {
+   if ((vm.count("help")) || (!vm.count("input-file")) || (!vm.count("genome")) || (!vm.count("fastq"))) {
      std::cerr << std::endl;
-     std::cerr << "Usage: delly " << argv[0] << " [OPTIONS] -g <pan-genome.gfa.gz> <sample1.gaf.gz> <sample2.gaf.gz> ..." << std::endl;
+     std::cerr << "Usage: delly " << argv[0] << " [OPTIONS] -g <pan-genome.gfa.gz> -x <sample.fq.gz> <sample1.gaf.gz> <sample2.gaf.gz> ..." << std::endl;
      std::cerr << visible_options << "\n";
      return 0;
    }
