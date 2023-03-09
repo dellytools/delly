@@ -486,6 +486,8 @@ namespace torali {
 	if ((gline[0] == '>') || (gline[0] == '@')) {
 	  validRec = true;
 	  qname = gline.substr(1);
+	  qname = qname.substr(0, qname.find(' '));
+	  qname = qname.substr(0, qname.find('\t'));
 	} else validRec = false;
       } else if (lnum % 2 == 1) {
 	if (validRec) {
@@ -549,6 +551,13 @@ namespace torali {
 	if (seqStore[svid].size() > 1) msaEdlib(c, seqStore[svid], svs[svid].consensus);
 	seqStore[svid].clear();
 	svcons[svid] = true;
+
+	// Debug
+	//std::string idname(_addID(svs[svid].svt));
+	//std::string padNumber = boost::lexical_cast<std::string>(svid);
+	//padNumber.insert(padNumber.begin(), 8 - padNumber.length(), '0');
+	//idname += padNumber;
+	//std::cerr << "SV\t" << idname << '\t' << idSegment[svs[svid].chr] << '\t' << svs[svid].svStart << '\t' << idSegment[svs[svid].chr2] << '\t' << svs[svid].svEnd << '\t' << _addID(svs[svid].svt) << '\t' << _addOrientation(svs[svid].svt) << '\t' << svs[svid].srSupport << '\t' << svs[svid].consensus << std::endl;
       }
     }
     
@@ -563,12 +572,49 @@ namespace torali {
     }
   }
 
+  inline void
+  _fillPrefix(Graph& g, uint32_t const nodeid, std::string prefix, std::vector<std::string>& all, int32_t const reqlen) {
+    for(uint32_t i = 0; i < g.links.size(); ++i) {
+      if ((g.links[i].to == nodeid) && (g.links[i].tofwd)) {
+	if (g.links[i].fromfwd) {
+	  std::cerr << "PrefixLink\t" << g.links[i].from << ',' << (int) g.links[i].fromfwd << ':' << g.links[i].to << ',' << (int) g.links[i].tofwd << ':' << g.nodelen(g.links[i].from) << ',' << reqlen << std::endl;
+	  int32_t localstart = g.nodelen(g.links[i].from)-reqlen;
+	  if (localstart < 0) {
+	    // Recurse
+	    _fillPrefix(g, g.links[i].from, g.nodeseq(g.links[i].from) + prefix, all, reqlen - g.nodelen(g.links[i].from));
+	  } else {
+	    all.push_back(g.nodeseq(g.links[i].from).substr(localstart) + prefix);
+	  }
+	}
+      }
+    }
+  }
+
+
+  inline void
+  _fillSuffix(Graph& g, uint32_t const nodeid, std::string suffix, std::vector<std::string>& all, int32_t const reqlen) {
+    for(uint32_t i = 0; i < g.links.size(); ++i) {
+      if ((g.links[i].from == nodeid) && (g.links[i].fromfwd)) {
+	if (g.links[i].tofwd) {
+	  std::cerr << "SuffixLink\t" << g.links[i].from << ',' << (int) g.links[i].fromfwd << ':' << g.links[i].to << ',' << (int) g.links[i].tofwd << ':' << g.nodelen(g.links[i].to) << ',' << reqlen << std::endl;
+	  int32_t localend = reqlen;
+	  if (localend > (int) g.nodelen(g.links[i].to)) {
+	    // Recurse
+	    _fillSuffix(g, g.links[i].to, suffix + g.nodeseq(g.links[i].to), all, reqlen - g.nodelen(g.links[i].to));
+	  } else {
+	    all.push_back(suffix + g.nodeseq(g.links[i].to).substr(0, localend));
+	  }	  
+	}
+      }
+    }
+  }
+
   template<typename TConfig>
   inline void
   alignToGraph(TConfig const& c, Graph& g, std::vector<StructuralVariantRecord>& svs) {
     // Generate pairwise alignment
     for(uint32_t svid = 0; svid < svs.size(); ++svid) {
-      std::cerr << "SV:" << svs[svid].svStart << ',' << svs[svid].svEnd << '\t' << svs[svid].svt << ',' << svs[svid].consensus.size() << std::endl;
+      std::cerr << "SV:" << svid << ',' << svs[svid].svStart << ',' << svs[svid].svEnd << '\t' << svs[svid].svt << ',' << svs[svid].consensus.size() << std::endl;
       bool validConsensusAlignment = false;
       AlignDescriptor ad;
       if ( (int32_t) svs[svid].consensus.size() >= (2 * c.minimumFlankSize + svs[svid].insLen)) {
@@ -576,10 +622,22 @@ namespace torali {
 	  uint32_t svsize = svs[svid].svEnd - svs[svid].svStart;
 	  if (svsize < svs[svid].consensus.size()) {
 	    int32_t startpos = svs[svid].svStart - svs[svid].consensus.size();
-	    if (startpos < 0) startpos = 0;
+	    std::vector<std::string> prefix;
+	    if (startpos < 0) {
+	      startpos = 0;
+	      _fillPrefix(g, svs[svid].chr, "", prefix, svs[svid].consensus.size() - svs[svid].svStart);
+	    }
+	    for(uint32_t i = 0; i < prefix.size(); ++i) std::cerr << "Prefix: " << prefix[i] << std::endl;
 	    int32_t endpos = svs[svid].svEnd + svs[svid].consensus.size();
-	    if (endpos > (int) g.nodelen(svs[svid].chr)) endpos = g.nodelen(svs[svid].chr);
+	    std::vector<std::string> suffix;
+	    if (endpos > (int) g.nodelen(svs[svid].chr)) {
+	      endpos = g.nodelen(svs[svid].chr);
+	      _fillSuffix(g, svs[svid].chr, "", suffix, svs[svid].consensus.size() - (g.nodelen(svs[svid].chr) - svs[svid].svEnd));
+	    }
+	    for(uint32_t i = 0; i < prefix.size(); ++i) std::cerr << "Suffix: " << suffix[i] << std::endl;
 	    std::string svRefStr = g.nodeseq(svs[svid].chr).substr(startpos, (endpos - startpos));
+	    std::cerr << "SV:" << svid << ',' << svRefStr << std::endl;
+	    std::cerr << "SV:" << svid << ',' << svs[svid].consensus << std::endl;
 	    if (_alignConsensus(c, svs[svid].consensus, svRefStr, svs[svid].svt, ad, true)) {
 	      validConsensusAlignment = true;
 	      std::cerr << "Valid alignment" << std::endl;
@@ -664,7 +722,7 @@ namespace torali {
      sort(svc.begin(), svc.end(), SortSVs<StructuralVariantRecord>());
            
      // Consensus alignment
-     alignToGraph(c, g, svc);
+     //alignToGraph(c, g, svc);
      
      // Keep assembled SVs only
      StructuralVariantRecord lastSV;

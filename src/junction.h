@@ -531,7 +531,7 @@ namespace torali
   inline void
   outputSRBamRecords(TConfig const& c, std::vector<std::vector<SRBamRecord> > const& br) {
     // Header
-    std::cerr << "id\tchr1\tpos1\tchr2\tpos2\tsvtype\tct\tqual\tinslen" << std::endl;
+    std::cerr << "qname\tid\tchr1\tpos1\tchr2\tpos2\tsvtype\tct\tqual\tinslen" << std::endl;
 
     // Hash reads
     typedef std::map<std::size_t, std::string> THashMap;
