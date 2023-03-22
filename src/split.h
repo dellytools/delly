@@ -175,7 +175,9 @@ namespace torali
       } else if (svt == 3) {
 	return boost::to_upper_copy(std::string(ref + svRec.svEndBeg, ref + svRec.svEndEnd)) + boost::to_upper_copy(std::string(ref + svRec.svStartBeg, ref + svRec.svStartEnd));
       } else if (svt == 0) {
-	std::string strEnd=boost::to_upper_copy(std::string(ref + svRec.svEndBeg, ref + svRec.svEndEnd));
+	std::string strEnd;
+	if ((svRec.svEnd - svRec.svStart) > c.minConsWindow) strEnd = boost::to_upper_copy(std::string(ref + svRec.svEndBeg, ref + svRec.svEndEnd));
+	else strEnd=boost::to_upper_copy(std::string(ref + svRec.svStart, ref + svRec.svEndEnd));
 	std::string strRevComp=strEnd;
 	std::string::reverse_iterator itR = strEnd.rbegin();
 	std::string::reverse_iterator itREnd = strEnd.rend();
@@ -189,9 +191,12 @@ namespace torali
 	  default: break;
 	  }
 	}
-	return boost::to_upper_copy(std::string(ref + svRec.svStartBeg, ref + svRec.svStartEnd)) + strRevComp;
+	if ((svRec.svEnd - svRec.svStart) > c.minConsWindow) return boost::to_upper_copy(std::string(ref + svRec.svStartBeg, ref + svRec.svStartEnd)) + strRevComp;
+	else return boost::to_upper_copy(std::string(ref + svRec.svStartBeg, ref + svRec.svStartEnd)) + strRevComp + boost::to_upper_copy(std::string(ref + svRec.svEnd, ref + svRec.svEndEnd));
       } else if (svt == 1) {
-	std::string strStart=boost::to_upper_copy(std::string(ref + svRec.svStartBeg, ref + svRec.svStartEnd));
+	std::string strStart;
+	if ((svRec.svEnd - svRec.svStart) > c.minConsWindow) strStart = boost::to_upper_copy(std::string(ref + svRec.svStartBeg, ref + svRec.svStartEnd));
+	else strStart = boost::to_upper_copy(std::string(ref + svRec.svStartBeg, ref + svRec.svEnd));
 	std::string strRevComp=strStart;
 	std::string::reverse_iterator itR = strStart.rbegin();
 	std::string::reverse_iterator itREnd = strStart.rend();
@@ -205,7 +210,8 @@ namespace torali
 	  default: break;
 	  }
 	}
-	return strRevComp + boost::to_upper_copy(std::string(ref + svRec.svEndBeg, ref + svRec.svEndEnd));
+	if ((svRec.svEnd - svRec.svStart) > c.minConsWindow) return strRevComp + boost::to_upper_copy(std::string(ref + svRec.svEndBeg, ref + svRec.svEndEnd));
+	else return boost::to_upper_copy(std::string(ref + svRec.svStartBeg, ref + svRec.svStart)) + strRevComp + boost::to_upper_copy(std::string(ref + svRec.svEndBeg, ref + svRec.svEndEnd));
       }
     }
     return "";
@@ -258,16 +264,30 @@ namespace torali
 	finalGapEnd = sv.svEndBeg + ad.rStart;
 	return true;
       } else if (svt == 0) {
-	int32_t annealed = sv.svStartEnd - sv.svStartBeg;
-	if ((ad.rStart >= annealed) || (ad.rEnd < annealed)) return false;
-	finalGapStart = sv.svStartBeg + ad.rStart;
-	finalGapEnd = sv.svEndBeg + (ref.size() - ad.rEnd) + 1;
+	if ((sv.svEnd - sv.svStart) > c.minConsWindow) {
+	  int32_t annealed = sv.svStartEnd - sv.svStartBeg;
+	  if ((ad.rStart >= annealed) || (ad.rEnd < annealed)) return false;
+	  finalGapStart = sv.svStartBeg + ad.rStart;
+	  finalGapEnd = sv.svEndBeg + (ref.size() - ad.rEnd) + 1;
+	} else {
+	  int32_t annealed = sv.svStartEnd - sv.svStartBeg;
+	  if ((ad.rStart >= annealed) || (ad.rEnd < annealed)) return false;
+	  finalGapStart = sv.svStartBeg + ad.rStart;
+	  finalGapEnd = sv.svEndEnd - (ad.rEnd - annealed);
+	}
 	return true;
       } else if (svt == 1) {
-	int32_t annealed = sv.svStartEnd - sv.svStartBeg;
-	if ((ad.rStart >= annealed) || (ad.rEnd < annealed)) return false;
-	finalGapStart = sv.svStartBeg + (annealed - ad.rStart) + 1;
-	finalGapEnd = sv.svEndBeg + (ad.rEnd - annealed);
+	if ((sv.svEnd - sv.svStart) > c.minConsWindow) {
+	  int32_t annealed = sv.svStartEnd - sv.svStartBeg;
+	  if ((ad.rStart >= annealed) || (ad.rEnd < annealed)) return false;
+	  finalGapStart = sv.svStartBeg + (annealed - ad.rStart) + 1;
+	  finalGapEnd = sv.svEndBeg + (ad.rEnd - annealed);
+	} else {
+	  int32_t annealed = (sv.svStart - sv.svStartBeg) + (sv.svEnd - sv.svStartBeg);
+	  if ((ad.rStart >= annealed) || (ad.rEnd < annealed)) return false;
+	  finalGapStart = sv.svStartBeg + (annealed - ad.rStart) + 1;
+	  finalGapEnd = sv.svEndBeg + (ad.rEnd - annealed);
+	}
 	return true;
       } else if (svt == 4) {
 	finalGapStart = sv.svStartBeg + ad.rStart;
@@ -480,7 +500,7 @@ namespace torali
     // Generate consensus alignment
     AlignDescriptor ad;
     if (!_alignConsensus(c, sv.consensus, svRefStr, sv.svt, ad, realign)) return false;
-    
+
     // Get the start and end of the structural variant
     unsigned int finalGapStart = 0;
     unsigned int finalGapEnd = 0;
@@ -497,7 +517,6 @@ namespace torali
     sv.ciposhigh = ci_wiggle;
     sv.ciendlow = -ci_wiggle;
     sv.ciendhigh = ci_wiggle;
-
     return true;
   }
 

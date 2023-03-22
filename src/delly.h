@@ -57,7 +57,7 @@ namespace torali
     int32_t nchr;
     int32_t minimumFlankSize;
     int32_t indelsize;
-    int32_t maxInsertionSize;
+    int32_t minConsWindow;
     uint32_t graphPruning;
     uint32_t minRefSep;
     uint32_t maxReadSep;
@@ -232,6 +232,7 @@ namespace torali
     hidden.add_options()
       ("input-file", boost::program_options::value< std::vector<boost::filesystem::path> >(&c.files), "input file")
       ("pruning,j", boost::program_options::value<uint32_t>(&c.graphPruning)->default_value(1000), "PE graph pruning cutoff")
+      ("cons-window,w", boost::program_options::value<int32_t>(&c.minConsWindow)->default_value(100), "consensus window")
       ("max-geno-count,a", boost::program_options::value<uint32_t>(&c.maxGenoReadCount)->default_value(250), "max. number of reads aligned for SR genotyping")
       ;
     
@@ -390,7 +391,6 @@ namespace torali
     c.flankQuality = 0.95;
     c.minimumFlankSize = 13;
     c.indelsize = 1000;
-    c.maxInsertionSize = 200;
     return dellyRun(c);
   }
 

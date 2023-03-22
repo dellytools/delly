@@ -216,7 +216,8 @@ namespace torali
     //std::cerr << gapped << std::endl;
 
     // Trim off 10% from either end
-    int32_t trim = (int32_t) (0.1 * cs.size());
+    int32_t trim = (int32_t) (0.05 * cs.size());
+    if (trim > 50) trim = 50;
     int32_t len = (int32_t) (cs.size()) - 2 * trim;
     if (len > 100) cs = cs.substr(trim, len);
     
@@ -295,7 +296,7 @@ namespace torali
 	      int32_t svid = seqsl.svid;
 	      if ((!svcons[svid]) && (seqStore[svid].size() < c.maxReadPerSV)) {
 		// Extract subsequence (otherwise MSA takes forever)
-		int32_t window = 1000; // MSA should be larger
+		int32_t window = c.minConsWindow; // MSA should be larger
 		int32_t sPos = seqsl.sstart - window;
 		int32_t ePos = seqsl.sstart + seqsl.inslen + window;
 		if (rec->core.flag & BAM_FREVERSE) {
@@ -305,7 +306,7 @@ namespace torali
 		if (sPos < 0) sPos = 0;
 		if (ePos > (int32_t) readlen) ePos = readlen;
 		// Min. seq length and max insertion size, 10kbp?
-		if (((ePos - sPos) > window) && ((ePos - sPos) <= (c.maxInsertionSize + window))) {
+		if ((ePos - sPos) > window) {
 		  std::string seqalign = sequence.substr(sPos, (ePos - sPos));
 		  seqStore[svid].push_back(seqalign);
 

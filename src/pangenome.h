@@ -50,7 +50,6 @@ namespace torali {
     int32_t nchr;
     int32_t minimumFlankSize;
     int32_t indelsize;
-    int32_t maxInsertionSize;
     float indelExtension;
     float flankQuality;
     std::set<int32_t> svtset;
@@ -513,7 +512,7 @@ namespace torali {
 		if (sPos < 0) sPos = 0;
 		if (ePos > (int32_t) readlen) ePos = readlen;
 		// Min. seq length and max insertion size, 10kbp?
-		if (((ePos - sPos) > window) && ((ePos - sPos) <= (c.maxInsertionSize + window))) {
+		if ((ePos - sPos) > window) {
 		  std::string seqalign = sequence.substr(sPos, (ePos - sPos));
 		  seqStore[svid].push_back(seqalign);
 
@@ -819,7 +818,6 @@ namespace torali {
      ("max-reads,p", boost::program_options::value<uint32_t>(&c.maxReadPerSV)->default_value(15), "max. reads for consensus computation")
      ("flank-size,f", boost::program_options::value<int32_t>(&c.minimumFlankSize)->default_value(100), "min. flank size")
      ("flank-quality,a", boost::program_options::value<float>(&c.flankQuality)->default_value(0.9), "min. flank quality")
-     ("max-isize,r", boost::program_options::value<int32_t>(&c.maxInsertionSize)->default_value(10000), "max. insertion size")
      ;     
    
    boost::program_options::options_description geno("Genotyping options");

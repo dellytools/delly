@@ -240,7 +240,7 @@ namespace torali
 		    else isizelen = (it->second[j].seqpos - it->second[i].seqpos) - (it->second[i].refpos - it->second[j].refpos);
 		  } else isizelen = 0;
 		}
-		if ((isizelen > (int32_t) c.minRefSep) && (isizelen < (int32_t) c.maxInsertionSize)) {
+		if ((isizelen > (int32_t) c.minRefSep) && (isizelen < std::max(it->second[i].seqpos, it->second[j].seqpos))) {
 		  // Avg. qval
 		  int32_t qval = (int32_t) (((int32_t) it->second[i].qual + (int32_t) it->second[j].qual) / 2);
 		  if (it->second[i].refpos <= it->second[j].refpos) {
@@ -585,7 +585,7 @@ namespace torali
   inline void
   outputStructuralVariants(TConfig const& c, std::vector<StructuralVariantRecord> const& svs, TSvtSRBamRecord const& srBR, int32_t const svt) {
     // Header
-    std::cerr << "chr1\tpos1\tchr2\tpos2\tsvtype\tct\tpeSupport\tsrSupport" << std::endl;
+    std::cerr << "chr1\tpos1\tchr2\tpos2\tsvtype\tct\tinslen\tpeSupport\tsrSupport" << std::endl;
     
     // Hash reads
     typedef std::map<std::size_t, std::string> THashMap;
@@ -633,7 +633,7 @@ namespace torali
     // SVs
     for(uint32_t i = 0; i < svs.size(); ++i) {
       if (svs[i].svt != svt) continue;
-      std::cerr << hdr->target_name[svs[i].chr] << '\t' << svs[i].svStart << '\t' << hdr->target_name[svs[i].chr2] << '\t' << svs[i].svEnd << '\t' << _addID(svs[i].svt) << '\t' << _addOrientation(svs[i].svt) << '\t' << svs[i].peSupport << '\t' << svs[i].srSupport << '\t';
+      std::cerr << hdr->target_name[svs[i].chr] << '\t' << svs[i].svStart << '\t' << hdr->target_name[svs[i].chr2] << '\t' << svs[i].svEnd << '\t' << _addID(svs[i].svt) << '\t' << _addOrientation(svs[i].svt) << '\t' << svs[i].insLen << '\t' << svs[i].peSupport << '\t' << svs[i].srSupport << '\t';
       for(uint32_t k = 0; k < svReadNames[svs[i].id].size(); ++k) std::cerr << svReadNames[svs[i].id][k] << ',';
       std::cerr << std::endl;
     }
