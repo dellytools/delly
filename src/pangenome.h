@@ -155,7 +155,7 @@ namespace torali {
 	      if (!ar.path[pi].first) locbeg = pstart + 1 + (srpend - srp);
 	      if ((locbeg > 0) && (locbeg < (int32_t) seqlen)) {
 		//std::cerr << seqname << '\t' << locbeg << "\tRead\t" << qname << '\t' << ar.seed << '\t' << ar.qlen << "\tPath\t" << pi << '\t' << (int32_t) ar.path[pi].first << '\t' << ar.pstart << "\tReadBp\t" << sp << std::endl;
-		_insertGraphJunction(readBp, ar.seed, ar, pi, locbeg, sp, !ar.path[pi].first);
+		_insertGraphJunction(readBp, ar.seed, ar, pi, locbeg, sp, ar.path[pi].first);
 	      }
 	    }
 	    // Internal junctions
@@ -229,7 +229,7 @@ namespace torali {
 	      if (!ar.path[pi].first) locbeg = pstart + 1 + (srpend - srp);
 	      if ((locbeg > 0) && (locbeg < (int32_t) seqlen)) {
 		//std::cerr << seqname << '\t' << locbeg << "\tRead\t" << qname << '\t' << ar.seed << '\t' << ar.qlen << "\tPath\t" << pi << '\t' << (int32_t) ar.path[pi].first << '\t' << ar.pstart << "\tReadBp\t" << sp << std::endl;
-		_insertGraphJunction(readBp, ar.seed, ar, pi, locbeg, sp, ar.path[pi].first);
+		_insertGraphJunction(readBp, ar.seed, ar, pi, locbeg, sp, !ar.path[pi].first);
 	      }
 	    }
 	  
