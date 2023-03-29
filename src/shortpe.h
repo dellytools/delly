@@ -431,7 +431,7 @@ namespace torali
     }
 
     // Debug abnormal paired-ends and split-reads
-    //outputSRBamRecords(c, srBR);
+    //outputSRBamRecords(c, srBR, false);
 
     // Cluster split-read records
     now = boost::posix_time::second_clock::local_time();

@@ -529,7 +529,7 @@ namespace torali
 
   template<typename TConfig>
   inline void
-  outputSRBamRecords(TConfig const& c, std::vector<std::vector<SRBamRecord> > const& br) {
+  outputSRBamRecords(TConfig const& c, std::vector<std::vector<SRBamRecord> > const& br, bool const longread) {
     // Header
     std::cerr << "qname\tid\tchr1\tpos1\tchr2\tpos2\tsvtype\tct\tqual\tinslen" << std::endl;
 
@@ -552,7 +552,9 @@ namespace torali
 	bam1_t* rec = bam_init1();
 	while (sam_itr_next(samfile[file_c], iter, rec) >= 0) {
 	  if (rec->core.flag & (BAM_FQCFAIL | BAM_FDUP | BAM_FUNMAP)) continue;
-	  std::size_t seed = hash_lr(rec);
+	  std::size_t seed;
+	  if (longread) seed = hash_lr(rec);
+	  else seed = hash_string(bam_get_qname(rec));
 	  std::string qname = bam_get_qname(rec);
 	  if (hm.find(seed) == hm.end()) hm.insert(std::make_pair(seed, qname));
 	  else {
@@ -581,6 +583,12 @@ namespace torali
     }
   }
 
+  template<typename TConfig>
+  inline void
+  outputSRBamRecords(TConfig const& c, std::vector<std::vector<SRBamRecord> > const& br) {
+    outputSRBamRecords(c, br, true);
+  }
+  
   template<typename TConfig, typename TSvtSRBamRecord>
   inline void
   outputStructuralVariants(TConfig const& c, std::vector<StructuralVariantRecord> const& svs, TSvtSRBamRecord const& srBR, int32_t const svt) {
