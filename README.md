@@ -14,8 +14,7 @@
 
 Delly is an integrated structural variant (SV) prediction method that can discover, genotype and visualize deletions, tandem duplications, inversions and translocations at single-nucleotide resolution in short-read and long-read massively parallel sequencing data. It uses paired-ends, split-reads and read-depth to sensitively and accurately delineate genomic rearrangements throughout the genome.
 
-Installing Delly
-----------------
+# Installing Delly
 
 Delly is available as a [statically linked binary](https://github.com/dellytools/delly/releases/), a [singularity container (SIF file)](https://github.com/dellytools/delly/releases/), a [docker container](https://hub.docker.com/r/dellytools/delly/) or via [Bioconda](https://anaconda.org/bioconda/delly). You can also build Delly from source using a recursive clone and make. 
 
@@ -28,8 +27,8 @@ Delly is available as a [statically linked binary](https://github.com/dellytools
 There is a Delly discussion group [delly-users](http://groups.google.com/d/forum/delly-users) for usage and installation questions.
 
 
-Delly multi-threading mode
---------------------------
+# Delly multi-threading mode
+
 Delly supports parallel computing using the OpenMP API (www.openmp.org).
 
 `make PARALLEL=1 -B src/delly`
@@ -41,8 +40,7 @@ You can set the number of threads using the environment variable OMP_NUM_THREADS
 Delly primarily parallelizes on the sample level. Hence, OMP_NUM_THREADS should be always smaller or equal to the number of input samples. 
 
 
-Running Delly
--------------
+# Running Delly
 
 Delly needs a sorted, indexed and duplicate marked bam file for every input sample.
 An indexed reference genome is required to identify split-reads.
