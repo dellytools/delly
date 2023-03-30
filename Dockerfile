@@ -3,7 +3,7 @@ FROM ubuntu:22.04
 
 MAINTAINER Tobias Rausch rausch@embl.de
 
-# install required packages
+# install required packages using apt
 RUN apt-get update && apt-get install -y \
     autoconf \
     build-essential \
