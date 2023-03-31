@@ -65,19 +65,6 @@ struct FilterConfig {
 };
 
 
-/* FILTER name for soft filtering */
-#define DELLY_FILTER_NAME "FAILED_DELLY_FILTER"
-
-/* macro setting FILTER and writing variant */
-#define  SOFT_FILTER_AND_WRITE(REC) \
-         if (c.softFilter) {\
-	   bcf_unpack(REC, BCF_UN_FLT); \
-           bcf_add_filter(hdr_out, REC, failed_filter_id); \
-           if ( bcf_write1(ofile, hdr_out, REC) != 0 ) { \
-              return EXIT_FAILURE; \
-              }\
-           }
-
 template<typename TFilterConfig>
 inline int
 filterRun(TFilterConfig const& c) {
@@ -91,25 +78,22 @@ filterRun(TFilterConfig const& c) {
   if (c.outfile.string() == "-") fmtout = "w";
   htsFile *ofile = hts_open(c.outfile.string().c_str(), fmtout.c_str());
   bcf_hdr_t *hdr_out = bcf_hdr_dup(hdr);
-  int failed_filter_id = -1;
-
-  /* set filter for soft filtering */
-  if (c.softFilter) {
-    bcf_hdr_printf(hdr_out, "##FILTER=<ID=" DELLY_FILTER_NAME ",Description=\"Fails delly filter\">");
-    failed_filter_id = bcf_hdr_id2int(hdr_out, BCF_DT_ID, DELLY_FILTER_NAME);
-    if (failed_filter_id<0) {
-       std::cerr << "Error: Failed to set FILTER " DELLY_FILTER_NAME " !" << std::endl;
-       exit(EXIT_FAILURE);
-    }
-  }
   if (c.filter == "somatic") {
     bcf_hdr_remove(hdr_out, BCF_HL_INFO, "RDRATIO");
     bcf_hdr_append(hdr_out, "##INFO=<ID=RDRATIO,Number=1,Type=Float,Description=\"Read-depth ratio of tumor vs. normal.\">");
     bcf_hdr_remove(hdr_out, BCF_HL_INFO, "SOMATIC");
     bcf_hdr_append(hdr_out, "##INFO=<ID=SOMATIC,Number=0,Type=Flag,Description=\"Somatic structural variant.\">");
+    if (c.softFilter) {
+      bcf_hdr_append(hdr_out, "##FILTER=<ID=FailDellyFilter,Description=\"Failed delly filter.\">");
+      bcf_hdr_append(hdr_out, "##FILTER=<ID=FailSomatic,Description=\"Failed somatic filter (likely germline variant).\">");
+    }
   } else if (c.filter == "germline") {
     bcf_hdr_remove(hdr_out, BCF_HL_INFO, "RDRATIO");
     bcf_hdr_append(hdr_out, "##INFO=<ID=RDRATIO,Number=1,Type=Float,Description=\"Read-depth ratio of SV carrier vs. non-carrier.\">");
+    if (c.softFilter) {
+      bcf_hdr_append(hdr_out, "##FILTER=<ID=FailDellyFilter,Description=\"Failed delly filter.\">");
+      bcf_hdr_append(hdr_out, "##FILTER=<ID=FailGermline,Description=\"Failed germline filter.\">");
+    }
   }
   if (bcf_hdr_write(ofile, hdr_out) != 0) std::cerr << "Error: Failed to write BCF header!" << std::endl;
 
@@ -246,9 +230,11 @@ filterRun(TFilterConfig const& c) {
 	  _remove_info_tag(hdr_out, rec, "SOMATIC");
 	  bcf_update_info_flag(hdr_out, rec, "SOMATIC", NULL, 1);
 	  bcf_write1(ofile, hdr_out, rec);
-	} else {
-          SOFT_FILTER_AND_WRITE(rec)
-        }
+	} else if (c.softFilter) {
+	  int32_t tmpi = bcf_hdr_id2int(hdr_out, BCF_DT_ID, "FailSomatic");
+	  bcf_update_filter(hdr_out, rec, &tmpi, 1);
+	  bcf_write1(ofile, hdr_out, rec);
+	} 
       } else if (c.filter == "germline") {
 	float genotypeRatio = (float) (nCount + tCount) / (float) (bcf_hdr_nsamples(hdr));
 	float rrefvarpercentile = 0;
@@ -269,26 +255,25 @@ filterRun(TFilterConfig const& c) {
 	
 	//std::cerr << bcf_hdr_id2name(hdr, rec->rid) << '\t' << (rec->pos + 1) << '\t' << *svend << '\t' << rec->d.id << '\t' << svlen << '\t' << ac[1] << '\t' << af << '\t' << genotypeRatio << '\t' << std::string(svt) << '\t' << precise << '\t' << rrefvarpercentile << '\t' << raltvarmed << '\t' << gqrefmed << '\t' << gqaltmed << '\t' << rdRatio << std::endl;
 
-	if ((af>0) && (gqaltmed >= c.gq) && (gqrefmed >= c.gq) && (raltvarmed >= c.altaf) && (genotypeRatio >= c.ratiogeno)) {
-	  if ((std::string(svt)=="DEL") && (rdRatio > c.rddel)) {
-            SOFT_FILTER_AND_WRITE(rec)
-            continue;
-            }
-	  if ((std::string(svt)=="DUP") && (rdRatio < c.rddup)) {
-            SOFT_FILTER_AND_WRITE(rec)
-            continue;
-            }
-	  if ((std::string(svt)!="DEL") && (std::string(svt)!="DUP") && (rrefvarpercentile > 0)) {
-            SOFT_FILTER_AND_WRITE(rec)
-            continue;
-            }
+	bool failgerm = false;
+	if (!((af>0) && (gqaltmed >= c.gq) && (gqrefmed >= c.gq) && (raltvarmed >= c.altaf) && (genotypeRatio >= c.ratiogeno))) failgerm = true;
+	if ((std::string(svt)=="DEL") && (rdRatio > c.rddel)) failgerm = true;
+	if ((std::string(svt)=="DUP") && (rdRatio < c.rddup)) failgerm = true;
+	if ((std::string(svt)!="DEL") && (std::string(svt)!="DUP") && (rrefvarpercentile > 0)) failgerm = true;
+	if (!failgerm) {
 	  _remove_info_tag(hdr_out, rec, "RDRATIO");
 	  bcf_update_info_float(hdr_out, rec, "RDRATIO", &rdRatio, 1);
 	  bcf_write1(ofile, hdr_out, rec);
-	} else {
-          SOFT_FILTER_AND_WRITE(rec)
-        }
+	} else if (c.softFilter) {
+	  int32_t tmpi = bcf_hdr_id2int(hdr_out, BCF_DT_ID, "FailGermline");
+	  bcf_update_filter(hdr_out, rec, &tmpi, 1);
+	  bcf_write1(ofile, hdr_out, rec);
+	}
       }
+    } else if (c.softFilter) {
+      int32_t tmpi = bcf_hdr_id2int(hdr_out, BCF_DT_ID, "FailDellyFilter");
+      bcf_update_filter(hdr_out, rec, &tmpi, 1);
+      bcf_write1(ofile, hdr_out, rec);
     }
   }
   bcf_destroy(rec);
@@ -342,7 +327,7 @@ int filter(int argc, char **argv) {
     ("maxsize,n", boost::program_options::value<int32_t>(&c.maxsize)->default_value(500000000), "max. SV size")
     ("ratiogeno,r", boost::program_options::value<float>(&c.ratiogeno)->default_value(0.75), "min. fraction of genotyped samples")
     ("pass,p", "Filter sites for PASS")
-    ("soft,S", "Soft filter variants")
+    ("tag,t", "Tag filtered sites in the FILTER column instead of removing them")
     ;
 
   // Define somatic options
@@ -391,10 +376,9 @@ int filter(int argc, char **argv) {
   if (vm.count("pass")) c.filterForPass = true;
   else c.filterForPass = false;
 
-  // Soft Filtering
-  if (vm.count("soft")) c.softFilter = true;
+  // Soft filtering
+  if (vm.count("tag")) c.softFilter = true;
   else c.softFilter = false;
-
 
   // Population Genomics
   if (c.filter == "germline") c.controlcont = 1.0;
