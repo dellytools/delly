@@ -429,7 +429,7 @@ namespace torali {
       std::sort(srBR[svt].begin(), srBR[svt].end(), SortSRBamRecord<SRBamRecord>());
 
       // Cluster
-      cluster(c, srBR[svt], svc, c.maxReadSep, svt);
+      cluster(c, srBR[svt], svc, svt);
 
       // Debug
       //outputGraphStructuralVariants(c, g, svc, srBR, svt);
@@ -519,7 +519,7 @@ namespace torali {
 		  // Enough split-reads?
 		  if ((seqStore[svid].size() == c.maxReadPerSV) || ((int32_t) seqStore[svid].size() == svs[svid].srSupport)) {
 		    if (seqStore[svid].size() > 1) {
-		      msaEdlib(c, seqStore[svid], svs[svid].consensus);
+		      msaEdlib(c, seqStore[svid], svs[svid].consensus, svs[svid].svt);
 
 		      // Debug
 		      //std::string idname(_addID(svs[svid].svt));
@@ -547,7 +547,7 @@ namespace torali {
     // Handle left-overs
     for(uint32_t svid = 0; svid < svcons.size(); ++svid) {
       if (!svcons[svid]) {
-	if (seqStore[svid].size() > 1) msaEdlib(c, seqStore[svid], svs[svid].consensus);
+	if (seqStore[svid].size() > 1) msaEdlib(c, seqStore[svid], svs[svid].consensus, svs[svid].svt);
 	seqStore[svid].clear();
 	svcons[svid] = true;
 

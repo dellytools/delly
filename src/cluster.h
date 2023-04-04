@@ -217,7 +217,7 @@ namespace torali
 
   template<typename TConfig, typename TCompEdgeList>
   inline void
-  _searchCliques(TConfig const& c, TCompEdgeList& compEdge, std::vector<SRBamRecord>& br, std::vector<StructuralVariantRecord>& sv, uint32_t const wiggle, int32_t const svt) {
+  _searchCliques(TConfig const& c, TCompEdgeList& compEdge, std::vector<SRBamRecord>& br, std::vector<StructuralVariantRecord>& sv, int32_t const svt) {
     typedef typename TCompEdgeList::mapped_type TEdgeList;
     typedef typename TEdgeList::value_type TEdgeRecord;
     typedef typename TEdgeRecord::TVertexType TVertex;
@@ -249,6 +249,17 @@ namespace torali
       int32_t ciendhigh = br[itWEdge->source].pos2;
       int32_t mapq = br[itWEdge->source].qual;
       int32_t inslen = br[itWEdge->source].inslen;
+
+      // Initialize wiggle
+      uint32_t wiggle = c.maxReadSep;
+      if (_translocation(svt)) wiggle = 2 * c.maxReadSep;
+      else {
+	// At most 1000bp breakpoint offset
+	uint32_t svvar = std::abs(0.1 * (pos2 - pos));
+	if (svt == 4) svvar = std::abs(0.1 * inslen);
+	if (wiggle < svvar) wiggle = svvar;
+	if (wiggle > 1000) wiggle = 1000;
+      }
 
       // Grow clique
       bool cliqueGrow = true;
@@ -309,7 +320,7 @@ namespace torali
 
   template<typename TConfig>
   inline void
-  cluster(TConfig const& c, std::vector<SRBamRecord>& br, std::vector<StructuralVariantRecord>& sv, uint32_t const varisize, int32_t const svt) {
+  cluster(TConfig const& c, std::vector<SRBamRecord>& br, std::vector<StructuralVariantRecord>& sv, int32_t const svt) {
     uint32_t count = 0;
     for(int32_t refIdx = 0; refIdx < c.nchr; ++refIdx) {
       
@@ -338,13 +349,22 @@ namespace torali
 	    // Clean edge lists
 	    if (!compEdge.empty()) {
 	      // Search cliques
-	      _searchCliques(c, compEdge, br, sv, varisize, svt);
+	      _searchCliques(c, compEdge, br, sv, svt);
 	      lastConnectedNodeStart = lastConnectedNode;
 	      compEdge.clear();
 	    }
 	  }
-	  
-	  
+
+	  // Get size variability
+	  uint32_t varisize = c.maxReadSep;
+	  if (_translocation(svt)) varisize = 2 * c.maxReadSep;
+	  else {
+	    // At most 1000bp breakpoint offset
+	    uint32_t svvar = std::abs(0.1 * (br[i].pos2 - br[i].pos));
+	    if (svt == 4) svvar = std::abs(0.1 * br[i].inslen);
+	    if (varisize < svvar) varisize = svvar;
+	    if (varisize > 1000) varisize = 1000;
+	  }
 	  for(uint32_t j = i + 1; j<br.size(); ++j) {
 	    if (br[j].chr == refIdx) {
 	      if ( (uint32_t) (br[j].pos - br[i].pos) > varisize) break;
@@ -409,7 +429,7 @@ namespace torali
       }
       // Search cliques
       if (!compEdge.empty()) {
-	_searchCliques(c, compEdge, br, sv, varisize, svt);
+	_searchCliques(c, compEdge, br, sv, svt);
 	compEdge.clear();
       }
     }

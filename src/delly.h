@@ -225,6 +225,7 @@ namespace torali
       ("vcffile,v", boost::program_options::value<boost::filesystem::path>(&c.vcffile), "input VCF/BCF file for genotyping")
       ("geno-qual,u", boost::program_options::value<uint16_t>(&c.minGenoQual)->default_value(5), "min. mapping quality for genotyping")
       ("dump,d", boost::program_options::value<boost::filesystem::path>(&c.dumpfile), "gzipped output file for SV-reads (optional)")
+      ("max-geno-count,a", boost::program_options::value<uint32_t>(&c.maxGenoReadCount)->default_value(250), "max. number of reads aligned for SR genotyping")
       ;
 
     // Define hidden options
@@ -233,7 +234,6 @@ namespace torali
       ("input-file", boost::program_options::value< std::vector<boost::filesystem::path> >(&c.files), "input file")
       ("pruning,j", boost::program_options::value<uint32_t>(&c.graphPruning)->default_value(1000), "PE graph pruning cutoff")
       ("cons-window,w", boost::program_options::value<int32_t>(&c.minConsWindow)->default_value(100), "consensus window")
-      ("max-geno-count,a", boost::program_options::value<uint32_t>(&c.maxGenoReadCount)->default_value(250), "max. number of reads aligned for SR genotyping")
       ;
     
     boost::program_options::positional_options_description pos_args;

@@ -127,7 +127,7 @@ namespace torali
 
   template<typename TConfig, typename TSplitReadSet>
   inline int
-  msaEdlib(TConfig const& c, TSplitReadSet& sps, std::string& cs) {
+  msaEdlib(TConfig const& c, TSplitReadSet& sps, std::string& cs, int32_t const svt) {
     // Pairwise scores
     std::vector<int32_t> edit(sps.size() * sps.size(), 0);
     for(uint32_t i = 0; i < sps.size(); ++i) {
@@ -189,21 +189,29 @@ namespace torali
       std::string alignStr;
       consensusEdlib(align, alignStr);
       // Debug MSA
-      //std::cerr << "Input MSA" << std::endl;
+      //std::cerr << "Progressive MSA: " << i << '(' << align.shape()[0] << ':' << align.shape()[1] << ')' << std::endl;
       //for(uint32_t i = 0; i<align.shape()[0]; ++i) {
       //for(uint32_t j = 0; j<align.shape()[1]; ++j) std::cerr << align[i][j];
       //std::cerr << std::endl;
       //}
+      //std::cerr << "Consensus: " << std::endl;
       //std::cerr << alignStr << std::endl;
-
+      //std::cerr << "ToBeAligned: " << sps[selectedIdx[i]] << std::endl;
       // Compute alignment
-      EdlibAlignResult cigar = edlibAlign(sps[selectedIdx[i]].c_str(), sps[selectedIdx[i]].size(), alignStr.c_str(), alignStr.size(), edlibNewAlignConfig(-1, EDLIB_MODE_HW, EDLIB_TASK_PATH, additionalEqualities, 20));
-      convertAlignment(sps[selectedIdx[i]], align, EDLIB_MODE_HW, cigar);
-      edlibFreeAlignResult(cigar);
+      if (svt == 4) {
+	// Global alignment, reads are often truncated for large insertions
+	EdlibAlignResult cigar = edlibAlign(sps[selectedIdx[i]].c_str(), sps[selectedIdx[i]].size(), alignStr.c_str(), alignStr.size(), edlibNewAlignConfig(-1, EDLIB_MODE_NW, EDLIB_TASK_PATH, additionalEqualities, 20));
+	convertAlignment(sps[selectedIdx[i]], align, EDLIB_MODE_NW, cigar);
+	edlibFreeAlignResult(cigar);
+      } else {
+	EdlibAlignResult cigar = edlibAlign(sps[selectedIdx[i]].c_str(), sps[selectedIdx[i]].size(), alignStr.c_str(), alignStr.size(), edlibNewAlignConfig(-1, EDLIB_MODE_HW, EDLIB_TASK_PATH, additionalEqualities, 20));
+	convertAlignment(sps[selectedIdx[i]], align, EDLIB_MODE_HW, cigar);
+	edlibFreeAlignResult(cigar);
+      }
     }
     
     // Debug MSA
-    //std::cerr << "Output MSA" << std::endl;
+    //std::cerr << "Output MSA " << '(' << align.shape()[0] << ':' << align.shape()[1] << ')' << std::endl;
     //for(uint32_t i = 0; i<align.shape()[0]; ++i) {
     //for(uint32_t j = 0; j<align.shape()[1]; ++j) std::cerr << align[i][j];
     //std::cerr << std::endl;
@@ -297,6 +305,8 @@ namespace torali
 	      if ((!svcons[svid]) && (seqStore[svid].size() < c.maxReadPerSV)) {
 		// Extract subsequence (otherwise MSA takes forever)
 		int32_t window = c.minConsWindow; // MSA should be larger
+		// Add breakpoint uncertainty
+		window += std::max(svs[svid].ciposhigh - svs[svid].ciposlow, svs[svid].ciendhigh - svs[svid].ciendlow);
 		int32_t sPos = seqsl.sstart - window;
 		int32_t ePos = seqsl.sstart + seqsl.inslen + window;
 		if (rec->core.flag & BAM_FREVERSE) {
@@ -305,6 +315,7 @@ namespace torali
 		}
 		if (sPos < 0) sPos = 0;
 		if (ePos > (int32_t) readlen) ePos = readlen;
+		//std::cerr << bam_get_qname(rec) << ',' << sPos << ',' << ePos << ":" << window << "\t" << sequence.substr(sPos, (ePos - sPos)) << std::endl;
 		// Min. seq length and max insertion size, 10kbp?
 		if ((ePos - sPos) > window) {
 		  std::string seqalign = sequence.substr(sPos, (ePos - sPos));
@@ -316,7 +327,7 @@ namespace torali
 		      bool msaSuccess = false;
 		      if (seqStore[svid].size() > 1) {
 			//std::cerr << svs[svid].svStart << ',' << svs[svid].svEnd << ',' << svs[svid].svt << ',' << svid << " SV" << std::endl;
-			msaEdlib(c, seqStore[svid], svs[svid].consensus);
+			msaEdlib(c, seqStore[svid], svs[svid].consensus, svs[svid].svt);
 			if (alignConsensus(c, hdr, seq, NULL, svs[svid], true)) msaSuccess = true;
 			//std::cerr << msaSuccess << std::endl;
 		      }
@@ -360,7 +371,7 @@ namespace torali
 	      if (computeMSA) {
 		bool msaSuccess = false;
 		//std::cerr << svs[svid].svStart << ',' << svs[svid].svEnd << ',' << svs[svid].svt << ',' << svid << " SV" << std::endl;
-		msaEdlib(c, seqStore[svid], svs[svid].consensus);
+		msaEdlib(c, seqStore[svid], svs[svid].consensus, svs[svid].svt);
 		if (alignConsensus(c, hdr, seq, sndSeq, svs[svid], true)) msaSuccess = true;
 		//std::cerr << msaSuccess << std::endl;
 		if (!msaSuccess) {

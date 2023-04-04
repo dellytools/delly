@@ -498,7 +498,7 @@ namespace torali
       std::sort(srBR[svt].begin(), srBR[svt].end(), SortSRBamRecord<SRBamRecord>());
       
       // Cluster
-      cluster(c, srBR[svt], svc, c.maxReadSep, svt);
+      cluster(c, srBR[svt], svc, svt);
 
       // Debug
       //outputStructuralVariants(c, svc, srBR, svt);
