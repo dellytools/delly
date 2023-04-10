@@ -501,7 +501,7 @@ namespace torali
       cluster(c, srBR[svt], svc, svt);
 
       // Debug
-      //outputStructuralVariants(c, svc, srBR, svt);
+      //outputStructuralVariants(c, svc, srBR, svt, false);
       // Track split-reads
       samFile* samfile = sam_open(c.files[0].string().c_str(), "r");
       bam_hdr_t* hdr = sam_hdr_read(samfile);
@@ -554,7 +554,7 @@ namespace torali
 	  if (rec->core.flag & (BAM_FQCFAIL | BAM_FDUP | BAM_FUNMAP)) continue;
 	  std::size_t seed;
 	  if (longread) seed = hash_lr(rec);
-	  else seed = hash_string(bam_get_qname(rec));
+	  else seed = hash_sr(rec);
 	  std::string qname = bam_get_qname(rec);
 	  if (hm.find(seed) == hm.end()) hm.insert(std::make_pair(seed, qname));
 	  else {
@@ -591,7 +591,7 @@ namespace torali
   
   template<typename TConfig, typename TSvtSRBamRecord>
   inline void
-  outputStructuralVariants(TConfig const& c, std::vector<StructuralVariantRecord> const& svs, TSvtSRBamRecord const& srBR, int32_t const svt) {
+  outputStructuralVariants(TConfig const& c, std::vector<StructuralVariantRecord> const& svs, TSvtSRBamRecord const& srBR, int32_t const svt, bool const longread) {
     // Header
     std::cerr << "chr1\tpos1\tchr2\tpos2\tsvtype\tct\tinslen\tpeSupport\tsrSupport" << std::endl;
     
@@ -614,7 +614,9 @@ namespace torali
 	bam1_t* rec = bam_init1();
 	while (sam_itr_next(samfile[file_c], iter, rec) >= 0) {
 	  if (rec->core.flag & (BAM_FQCFAIL | BAM_FDUP | BAM_FUNMAP)) continue;
-	  std::size_t seed = hash_lr(rec);
+	  std::size_t seed;
+	  if (longread) seed = hash_lr(rec);
+	  else seed = hash_sr(rec);
 	  std::string qname = bam_get_qname(rec);
 	  if (hm.find(seed) == hm.end()) hm.insert(std::make_pair(seed, qname));
 	  else {
@@ -654,34 +656,6 @@ namespace torali
     }
   }
 
-
-  template<typename TConfig>
-  inline void
-  outputStructuralVariants(TConfig const& c, std::vector<StructuralVariantRecord> const& svs, int32_t const svt) {
-    samFile* samfile = sam_open(c.files[0].string().c_str(), "r");
-    hts_set_fai_filename(samfile, c.genome.string().c_str());
-    bam_hdr_t* hdr = sam_hdr_read(samfile);
-
-    // Header
-    std::cerr << "chr1\tpos1\tchr2\tpos2\tsvtype\tct\tpeSupport\tsrSupport\tconsensus" << std::endl;
-    
-    // SVs
-    for(uint32_t i = 0; i < svs.size(); ++i) {
-      if (svs[i].svt != svt) continue;
-      std::cerr << hdr->target_name[svs[i].chr] << '\t' << svs[i].svStart << '\t' << hdr->target_name[svs[i].chr2] << '\t' << svs[i].svEnd << '\t' << _addID(svs[i].svt) << '\t' << _addOrientation(svs[i].svt) << '\t' << svs[i].peSupport << '\t' << svs[i].srSupport << '\t' << svs[i].consensus << std::endl;
-    }
-    
-    // Clean-up
-    bam_hdr_destroy(hdr);
-    sam_close(samfile);
-  }
-
-  template<typename TConfig>
-  inline void
-  outputStructuralVariants(TConfig const& c, std::vector<StructuralVariantRecord> const& svs) {
-    for(uint32_t i = 0; i <= 8; ++i) outputStructuralVariants(c, svs, i);
-  }
-  
 
 }
 

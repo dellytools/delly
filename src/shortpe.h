@@ -108,7 +108,7 @@ namespace torali
 	    if (!hits[rec->core.pos]) continue;
 
 	    // Valid split-read
-	    std::size_t seed = hash_string(bam_get_qname(rec));
+	    std::size_t seed = hash_sr(rec);
 	    typename TPosReadSV::const_iterator it = srStore[refIndex].find(std::make_pair(rec->core.pos, seed));
 	    if (it != srStore[refIndex].end()) {
 	      int32_t svid = it->second;
@@ -281,7 +281,7 @@ namespace torali
 
       // Split-read junctions
       typedef std::vector<Junction> TJunctionVector;
-      typedef std::map<unsigned, TJunctionVector> TReadBp;
+      typedef std::map<std::size_t, TJunctionVector> TReadBp;
       TReadBp readBp;
       
       // Iterate all chromosomes for that sample
@@ -312,8 +312,7 @@ namespace torali
 	    if (rec->core.flag & (BAM_FQCFAIL | BAM_FDUP | BAM_FUNMAP)) continue;
 	    if ((rec->core.qual < c.minMapQual) || (rec->core.tid<0)) continue;
 
-	    unsigned seed = hash_string(bam_get_qname(rec));
-	    
+	    std::size_t seed = hash_sr(rec);
 	    // SV detection using single-end read
 	    uint32_t rp = rec->core.pos; // reference pointer
 	    uint32_t sp = 0; // sequence pointer
@@ -447,7 +446,7 @@ namespace torali
       cluster(c, srBR[svt], srSVs, svt);
 
       // Debug SR SVs
-      //outputStructuralVariants(c, srSVs, svt);
+      //outputStructuralVariants(c, srSVs, srBR, svt, false); // Short reads
     }
 
     // Cluster paired-end records

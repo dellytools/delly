@@ -312,6 +312,15 @@ namespace torali
     return seed;
   }
 
+  inline std::size_t hash_sr(bam1_t* rec) {
+    boost::hash<std::string> string_hash;
+    std::string qname = bam_get_qname(rec);
+    std::size_t seed = hash_string(qname.c_str());
+    boost::hash_combine(seed, string_hash(qname));
+    boost::hash_combine(seed, (bool) (rec->core.flag & BAM_FREAD1));
+    return seed;
+  }
+
   inline std::size_t hash_lr(bam1_t* rec) {
     boost::hash<std::string> string_hash;
     std::string qname = bam_get_qname(rec);
