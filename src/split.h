@@ -505,19 +505,23 @@ namespace torali
     unsigned int finalGapStart = 0;
     unsigned int finalGapEnd = 0;
     if (!_coordTransform(c, svRefStr, bp, ad, finalGapStart, finalGapEnd, sv.svt)) return false;
-    
-    sv.precise=true;
-    sv.svStart=finalGapStart;
-    sv.svEnd=finalGapEnd;
-    sv.srAlignQuality = ad.percId;
-    sv.insLen=ad.cEnd - ad.cStart - 1;
-    sv.homLen=std::max(0, ad.homLeft + ad.homRight - 2);
-    int32_t ci_wiggle = std::max(ad.homLeft, ad.homRight);
-    sv.ciposlow = -ci_wiggle;
-    sv.ciposhigh = ci_wiggle;
-    sv.ciendlow = -ci_wiggle;
-    sv.ciendhigh = ci_wiggle;
-    return true;
+
+    if ((_translocation(sv.svt)) || (finalGapStart < finalGapEnd)) {
+      sv.precise=true;
+      sv.svStart=finalGapStart;
+      sv.svEnd=finalGapEnd;
+      sv.srAlignQuality = ad.percId;
+      sv.insLen=ad.cEnd - ad.cStart - 1;
+      sv.homLen=std::max(0, ad.homLeft + ad.homRight - 2);
+      int32_t ci_wiggle = std::max(ad.homLeft, ad.homRight);
+      sv.ciposlow = -ci_wiggle;
+      sv.ciposhigh = ci_wiggle;
+      sv.ciendlow = -ci_wiggle;
+      sv.ciendhigh = ci_wiggle;
+      return true;
+    } else {
+      return false;
+    }
   }
 
   template<typename TConfig>
