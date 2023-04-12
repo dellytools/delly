@@ -317,7 +317,7 @@ namespace torali
     std::string qname = bam_get_qname(rec);
     std::size_t seed = hash_string(qname.c_str());
     boost::hash_combine(seed, string_hash(qname));
-    boost::hash_combine(seed, (bool) (rec->core.flag & BAM_FREAD1));
+    if ((rec->core.flag & BAM_FREAD1) && (seed > 0))  --seed;
     return seed;
   }
 

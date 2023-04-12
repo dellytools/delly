@@ -296,8 +296,20 @@ namespace torali
 	}
       }
 
+      // Count paired-end fragments only once
+      std::size_t prevSeed = 0;
+      uint32_t cliqSize = 0;
+      TSeeds selectedSeeds;
+      for(typename TSeeds::const_iterator itS = seeds.begin(); itS != seeds.end(); ++itS) {
+	if (prevSeed + 1 != *itS) {
+	  selectedSeeds.insert(*itS);
+	  ++cliqSize;
+	}
+	prevSeed = *itS;
+      }
+	    
       // Enough split reads?
-      if (clique.size() >= c.minCliqueSize) {
+      if (cliqSize >= c.minCliqueSize) {
 	int32_t svStart = (int32_t) (pos / (uint64_t) clique.size());
 	int32_t svEnd = (int32_t) (pos2 / (uint64_t) clique.size());
 	int32_t svInsLen = (int32_t) (inslen / (int32_t) clique.size());
@@ -306,11 +318,13 @@ namespace torali
 	    std::cerr << "Warning: Confidence intervals out of bounds: " << ciposlow << ',' << svStart << ',' << ciposhigh << ':' << ciendlow << ',' << svEnd << ',' << ciendhigh << std::endl;
 	  }
 	  int32_t svid = sv.size();
-	  sv.push_back(StructuralVariantRecord(chr, svStart, chr2, svEnd, (ciposlow - svStart), (ciposhigh - svStart), (ciendlow - svEnd), (ciendhigh - svEnd), clique.size(), mapq / clique.size(), mapq, svInsLen, svt, svid));
+	  sv.push_back(StructuralVariantRecord(chr, svStart, chr2, svEnd, (ciposlow - svStart), (ciposhigh - svStart), (ciendlow - svEnd), (ciendhigh - svEnd), cliqSize, mapq / clique.size(), mapq, svInsLen, svt, svid));
 	  // Reads assigned
 	  for(typename TCliqueMembers::iterator itC = clique.begin(); itC != clique.end(); ++itC) {
-	    //std::cerr << svid << ',' << br[*itC].id << std::endl;
-	    br[*itC].svid = svid;
+	    if (selectedSeeds.find(br[*itC].id) != selectedSeeds.end()) {
+	      //std::cerr << svid << ',' << br[*itC].id << std::endl;
+	      br[*itC].svid = svid;
+	    }
 	  }
 	}
       }
