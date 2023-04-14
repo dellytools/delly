@@ -74,6 +74,7 @@ install: ${BUILT_PROGRAMS}
 
 clean:
 	if [ -r src/htslib/Makefile ]; then cd src/htslib && $(MAKE) clean; fi
+	if [ -r src/wfa/build/Makefile ]; then cd src/wfa/build && cmake --build . --target clean && cd ../ && rm -rf build; fi
 	rm -f $(TARGETS) $(TARGETS:=.o) ${SUBMODULES}
 
 distclean: clean
