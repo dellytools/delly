@@ -2,3 +2,7 @@
 	path = src/htslib
 	url = https://github.com/samtools/htslib.git
 	ignore = dirty
+[submodule "src/wfa"]
+	path = src/wfa
+	url = https://github.com/smarco/WFA2-lib
+	ignore = dirty

@@ -127,7 +127,7 @@ namespace torali
 
   template<typename TConfig, typename TSplitReadSet>
   inline int
-  msaEdlib(TConfig const& c, TSplitReadSet& sps, std::string& cs, int32_t const svt) {
+  msaEdlib(TConfig const& c, TSplitReadSet& sps, std::string& cs) {
     // Pairwise scores
     std::vector<int32_t> edit(sps.size() * sps.size(), 0);
     for(uint32_t i = 0; i < sps.size(); ++i) {
@@ -319,7 +319,7 @@ namespace torali
 		      bool msaSuccess = false;
 		      if (seqStore[svid].size() > 1) {
 			//std::cerr << svs[svid].svStart << ',' << svs[svid].svEnd << ',' << svs[svid].svt << ',' << svid << " SV" << std::endl;
-			msaEdlib(c, seqStore[svid], svs[svid].consensus, svs[svid].svt);
+			msaEdlib(c, seqStore[svid], svs[svid].consensus);
 			if (alignConsensus(c, hdr, seq, NULL, svs[svid], true)) msaSuccess = true;
 			//std::cerr << msaSuccess << std::endl;
 		      }
@@ -363,7 +363,7 @@ namespace torali
 	      if (computeMSA) {
 		bool msaSuccess = false;
 		//std::cerr << svs[svid].svStart << ',' << svs[svid].svEnd << ',' << svs[svid].svt << ',' << svid << " SV" << std::endl;
-		msaEdlib(c, seqStore[svid], svs[svid].consensus, svs[svid].svt);
+		msaEdlib(c, seqStore[svid], svs[svid].consensus);
 		if (alignConsensus(c, hdr, seq, sndSeq, svs[svid], true)) msaSuccess = true;
 		//std::cerr << msaSuccess << std::endl;
 		if (!msaSuccess) {

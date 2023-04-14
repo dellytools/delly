@@ -5,6 +5,7 @@ STATIC ?= 0
 # Submodules
 PWD = $(shell pwd)
 EBROOTHTSLIB ?= ${PWD}/src/htslib/
+WFALIB ?= ${PWD}/src/wfa/
 
 # Install dir
 prefix = ${PWD}
@@ -42,10 +43,14 @@ endif
 ifeq (${EBROOTHTSLIB}, ${PWD}/src/htslib/)
 	SUBMODULES += .htslib
 endif
+ifeq (${WFALIB}, ${PWD}/src/wfa/)
+	SUBMODULES += .wfalib
+endif
 
 
 # External sources
 HTSLIBSOURCES = $(wildcard src/htslib/*.c) $(wildcard src/htslib/*.h)
+WFALIBSOURCES = $(wildcard src/wfa/*/*.c) $(wildcard src/wfa/*/*.h)
 SOURCES = $(wildcard src/*.h) $(wildcard src/*.cpp)
 
 # Targets
@@ -56,6 +61,9 @@ all:   	$(TARGETS)
 
 .htslib: $(HTSLIBSOURCES)
 	if [ -r src/htslib/Makefile ]; then cd src/htslib && autoreconf -i && ./configure --disable-s3 --disable-gcs --disable-libcurl --disable-plugins && $(MAKE) && $(MAKE) lib-static && cd ../../ && touch .htslib; fi
+
+.wfalib: $(WFALIBSOURCES)
+	if [ -r src/wfa/CMakeLists.txt ]; then cd src/wfa && mkdir build && cd build && cmake .. -DCMAKE_BUILD_TYPE=Release -DOPENMP=TRUE -DEXTRA_FLAGS="-ftree-vectorize -msse2 -mfpmath=sse -ftree-vectorizer-verbose=5" && cmake --build . --verbose && ctest . --verbose && cd ../../../ && touch .wfalib; fi
 
 src/delly: ${SUBMODULES} $(SOURCES)
 	$(CXX) $(CXXFLAGS) $@.cpp src/edlib.cpp -o $@ $(LDFLAGS)
