@@ -8,6 +8,7 @@
 #include "split.h"
 #include "gotoh.h"
 #include "needle.h"
+#include "wfa.h"
 
 namespace torali
 {
