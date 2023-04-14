@@ -23,6 +23,7 @@ RUN apt-get update && apt-get install -y \
     libhdf5-dev \
     libncurses-dev \
     liblzma-dev \
+    pkg-config \
     zlib1g-dev \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
