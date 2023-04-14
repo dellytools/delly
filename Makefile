@@ -65,7 +65,7 @@ all:   	$(TARGETS)
 	if [ -r src/htslib/Makefile ]; then cd src/htslib && autoreconf -i && ./configure --disable-s3 --disable-gcs --disable-libcurl --disable-plugins && $(MAKE) && $(MAKE) lib-static && cd ../../ && touch .htslib; fi
 
 .wfalib: $(WFALIBSOURCES)
-	if [ -r src/wfa/CMakeLists.txt ]; then cd src/wfa && mkdir build && cd build && cmake .. -DCMAKE_BUILD_TYPE=Release -DOPENMP=$(MPFLAG) -DEXTRA_FLAGS="-ftree-vectorize -msse2 -mfpmath=sse -ftree-vectorizer-verbose=5" && cmake --build . --verbose && ctest . --verbose && cd ../../../ && touch .wfalib; fi
+	if [ -r src/wfa/CMakeLists.txt ]; then cd src/wfa && mkdir build && cd build && cmake .. -DCMAKE_BUILD_TYPE=Release -DOPENMP=$(MPFLAG) -DEXTRA_FLAGS="-ftree-vectorize -msse2 -mfpmath=sse" && cmake --build . --verbose && ctest . --verbose && cd ../../../ && touch .wfalib; fi
 
 src/delly: ${SUBMODULES} $(SOURCES)
 	$(CXX) $(CXXFLAGS) $@.cpp src/edlib.cpp -o $@ $(LDFLAGS)
