@@ -198,16 +198,9 @@ namespace torali
       //std::cerr << alignStr << std::endl;
       //std::cerr << "ToBeAligned: " << sps[selectedIdx[i]] << std::endl;
       // Compute alignment
-      if (svt == 4) {
-	// Global alignment, reads are often truncated for large insertions
-	EdlibAlignResult cigar = edlibAlign(sps[selectedIdx[i]].c_str(), sps[selectedIdx[i]].size(), alignStr.c_str(), alignStr.size(), edlibNewAlignConfig(-1, EDLIB_MODE_NW, EDLIB_TASK_PATH, additionalEqualities, 20));
-	convertAlignment(sps[selectedIdx[i]], align, EDLIB_MODE_NW, cigar);
-	edlibFreeAlignResult(cigar);
-      } else {
-	EdlibAlignResult cigar = edlibAlign(sps[selectedIdx[i]].c_str(), sps[selectedIdx[i]].size(), alignStr.c_str(), alignStr.size(), edlibNewAlignConfig(-1, EDLIB_MODE_HW, EDLIB_TASK_PATH, additionalEqualities, 20));
-	convertAlignment(sps[selectedIdx[i]], align, EDLIB_MODE_HW, cigar);
-	edlibFreeAlignResult(cigar);
-      }
+      EdlibAlignResult cigar = edlibAlign(sps[selectedIdx[i]].c_str(), sps[selectedIdx[i]].size(), alignStr.c_str(), alignStr.size(), edlibNewAlignConfig(-1, EDLIB_MODE_NW, EDLIB_TASK_PATH, additionalEqualities, 20));
+      convertAlignment(sps[selectedIdx[i]], align, EDLIB_MODE_NW, cigar);
+      edlibFreeAlignResult(cigar);
     }
     
     // Debug MSA
@@ -234,7 +227,6 @@ namespace torali
   }
 
 
-  
   template<typename TConfig, typename TValidRegion, typename TSRStore>
   inline void
     assemble(TConfig const& c, TValidRegion const& validRegions, std::vector<StructuralVariantRecord>& svs, TSRStore& srStore) {

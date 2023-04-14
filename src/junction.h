@@ -310,6 +310,41 @@ namespace torali
   }
 
 
+  // Insertion junctions
+  template<typename TConfig, typename TReadBp>
+  inline void
+  bridgeInsertions(TConfig const& c, TReadBp const& readBp, std::vector<std::vector<SRBamRecord> >& br) {
+    // Insertion map
+    std::set<std::size_t> readIds;
+    typedef std::map<uint32_t, int32_t> TPosInsMap;
+    TPosInsMap pins;
+    for(int32_t refIndex = 0; refIndex < c.nchr; ++refIndex) {
+      pins.clear();
+      readIds.clear();
+      for(uint32_t i = 0; i < br[4].size(); ++i) {
+	if (br[4][i].chr == refIndex) {
+	  readIds.insert(br[4][i].id);
+	  for(int32_t k = br[4][i].pos; k <= br[4][i].pos2; ++k) {
+	    typename TPosInsMap::iterator it = pins.find(k);
+	    if (it == pins.end()) pins.insert(std::make_pair(k, br[4][i].inslen));
+	    else it->second = (it->second + br[4][i].inslen) / 2;
+	  }
+	}
+      }
+      for(typename TReadBp::const_iterator it = readBp.begin(); it != readBp.end(); ++it) {
+	int32_t rst = _selectReadStart(it->second);
+	for(uint32_t i = 0; i < it->second.size(); ++i) {
+	  // Any insertion?
+	  if ((it->second[i].refidx == refIndex) && (readIds.find(it->first) == readIds.end()) && (pins.find(it->second[i].refpos) != pins.end())) {
+	    int32_t qval = (int32_t) it->second[i].qual;
+	    br[4].push_back(SRBamRecord(it->second[i].refidx, it->second[i].refpos, it->second[i].refidx, it->second[i].refpos + 1, rst, it->second[i].seqpos, qval, pins[it->second[i].refpos], it->first));
+	  }
+	}
+      }
+    }
+  }
+  
+
   template<typename TConfig, typename TValidRegion, typename TReadBp>
   inline void
   findJunctions(TConfig const& c, TValidRegion const& validRegions, TReadBp& readBp) {
@@ -462,7 +497,10 @@ namespace torali
     if ((c.svtset.empty()) || (c.svtset.find(2) != c.svtset.end())) selectDeletions(c, readBp, br);
     if ((c.svtset.empty()) || (c.svtset.find(3) != c.svtset.end())) selectDuplications(c, readBp, br);
     if ((c.svtset.empty()) || (c.svtset.find(0) != c.svtset.end()) || (c.svtset.find(1) != c.svtset.end())) selectInversions(c, readBp, br);
-    if ((c.svtset.empty()) || (c.svtset.find(4) != c.svtset.end())) selectInsertions(c, readBp, br);
+    if ((c.svtset.empty()) || (c.svtset.find(4) != c.svtset.end())) {
+      selectInsertions(c, readBp, br);
+      //bridgeInsertions(c, readBp, br);
+    }
     if ((c.svtset.empty()) || (c.svtset.find(5) != c.svtset.end()) || (c.svtset.find(6) != c.svtset.end()) || (c.svtset.find(7) != c.svtset.end()) || (c.svtset.find(8) != c.svtset.end())) selectTranslocations(c, readBp, br);
   }
 
@@ -488,7 +526,7 @@ namespace torali
     _findSRBreakpoints(c, validRegions, srBR);
 	 	 
     // Debug
-    //outputSRBamRecords(c, srBR);
+    //outputSRBamRecords(c, srBR, true);
 
     // Cluster BAM records
     for(uint32_t svt = 0; svt < srBR.size(); ++svt) {
@@ -501,7 +539,7 @@ namespace torali
       cluster(c, srBR[svt], svc, svt);
 
       // Debug
-      //outputStructuralVariants(c, svc, srBR, svt, false);
+      //outputStructuralVariants(c, svc, srBR, svt, true);
       // Track split-reads
       samFile* samfile = sam_open(c.files[0].string().c_str(), "r");
       bam_hdr_t* hdr = sam_hdr_read(samfile);
@@ -583,12 +621,6 @@ namespace torali
     }
   }
 
-  template<typename TConfig>
-  inline void
-  outputSRBamRecords(TConfig const& c, std::vector<std::vector<SRBamRecord> > const& br) {
-    outputSRBamRecords(c, br, true);
-  }
-  
   template<typename TConfig, typename TSvtSRBamRecord>
   inline void
   outputStructuralVariants(TConfig const& c, std::vector<StructuralVariantRecord> const& svs, TSvtSRBamRecord const& srBR, int32_t const svt, bool const longread) {
