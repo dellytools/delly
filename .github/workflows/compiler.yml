@@ -12,13 +12,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v2
-      with:
-        submodules: recursive
     - name: make
       env:
         CXX: g++-10
       run: |
         sudo apt-get update
-        sudo apt-get install -y libcurl4-gnutls-dev libboost-date-time-dev libboost-program-options-dev libboost-system-dev libboost-filesystem-dev libboost-iostreams-dev g++-10
+        sudo apt-get install -y libcurl4-gnutls-dev libhts-dev libboost-date-time-dev libboost-program-options-dev libboost-system-dev libboost-filesystem-dev libboost-iostreams-dev g++-10
         export CXX=g++-10
         make

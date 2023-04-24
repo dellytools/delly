@@ -8,7 +8,6 @@
 #include "split.h"
 #include "gotoh.h"
 #include "needle.h"
-#include "wfa.h"
 
 namespace torali
 {
@@ -624,7 +623,6 @@ namespace torali
   inline int
   msaWfa(TConfig const& c, TSplitReadSet& sps, std::string& cs, std::string& prefix, std::string& suffix) {
     // Pairwise scores
-    wfa::WFAlignerGapAffine aligner(3, 6, 2, wfa::WFAligner::Alignment, wfa::WFAligner::MemoryHigh);
     std::vector<int32_t> edit(sps.size() * sps.size(), 0);
     std::vector<uint32_t> kmerHitI;
     std::vector<uint32_t> kmerHitJ;

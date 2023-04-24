@@ -4,8 +4,7 @@ STATIC ?= 0
 
 # Submodules
 PWD = $(shell pwd)
-EBROOTHTSLIB ?= ${PWD}/src/htslib
-WFALIB ?= ${PWD}/src/wfa
+EBROOTHTSLIB ?= ${PWD}/src/htslib/
 
 # Install dir
 prefix = ${PWD}
@@ -14,23 +13,21 @@ bindir ?= $(exec_prefix)/bin
 
 # Flags
 CXX ?= g++
-CXXFLAGS += -std=c++11 -isystem ${EBROOTHTSLIB} -isystem ${WFALIB} -pedantic -W -Wall -Wno-unknown-pragmas -D__STDC_LIMIT_MACROS -fno-strict-aliasing -fpermissive
-LDFLAGS += -L${EBROOTHTSLIB} -L${WFALIB}/build -lboost_iostreams -lboost_filesystem -lboost_system -lboost_program_options -lboost_date_time
+CXXFLAGS += -std=c++11 -isystem ${EBROOTHTSLIB} -pedantic -W -Wall -Wno-unknown-pragmas -D__STDC_LIMIT_MACROS -fno-strict-aliasing -fpermissive
+LDFLAGS += -L${EBROOTHTSLIB} -lboost_iostreams -lboost_filesystem -lboost_system -lboost_program_options -lboost_date_time
 
 # Flags for parallel computation
 ifeq (${PARALLEL}, 1)
 	CXXFLAGS += -fopenmp -DOPENMP
-	MPFLAG=TRUE
 else
 	CXXFLAGS += -DNOPENMP
-	MPFLAG=FALSE
 endif
 
 # Flags for static compile
 ifeq (${STATIC}, 1)
-	LDFLAGS += -static -static-libgcc -pthread -lhts -lz -llzma -lbz2 -ldeflate -lwfa2cpp -lwfa2
+	LDFLAGS += -static -static-libgcc -pthread -lhts -lz -llzma -lbz2 -ldeflate
 else
-	LDFLAGS += -lhts -lwfa2 -lwfa2cpp -lz -llzma -lbz2 -Wl,-rpath ${EBROOTHTSLIB} -Wl,-rpath ${WFALIB}/build
+	LDFLAGS += -lhts -lz -llzma -lbz2 -Wl,-rpath,${EBROOTHTSLIB}
 endif
 
 # Flags for debugging, profiling and releases
@@ -42,17 +39,12 @@ else ifeq (${DEBUG}, 2)
 else
 	CXXFLAGS += -O3 -fno-tree-vectorize -DNDEBUG
 endif
-ifeq (${EBROOTHTSLIB}, ${PWD}/src/htslib)
+ifeq (${EBROOTHTSLIB}, ${PWD}/src/htslib/)
 	SUBMODULES += .htslib
 endif
-ifeq (${WFALIB}, ${PWD}/src/wfa)
-	SUBMODULES += .wfalib
-endif
-
 
 # External sources
 HTSLIBSOURCES = $(wildcard src/htslib/*.c) $(wildcard src/htslib/*.h)
-WFALIBSOURCES = $(wildcard src/wfa/*/*.c) $(wildcard src/wfa/*/*.h)
 SOURCES = $(wildcard src/*.h) $(wildcard src/*.cpp)
 
 # Targets
@@ -64,9 +56,6 @@ all:   	$(TARGETS)
 .htslib: $(HTSLIBSOURCES)
 	if [ -r src/htslib/Makefile ]; then cd src/htslib && autoreconf -i && ./configure --disable-s3 --disable-gcs --disable-libcurl --disable-plugins && $(MAKE) && $(MAKE) lib-static && cd ../../ && touch .htslib; fi
 
-.wfalib: $(WFALIBSOURCES)
-	if [ -r src/wfa/CMakeLists.txt ]; then cd src/wfa && mkdir build && cd build && cmake .. -DCMAKE_BUILD_TYPE=Release -DOPENMP=$(MPFLAG) -DEXTRA_FLAGS="-ftree-vectorize -msse2 -mfpmath=sse" && cmake --build . --verbose && ctest . --verbose && cd ../../../ && touch .wfalib; fi
-
 src/delly: ${SUBMODULES} $(SOURCES)
 	$(CXX) $(CXXFLAGS) $@.cpp src/edlib.cpp -o $@ $(LDFLAGS)
 
@@ -76,7 +65,6 @@ install: ${BUILT_PROGRAMS}
 
 clean:
 	if [ -r src/htslib/Makefile ]; then cd src/htslib && $(MAKE) clean; fi
-	if [ -r src/wfa/build/Makefile ]; then cd src/wfa/build && cmake --build . --target clean && cd ../ && rm -rf build/; fi
 	rm -f $(TARGETS) $(TARGETS:=.o) ${SUBMODULES}
 
 distclean: clean
