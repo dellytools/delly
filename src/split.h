@@ -484,11 +484,10 @@ namespace torali
   _alignConsensus(TConfig const& c, std::string& consensus, std::string& svRefStr, int32_t svt, AlignDescriptor& ad, bool const realign) {
     // Realign?
     if (realign) {
-      std::string refStr = svRefStr.substr(0, svRefStr.size()/2);
       std::string revc = consensus;
       reverseComplement(revc);
-      EdlibAlignResult alignFwd = edlibAlign(refStr.c_str(), refStr.size(), consensus.c_str(), consensus.size(), edlibNewAlignConfig(-1, EDLIB_MODE_HW, EDLIB_TASK_DISTANCE, NULL, 0));
-      EdlibAlignResult alignRev = edlibAlign(refStr.c_str(), refStr.size(), revc.c_str(), revc.size(), edlibNewAlignConfig(-1, EDLIB_MODE_HW, EDLIB_TASK_DISTANCE, NULL, 0));
+      EdlibAlignResult alignFwd = edlibAlign(svRefStr.c_str(), svRefStr.size(), consensus.c_str(), consensus.size(), edlibNewAlignConfig(-1, EDLIB_MODE_NW, EDLIB_TASK_DISTANCE, NULL, 0));
+      EdlibAlignResult alignRev = edlibAlign(svRefStr.c_str(), svRefStr.size(), revc.c_str(), revc.size(), edlibNewAlignConfig(-1, EDLIB_MODE_NW, EDLIB_TASK_DISTANCE, NULL, 0));
       if (alignRev.editDistance < alignFwd.editDistance) consensus = revc;
       edlibFreeAlignResult(alignFwd);
       edlibFreeAlignResult(alignRev);

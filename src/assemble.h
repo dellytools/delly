@@ -939,13 +939,15 @@ namespace torali
 		      bool msaSuccess = false;
 		      if (seqStore[svid].size() > 1) {
 			//std::cerr << svs[svid].svStart << ',' << svs[svid].svEnd << ',' << svs[svid].svt << ',' << svid << " SV" << std::endl;
-			if (svs[svid].svt != 4) msaEdlib(c, seqStore[svid], svs[svid].consensus);
-			else {
+			if (svs[svid].svt != 4) {
+			  msaEdlib(c, seqStore[svid], svs[svid].consensus);
+			  if (alignConsensus(c, hdr, seq, NULL, svs[svid], true)) msaSuccess = true;
+			} else {
 			  std::string prefix = boost::to_upper_copy(std::string(seq + std::max(svs[svid].svStart - (int32_t) c.minConsWindow, 0), seq + svs[svid].svStart));
 			  std::string suffix = boost::to_upper_copy(std::string(seq + svs[svid].svStart, seq + svs[svid].svStart + c.minConsWindow));
 			  msaWfa(c, seqStore[svid], svs[svid].consensus, prefix, suffix);
+			  if (alignConsensus(c, hdr, seq, NULL, svs[svid], false)) msaSuccess = true;
 			}
-			if (alignConsensus(c, hdr, seq, NULL, svs[svid], true)) msaSuccess = true;
 			//std::cerr << msaSuccess << std::endl;
 		      }
 		      if (!msaSuccess) {
@@ -988,13 +990,15 @@ namespace torali
 	      if (computeMSA) {
 		bool msaSuccess = false;
 		//std::cerr << svs[svid].svStart << ',' << svs[svid].svEnd << ',' << svs[svid].svt << ',' << svid << " SV" << std::endl;
-		if (svs[svid].svt != 4) msaEdlib(c, seqStore[svid], svs[svid].consensus);
-		else {
+		if (svs[svid].svt != 4) {
+		  msaEdlib(c, seqStore[svid], svs[svid].consensus);
+		  if (alignConsensus(c, hdr, seq, sndSeq, svs[svid], true)) msaSuccess = true;
+		} else {
 		  std::string prefix = boost::to_upper_copy(std::string(seq + std::max(svs[svid].svStart - (int32_t) c.minConsWindow, 0), seq + svs[svid].svStart));
 		  std::string suffix = boost::to_upper_copy(std::string(seq + svs[svid].svStart, seq + svs[svid].svStart + c.minConsWindow));
 		  msaWfa(c, seqStore[svid], svs[svid].consensus, prefix, suffix);
+		  if (alignConsensus(c, hdr, seq, NULL, svs[svid], false)) msaSuccess = true;
 		}
-		if (alignConsensus(c, hdr, seq, sndSeq, svs[svid], true)) msaSuccess = true;
 		//std::cerr << msaSuccess << std::endl;
 		if (!msaSuccess) {
 		  svs[svid].consensus = "";
