@@ -2,6 +2,9 @@
 #define SPLIT_H
 
 #include <iostream>
+
+//#include "bindings/cpp/WFAligner.hpp"
+
 #include "edlib.h"
 #include "gotoh.h"
 #include "needle.h"
@@ -21,6 +24,34 @@ namespace torali
     AlignDescriptor() : cStart(0), cEnd(0), rStart(0), rEnd(0), homLeft(0), homRight(0), percId(0) {}
   };
 
+
+  /*
+  template<typename TWFAligner>
+  inline void
+  printWfaAlignment(std::string const& pattern, std::string const& text, TWFAligner& aligner) {
+    std::string cigar = aligner.getAlignmentCigar();
+
+    std::cerr << "Alignment score: " << aligner.getAlignmentScore() << std::endl;
+
+    // pattern
+    uint32_t pidx = 0;
+    for (uint32_t j = 0; j < cigar.size(); ++j) {
+      if (cigar[j] == 'I') std::cerr << '-';
+      else std::cerr << pattern[pidx++];
+    }
+    std::cerr << std::endl;
+
+    // text
+    uint32_t tidx = 0;
+    for (uint32_t j = 0; j < cigar.size(); ++j) {
+      if (cigar[j] == 'D') std::cerr << '-';
+      else std::cerr <<	text[tidx++];
+    }
+    std::cerr << std::endl;
+  }
+  */
+  
+  
   template<typename TBPoint>
   inline void
   _adjustOrientation(std::string& sequence, TBPoint bpPoint, int32_t const svt) {
@@ -453,15 +484,20 @@ namespace torali
   _alignConsensus(TConfig const& c, std::string& consensus, std::string& svRefStr, int32_t svt, AlignDescriptor& ad, bool const realign) {
     // Realign?
     if (realign) {
+      std::string refStr = svRefStr.substr(0, svRefStr.size()/2);
       std::string revc = consensus;
       reverseComplement(revc);
-      EdlibAlignResult alignFwd = edlibAlign(consensus.c_str(), consensus.size(), svRefStr.c_str(), svRefStr.size(), edlibNewAlignConfig(-1, EDLIB_MODE_NW, EDLIB_TASK_DISTANCE, NULL, 0));
-      EdlibAlignResult alignRev = edlibAlign(revc.c_str(), revc.size(), svRefStr.c_str(), svRefStr.size(), edlibNewAlignConfig(-1, EDLIB_MODE_NW, EDLIB_TASK_DISTANCE, NULL, 0));
+      EdlibAlignResult alignFwd = edlibAlign(refStr.c_str(), refStr.size(), consensus.c_str(), consensus.size(), edlibNewAlignConfig(-1, EDLIB_MODE_HW, EDLIB_TASK_DISTANCE, NULL, 0));
+      EdlibAlignResult alignRev = edlibAlign(refStr.c_str(), refStr.size(), revc.c_str(), revc.size(), edlibNewAlignConfig(-1, EDLIB_MODE_HW, EDLIB_TASK_DISTANCE, NULL, 0));
       if (alignRev.editDistance < alignFwd.editDistance) consensus = revc;
       edlibFreeAlignResult(alignFwd);
       edlibFreeAlignResult(alignRev);
     }
-        
+
+    //wfa::WFAlignerGapAffine2Pieces aligner(8, 12, 4, 60, 1, wfa::WFAligner::Alignment, wfa::WFAligner::MemoryHigh);
+    //aligner.alignEnd2End(consensus, svRefStr);
+    //printWfaAlignment(consensus, svRefStr, aligner);
+
     // Consensus to reference alignment
     typedef boost::multi_array<char, 2> TAlign;
     TAlign align;

@@ -25,49 +25,6 @@ namespace torali
     Geno(int32_t const id, int32_t const s, int32_t const r) : svid(id), sp(s), rp(r) {}
   };
   
-  inline void
-  printAlignment(std::string const& query, std::string const& target, EdlibAlignMode const modeCode, EdlibAlignResult& align) {
-    int32_t tIdx = -1;
-    int32_t qIdx = -1;
-    if (modeCode == EDLIB_MODE_HW) {
-        tIdx = align.endLocations[0];
-        for (int32_t i = 0; i < align.alignmentLength; i++) {
-            if (align.alignment[i] != EDLIB_EDOP_INSERT) tIdx--;
-        }
-    }
-    std::cerr << std::endl;
-    for (int start = 0; start < align.alignmentLength; start += 50) {
-      std::cerr << "T: ";
-      int32_t startTIdx = -1;
-      for (int32_t j = start; ((j < start + 50) && (j < align.alignmentLength)); ++j) {
-	if (align.alignment[j] == EDLIB_EDOP_INSERT) std::cerr << "-";
-	else std::cerr << target[++tIdx];
-	if (j == start) startTIdx = tIdx;
-      }
-      std::cerr << " (" << std::max(startTIdx, 0) << " - " << tIdx << ")" << std::endl;
-
-      // match / mismatch
-      std::cerr << ("   ");
-      for (int32_t j = start; j < start + 50 && j < align.alignmentLength; j++) {
-	if (align.alignment[j] == EDLIB_EDOP_MATCH) std::cerr <<  "|";
-	else std::cerr << " ";
-      }
-      std::cerr << std::endl;
-
-      // query
-      std::cerr << "Q: ";
-      int32_t startQIdx = qIdx;
-      for (int32_t j = start; j < start + 50 && j < align.alignmentLength; j++) {
-	if (align.alignment[j] == EDLIB_EDOP_DELETE) std::cerr << "-";
-	else std::cerr << query[++qIdx];
-	if (j == start) startQIdx = qIdx;
-      }
-      std::cerr << " ("<< std::max(startQIdx, 0) << " - " << qIdx << ")" << std::endl;
-      std::cerr << std::endl;
-    }
-  }
-  
-
   inline float
   percentIdentity(std::string const& s1, std::string const& s2, int32_t splitpos, int32_t window) {
     // Get window boundaries

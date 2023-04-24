@@ -499,7 +499,7 @@ namespace torali
     if ((c.svtset.empty()) || (c.svtset.find(0) != c.svtset.end()) || (c.svtset.find(1) != c.svtset.end())) selectInversions(c, readBp, br);
     if ((c.svtset.empty()) || (c.svtset.find(4) != c.svtset.end())) {
       selectInsertions(c, readBp, br);
-      //bridgeInsertions(c, readBp, br);
+      bridgeInsertions(c, readBp, br);
     }
     if ((c.svtset.empty()) || (c.svtset.find(5) != c.svtset.end()) || (c.svtset.find(6) != c.svtset.end()) || (c.svtset.find(7) != c.svtset.end()) || (c.svtset.find(8) != c.svtset.end())) selectTranslocations(c, readBp, br);
   }

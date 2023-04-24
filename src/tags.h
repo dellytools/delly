@@ -11,6 +11,14 @@ namespace torali {
   #define DELLY_OUTOFBAND -99999999
   #endif
 
+  #ifndef DELLY_DUPLICATE
+  #define DELLY_DUPLICATE std::numeric_limits<uint32_t>::max()
+  #endif
+
+  #ifndef DELLY_KMER
+  #define DELLY_KMER 7
+  #endif
+
   inline bool
   _translocation(int32_t const svt) {
     return (DELLY_SVT_TRANS <= svt) && (svt < 9);
