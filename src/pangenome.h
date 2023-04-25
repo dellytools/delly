@@ -513,13 +513,13 @@ namespace torali {
 		if (ePos > (int32_t) readlen) ePos = readlen;
 		// Min. seq length and max insertion size, 10kbp?
 		if ((ePos - sPos) > window) {
-		  std::string seqalign = sequence.substr(sPos, (ePos - sPos));
-		  seqStore[svid].push_back(seqalign);
+		  seqStore[svid].push_back(sequence.substr(sPos, (ePos - sPos)));
 
 		  // Enough split-reads?
 		  if ((seqStore[svid].size() == c.maxReadPerSV) || ((int32_t) seqStore[svid].size() == svs[svid].srSupport)) {
 		    if (seqStore[svid].size() > 1) {
-		      msaEdlib(c, seqStore[svid], svs[svid].consensus);
+		      if (svs[svid].svt != 4) msaEdlib(c, seqStore[svid], svs[svid].consensus);
+		      else msaWfa(c, seqStore[svid], svs[svid].consensus);
 
 		      // Debug
 		      //std::string idname(_addID(svs[svid].svt));

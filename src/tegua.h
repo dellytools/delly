@@ -120,7 +120,13 @@ namespace torali {
        if ((svIter->srSupport == 0) && (svIter->peSupport == 0)) continue;
        // Duplicate?
        if (!svs.empty()) {
-	 if ((lastSV.chr == svIter->chr) && (lastSV.chr2 == svIter->chr2) && (lastSV.svt == svIter->svt) && (std::abs(svIter->svStart - lastSV.svStart) < c.minRefSep) && (std::abs(svIter->svEnd - lastSV.svEnd) < c.minRefSep)) continue;
+	 if ((lastSV.chr == svIter->chr) && (lastSV.chr2 == svIter->chr2) && (lastSV.svt == svIter->svt) && (std::abs(svIter->svStart - lastSV.svStart) < c.minRefSep) && (std::abs(svIter->svEnd - lastSV.svEnd) < c.minRefSep)) {
+	   // Check length
+	   int32_t lengthvar = std::min(0.1 * (svIter->svEnd - svIter->svStart), 0.1 * (lastSV.svEnd - lastSV.svStart));
+	   int32_t lengthdiff = std::min(svIter->svEnd - svIter->svStart, lastSV.svEnd - lastSV.svStart);
+	   if (lengthvar < 15) lengthvar = 15;
+	   if (lengthdiff < lengthvar) continue;
+	 }
        }
        lastSV = *svIter;
        svs.push_back(*svIter);

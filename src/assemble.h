@@ -621,7 +621,7 @@ namespace torali
     
   template<typename TConfig, typename TSplitReadSet>
   inline int
-  msaWfa(TConfig const& c, TSplitReadSet& sps, std::string& cs, std::string& prefix, std::string& suffix) {
+  msaWfa(TConfig const& c, TSplitReadSet& sps, std::string& cs, std::string const& prefix, std::string const& suffix) {
     // Pairwise scores
     std::vector<int32_t> edit(sps.size() * sps.size(), 0);
     std::vector<uint32_t> kmerHitI;
@@ -815,37 +815,50 @@ namespace torali
     //std::cerr << cs << std::endl;
 
     // Fix consensus orientation
-    std::string prefixRev = prefix;
-    reverseComplement(prefixRev);
-    EdlibAlignResult cigarFwd = edlibAlign(prefix.c_str(), prefix.size(), cs.c_str(), cs.size(), edlibNewAlignConfig(-1, EDLIB_MODE_HW, EDLIB_TASK_DISTANCE, NULL, 0));
-    int32_t scoreFwd = cigarFwd.editDistance;
-    edlibFreeAlignResult(cigarFwd);
-    EdlibAlignResult cigarRev = edlibAlign(prefixRev.c_str(), prefixRev.size(), cs.c_str(), cs.size(), edlibNewAlignConfig(-1, EDLIB_MODE_HW, EDLIB_TASK_DISTANCE, NULL, 0));
-    int32_t scoreRev = cigarRev.editDistance;
-    edlibFreeAlignResult(cigarRev);
-    if (scoreFwd > scoreRev) reverseComplement(cs);
+    if ((!prefix.empty()) && (!suffix.empty())) {
+      std::string prefixRev = prefix;
+      reverseComplement(prefixRev);
+      EdlibAlignResult cigarFwd = edlibAlign(prefix.c_str(), prefix.size(), cs.c_str(), cs.size(), edlibNewAlignConfig(-1, EDLIB_MODE_HW, EDLIB_TASK_DISTANCE, NULL, 0));
+      int32_t scoreFwd = cigarFwd.editDistance;
+      edlibFreeAlignResult(cigarFwd);
+      EdlibAlignResult cigarRev = edlibAlign(prefixRev.c_str(), prefixRev.size(), cs.c_str(), cs.size(), edlibNewAlignConfig(-1, EDLIB_MODE_HW, EDLIB_TASK_DISTANCE, NULL, 0));
+      int32_t scoreRev = cigarRev.editDistance;
+      edlibFreeAlignResult(cigarRev);
+      if (scoreFwd > scoreRev) reverseComplement(cs);
 
-    // Anchor reference probes
-    EdlibAlignResult cigarPrefix = edlibAlign(prefix.c_str(), prefix.size(), cs.c_str(), cs.size(), edlibNewAlignConfig(-1, EDLIB_MODE_HW, EDLIB_TASK_PATH, NULL, 0));
-    uint32_t csStart = infixStart(cigarPrefix);
-    //std::cerr << "Prefix alignment: " << cigarPrefix.editDistance << std::endl;
-    //printAlignment(prefix, cs, EDLIB_MODE_HW, cigarPrefix);
-    edlibFreeAlignResult(cigarPrefix);
-    EdlibAlignResult cigarSuffix = edlibAlign(suffix.c_str(), suffix.size(), cs.c_str(), cs.size(), edlibNewAlignConfig(-1, EDLIB_MODE_HW, EDLIB_TASK_PATH, NULL, 0));
-    uint32_t csEnd = infixEnd(cigarSuffix);
-    //std::cerr << "Suffix alignment: " << cigarSuffix.editDistance << std::endl;
-    //printAlignment(suffix, cs, EDLIB_MODE_HW, cigarSuffix);
-    edlibFreeAlignResult(cigarSuffix);
-    //std::cerr << "Trimming: " << csStart << ',' << csEnd << '(' << cs.size() << ')' << std::endl;
+      // Anchor reference probes
+      EdlibAlignResult cigarPrefix = edlibAlign(prefix.c_str(), prefix.size(), cs.c_str(), cs.size(), edlibNewAlignConfig(-1, EDLIB_MODE_HW, EDLIB_TASK_PATH, NULL, 0));
+      uint32_t csStart = infixStart(cigarPrefix);
+      //std::cerr << "Prefix alignment: " << cigarPrefix.editDistance << std::endl;
+      //printAlignment(prefix, cs, EDLIB_MODE_HW, cigarPrefix);
+      edlibFreeAlignResult(cigarPrefix);
+      EdlibAlignResult cigarSuffix = edlibAlign(suffix.c_str(), suffix.size(), cs.c_str(), cs.size(), edlibNewAlignConfig(-1, EDLIB_MODE_HW, EDLIB_TASK_PATH, NULL, 0));
+      uint32_t csEnd = infixEnd(cigarSuffix);
+      //std::cerr << "Suffix alignment: " << cigarSuffix.editDistance << std::endl;
+      //printAlignment(suffix, cs, EDLIB_MODE_HW, cigarSuffix);
+      edlibFreeAlignResult(cigarSuffix);
+      //std::cerr << "Trimming: " << csStart << ',' << csEnd << '(' << cs.size() << ')' << std::endl;
 
-    // Trim consensus
-    if ((csStart < csEnd) && (csEnd < cs.size())) cs = cs.substr(csStart, (csEnd - csStart));
-
+      // Trim consensus
+      if ((csStart < csEnd) && (csEnd < cs.size())) cs = cs.substr(csStart, (csEnd - csStart));
+    } else {
+      // Trim off 10% from either end
+      int32_t trim = (int32_t) (0.05 * cs.size());
+      if (trim > 50) trim = 50;
+      int32_t len = (int32_t) (cs.size()) - 2 * trim;
+      if (len > 100) cs = cs.substr(trim, len);
+    }
+    
     // Return split-read support
     return selectedIdx.size();
   }
 
 
+  template<typename TConfig, typename TSplitReadSet>
+  inline int
+  msaWfa(TConfig const& c, TSplitReadSet& sps, std::string& cs) {
+    return msaWfa(c, sps, cs, "", "");
+  }
   
   template<typename TConfig, typename TValidRegion, typename TSRStore>
   inline void

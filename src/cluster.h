@@ -370,13 +370,12 @@ namespace torali
 	  }
 
 	  // Get size variability
-	  uint32_t varisize = c.maxReadSep;
+	  uint32_t varisize = std::abs(0.1 * (br[i].pos2 - br[i].pos));
+	  if (svt == 4) varisize = std::abs(0.1 * br[i].inslen);
 	  if (_translocation(svt)) varisize = 2 * c.maxReadSep;
 	  else {
-	    // At most 1000bp breakpoint offset
-	    uint32_t svvar = std::abs(0.1 * (br[i].pos2 - br[i].pos));
-	    if (svt == 4) svvar = std::abs(0.1 * br[i].inslen);
-	    if (varisize < svvar) varisize = svvar;
+	    // At least 15bp, at most 1kbp
+	    if (varisize < 15) varisize = 15;
 	    if (varisize > 1000) varisize = 1000;
 	  }
 	  for(uint32_t j = i + 1; j<br.size(); ++j) {
