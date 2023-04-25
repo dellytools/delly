@@ -50,7 +50,7 @@ namespace torali
     typedef typename TAlign::index TAIndex;
 
     // DP Matrix
-    typedef boost::multi_array<TScoreValue, 2> TMatrix;
+    typedef boost::multi_array<int16_t, 2> TMatrix;
     std::size_t m = s1.size();
     std::size_t n = s2.size();
     TMatrix mat(boost::extents[m+1][n+1]);

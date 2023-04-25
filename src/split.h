@@ -464,7 +464,7 @@ namespace torali
   inline bool
   _consRefAlignment(std::string const& cons, std::string const& svRefStr, TAlign& aln, int32_t const svt) {
     AlignConfig<true, false> semiglobal;
-    DnaScore<int> lnsc(5, -4, -4, -4);
+    DnaScore<int> lnsc(1, -1, -1, -1);
     bool reNeedle = false;
     if (svt == 4) {
       reNeedle = longNeedle(svRefStr, cons, aln, semiglobal, lnsc);
@@ -502,7 +502,7 @@ namespace torali
     TAlign align;
     //std::cerr << "Consensus-to-Reference alignment" << std::endl;
     if (!_consRefAlignment(consensus, svRefStr, align, svt)) return false;
-
+    
     // Debug consensus to reference alignment
     //for(uint32_t i = 0; i < align.shape()[0]; ++i) {
     //for(uint32_t j = 0; j< align.shape()[1]; ++j) {

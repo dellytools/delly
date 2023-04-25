@@ -520,6 +520,7 @@ namespace torali {
 		    if (seqStore[svid].size() > 1) {
 		      if (svs[svid].svt != 4) msaEdlib(c, seqStore[svid], svs[svid].consensus);
 		      else msaWfa(c, seqStore[svid], svs[svid].consensus);
+		      // Check  svs[svid].consensus.size() < svs[svid].insLen + 4 * c.minConsWindow to see if it worked
 
 		      // Debug
 		      //std::string idname(_addID(svs[svid].svt));
@@ -547,7 +548,10 @@ namespace torali {
     // Handle left-overs
     for(uint32_t svid = 0; svid < svcons.size(); ++svid) {
       if (!svcons[svid]) {
-	if (seqStore[svid].size() > 1) msaEdlib(c, seqStore[svid], svs[svid].consensus);
+	if (seqStore[svid].size() > 1) {
+	  if (svs[svid].svt != 4) msaEdlib(c, seqStore[svid], svs[svid].consensus);
+	  else msaWfa(c, seqStore[svid], svs[svid].consensus);
+	}
 	seqStore[svid].clear();
 	svcons[svid] = true;
 

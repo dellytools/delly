@@ -735,7 +735,6 @@ namespace torali
     if (lastIdx < 3) lastIdx = 3;
     for(uint32_t i = 0; ((i < qscores.size()) && (i < lastIdx)); ++i) selectedIdx.push_back(qscores[i].second);
 
-
     // Build superstring
     std::string superStr = sps[selectedIdx[0]];
     for(uint32_t i = 1; i < selectedIdx.size(); ++i) {
@@ -792,7 +791,6 @@ namespace torali
 	std::string outStr;
 	buildSuperstring(superStr, sps[selectedIdx[i]], outStr, cigar, preI, postI, preJ, postJ);
 	edlibFreeAlignResult(cigar);
-	//std::cerr << outStr << std::endl;
 
 	// Next iteration
 	superStr = outStr;
@@ -962,7 +960,9 @@ namespace torali
 			  std::string prefix = boost::to_upper_copy(std::string(seq + std::max(svs[svid].svStart - (int32_t) c.minConsWindow, 0), seq + svs[svid].svStart));
 			  std::string suffix = boost::to_upper_copy(std::string(seq + svs[svid].svStart, seq + svs[svid].svStart + c.minConsWindow));
 			  msaWfa(c, seqStore[svid], svs[svid].consensus, prefix, suffix);
-			  if (alignConsensus(c, hdr, seq, NULL, svs[svid], false)) msaSuccess = true;
+			  if (svs[svid].consensus.size() < svs[svid].insLen + 4 * c.minConsWindow) {
+			    if (alignConsensus(c, hdr, seq, NULL, svs[svid], false)) msaSuccess = true;
+			  }
 			}
 			//std::cerr << msaSuccess << std::endl;
 		      }
@@ -1013,7 +1013,9 @@ namespace torali
 		  std::string prefix = boost::to_upper_copy(std::string(seq + std::max(svs[svid].svStart - (int32_t) c.minConsWindow, 0), seq + svs[svid].svStart));
 		  std::string suffix = boost::to_upper_copy(std::string(seq + svs[svid].svStart, seq + svs[svid].svStart + c.minConsWindow));
 		  msaWfa(c, seqStore[svid], svs[svid].consensus, prefix, suffix);
-		  if (alignConsensus(c, hdr, seq, NULL, svs[svid], false)) msaSuccess = true;
+		  if (svs[svid].consensus.size() < svs[svid].insLen + 4 * c.minConsWindow) {
+		    if (alignConsensus(c, hdr, seq, NULL, svs[svid], false)) msaSuccess = true;
+		  }
 		}
 		//std::cerr << msaSuccess << std::endl;
 		if (!msaSuccess) {
