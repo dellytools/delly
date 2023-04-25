@@ -41,6 +41,7 @@ namespace torali {
     uint32_t maxReadSep;
     int32_t nchr;
     int32_t maxInsertionSize;
+    int32_t indelsize;
     std::set<int32_t> svtset;
     boost::filesystem::path outfile;
     std::vector<boost::filesystem::path> files;
@@ -388,6 +389,7 @@ namespace torali {
    std::cerr << std::endl;
    
    // Run assembly mode
+   c.indelsize = 20000;
    return runAsm(c);
  }
 

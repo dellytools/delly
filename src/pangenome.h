@@ -923,6 +923,7 @@ namespace torali {
    std::cerr << std::endl;
    
    // Run pan-genome SV discovery
+   c.indelsize = 20000;
    return runGraph(c);
  }
 

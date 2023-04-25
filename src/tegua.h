@@ -215,8 +215,8 @@ namespace torali {
      ("cons-window,w", boost::program_options::value<int32_t>(&c.minConsWindow)->default_value(1000), "consensus window")
      ("flank-size,f", boost::program_options::value<int32_t>(&c.minimumFlankSize)->default_value(100), "min. flank size")
      ("flank-quality,a", boost::program_options::value<float>(&c.flankQuality)->default_value(0.9), "min. flank quality")
-     ("indel-size,i", boost::program_options::value<int32_t>(&c.indelsize)->default_value(10000), "use exact alleles for InDels <10kbp")
-     ;     
+     ("indel-size,i", boost::program_options::value<int32_t>(&c.indelsize)->default_value(20000), "use exact alleles for InDels <20kbp")
+     ;
    
    boost::program_options::options_description geno("Genotyping options");
    geno.add_options()
