@@ -444,6 +444,36 @@ namespace torali
     }
   }
 
+  inline void
+  _trimConsensus(std::string const& prefix, std::string const& suffix, std::string& cs) {
+    std::string prefixRev = prefix;
+    reverseComplement(prefixRev);
+    EdlibAlignResult cigarFwd = edlibAlign(prefix.c_str(), prefix.size(), cs.c_str(), cs.size(), edlibNewAlignConfig(-1, EDLIB_MODE_HW, EDLIB_TASK_DISTANCE, NULL, 0));
+    int32_t scoreFwd = cigarFwd.editDistance;
+    edlibFreeAlignResult(cigarFwd);
+    EdlibAlignResult cigarRev = edlibAlign(prefixRev.c_str(), prefixRev.size(), cs.c_str(), cs.size(), edlibNewAlignConfig(-1, EDLIB_MODE_HW, EDLIB_TASK_DISTANCE, NULL, 0));
+    int32_t scoreRev = cigarRev.editDistance;
+    edlibFreeAlignResult(cigarRev);
+    if (scoreFwd > scoreRev) reverseComplement(cs);
+    
+    // Anchor reference probes
+    EdlibAlignResult cigarPrefix = edlibAlign(prefix.c_str(), prefix.size(), cs.c_str(), cs.size(), edlibNewAlignConfig(-1, EDLIB_MODE_HW, EDLIB_TASK_PATH, NULL, 0));
+    uint32_t csStart = infixStart(cigarPrefix);
+    //std::cerr << "Prefix alignment: " << cigarPrefix.editDistance << std::endl;
+    //printAlignment(prefix, cs, EDLIB_MODE_HW, cigarPrefix);
+    edlibFreeAlignResult(cigarPrefix);
+    EdlibAlignResult cigarSuffix = edlibAlign(suffix.c_str(), suffix.size(), cs.c_str(), cs.size(), edlibNewAlignConfig(-1, EDLIB_MODE_HW, EDLIB_TASK_PATH, NULL, 0));
+    uint32_t csEnd = infixEnd(cigarSuffix);
+    //std::cerr << "Suffix alignment: " << cigarSuffix.editDistance << std::endl;
+    //printAlignment(suffix, cs, EDLIB_MODE_HW, cigarSuffix);
+    edlibFreeAlignResult(cigarSuffix);
+    //std::cerr << "Trimming: " << csStart << ',' << csEnd << '(' << cs.size() << ')' << std::endl;
+    
+    // Trim consensus
+    if ((csStart < csEnd) && (csEnd < cs.size())) cs = cs.substr(csStart, (csEnd - csStart));
+  }
+  
+    
   template<typename TConfig, typename TSplitReadSet>
   inline int
   msaEdlib(TConfig const& c, TSplitReadSet& sps, std::string& cs) {
@@ -545,8 +575,6 @@ namespace torali
     return align.shape()[0];
   }
 
-
-
   inline uint32_t
   charToInt(char c) {
     switch(c)
@@ -644,7 +672,6 @@ namespace torali
 	  seqI = sps[i].substr(0, seqlen);
 	  seqJ = sps[j].substr(-1 * bestDiag, seqlen);
 	}
-	// Compute edit distance
 	EdlibAlignResult align = edlibAlign(seqI.c_str(), seqI.size(), seqJ.c_str(), seqJ.size(), edlibNewAlignConfig(-1, EDLIB_MODE_NW, EDLIB_TASK_DISTANCE, NULL, 0));
 	int32_t score = (align.editDistance * 1000) / std::max(seqI.size(), seqJ.size());
 	edit[i * sps.size() + j] = score;
@@ -814,33 +841,9 @@ namespace torali
     //std::cerr << gapped << std::endl;
     //std::cerr << cs << std::endl;
 
-    // Fix consensus orientation
+    // Fix consensus orientation and trim to prefix & suffix
     if ((!prefix.empty()) && (!suffix.empty())) {
-      std::string prefixRev = prefix;
-      reverseComplement(prefixRev);
-      EdlibAlignResult cigarFwd = edlibAlign(prefix.c_str(), prefix.size(), cs.c_str(), cs.size(), edlibNewAlignConfig(-1, EDLIB_MODE_HW, EDLIB_TASK_DISTANCE, NULL, 0));
-      int32_t scoreFwd = cigarFwd.editDistance;
-      edlibFreeAlignResult(cigarFwd);
-      EdlibAlignResult cigarRev = edlibAlign(prefixRev.c_str(), prefixRev.size(), cs.c_str(), cs.size(), edlibNewAlignConfig(-1, EDLIB_MODE_HW, EDLIB_TASK_DISTANCE, NULL, 0));
-      int32_t scoreRev = cigarRev.editDistance;
-      edlibFreeAlignResult(cigarRev);
-      if (scoreFwd > scoreRev) reverseComplement(cs);
-
-      // Anchor reference probes
-      EdlibAlignResult cigarPrefix = edlibAlign(prefix.c_str(), prefix.size(), cs.c_str(), cs.size(), edlibNewAlignConfig(-1, EDLIB_MODE_HW, EDLIB_TASK_PATH, NULL, 0));
-      uint32_t csStart = infixStart(cigarPrefix);
-      //std::cerr << "Prefix alignment: " << cigarPrefix.editDistance << std::endl;
-      //printAlignment(prefix, cs, EDLIB_MODE_HW, cigarPrefix);
-      edlibFreeAlignResult(cigarPrefix);
-      EdlibAlignResult cigarSuffix = edlibAlign(suffix.c_str(), suffix.size(), cs.c_str(), cs.size(), edlibNewAlignConfig(-1, EDLIB_MODE_HW, EDLIB_TASK_PATH, NULL, 0));
-      uint32_t csEnd = infixEnd(cigarSuffix);
-      //std::cerr << "Suffix alignment: " << cigarSuffix.editDistance << std::endl;
-      //printAlignment(suffix, cs, EDLIB_MODE_HW, cigarSuffix);
-      edlibFreeAlignResult(cigarSuffix);
-      //std::cerr << "Trimming: " << csStart << ',' << csEnd << '(' << cs.size() << ')' << std::endl;
-
-      // Trim consensus
-      if ((csStart < csEnd) && (csEnd < cs.size())) cs = cs.substr(csStart, (csEnd - csStart));
+      _trimConsensus(prefix, suffix, cs);
     } else {
       // Trim off 10% from either end
       int32_t trim = (int32_t) (0.05 * cs.size());
