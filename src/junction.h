@@ -240,7 +240,7 @@ namespace torali
 		    else isizelen = (it->second[j].seqpos - it->second[i].seqpos) - (it->second[i].refpos - it->second[j].refpos);
 		  } else isizelen = 0;
 		}
-		if (((isizelen > (int32_t) c.minRefSep) && (isizelen < std::max(it->second[i].seqpos, it->second[j].seqpos)) && (isizelen < c.indelsize))) {
+		if ((isizelen > (int32_t) c.minRefSep) && (isizelen < std::max(it->second[i].seqpos, it->second[j].seqpos))) {
 		  // Avg. qval
 		  int32_t qval = (int32_t) (((int32_t) it->second[i].qual + (int32_t) it->second[j].qual) / 2);
 		  if (it->second[i].refpos <= it->second[j].refpos) {

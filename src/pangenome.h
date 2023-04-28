@@ -49,7 +49,6 @@ namespace torali {
     uint32_t maxReadPerSV;
     int32_t nchr;
     int32_t minimumFlankSize;
-    int32_t indelsize;
     float indelExtension;
     float flankQuality;
     std::set<int32_t> svtset;
@@ -927,7 +926,6 @@ namespace torali {
    std::cerr << std::endl;
    
    // Run pan-genome SV discovery
-   c.indelsize = 20000;
    return runGraph(c);
  }
 
