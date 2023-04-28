@@ -8,6 +8,7 @@ chrNamesShort = c("1","2","3","4","5","6","7","8","9","10","11","12","13","14","
 
 args = commandArgs(trailingOnly=TRUE)
 x = read.table(args[1], header=T)
+minCN = 0
 maxCN = 8
 seg = data.frame()
 if (length(args)>1) {
@@ -32,7 +33,7 @@ p = p + ylab("Copy-number")
 p = p + scale_x_continuous(labels=comma)
 if (nrow(seg)) { p = p + geom_segment(data=seg, aes(x=start, y=cn, xend=end, yend=cn), color="#31a354", size=1.2); }
 p = p + facet_grid(. ~ chr, scales="free_x", space="free_x")
-p = p + ylim(0, maxCN)
+p = p + ylim(minCN, maxCN)
 p = p + theme(axis.text.x = element_text(angle=45, hjust=1))
 p = p + ggtitle(args[1])
 ggsave(p, file="plot.wholegenome.png", width=24, height=6)
@@ -48,7 +49,7 @@ for(chrname in unique(x$chr)) {
  p = p + ylab("Copy-number") + xlab(chrname)
  p = p + scale_x_continuous(labels=comma, breaks = scales::pretty_breaks(n=20))
  if (nrow(sl)) { p = p + geom_segment(data=sl, aes(x=start, y=cn, xend=end, yend=cn), color="#31a354", size=1.2); }
- p = p + ylim(0, maxCN)
+ p = p + ylim(minCN, maxCN)
  p = p + theme(axis.text.x = element_text(angle=45, hjust=1))
  ggsave(p, file=paste0("plot.", chrname, ".png"), width=24, height=6)
  print(warnings())

@@ -460,6 +460,169 @@ namespace torali
     return true;
   }
 
+
+  inline void
+  editDistanceVec(std::string const& seqI, std::string const& seqJ, EdlibAlignResult& cigar, std::vector<uint32_t>& dist) {
+    // Fill edit distance vector
+    dist.resize(seqI.size());
+    std::fill(dist.begin(), dist.end(), 0);
+
+    // Compute edit distance
+    int32_t tIdx = -1;
+    int32_t qIdx = -1;
+    uint32_t editDist = 0;
+    // seqI
+    for (int32_t j = 0; j < cigar.alignmentLength; ++j) {
+      if (cigar.alignment[j] == EDLIB_EDOP_DELETE) {
+	++tIdx;
+	++editDist;
+      }
+      else if (cigar.alignment[j] == EDLIB_EDOP_INSERT) {
+	++qIdx;
+	++editDist;
+	dist[qIdx] = editDist;
+      }
+      else {
+	++tIdx;
+	++qIdx;
+	if (seqI[qIdx] != seqJ[tIdx]) ++editDist;
+	dist[qIdx] = editDist;
+      }
+    }
+  }
+
+  template<typename TAlign>
+  inline void
+  glueAlignment(std::string const& query, std::string const& target, uint32_t const gaplen, EdlibAlignMode const modeCode, EdlibAlignResult& cigarLeft, EdlibAlignResult& cigarRight, TAlign& align) {
+    // Create new alignment
+    int32_t tIdx = -1;
+    int32_t qIdx = -1;
+    uint32_t missingStart = 0;
+    if (modeCode == EDLIB_MODE_HW) {
+      tIdx = cigarLeft.endLocations[0];
+      for (int32_t i = 0; i < cigarLeft.alignmentLength; i++) {
+	if (cigarLeft.alignment[i] != EDLIB_EDOP_INSERT) --tIdx;
+      }
+      if (tIdx >= 0) missingStart = tIdx + 1;
+    }
+    uint32_t missingEnd = cigarRight.endLocations[0];
+    if (missingEnd < target.size()) missingEnd = target.size() - missingEnd - 1;
+    align.resize(boost::extents[2][missingStart + cigarLeft.alignmentLength + gaplen + cigarRight.alignmentLength + missingEnd]);
+
+    // fix start
+    if (modeCode == EDLIB_MODE_HW) {
+      if (missingStart) {
+	for (uint32_t j = 0; j < missingStart; ++j) {
+	  align[1][j] = target[j];
+	  align[0][j] = '-';
+	}
+      }
+    }
+    // target
+    for (int32_t j = 0; j < cigarLeft.alignmentLength; ++j) {
+      if (cigarLeft.alignment[j] == EDLIB_EDOP_INSERT) align[1][j + missingStart] = '-';
+      else {
+	++tIdx;
+	align[1][j + missingStart] = target[tIdx];
+      }
+    }
+    // query
+    for (int32_t j = 0; j < cigarLeft.alignmentLength; ++j) {
+      if (cigarLeft.alignment[j] == EDLIB_EDOP_DELETE) align[0][j + missingStart] = '-';
+      else align[0][j + missingStart] = query[++qIdx];
+    }
+    // gap
+    for (uint32_t j = 0; j < gaplen; ++j) {
+      align[0][j + missingStart + cigarLeft.alignmentLength] = '-';
+      ++tIdx;
+      align[1][j + missingStart + cigarLeft.alignmentLength] = target[tIdx];
+    }
+    // target
+    for (int32_t j = 0; j < cigarRight.alignmentLength; ++j) {
+      if (cigarRight.alignment[j] == EDLIB_EDOP_INSERT) align[1][j + missingStart + cigarLeft.alignmentLength + gaplen] = '-';
+      else {
+	++tIdx;
+	align[1][j + missingStart + cigarLeft.alignmentLength + gaplen] = target[tIdx];
+      }
+    }
+    // query
+    for (int32_t j = 0; j < cigarRight.alignmentLength; ++j) {
+      if (cigarRight.alignment[j] == EDLIB_EDOP_DELETE) align[0][j + missingStart + cigarLeft.alignmentLength + gaplen] = '-';
+      else align[0][j + missingStart + cigarLeft.alignmentLength + gaplen] = query[++qIdx];
+    }
+    // fix end
+    if (modeCode == EDLIB_MODE_HW) {
+      if (missingEnd) {
+	for (uint32_t j = 0; j < missingEnd; ++j) {
+	  ++tIdx;
+	  align[1][j + missingStart + cigarLeft.alignmentLength + gaplen + cigarRight.alignmentLength] = target[tIdx];
+	  align[0][j + missingStart + cigarLeft.alignmentLength + gaplen + cigarRight.alignmentLength] = '-';
+	}
+      }
+    }
+  }
+
+
+  template<typename TAlign>
+  inline bool
+  splitAlign(std::string const& cons, std::string const& svRefStr, TAlign& align) {
+    // Prepare SHW alignment
+    std::string prefix = svRefStr.substr(0, svRefStr.size()/3);
+    EdlibAlignResult cigarPrefix = edlibAlign(prefix.c_str(), prefix.size(), cons.c_str(), cons.size(), edlibNewAlignConfig(-1, EDLIB_MODE_HW, EDLIB_TASK_PATH, NULL, 0));
+    uint32_t csStart = infixStart(cigarPrefix);
+    edlibFreeAlignResult(cigarPrefix);
+    std::string suffix = svRefStr.substr(2 * svRefStr.size()/3);
+    EdlibAlignResult cigarSuffix = edlibAlign(suffix.c_str(), suffix.size(), cons.c_str(), cons.size(), edlibNewAlignConfig(-1, EDLIB_MODE_HW, EDLIB_TASK_PATH, NULL, 0));
+    uint32_t csEnd = infixEnd(cigarSuffix);
+    edlibFreeAlignResult(cigarSuffix);
+    
+    if (csStart >= csEnd) return false;
+    std::string cs = cons.substr(csStart, (csEnd - csStart));
+    
+    // Prefix alignment
+    EdlibAlignResult cigar = edlibAlign(svRefStr.c_str(), svRefStr.size(), cs.c_str(), cs.size(), edlibNewAlignConfig(-1, EDLIB_MODE_SHW, EDLIB_TASK_PATH, NULL, 0));
+    std::vector<uint32_t> distFwd;
+    //printAlignment(svRefStr, cs, EDLIB_MODE_HW, cigar);
+    editDistanceVec(svRefStr, cs, cigar, distFwd);
+    edlibFreeAlignResult(cigar);
+    // Suffix alignment
+    std::string svRefStrRev = svRefStr;
+    std::string csRev = cs;
+    reverseComplement(svRefStrRev);
+    reverseComplement(csRev);
+    EdlibAlignResult cigarRev = edlibAlign(svRefStrRev.c_str(), svRefStrRev.size(), csRev.c_str(), csRev.size(), edlibNewAlignConfig(-1, EDLIB_MODE_SHW, EDLIB_TASK_PATH, NULL, 0));
+    std::vector<uint32_t> distRev;
+    //printAlignment(svRefStrRev, csRev, EDLIB_MODE_HW, cigarRev);
+    editDistanceVec(svRefStrRev, csRev, cigarRev, distRev);
+    edlibFreeAlignResult(cigarRev);
+    
+    // Best join
+    uint32_t bestJoin = 0;
+    for(uint32_t i = 1; i < distFwd.size() - 1; ++i) {
+      if (distFwd[i] + distRev[distFwd.size() - i - 2] < distFwd[bestJoin] + distRev[distFwd.size() - bestJoin - 2]) bestJoin = i;
+    }
+    
+    // Split reference and do infix alignment
+    std::string svRefLeft = svRefStr.substr(0, bestJoin + 1);
+    std::string svRefRight = svRefStr.substr(bestJoin + 1);
+    
+    // Infix alignment
+    EdlibAlignResult cigarLeft = edlibAlign(svRefLeft.c_str(), svRefLeft.size(), cons.c_str(), cons.size(), edlibNewAlignConfig(-1, EDLIB_MODE_HW, EDLIB_TASK_PATH, NULL, 0));
+    uint32_t leftEnd = infixEnd(cigarLeft);
+    //printAlignment(svRefLeft, cons, EDLIB_MODE_HW, cigarLeft);
+    EdlibAlignResult cigarRight = edlibAlign(svRefRight.c_str(), svRefRight.size(), cons.c_str(), cons.size(), edlibNewAlignConfig(-1, EDLIB_MODE_HW, EDLIB_TASK_PATH, NULL, 0));
+    //printAlignment(svRefRight, cons, EDLIB_MODE_HW, cigarRight);
+    uint32_t rightStart = infixStart(cigarRight);
+    
+    // Glue alignment
+    if (leftEnd + 15 >= rightStart) return false;
+    glueAlignment(svRefStr, cons, rightStart - leftEnd - 1, EDLIB_MODE_HW, cigarLeft, cigarRight, align);
+    edlibFreeAlignResult(cigarLeft);
+    edlibFreeAlignResult(cigarRight);
+    return true;
+  }
+  
+
   template<typename TAlign>
   inline bool
   _consRefAlignment(std::string const& cons, std::string const& svRefStr, TAlign& aln, int32_t const svt) {
@@ -467,7 +630,8 @@ namespace torali
     DnaScore<int> lnsc(1, -1, -1, -1);
     bool reNeedle = false;
     if (svt == 4) {
-      reNeedle = longNeedle(svRefStr, cons, aln, semiglobal, lnsc);
+      reNeedle = splitAlign(cons, svRefStr, aln);
+      //reNeedle = longNeedle(svRefStr, cons, aln, semiglobal, lnsc);
       for(uint32_t j = 0; j < aln.shape()[1]; ++j) {
 	char tmp = aln[0][j];
 	aln[0][j] = aln[1][j];
@@ -510,7 +674,8 @@ namespace torali
     //}
     //std::cerr << std::endl;
     //}
-    
+    //std::cerr << std::endl;
+    //std::cerr << std::endl;
     // Check breakpoint
     if (!_findSplit(c, consensus, svRefStr, align, ad, svt)) return false;
 

@@ -21,115 +21,6 @@ namespace torali
     SeqSlice(int32_t const sv, int32_t const sst, int32_t const il, int32_t q) : svid(sv), sstart(sst), inslen(il), qual(q) {}
   };
 
-  inline void
-  printAlignmentPretty(std::string const& query, std::string const& target, EdlibAlignMode const modeCode, EdlibAlignResult& align) {
-    int32_t tIdx = -1;
-    int32_t qIdx = -1;
-    if (modeCode == EDLIB_MODE_HW) {
-        tIdx = align.endLocations[0];
-        for (int32_t i = 0; i < align.alignmentLength; i++) {
-            if (align.alignment[i] != EDLIB_EDOP_INSERT) tIdx--;
-        }
-    }
-    std::cerr << std::endl;
-    for (int start = 0; start < align.alignmentLength; start += 50) {
-      std::cerr << "T: ";
-      int32_t startTIdx = -1;
-      for (int32_t j = start; ((j < start + 50) && (j < align.alignmentLength)); ++j) {
-	if (align.alignment[j] == EDLIB_EDOP_INSERT) std::cerr << "-";
-	else std::cerr << target[++tIdx];
-	if (j == start) startTIdx = tIdx;
-      }
-      std::cerr << " (" << std::max(startTIdx, 0) << " - " << tIdx << ")" << std::endl;
-
-      // match / mismatch
-      std::cerr << ("   ");
-      for (int32_t j = start; j < start + 50 && j < align.alignmentLength; j++) {
-	if (align.alignment[j] == EDLIB_EDOP_MATCH) std::cerr <<  "|";
-	else std::cerr << " ";
-      }
-      std::cerr << std::endl;
-
-      // query
-      std::cerr << "Q: ";
-      int32_t startQIdx = qIdx;
-      for (int32_t j = start; j < start + 50 && j < align.alignmentLength; j++) {
-	if (align.alignment[j] == EDLIB_EDOP_DELETE) std::cerr << "-";
-	else std::cerr << query[++qIdx];
-	if (j == start) startQIdx = qIdx;
-      }
-      std::cerr << " ("<< std::max(startQIdx, 0) << " - " << qIdx << ")" << std::endl;
-      std::cerr << std::endl;
-    }
-  }
-
-  inline uint32_t
-  infixStart(EdlibAlignResult& cigar) {
-    int32_t tIdx = cigar.endLocations[0];
-    for (int32_t i = 0; i < cigar.alignmentLength; i++) {
-      if (cigar.alignment[i] != EDLIB_EDOP_INSERT) tIdx--;
-    }
-    if (tIdx >= 0) return tIdx + 1;
-    else return 0;
-  }
-
-  inline uint32_t
-  infixEnd(EdlibAlignResult& cigar) {
-    return cigar.endLocations[0];
-  }
-  
-  inline void
-  printAlignment(std::string const& seqI, std::string const& seqJ, EdlibAlignMode const modeCode, EdlibAlignResult& cigar) {
-    int32_t tIdx = -1;
-    int32_t qIdx = -1;
-    uint32_t missingEnd = 0;
-    uint32_t missingStart = 0;
-    if (modeCode == EDLIB_MODE_HW) {
-      tIdx = cigar.endLocations[0];
-      if (tIdx < (int32_t) seqJ.size()) missingEnd = seqJ.size() - tIdx - 1;
-      for (int32_t i = 0; i < cigar.alignmentLength; i++) {
-	if (cigar.alignment[i] != EDLIB_EDOP_INSERT) tIdx--;
-      }
-      if (tIdx >= 0) missingStart = tIdx + 1;
-    }
-    // infix alignment, fix start
-    if (modeCode == EDLIB_MODE_HW) {
-      if (missingStart) {
-	for (uint32_t j = 0; j < missingStart; ++j) std::cerr << '-';
-      }
-    }
-    // seqI
-    for (int32_t j = 0; j < cigar.alignmentLength; ++j) {
-      if (cigar.alignment[j] == EDLIB_EDOP_DELETE) std::cerr << '-';
-      else std::cerr << seqI[++qIdx];
-    }
-    // infix alignment, fix end
-    if (modeCode == EDLIB_MODE_HW) {
-      if (missingEnd) {
-	for (uint32_t j = 0; j < missingEnd; ++j) std::cerr << '-';
-      }
-    }
-    std::cerr << std::endl;
-    // infix alignment, fix start
-    if (modeCode == EDLIB_MODE_HW) {
-      if (missingStart) {
-	for (uint32_t j = 0; j < missingStart; ++j) std::cerr << seqJ[j];
-      }
-    }
-    // seqJ
-    for (int32_t j = 0; j < cigar.alignmentLength; ++j) {
-      if (cigar.alignment[j] == EDLIB_EDOP_INSERT) std::cerr << '-';
-      else std::cerr << seqJ[++tIdx];
-    }
-    // infix alignment, fix end
-    if (modeCode == EDLIB_MODE_HW) {
-      if (missingEnd) {
-	for (uint32_t j = 0; j < missingEnd; ++j) std::cerr << seqJ[++tIdx];
-      }
-    }
-    std::cerr << std::endl;
-  }
-
   template<typename TAlign>
   inline void
   convertAlignment(std::string const& query, TAlign& align, EdlibAlignMode const modeCode, EdlibAlignResult& cigar) {
@@ -960,7 +851,7 @@ namespace torali
 			  std::string prefix = boost::to_upper_copy(std::string(seq + std::max(svs[svid].svStart - (int32_t) c.minConsWindow, 0), seq + svs[svid].svStart));
 			  std::string suffix = boost::to_upper_copy(std::string(seq + svs[svid].svStart, seq + svs[svid].svStart + c.minConsWindow));
 			  msaWfa(c, seqStore[svid], svs[svid].consensus, prefix, suffix);
-			  if (svs[svid].consensus.size() < svs[svid].insLen + 4 * c.minConsWindow) {
+			  if ((int32_t) svs[svid].consensus.size() < svs[svid].insLen + 4 * c.minConsWindow) {
 			    if (alignConsensus(c, hdr, seq, NULL, svs[svid], false)) msaSuccess = true;
 			  }
 			}
@@ -1013,7 +904,7 @@ namespace torali
 		  std::string prefix = boost::to_upper_copy(std::string(seq + std::max(svs[svid].svStart - (int32_t) c.minConsWindow, 0), seq + svs[svid].svStart));
 		  std::string suffix = boost::to_upper_copy(std::string(seq + svs[svid].svStart, seq + svs[svid].svStart + c.minConsWindow));
 		  msaWfa(c, seqStore[svid], svs[svid].consensus, prefix, suffix);
-		  if (svs[svid].consensus.size() < svs[svid].insLen + 4 * c.minConsWindow) {
+		  if ((int32_t) svs[svid].consensus.size() < svs[svid].insLen + 4 * c.minConsWindow) {
 		    if (alignConsensus(c, hdr, seq, NULL, svs[svid], false)) msaSuccess = true;
 		  }
 		}

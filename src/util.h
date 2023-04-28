@@ -10,6 +10,8 @@
 #include <htslib/sam.h>
 #include <sstream>
 #include <math.h>
+
+#include "edlib.h"
 #include "tags.h"
 
 
@@ -77,6 +79,116 @@ namespace torali
   };
 
 
+  inline uint32_t
+  infixStart(EdlibAlignResult& cigar) {
+    int32_t tIdx = cigar.endLocations[0];
+    for (int32_t i = 0; i < cigar.alignmentLength; i++) {
+      if (cigar.alignment[i] != EDLIB_EDOP_INSERT) tIdx--;
+    }
+    if (tIdx >= 0) return tIdx + 1;
+    else return 0;
+  }
+
+  inline uint32_t
+  infixEnd(EdlibAlignResult& cigar) {
+    return cigar.endLocations[0];
+  }
+  
+  inline void
+  printAlignmentPretty(std::string const& query, std::string const& target, EdlibAlignMode const modeCode, EdlibAlignResult& align) {
+    int32_t tIdx = -1;
+    int32_t qIdx = -1;
+    if (modeCode == EDLIB_MODE_HW) {
+        tIdx = align.endLocations[0];
+        for (int32_t i = 0; i < align.alignmentLength; i++) {
+            if (align.alignment[i] != EDLIB_EDOP_INSERT) tIdx--;
+        }
+    }
+    std::cerr << std::endl;
+    for (int start = 0; start < align.alignmentLength; start += 50) {
+      std::cerr << "T: ";
+      int32_t startTIdx = -1;
+      for (int32_t j = start; ((j < start + 50) && (j < align.alignmentLength)); ++j) {
+	if (align.alignment[j] == EDLIB_EDOP_INSERT) std::cerr << "-";
+	else std::cerr << target[++tIdx];
+	if (j == start) startTIdx = tIdx;
+      }
+      std::cerr << " (" << std::max(startTIdx, 0) << " - " << tIdx << ")" << std::endl;
+
+      // match / mismatch
+      std::cerr << ("   ");
+      for (int32_t j = start; j < start + 50 && j < align.alignmentLength; j++) {
+	if (align.alignment[j] == EDLIB_EDOP_MATCH) std::cerr <<  "|";
+	else std::cerr << " ";
+      }
+      std::cerr << std::endl;
+
+      // query
+      std::cerr << "Q: ";
+      int32_t startQIdx = qIdx;
+      for (int32_t j = start; j < start + 50 && j < align.alignmentLength; j++) {
+	if (align.alignment[j] == EDLIB_EDOP_DELETE) std::cerr << "-";
+	else std::cerr << query[++qIdx];
+	if (j == start) startQIdx = qIdx;
+      }
+      std::cerr << " ("<< std::max(startQIdx, 0) << " - " << qIdx << ")" << std::endl;
+      std::cerr << std::endl;
+    }
+  }
+
+  inline void
+  printAlignment(std::string const& seqI, std::string const& seqJ, EdlibAlignMode const modeCode, EdlibAlignResult& cigar) {
+    int32_t tIdx = -1;
+    int32_t qIdx = -1;
+    uint32_t missingEnd = 0;
+    uint32_t missingStart = 0;
+    if ((modeCode == EDLIB_MODE_HW) || (modeCode == EDLIB_MODE_SHW)) {
+      tIdx = cigar.endLocations[0];
+      if (tIdx < (int32_t) seqJ.size()) missingEnd = seqJ.size() - tIdx - 1;
+      for (int32_t i = 0; i < cigar.alignmentLength; i++) {
+	if (cigar.alignment[i] != EDLIB_EDOP_INSERT) tIdx--;
+      }
+      if (tIdx >= 0) missingStart = tIdx + 1;
+    }
+    // infix alignment, fix start
+    if ((modeCode == EDLIB_MODE_HW) || (modeCode == EDLIB_MODE_SHW)) {
+      if (missingStart) {
+	for (uint32_t j = 0; j < missingStart; ++j) std::cerr << '-';
+      }
+    }
+    // seqI
+    for (int32_t j = 0; j < cigar.alignmentLength; ++j) {
+      if (cigar.alignment[j] == EDLIB_EDOP_DELETE) std::cerr << '-';
+      else std::cerr << seqI[++qIdx];
+    }
+    // infix alignment, fix end
+    if ((modeCode == EDLIB_MODE_HW) || (modeCode == EDLIB_MODE_SHW)) {
+      if (missingEnd) {
+	for (uint32_t j = 0; j < missingEnd; ++j) std::cerr << '-';
+      }
+    }
+    std::cerr << std::endl;
+    // infix alignment, fix start
+    if ((modeCode == EDLIB_MODE_HW) || (modeCode == EDLIB_MODE_SHW)) {
+      if (missingStart) {
+	for (uint32_t j = 0; j < missingStart; ++j) std::cerr << seqJ[j];
+      }
+    }
+    // seqJ
+    for (int32_t j = 0; j < cigar.alignmentLength; ++j) {
+      if (cigar.alignment[j] == EDLIB_EDOP_INSERT) std::cerr << '-';
+      else std::cerr << seqJ[++tIdx];
+    }
+    // infix alignment, fix end
+    if ((modeCode == EDLIB_MODE_HW) || (modeCode == EDLIB_MODE_SHW)) {
+      if (missingEnd) {
+	for (uint32_t j = 0; j < missingEnd; ++j) std::cerr << seqJ[++tIdx];
+      }
+    }
+    std::cerr << std::endl;
+  }
+
+  
   template<typename TConfig>
   inline void
   checkSampleNames(TConfig& c) {
