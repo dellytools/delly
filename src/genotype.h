@@ -171,6 +171,9 @@ namespace torali
 	    _initBreakpoint(hdr, bp, bufferSpace, itSV->svt);
 	  } else _initBreakpoint(hdr, bp, (int32_t) itSV->consensus.size(), itSV->svt);
 	  std::string svRefStr = _getSVRef(c, seq, bp, refIndex, itSV->svt);
+
+	  // Check for Ns
+	  if (nContent(svRefStr)) continue;
 	  
 	  // Find breakpoint to reference
 	  TAlign align;
@@ -232,7 +235,7 @@ namespace torali
 
   template<typename TConfig, typename TSVs, typename TGenoMap, typename TReadCountMap>
   inline void
-  _fetchReads(TConfig const& c, std::vector<samFile*>& samfile, std::vector<hts_idx_t*>& idx, std::vector<bam_hdr_t*>& hdr, int32_t const file_c, TSVs& svs, TGenoMap& genoMap, TReadCountMap& covMap) {
+  _fetchReads(TConfig const& c, std::vector<samFile*>& samfile, std::vector<hts_idx_t*>& idx, std::vector<bam_hdr_t*>& hdr, int32_t const file_c, TSVs& svs, TGenoMap& genoMap, TReadCountMap& covMap, std::vector<bool> const& probe) {
     typedef typename TGenoMap::mapped_type TGeno;
     
     boost::posix_time::ptime noww = boost::posix_time::second_clock::local_time();
@@ -245,6 +248,7 @@ namespace torali
       std::vector<int32_t> breakpoint(hdr[file_c]->target_len[refIndex], -1);
       for(typename TSVs::iterator itSV = svs.begin(); itSV != svs.end(); ++itSV) {
 	if (itSV->chr != refIndex) continue;
+	if (!probe[itSV->id]) continue;
 	int32_t pos = itSV->svStart;
 	if (itSV->svt == 3) pos = itSV->svEnd; // for duplications the end region is first in the refprobe
 	while ((breakpoint[pos] != -1) && (pos + 1 < (int) breakpoint.size())) ++pos;
@@ -376,6 +380,10 @@ namespace torali
     std::vector<std::string> refseq(svs.size());
     std::vector<std::string> altseq(svs.size());
     _generateProbes(c, hdr[0], svs, refseq, altseq);
+    std::vector<bool> probeSuccess(svs.size(), true);
+    for(uint32_t i = 0; i < svs.size(); ++i) {
+      if ((refseq[i].empty()) || (altseq[i].empty())) probeSuccess[i] = false;
+    }
 
     // Ref aligned reads
     typedef std::vector<uint32_t> TRefAlignCount;
@@ -396,7 +404,7 @@ namespace torali
 
       // Identify reads required for genotyping
       std::map<std::size_t, std::vector<Geno> > genoMap;
-      _fetchReads(c, samfile, idx, hdr, file_c, svs, genoMap, covMap);
+      _fetchReads(c, samfile, idx, hdr, file_c, svs, genoMap, covMap, probeSuccess);
 
       // Genotype SVs
       boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
@@ -413,6 +421,7 @@ namespace torali
 	    std::string sequence;
 	    for(uint32_t k = 0; k < genoMap[seed].size(); ++k) {
 	      int32_t svid = genoMap[seed][k].svid;
+	      if ((refseq[svid].empty()) || (altseq[svid].empty())) continue;
 	      int32_t probelen = std::max(refseq[svid].size(), altseq[svid].size());
 	      if (genoMap[seed][k].sp < probelen) continue;
 	      
@@ -428,10 +437,8 @@ namespace torali
 	      //std::cerr << svs[svid].svStart << "-" << svs[svid].svEnd << "," << svs[svid].svt << std::endl;
 	      //std::cerr << seed << "," << genoMap[seed][k].sp << "," << genoMap[seed][k].rp << std::endl;
 	      //std::cerr << sequence.size() << ',' << probelen << std::endl;
-	      std::string subseq = sequence.substr(genoMap[seed][k].sp - probelen, 2 * probelen);
-	      
-	      uint32_t maxGenoReadCount = 500;
-	      if ((jctMap[file_c][svid].ref.size() + jctMap[file_c][svid].alt.size()) >= maxGenoReadCount) continue;
+	      std::string subseq = sequence.substr(genoMap[seed][k].sp - probelen, 2 * probelen);	      
+	      if ((jctMap[file_c][svid].ref.size() + jctMap[file_c][svid].alt.size()) >= c.maxGenoReadCount) continue;
 	    
 	      // Reverse complement probes
 	      std::string revref = refseq[svid];
