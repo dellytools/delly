@@ -399,10 +399,14 @@ void _outputSelectedIntervals(MergeConfig& c, TGenomeIntervals const& iSelected,
 	uint32_t tid = cMap[chrName];
 	uint32_t svStart = rec[idx]->pos;
 	uint32_t svEnd = svStart + 1;
+	uint32_t tmpSvEnd = 0;
 	if (bcf_get_info_int32(hdr[idx], rec[idx], "END", &svend, &nsvend) > 0) svEnd = *svend;
 	unsigned int inslenVal = 0;
 	if (bcf_get_info_int32(hdr[idx], rec[idx], "INSLEN", &inslen, &ninslen) > 0) inslenVal = *inslen;
-	if (recsvt == 4) svEnd = svStart + inslenVal; // To enable reciprocal overlap
+	if (recsvt == 4) {
+	  tmpSvEnd = svEnd;
+	  svEnd = svStart + inslenVal; // To enable reciprocal overlap
+	}
 
 	// Parse INFO fields
 	if ((std::string(svt) == "BND") || ((std::string(svt) == "INS") && (inslenVal >= c.minsize) && (inslenVal <= c.maxsize)) || ((std::string(svt) != "BND") && (std::string(svt) != "INS") && (svEnd - svStart >= c.minsize) && (svEnd - svStart <= c.maxsize))) {
@@ -482,7 +486,8 @@ void _outputSelectedIntervals(MergeConfig& c, TGenomeIntervals const& iSelected,
 	    std::string dellyVersion("EMBL.DELLYv");
 	    dellyVersion += dellyVersionNumber;
 	    bcf_update_info_string(hdr_out,rout, "SVMETHOD", dellyVersion.c_str());
-	    bcf_update_info_int32(hdr_out, rout, "END", &svEnd, 1);
+	    if (recsvt == 4) bcf_update_info_int32(hdr_out, rout, "END", &tmpSvEnd, 1);
+	    else bcf_update_info_int32(hdr_out, rout, "END", &svEnd, 1);
 	    if (svtin >= DELLY_SVT_TRANS) {
 	      bcf_update_info_string(hdr_out,rout, "CHR2", chr2Name.c_str());
 	      bcf_update_info_int32(hdr_out, rout, "POS2", &pos2val, 1);
