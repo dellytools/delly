@@ -24,6 +24,7 @@
 #include "asmode.h"
 #include "dpe.h"
 #include "pangenome.h"
+#include "markdup.h"
 
 using namespace torali;
 
@@ -49,6 +50,9 @@ displayUsage() {
   std::cerr << "Copy-number variant calling:" << std::endl;
   std::cerr << "    cnv          discover and genotype copy-number variants" << std::endl;
   std::cerr << "    classify     classify somatic or germline copy-number variants" << std::endl;
+  //std::cerr << std::endl;
+  //std::cerr << "Population VCF filtering:" << std::endl;
+  //std::cerr << "    markdup      mark duplicate sites based on SV allele and GT concordance" << std::endl;
   //std::cerr << "Deprecated:" << std::endl;
   //std::cerr << "    dpe          double paired-end signatures" << std::endl;
   //std::cerr << std::endl;
@@ -90,6 +94,9 @@ int main(int argc, char **argv) {
     }
     else if ((std::string(argv[1]) == "asm")) {
       return asmode(argc-1,argv+1);
+    }
+    else if ((std::string(argv[1]) == "markdup")) {
+      return markdup(argc-1,argv+1);
     }
     else if ((std::string(argv[1]) == "pg")) {
       return pg(argc-1,argv+1);
