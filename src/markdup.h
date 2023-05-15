@@ -77,6 +77,46 @@ namespace torali
     boost::filesystem::path vcffile;
   };
 
+  inline double
+  _pearsonCorrelation(std::vector<float> const& vaf1, std::vector<float> const& vaf2) {
+    uint32_t n = vaf1.size();
+    double m1 = 0;
+    double m2 = 0;
+    for(uint32_t i = 0; i < n; ++i) {
+      m1 += vaf1[i];
+      m2 += vaf2[i];
+    }
+    m1 /= n;
+    m2 /= n;
+    double d1 = 0;
+    double d2 = 0;
+    for(uint32_t i = 0; i < n; ++i) {
+      d1 += std::pow(vaf1[i] - m1, 2);
+      d2 += std::pow(vaf2[i] - m2, 2);
+    }
+    d1 = sqrt(d1/n);
+    d2 = sqrt(d2/n);
+    double covar = 0;
+    for(uint32_t i = 0; i < n; ++i) {
+      covar += (vaf1[i] - m1) * (vaf2[i] - m2);
+    }
+    return covar / (n * d1 * d2);
+  }
+
+  inline double
+  _sharedCarriers(std::vector<int32_t> const& gt1, std::vector<int32_t> const& gt2) {
+    // Percentage of shared carriers
+    uint32_t carnum = 0;
+    uint32_t carshared = 0;
+    for(uint32_t k = 0; k < gt1.size(); ++k) {
+      if ((gt1[k] != 0) || (gt2[k] != 0)) {
+	++carnum;
+	if ((gt1[k] != 0) && (gt2[k] != 0)) ++carshared;
+      }
+    }
+    return (double) (carshared) / (double) (carnum);
+  }
+  
   inline bool
   _loadSVEvents(MarkdupConfig const& c, std::vector<SVEvent>& allsv) {
     bool success = true;
@@ -203,6 +243,87 @@ namespace torali
     return success;    
   }
 
+  inline bool
+  _writeUniqueSVs(MarkdupConfig const& c, std::vector<SVEvent> const& allsv) {
+    std::map<std::string, bool> dupmap;
+    for(uint32_t i = 0; i < allsv.size(); ++i) dupmap.insert(std::make_pair(allsv[i].id, allsv[i].duplicate));
+
+    // Load bcf file
+    htsFile* ifile = hts_open(c.vcffile.string().c_str(), "r");
+    bcf_hdr_t* hdr = bcf_hdr_read(ifile);
+
+    // Open output VCF file
+    std::string fmtout = "wb";
+    if (c.outfile.string() == "-") fmtout = "w";
+    htsFile *ofile = hts_open(c.outfile.string().c_str(), fmtout.c_str());
+    bcf_hdr_t *hdr_out = bcf_hdr_dup(hdr);
+    if (c.softFilter) {
+      bcf_hdr_append(hdr_out, "##FILTER=<ID=Duplicate,Description=\"Marked duplicate.\">");
+      bcf_hdr_append(hdr_out, "##FILTER=<ID=FAIL,Description=\"SV site fails quality check.\">");
+    }
+    if (bcf_hdr_write(ofile, hdr_out) != 0) {
+      std::cerr << "Error: Failed to write BCF header!" << std::endl;
+      return false;
+    }
+
+    // VCF fields
+    int32_t nsvend = 0;
+    int32_t* svend = NULL;
+    int32_t nsvt = 0;
+    char* svt = NULL;
+
+    // Parse BCF
+    std::cerr << '[' << boost::posix_time::to_simple_string(boost::posix_time::second_clock::local_time()) << "] " << "Output VCF/BCF file" << std::endl;
+    bcf1_t* rec = bcf_init1();
+    while (bcf_read(ifile, hdr, rec) == 0) {
+      bcf_unpack(rec, BCF_UN_INFO);
+      // Check SV type
+      bcf_get_info_string(hdr, rec, "SVTYPE", &svt, &nsvt);
+
+      // Check size and PASS
+      bcf_get_info_int32(hdr, rec, "END", &svend, &nsvend);
+      bool pass = true;
+      if (c.filterForPass) pass = (bcf_has_filter(hdr, rec, const_cast<char*>("PASS"))==1);
+      if ((rec->qual >= c.qualthres) && (pass)) {
+	std::string idname = std::string(rec->d.id);
+	if (dupmap.find(idname) == dupmap.end()) {
+	  std::cerr << "Error: SV site does not exist: " << idname << std::endl;
+	  return false;
+	}
+	if (dupmap[idname]) {
+	  // Duplicate
+	  if (c.softFilter) {
+	    int32_t tmpi = bcf_hdr_id2int(hdr_out, BCF_DT_ID, "Duplicate");
+	    bcf_update_filter(hdr_out, rec, &tmpi, 1);
+	    bcf_write1(ofile, hdr_out, rec);
+	  }
+	} else bcf_write1(ofile, hdr_out, rec);
+      } else if (c.softFilter) {
+	int32_t tmpi = bcf_hdr_id2int(hdr_out, BCF_DT_ID, "FAIL");
+	bcf_update_filter(hdr_out, rec, &tmpi, 1);
+	bcf_write1(ofile, hdr_out, rec);
+      }
+    }
+    bcf_destroy(rec);
+
+    // Clean-up
+    if (svend != NULL) free(svend);
+    if (svt != NULL) free(svt);
+
+    // Close output VCF
+    bcf_hdr_destroy(hdr_out);
+    hts_close(ofile);
+
+    // Build index
+    if (c.outfile.string() != "-") bcf_index_build(c.outfile.string().c_str(), 14);
+
+    // Close VCF
+    bcf_hdr_destroy(hdr);
+    bcf_close(ifile);
+
+    return true;
+  }
+  
   
   inline void
   _markDuplicates(MarkdupConfig const& c, std::vector<SVEvent>& allsv) {
@@ -233,10 +354,23 @@ namespace torali
 	edlibFreeAlignResult(cigar);
 	if (score > c.divergence) continue;
 
-	// Duplicate
-	std::cerr << allsv[i].tid << ',' << allsv[i].svStart << ',' << allsv[i].svEnd << ',' << allsv[i].id << ',' << allsv[i].svLen << std::endl;
-	std::cerr << allsv[j].tid << ',' << allsv[j].svStart << ',' << allsv[j].svEnd << ',' << allsv[i].id << ',' << allsv[j].svLen << std::endl;
-	std::cerr << std::endl;
+	// Find better SV
+	double gqsum1 = 0;
+	double gqsum2 = 0;
+	for(uint32_t k = 0; k < allsv[i].gq.size(); ++k) {
+	  gqsum1 += allsv[i].gq[k];
+	  gqsum2 += allsv[j].gq[k];
+	}
+	
+	// Duplicates (Debug)
+	//double pe = _pearsonCorrelation(allsv[i].vaf, allsv[j].vaf);
+	//double sharedperc = _sharedCarriers(allsv[i].gt, allsv[j].gt);
+	//std::cerr << allsv[i].tid << ',' << allsv[i].svStart << ',' << allsv[i].svEnd << ',' << allsv[i].id << ',' << allsv[i].svLen << std::endl;
+	//std::cerr << allsv[j].tid << ',' << allsv[j].svStart << ',' << allsv[j].svEnd << ',' << allsv[j].id << ',' << allsv[j].svLen << std::endl;
+	//std::cerr << gqsum1 << '\t' << gqsum2 << '\t' << pe << '\t' << sharedperc << std::endl;
+
+	if (gqsum1 < gqsum2) allsv[i].duplicate = true;
+	else allsv[j].duplicate	= true;
       }
     }
   }
@@ -254,140 +388,9 @@ namespace torali
 
     // Mark duplicates
     _markDuplicates(c, allsv);
-    
-    /*
 
-        // Load bcf file
-    htsFile* ifile = hts_open(c.vcffile.string().c_str(), "r");
-    bcf_hdr_t* hdr = bcf_hdr_read(ifile);
-
-    // Open output VCF file
-    std::string fmtout = "wb";
-    if (c.outfile.string() == "-") fmtout = "w";
-    htsFile *ofile = hts_open(c.outfile.string().c_str(), fmtout.c_str());
-    bcf_hdr_t *hdr_out = bcf_hdr_dup(hdr);
-    if (c.softFilter) {
-      bcf_hdr_append(hdr_out, "##FILTER=<ID=Duplicate,Description=\"Marked duplicate.\">");
-      bcf_hdr_append(hdr_out, "##FILTER=<ID=FAIL,Description=\"SV site fails quality check.\">");
-    }
-    if (bcf_hdr_write(ofile, hdr_out) != 0) std::cerr << "Error: Failed to write BCF header!" << std::endl;
-
-    // VCF fields
-    int32_t nsvend = 0;
-    int32_t* svend = NULL;
-    int32_t nsvt = 0;
-    char* svt = NULL;
-    int32_t ninslen = 0;
-    int32_t* inslen = NULL;
-    int ngt = 0;
-    int32_t* gt = NULL;
-    int ngq = 0;
-    int32_t* gq = NULL;
-    float* gqf = NULL;
-    int ndv = 0;
-    int32_t* dv = NULL;
-    int ndr = 0;
-    int32_t* dr = NULL;
-    int nrv = 0;
-    int32_t* rv = NULL;
-    int nrr = 0;
-    int32_t* rr = NULL;
-    bool germline = false;
-
-    // Parse BCF
-    std::cerr << '[' << boost::posix_time::to_simple_string(boost::posix_time::second_clock::local_time()) << "] " << "Parsing VCF/BCF file" << std::endl;
-    bcf1_t* rec = bcf_init1();
-    while (bcf_read(ifile, hdr, rec) == 0) {
-      bcf_unpack(rec, BCF_UN_INFO);
-
-      // Check SV type
-      bcf_get_info_string(hdr, rec, "SVTYPE", &svt, &nsvt);
-
-      // Check size and PASS
-      bcf_get_info_int32(hdr, rec, "END", &svend, &nsvend);
-      bool pass = true;
-      if (c.filterForPass) pass = (bcf_has_filter(hdr, rec, const_cast<char*>("PASS"))==1);
-      int32_t inslenVal = 0;
-      if (bcf_get_info_int32(hdr, rec, "INSLEN", &inslen, &ninslen) > 0) inslenVal = *inslen;
-      if ((rec->qual >= c.qualthres) && (pass)) {
-	// Define SV event
-	SVEvent sv;
-	sv.svStart = rec->pos;
-	sv.svEnd = sv.svStart + 1;
-	sv.svLen = 1;
-	if (svend != NULL) {
-	  sv.svLen = *svend - rec->pos;
-	  sv.svEnd = *svend;
-	}
-	if (std::string(svt) == "INS") sv.svLen = inslenVal;
-	
-	// Check genotypes
-	bcf_unpack(rec, BCF_UN_ALL);
-	bool precise = false;
-	if (bcf_get_info_flag(hdr, rec, "PRECISE", 0, 0) > 0) precise = true;
-	bcf_get_format_int32(hdr, rec, "GT", &gt, &ngt);
-	if (_getFormatType(hdr, "GQ") == BCF_HT_INT) bcf_get_format_int32(hdr, rec, "GQ", &gq, &ngq);
-	else if (_getFormatType(hdr, "GQ") == BCF_HT_REAL) bcf_get_format_float(hdr, rec, "GQ", &gqf, &ngq);
-	bcf_get_format_int32(hdr, rec, "DV", &dv, &ndv);
-	bcf_get_format_int32(hdr, rec, "DR", &dr, &ndr);
-	bcf_get_format_int32(hdr, rec, "RV", &rv, &nrv);
-	bcf_get_format_int32(hdr, rec, "RR", &rr, &nrr);
-
-	sv.vaf.resize(bcf_hdr_nsamples(hdr), 0);
-	sv.gq.resize(bcf_hdr_nsamples(hdr), 0);
-	sv.gt.resize(bcf_hdr_nsamples(hdr), 0);
-	for (int i = 0; i < bcf_hdr_nsamples(hdr); ++i) {
-	  if ((bcf_gt_allele(gt[i*2]) != -1) && (bcf_gt_allele(gt[i*2 + 1]) != -1)) {
-	    sv.gt[i] = bcf_gt_allele(gt[i*2]) + bcf_gt_allele(gt[i*2 + 1]);
-	    if (_getFormatType(hdr, "GQ") == BCF_HT_INT) sv.gq[i] = gq[i];
-	    else if (_getFormatType(hdr, "GQ") == BCF_HT_REAL) sv.gq[i] = gqf[i];
-	    float rVar = 0;
-	    if (!precise) rVar = (float) dv[i] / (float) (dr[i] + dv[i]);
-	    else rVar = (float) rv[i] / (float) (rr[i] + rv[i]);
-	    sv.vaf[i] = rVar;
-	  }
-	}
-	if (c.softFilter) {
-	  int32_t tmpi = bcf_hdr_id2int(hdr_out, BCF_DT_ID, "Duplicate");
-	  bcf_update_filter(hdr_out, rec, &tmpi, 1);
-	  bcf_write1(ofile, hdr_out, rec);
-	} else bcf_write1(ofile, hdr_out, rec);
-	
-	std::cerr << bcf_hdr_id2name(hdr, rec->rid) << '\t' << (rec->pos + 1) << '\t' << *svend << '\t' << rec->d.id << '\t' << svlen << '\t' << ac[0] << '\t' << ac[1] << '\t' << std::string(svt) << '\t' << precise << std::endl;
-      } else if (c.softFilter) {
-	int32_t tmpi = bcf_hdr_id2int(hdr_out, BCF_DT_ID, "FAIL");
-	bcf_update_filter(hdr_out, rec, &tmpi, 1);
-	bcf_write1(ofile, hdr_out, rec);
-      }
-    }
-    bcf_destroy(rec);
-
-    // Clean-up
-    if (svend != NULL) free(svend);
-    if (svt != NULL) free(svt);
-    if (inslen != NULL) free(inslen);
-    if (gt != NULL) free(gt);
-    if (gq != NULL) free(gq);
-    if (gqf != NULL) free(gqf);
-    if (dv != NULL) free(dv);
-    if (dr != NULL) free(dr);
-    if (rv != NULL) free(rv);
-    if (rr != NULL) free(rr);
-
-    // Close output VCF
-    bcf_hdr_destroy(hdr_out);
-    hts_close(ofile);
-
-    // Build index
-    if (c.outfile.string() != "-") bcf_index_build(c.outfile.string().c_str(), 14);
-
-    // Close VCF
-    bcf_hdr_destroy(hdr);
-    bcf_close(ifile);
-    
-    // End
-    std::cerr << '[' << boost::posix_time::to_simple_string(boost::posix_time::second_clock::local_time()) << "] Done." << std::endl;
-    */
+    // Write non-duplicate SV sites
+    if (!_writeUniqueSVs(c, allsv)) return -1;
 
     return 0;
   }
