@@ -25,6 +25,7 @@
 #include "dpe.h"
 #include "pangenome.h"
 #include "markdup.h"
+#include "compvcf.h"
 
 using namespace torali;
 
@@ -53,6 +54,7 @@ displayUsage() {
   //std::cerr << std::endl;
   //std::cerr << "Population VCF filtering:" << std::endl;
   //std::cerr << "    markdup      mark duplicate sites based on SV allele and GT concordance" << std::endl;
+  //std::cerr << "    compvcf      compare population VCF files" << std::endl;
   //std::cerr << "Deprecated:" << std::endl;
   //std::cerr << "    dpe          double paired-end signatures" << std::endl;
   //std::cerr << std::endl;
@@ -97,6 +99,9 @@ int main(int argc, char **argv) {
     }
     else if ((std::string(argv[1]) == "markdup")) {
       return markdup(argc-1,argv+1);
+    }
+    else if ((std::string(argv[1]) == "compvcf")) {
+      return compvcf(argc-1,argv+1);
     }
     else if ((std::string(argv[1]) == "pg")) {
       return pg(argc-1,argv+1);

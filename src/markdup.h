@@ -50,6 +50,7 @@ namespace torali
     int32_t svEnd;
     int32_t svLen;
     int32_t svt;
+    int32_t qual;
     std::string id;
     std::string consensus;
     std::vector<float> vaf;
@@ -73,6 +74,7 @@ namespace torali
     int32_t bpdiff;
     float sizeratio;
     float divergence;
+    float sharedcarrier;
     boost::filesystem::path outfile;
     boost::filesystem::path vcffile;
   };
@@ -129,8 +131,13 @@ namespace torali
     // VCF fields
     int32_t nsvend = 0;
     int32_t* svend = NULL;
+    int32_t svEndVal;
     int32_t nsvt = 0;
     char* svt = NULL;
+    std::string svtVal;
+    int32_t nct = 0;
+    char* ct = NULL;
+    std::string ctVal;
     int32_t ninslen = 0;
     int32_t* inslen = NULL;
     int ngt = 0;
@@ -156,16 +163,48 @@ namespace torali
       bcf_unpack(rec, BCF_UN_INFO);
 
       // Check SV type
-      bcf_get_info_string(hdr, rec, "SVTYPE", &svt, &nsvt);
+      if (_isKeyPresent(hdr, "SVTYPE")) {
+	bcf_get_info_string(hdr, rec, "SVTYPE", &svt, &nsvt);
+	svtVal = std::string(svt);
+	bcf_get_info_string(hdr, rec, "CT", &ct, &nct);
+	ctVal = std::string(ct);
+      } else {
+	std::string refAllele = rec->d.allele[0];
+	std::string altAllele = rec->d.allele[1];
+	if (refAllele.size() > altAllele.size()) {
+	  svtVal = "DEL";
+	  ctVal = "3to5";
+	} else {
+	  svtVal = "INS";
+	  ctVal = "NtoN";
+	}
+      }
 
       // Check size and PASS
-      bcf_get_info_int32(hdr, rec, "END", &svend, &nsvend);
+      if (_isKeyPresent(hdr, "END")) {
+	bcf_get_info_int32(hdr, rec, "END", &svend, &nsvend);
+	svEndVal = *svend;
+      } else {
+	std::string refAllele = rec->d.allele[0];
+	std::string altAllele = rec->d.allele[1];
+	if (refAllele.size() > altAllele.size()) svEndVal = rec->pos + (refAllele.size() - altAllele.size());
+	else svEndVal = rec->pos + 1;
+      }
       bool pass = true;
       if (c.filterForPass) pass = (bcf_has_filter(hdr, rec, const_cast<char*>("PASS"))==1);
       int32_t inslenVal = 0;
-      if (bcf_get_info_int32(hdr, rec, "INSLEN", &inslen, &ninslen) > 0) inslenVal = *inslen;
+      if (_isKeyPresent(hdr, "INSLEN")) {
+	if (bcf_get_info_int32(hdr, rec, "INSLEN", &inslen, &ninslen) > 0) inslenVal = *inslen;
+      } else {
+	std::string refAllele = rec->d.allele[0];
+	std::string altAllele = rec->d.allele[1];
+	if (refAllele.size() < altAllele.size()) inslenVal = altAllele.size() - refAllele.size();
+      }
       bool precise = false;
       if (bcf_get_info_flag(hdr, rec, "PRECISE", 0, 0) > 0) precise=true;
+      else {
+	if (_isKeyPresent(hdr, "CONSENSUS")) precise=true;
+      }	
       if ((rec->qual >= c.qualthres) && (pass)) {
 	// Define SV event
 	SVEvent sv;
@@ -174,11 +213,14 @@ namespace torali
 	sv.svStart = rec->pos;
 	sv.svEnd = sv.svStart + 1;
 	sv.svLen = 1;
-	if (svend != NULL) {
-	  sv.svLen = *svend - rec->pos;
-	  sv.svEnd = *svend;
+	sv.svt = _decodeOrientation(ctVal, svtVal);
+	sv.qual = rec->qual;
+	if (svtVal != "INS") {
+	  sv.svLen = svEndVal - rec->pos;
+	  sv.svEnd = svEndVal;
+	} else {
+	  sv.svLen = inslenVal;
 	}
-	if (std::string(svt) == "INS") sv.svLen = inslenVal;
 	if (precise) {
 	  if (bcf_get_info_string(hdr, rec, "CONSENSUS", &cons, &ncons) > 0) {
 	    sv.consensus = boost::to_upper_copy(std::string(cons));
@@ -190,12 +232,14 @@ namespace torali
 	bool precise = false;
 	if (bcf_get_info_flag(hdr, rec, "PRECISE", 0, 0) > 0) precise = true;
 	bcf_get_format_int32(hdr, rec, "GT", &gt, &ngt);
-	if (_getFormatType(hdr, "GQ") == BCF_HT_INT) bcf_get_format_int32(hdr, rec, "GQ", &gq, &ngq);
-	else if (_getFormatType(hdr, "GQ") == BCF_HT_REAL) bcf_get_format_float(hdr, rec, "GQ", &gqf, &ngq);
-	bcf_get_format_int32(hdr, rec, "DV", &dv, &ndv);
-	bcf_get_format_int32(hdr, rec, "DR", &dr, &ndr);
-	bcf_get_format_int32(hdr, rec, "RV", &rv, &nrv);
-	bcf_get_format_int32(hdr, rec, "RR", &rr, &nrr);
+	if (_isKeyPresent(hdr, "GQ")) {
+	  if (_getFormatType(hdr, "GQ") == BCF_HT_INT) bcf_get_format_int32(hdr, rec, "GQ", &gq, &ngq);
+	  else if (_getFormatType(hdr, "GQ") == BCF_HT_REAL) bcf_get_format_float(hdr, rec, "GQ", &gqf, &ngq);
+	}
+	if (_isKeyPresent(hdr, "DV")) bcf_get_format_int32(hdr, rec, "DV", &dv, &ndv);
+	if (_isKeyPresent(hdr, "DR")) bcf_get_format_int32(hdr, rec, "DR", &dr, &ndr);
+	if (_isKeyPresent(hdr, "RV")) bcf_get_format_int32(hdr, rec, "RV", &rv, &nrv);
+	if (_isKeyPresent(hdr, "RR")) bcf_get_format_int32(hdr, rec, "RR", &rr, &nrr);
 
 	sv.vaf.resize(bcf_hdr_nsamples(hdr), 0);
 	sv.gq.resize(bcf_hdr_nsamples(hdr), 0);
@@ -203,11 +247,16 @@ namespace torali
 	for (int i = 0; i < bcf_hdr_nsamples(hdr); ++i) {
 	  if ((bcf_gt_allele(gt[i*2]) != -1) && (bcf_gt_allele(gt[i*2 + 1]) != -1)) {
 	    sv.gt[i] = bcf_gt_allele(gt[i*2]) + bcf_gt_allele(gt[i*2 + 1]);
-	    if (_getFormatType(hdr, "GQ") == BCF_HT_INT) sv.gq[i] = gq[i];
-	    else if (_getFormatType(hdr, "GQ") == BCF_HT_REAL) sv.gq[i] = gqf[i];
+	    if (gq != NULL) {
+	      if (_getFormatType(hdr, "GQ") == BCF_HT_INT) sv.gq[i] = gq[i];
+	      else if (_getFormatType(hdr, "GQ") == BCF_HT_REAL) sv.gq[i] = gqf[i];
+	    }
 	    float rVar = 0;
-	    if (!precise) rVar = (float) dv[i] / (float) (dr[i] + dv[i]);
-	    else rVar = (float) rv[i] / (float) (rr[i] + rv[i]);
+	    if (!precise) {
+	      if ((dv != NULL) && (dr != NULL)) rVar = (float) dv[i] / (float) (dr[i] + dv[i]);
+	    } else {
+	      if ((rv != NULL) && (rr != NULL)) rVar = (float) rv[i] / (float) (rr[i] + rv[i]);
+	    }
 	    sv.vaf[i] = rVar;
 	  }
 	}
@@ -216,6 +265,7 @@ namespace torali
 	  success=false;
 	  std::cerr << "Error: Duplicate IDs " << sv.id << std::endl;
 	} else {
+	  //std::cerr << sv.tid << ',' << sv.svStart << ',' << sv.svEnd << ',' << sv.id << ',' << sv.svLen << ',' << sv.svt << std::endl;
 	  allIds.insert(sv.id);
 	  allsv.push_back(sv);
 	}
@@ -226,6 +276,7 @@ namespace torali
     // Clean-up
     if (svend != NULL) free(svend);
     if (svt != NULL) free(svt);
+    if (ct != NULL) free(ct);
     if (inslen != NULL) free(inslen);
     if (gt != NULL) free(gt);
     if (gq != NULL) free(gq);
@@ -266,22 +317,13 @@ namespace torali
       return false;
     }
 
-    // VCF fields
-    int32_t nsvend = 0;
-    int32_t* svend = NULL;
-    int32_t nsvt = 0;
-    char* svt = NULL;
-
     // Parse BCF
     std::cerr << '[' << boost::posix_time::to_simple_string(boost::posix_time::second_clock::local_time()) << "] " << "Output VCF/BCF file" << std::endl;
     bcf1_t* rec = bcf_init1();
     while (bcf_read(ifile, hdr, rec) == 0) {
       bcf_unpack(rec, BCF_UN_INFO);
-      // Check SV type
-      bcf_get_info_string(hdr, rec, "SVTYPE", &svt, &nsvt);
 
-      // Check size and PASS
-      bcf_get_info_int32(hdr, rec, "END", &svend, &nsvend);
+      // Check quality and PASS
       bool pass = true;
       if (c.filterForPass) pass = (bcf_has_filter(hdr, rec, const_cast<char*>("PASS"))==1);
       if ((rec->qual >= c.qualthres) && (pass)) {
@@ -305,10 +347,6 @@ namespace torali
       }
     }
     bcf_destroy(rec);
-
-    // Clean-up
-    if (svend != NULL) free(svend);
-    if (svt != NULL) free(svt);
 
     // Close output VCF
     bcf_hdr_destroy(hdr_out);
@@ -361,10 +399,17 @@ namespace torali
 	  gqsum1 += allsv[i].gq[k];
 	  gqsum2 += allsv[j].gq[k];
 	}
-	
-	// Duplicates (Debug)
+	if ((gqsum1 == 0) && (gqsum2 == 0)) {
+	  // Use QUAL
+	  gqsum1 = allsv[i].qual;
+	  gqsum2 = allsv[j].qual;
+	}
+	double sharedperc = _sharedCarriers(allsv[i].gt, allsv[j].gt);
+	if (sharedperc < c.sharedcarrier) continue;
+
+	// Mark as duplicate
+	// Debug
 	//double pe = _pearsonCorrelation(allsv[i].vaf, allsv[j].vaf);
-	//double sharedperc = _sharedCarriers(allsv[i].gt, allsv[j].gt);
 	//std::cerr << allsv[i].tid << ',' << allsv[i].svStart << ',' << allsv[i].svEnd << ',' << allsv[i].id << ',' << allsv[i].svLen << std::endl;
 	//std::cerr << allsv[j].tid << ',' << allsv[j].svStart << ',' << allsv[j].svEnd << ',' << allsv[j].id << ',' << allsv[j].svLen << std::endl;
 	//std::cerr << gqsum1 << '\t' << gqsum2 << '\t' << pe << '\t' << sharedperc << std::endl;
@@ -408,6 +453,7 @@ namespace torali
       ("bpdiff,b", boost::program_options::value<int32_t>(&c.bpdiff)->default_value(50), "max. SV breakpoint offset")
       ("sizeratio,s", boost::program_options::value<float>(&c.sizeratio)->default_value(0.8), "min. SV size ratio")
       ("divergence,d", boost::program_options::value<float>(&c.divergence)->default_value(0.1), "max. SV allele divergence")
+      ("carrier,c", boost::program_options::value<float>(&c.sharedcarrier)->default_value(0.25), "min. fraction of shared SV carriers")
       ("pass,p", "Filter sites for PASS")
       ("tag,t", "Tag duplicate marked sites in the FILTER column instead of removing them")
       ;
