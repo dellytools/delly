@@ -105,20 +105,6 @@ namespace torali
     return covar / (n * d1 * d2);
   }
 
-  inline double
-  _sharedCarriers(std::vector<int32_t> const& gt1, std::vector<int32_t> const& gt2) {
-    // Percentage of shared carriers
-    uint32_t carnum = 0;
-    uint32_t carshared = 0;
-    for(uint32_t k = 0; k < gt1.size(); ++k) {
-      if ((gt1[k] != 0) || (gt2[k] != 0)) {
-	++carnum;
-	if ((gt1[k] != 0) && (gt2[k] != 0)) ++carshared;
-      }
-    }
-    return (double) (carshared) / (double) (carnum);
-  }
-  
   inline bool
   _loadSVEvents(MarkdupConfig const& c, std::vector<SVEvent>& allsv) {
     bool success = true;

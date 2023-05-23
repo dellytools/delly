@@ -22,6 +22,7 @@
 #include <boost/algorithm/string.hpp>
 #include <boost/filesystem.hpp>
 #include <boost/tokenizer.hpp>
+#include <boost/math/special_functions/fpclassify.hpp>
 
 #include <htslib/sam.h>
 #include <htslib/vcf.h>
@@ -43,19 +44,23 @@
 namespace torali
 {
 
-  struct MinimalSVRecord {
+  struct CompSVRecord {
+    int32_t match;
     int32_t tid;
     int32_t svStart;
     int32_t svEnd;
     int32_t svLen;
     int32_t svt;
     int32_t qual;
+    double gtConc;
+    double nonrefGtConc;
     std::string id;
+    std::string allele;
     std::vector<int32_t> gt;
   };
 
   template<typename TSV>
-  struct SortMinimalSVRecord : public std::binary_function<TSV, TSV, bool>
+  struct SortCompSVRecord : public std::binary_function<TSV, TSV, bool>
   {
     inline bool operator()(TSV const& sv1, TSV const& sv2) {
       return ((sv1.tid<sv2.tid) || ((sv1.tid==sv2.tid) && (sv1.svStart<sv2.svStart)) || ((sv1.tid==sv2.tid) && (sv1.svStart==sv2.svStart) && (sv1.svEnd<sv2.svEnd)));
@@ -65,17 +70,77 @@ namespace torali
   
   struct CompvcfConfig {
     bool filterForPass;
+    bool checkID;
     int32_t qualthres;
     int32_t bpdiff;
+    int32_t minsize;
+    int32_t maxsize;
+    int32_t minac;
+    int32_t maxac;
     float sizeratio;
+    float divergence;
     boost::filesystem::path vcffile;
     boost::filesystem::path base;
+    std::vector<std::string> samples;
+    std::map<std::string, uint32_t> chrmap;
   };
 
+  inline void
+  compareSVs(CompvcfConfig const& c, std::vector<CompSVRecord>& basesv, std::vector<CompSVRecord>& compsv) {
+    std::cerr << '[' << boost::posix_time::to_simple_string(boost::posix_time::second_clock::local_time()) << "] " << "Comparing " << compsv.size() << " SVs with " << basesv.size() << " SVs in the base VCF/BCF file " << std::endl;
+    for(uint32_t i = 0; i < basesv.size(); ++i) {
+      for(uint32_t j = 0; j < compsv.size(); ++j) {
+	if (basesv[i].svt != compsv[j].svt) continue;
+	if (basesv[i].tid != compsv[j].tid) continue;
+	if (std::abs(basesv[i].svStart - compsv[j].svStart) > c.bpdiff) continue;
+	float sizerat = (float) basesv[i].svLen / (float) compsv[j].svLen;
+	if (basesv[i].svLen > compsv[j].svLen) sizerat = (float) compsv[j].svLen / (float) basesv[i].svLen;
+	if (sizerat < c.sizeratio) continue;
+	// Check SV similarity
+	if ((!basesv[i].allele.empty()) && (!compsv[j].allele.empty())) {
+	  std::string longc;
+	  std::string shortc;
+	  if (basesv[i].allele.size() > compsv[j].allele.size()) {
+	    longc = basesv[i].allele;
+	    int32_t deslen = 0.8  * compsv[j].allele.size();
+	    int32_t offset = (compsv[j].allele.size() - deslen)/2;
+	    shortc = compsv[j].allele.substr(offset, deslen);
+	  } else {
+	    longc = compsv[j].allele;
+	    int32_t deslen = 0.8  * basesv[i].allele.size();
+	    int32_t offset = (basesv[i].allele.size() - deslen)/2;
+	    shortc = basesv[i].allele.substr(offset, deslen);
+	  }
+	  EdlibAlignResult cigar = edlibAlign(shortc.c_str(), shortc.size(), longc.c_str(), longc.size(), edlibNewAlignConfig(-1, EDLIB_MODE_HW, EDLIB_TASK_DISTANCE, NULL, 0));
+	  //printAlignment(shortc, longc, EDLIB_MODE_HW, cigar);
+	  double score = (double) cigar.editDistance / (double) shortc.size();
+	  edlibFreeAlignResult(cigar);
+	  if (score > c.divergence) continue;
+	}
+	// Match
+	++basesv[i].match;
+	++compsv[j].match;
+	double gtconc = gtConc(basesv[i].gt, compsv[j].gt);
+	if (gtconc > basesv[i].gtConc) basesv[i].gtConc = gtconc;
+	if (gtconc > compsv[j].gtConc) compsv[j].gtConc = gtconc;
+	double nonrefgtconc = nonrefGtConc(basesv[i].gt, compsv[j].gt);
+	if (nonrefgtconc > basesv[i].nonrefGtConc) basesv[i].nonrefGtConc = nonrefgtconc;
+	if (nonrefgtconc > compsv[j].nonrefGtConc) compsv[j].nonrefGtConc = nonrefgtconc;
+	
+	//std::cerr << basesv[i].tid << ',' << basesv[i].svStart << ',' << basesv[i].svEnd << ',' << basesv[i].id << ',' << basesv[i].svLen << std::endl;
+	//std::cerr << compsv[j].tid << ',' << compsv[j].svStart << ',' << compsv[j].svEnd << ',' << compsv[j].id << ',' << compsv[j].svLen << std::endl;
+      }
+    }
+  }
+  
   inline bool
-  _loadMinimalSVs(CompvcfConfig const& c, std::string const& filename, std::vector<MinimalSVRecord>& allsv) {
+  _loadCompSVs(CompvcfConfig& c, std::string const& filename, std::vector<CompSVRecord>& allsv) {
     bool success = true;
     std::set<std::string> allIds;
+
+    // Sample map
+    std::map<std::string, uint32_t> smap;
+    for(uint32_t i = 0; i < c.samples.size(); ++i) smap.insert(std::make_pair(c.samples[i], i));
     
     // Load bcf file
     htsFile* ifile = hts_open(filename.c_str(), "r");
@@ -94,78 +159,118 @@ namespace torali
     int ngt = 0;
     int32_t* gt = NULL;
     int32_t inslenVal = 0;
+    int32_t svLenVal = 0;
     
     // Parse BCF
-    std::cerr << '[' << boost::posix_time::to_simple_string(boost::posix_time::second_clock::local_time()) << "] " << "Parsing VCF/BCF file" << std::endl;
+    std::cerr << '[' << boost::posix_time::to_simple_string(boost::posix_time::second_clock::local_time()) << "] " << "Parsing VCF/BCF file " << filename << std::endl;
+    uint32_t svcounter = 0;
     bcf1_t* rec = bcf_init1();
     while (bcf_read(ifile, hdr, rec) == 0) {
       bcf_unpack(rec, BCF_UN_INFO);
 
       // Check SV type
+      svtVal = "NA";
+      ctVal = "NA";
       if (_isKeyPresent(hdr, "SVTYPE")) {
 	bcf_get_info_string(hdr, rec, "SVTYPE", &svt, &nsvt);
 	svtVal = std::string(svt);
-	bcf_get_info_string(hdr, rec, "CT", &ct, &nct);
-	ctVal = std::string(ct);
-      } else {
-	std::string refAllele = rec->d.allele[0];
-	std::string altAllele = rec->d.allele[1];
-	if (refAllele.size() > altAllele.size()) {
-	  svtVal = "DEL";
-	  ctVal = "3to5";
-	  inslenVal = 0;
+	if (_isKeyPresent(hdr, "CT")) {
+	  bcf_get_info_string(hdr, rec, "CT", &ct, &nct);
+	  ctVal = std::string(ct);
 	} else {
-	  svtVal = "INS";
-	  ctVal = "NtoN";
-	  inslenVal = altAllele.size() - refAllele.size();
+	  if (svtVal == "INS") ctVal = "NtoN";
+	  else if (svtVal == "DEL") ctVal = "3to5";
+	  else if (svtVal == "DUP") ctVal = "5to3";
+	  else if (svtVal == "INV") ctVal = "3to3"; // or 5to5
 	}
       }
 
-      // Check size and PASS
+      // SV end
       if (_isKeyPresent(hdr, "END")) {
 	bcf_get_info_int32(hdr, rec, "END", &svend, &nsvend);
 	svEndVal = *svend;
+      }
+	
+      // SV length
+      std::string refAllele = rec->d.allele[0];
+      std::string altAllele = rec->d.allele[1];
+      if (refAllele.size() > altAllele.size()) {
+	if (svtVal == "NA") svtVal = "DEL";
+	else {
+	  if (svtVal != "DEL") {
+	    success=false;
+	    std::cerr << "Error: SV type " << svtVal << " disagrees with REF and ALT allele." << std::endl;
+	  }
+	}
+	if (ctVal == "NA") ctVal = "3to5";
+	svEndVal = rec->pos + (refAllele.size() - altAllele.size());
+	inslenVal = 0;
       } else {
-	std::string refAllele = rec->d.allele[0];
-	std::string altAllele = rec->d.allele[1];
-	if (refAllele.size() > altAllele.size()) svEndVal = rec->pos + (refAllele.size() - altAllele.size());
-	else svEndVal = rec->pos + 1;
+	if (svtVal == "NA") svtVal = "INS";
+	else {
+	  if (svtVal != "INS") {
+	    success=false;
+	    std::cerr << "Error: SV type " << svtVal << " disagrees with REF and ALT allele." << std::endl;
+	  }
+	}
+	if (ctVal == "NA") ctVal = "NtoN";
+	inslenVal = altAllele.size() - refAllele.size();
+	svEndVal = rec->pos + 1;
       }
       bool pass = true;
       if (c.filterForPass) pass = (bcf_has_filter(hdr, rec, const_cast<char*>("PASS"))==1);
-      if ((rec->qual >= c.qualthres) && (pass)) {
+      int32_t qualVal = 0;
+      if (!boost::math::isnan(rec->qual)) qualVal = rec->qual;
+      if (svtVal != "INS") svLenVal = svEndVal - rec->pos;
+      else {
+	svEndVal = rec->pos + 1;
+	svLenVal = inslenVal;
+      }
+      if ((qualVal >= c.qualthres) && (pass) && (svLenVal >= c.minsize) && (svLenVal < c.maxsize)) {
 	// Define SV event
-	MinimalSVRecord sv;
-	sv.tid = rec->rid;
+	CompSVRecord sv;
+	sv.match = 0;
+	std::string chrname = std::string(bcf_hdr_id2name(hdr, rec->rid));
+	if (c.chrmap.find(chrname) == c.chrmap.end()) c.chrmap.insert(std::make_pair(chrname, c.chrmap.size()));
+	sv.tid = c.chrmap[chrname];
 	sv.svStart = rec->pos;
-	sv.svEnd = sv.svStart + 1;
+	sv.svEnd = svEndVal;
 	sv.svLen = 1;
 	sv.svt = _decodeOrientation(ctVal, svtVal);
-	sv.qual = rec->qual;
-	if (svtVal != "INS") {
-	  sv.svLen = svEndVal - rec->pos;
-	  sv.svEnd = svEndVal;
-	} else {
-	  sv.svLen = inslenVal;
-	}
+	sv.qual = qualVal;
 
 	// Check genotypes
 	bcf_unpack(rec, BCF_UN_ALL);
 	bcf_get_format_int32(hdr, rec, "GT", &gt, &ngt);
-	sv.gt.resize(bcf_hdr_nsamples(hdr), 0);
+	sv.gt.resize(c.samples.size(), -1); // Missing GT initialization
+	int32_t gtsum = 0;
 	for (int i = 0; i < bcf_hdr_nsamples(hdr); ++i) {
 	  if ((bcf_gt_allele(gt[i*2]) != -1) && (bcf_gt_allele(gt[i*2 + 1]) != -1)) {
-	    sv.gt[i] = bcf_gt_allele(gt[i*2]) + bcf_gt_allele(gt[i*2 + 1]);
+	    std::string sname = hdr->samples[i];
+	    if (smap.find(sname) != smap.end()) {
+	      sv.gt[smap[sname]] = bcf_gt_allele(gt[i*2]) + bcf_gt_allele(gt[i*2 + 1]);
+	      gtsum += bcf_gt_allele(gt[i*2]) + bcf_gt_allele(gt[i*2 + 1]);
+	    }
 	  }
 	}
-	sv.id = std::string(rec->d.id);
-	if (allIds.find(sv.id) != allIds.end()) {
-	  success=false;
-	  std::cerr << "Error: Duplicate IDs " << sv.id << std::endl;
-	} else {
-	  std::cerr << sv.tid << ',' << sv.svStart << ',' << sv.svEnd << ',' << sv.id << ',' << sv.svLen << ',' << sv.svt << std::endl;
-	  allIds.insert(sv.id);
-	  allsv.push_back(sv);
+	
+	// Min. and max. allele count
+	if ((gtsum >= c.minac) && (gtsum < c.maxac)) {
+	  if (svtVal == "INS") sv.allele = std::string(rec->d.allele[1]);
+	  else if (svtVal == "DEL") sv.allele = std::string(rec->d.allele[0]);
+	  else sv.allele = "";
+	  sv.id = std::string(rec->d.id);
+	  if (sv.id == ".") {
+	    sv.id = std::string(bcf_hdr_id2name(hdr, rec->rid)) + "-" + boost::lexical_cast<std::string>(rec->pos) + "-ID" + boost::lexical_cast<std::string>(++svcounter);
+	  }
+	  if ((c.checkID) && (allIds.find(sv.id) != allIds.end())) {
+	    success=false;
+	    std::cerr << "Error: Duplicate IDs " << sv.id << std::endl;
+	  } else {
+	    //std::cerr << sv.tid << ',' << sv.svStart << ',' << sv.svEnd << ',' << sv.id << ',' << sv.svLen << ',' << sv.svt << std::endl;
+	    allIds.insert(sv.id);
+	    allsv.push_back(sv);
+	  }
 	}
       }
     }
@@ -185,26 +290,52 @@ namespace torali
   }
 
   inline int
-  compvcfRun(CompvcfConfig const& c) {
+  compvcfRun(CompvcfConfig& c) {
 
     // Load SVs
-    std::vector<MinimalSVRecord> basesv;
-    if (!_loadMinimalSVs(c, c.base.string(), basesv)) return -1;
+    std::vector<CompSVRecord> basesv;
+    if (!_loadCompSVs(c, c.base.string(), basesv)) return -1;
 
-    std::vector<MinimalSVRecord> compsv;
-    if (!_loadMinimalSVs(c, c.vcffile.string(), compsv)) return -1;
-
-    std::cerr << basesv.size() << ',' << compsv.size() << std::endl;
+    std::vector<CompSVRecord> compsv;
+    if (!_loadCompSVs(c, c.vcffile.string(), compsv)) return -1;
 
     // Sort SVs
-    //sort(allsv.begin(), allsv.end(), SortSVEvents<SVEvent>());
+    sort(basesv.begin(), basesv.end(), SortCompSVRecord<CompSVRecord>());
+    sort(compsv.begin(), compsv.end(), SortCompSVRecord<CompSVRecord>());
 
-    // Mark duplicates
-    //_markDuplicates(c, allsv);
+    // Recall, precission, GT concordance
+    compareSVs(c, basesv, compsv);
 
-    // Write non-duplicate SV sites
-    //if (!_writeUniqueSVs(c, allsv)) return -1;
-
+    // Metrics
+    uint32_t tp_base = 0;
+    uint32_t tp_comp = 0;
+    uint32_t redundant = 0;
+    uint32_t fn = 0;
+    uint32_t fp = 0;
+    double gtconc = 0;
+    double nonrefgtconc = 0;
+    for(uint32_t i = 0; i < basesv.size(); ++i) {
+      if (basesv[i].match) {
+	++tp_base;
+	redundant += basesv[i].match;
+	gtconc += basesv[i].gtConc;
+	nonrefgtconc += basesv[i].nonrefGtConc;
+      } else ++fn;
+    }
+    for(uint32_t j = 0; j < compsv.size(); ++j) {
+      if (compsv[j].match) ++tp_comp;
+      else ++fp;
+    }
+    double recall = (double) (tp_base) / (double) (basesv.size());
+    double precision = (double) (tp_base) / (double) (tp_base + fp);
+    double redundancyRation = (double) redundant / (double) (tp_base);
+    double f1 = 2 * recall * precision / (recall + precision);
+    gtconc /= (double) (tp_base);
+    nonrefgtconc /= (double) (tp_base);
+    std::cerr << "Size\tAC\tTP_Base\tFN\tTP_Comp\tFP\tRecall\tPrecision\tF1\tRedundancyRatio\tGTConc\tNonRefGTConc" << std::endl;
+    std::cerr << '[' << boost::lexical_cast<std::string>(c.minsize) << ',' << boost::lexical_cast<std::string>(c.maxsize) << '[' << '\t';
+    std::cerr << '[' << boost::lexical_cast<std::string>(c.minac) << ',' << boost::lexical_cast<std::string>(c.maxac) << '[' << '\t';
+    std::cerr << tp_base << '\t' << fn << '\t' << tp_comp << '\t' << fp << '\t' << recall << '\t' << precision << '\t' << f1 << '\t' << redundancyRation << '\t' << gtconc << '\t' << nonrefgtconc << std::endl;
     return 0;
   }
 
@@ -216,11 +347,17 @@ namespace torali
     boost::program_options::options_description generic("Generic options");
     generic.add_options()
       ("help,?", "show help message")
-      ("base,b", boost::program_options::value<boost::filesystem::path>(&c.base), "base VCF/BCF file")
-      ("quality,y", boost::program_options::value<int32_t>(&c.qualthres)->default_value(300), "min. SV site quality")
-      ("bpdiff,b", boost::program_options::value<int32_t>(&c.bpdiff)->default_value(50), "max. SV breakpoint offset")
-      ("sizeratio,s", boost::program_options::value<float>(&c.sizeratio)->default_value(0.8), "min. SV size ratio")
+      ("base,a", boost::program_options::value<boost::filesystem::path>(&c.base), "base VCF/BCF file")
+      ("quality,y", boost::program_options::value<int32_t>(&c.qualthres)->default_value(0), "min. SV site quality")
+      ("minsize,m", boost::program_options::value<int32_t>(&c.minsize)->default_value(50), "min. SV size")
+      ("maxsize,n", boost::program_options::value<int32_t>(&c.maxsize)->default_value(100000), "max. SV size")
+      ("minac,e", boost::program_options::value<int32_t>(&c.minac)->default_value(1), "min. allele count")
+      ("maxac,f", boost::program_options::value<int32_t>(&c.maxac)->default_value(10000), "max. allele count")
+      ("bpdiff,b", boost::program_options::value<int32_t>(&c.bpdiff)->default_value(500), "max. SV breakpoint offset")
+      ("sizeratio,s", boost::program_options::value<float>(&c.sizeratio)->default_value(0.7), "min. SV size ratio")
+      ("divergence,d", boost::program_options::value<float>(&c.divergence)->default_value(0.2), "max. SV allele divergence")
       ("pass,p", "Filter sites for PASS")
+      ("ignore,i", "Ignore duplicate IDs")
       ;
     
     // Define hidden options
@@ -252,8 +389,49 @@ namespace torali
     // Filter for PASS
     if (vm.count("pass")) c.filterForPass = true;
     else c.filterForPass = false;
-        
-    // Check input VCF file
+
+    // Check duplicate IDs
+    if (vm.count("ignore")) c.checkID = false;
+    else c.checkID = true;
+
+    // Check base VCF file
+    std::set<std::string> baseSamples;
+    if (vm.count("base")) {
+      if (!(boost::filesystem::exists(c.base) && boost::filesystem::is_regular_file(c.base) && boost::filesystem::file_size(c.base))) {
+	std::cerr << "Input VCF/BCF file is missing: " << c.base.string() << std::endl;
+	return 1;
+      }
+      htsFile* ifile = bcf_open(c.base.string().c_str(), "r");
+      if (ifile == NULL) {
+	std::cerr << "Fail to open file " << c.base.string() << std::endl;
+      return 1;
+      }
+      hts_idx_t* bcfidx = NULL;
+      tbx_t* tbx = NULL;
+      if (hts_get_format(ifile)->format==vcf) tbx = tbx_index_load(c.base.string().c_str());
+      else bcfidx = bcf_index_load(c.base.string().c_str());
+      if ((bcfidx == NULL) && (tbx == NULL)) {
+	std::cerr << "Fail to open index file for " << c.base.string() << std::endl;
+	return 1;
+      }
+      bcf_hdr_t* hdr = bcf_hdr_read(ifile);
+      if (hdr == NULL) {
+	std::cerr << "Fail to header for " << c.base.string() << std::endl;
+	return 1;
+      }
+      if (!(bcf_hdr_nsamples(hdr)>0)) {
+	std::cerr << "BCF/VCF file has no sample genotypes!" << std::endl;
+	return 1;
+      }
+      for (int i = 0; i < bcf_hdr_nsamples(hdr); ++i) baseSamples.insert(hdr->samples[i]);
+      bcf_hdr_destroy(hdr);
+      if (bcfidx) hts_idx_destroy(bcfidx);
+      if (tbx) tbx_destroy(tbx);
+      bcf_close(ifile);
+    }
+    
+    // Check comparison VCF file
+    std::set<std::string> compSamples;
     if (vm.count("input-file")) {
       if (!(boost::filesystem::exists(c.vcffile) && boost::filesystem::is_regular_file(c.vcffile) && boost::filesystem::file_size(c.vcffile))) {
 	std::cerr << "Input VCF/BCF file is missing: " << c.vcffile.string() << std::endl;
@@ -281,11 +459,13 @@ namespace torali
 	std::cerr << "BCF/VCF file has no sample genotypes!" << std::endl;
 	return 1;
       }
+      for (int i = 0; i < bcf_hdr_nsamples(hdr); ++i) compSamples.insert(hdr->samples[i]);
       bcf_hdr_destroy(hdr);
       if (bcfidx) hts_idx_destroy(bcfidx);
       if (tbx) tbx_destroy(tbx);
       bcf_close(ifile);
     }
+    
     
     // Show cmd
     boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
@@ -293,7 +473,18 @@ namespace torali
     std::cerr << "delly ";
     for(int i=0; i<argc; ++i) { std::cerr << argv[i] << ' '; }
     std::cerr << std::endl;
-    
+
+    // Common samples
+    std::cerr << '[' << boost::posix_time::to_simple_string(now) << "] " << baseSamples.size() << " base samples and " << compSamples.size() << " comparison samples" << std::endl;
+    std::set_intersection(baseSamples.begin(), baseSamples.end(), compSamples.begin(), compSamples.end(), std::inserter(c.samples, c.samples.begin()));
+    //for(uint32_t i = 0; i < c.samples.size(); ++i) std::cerr << c.samples[i] << std::endl;
+    std::cerr << '[' << boost::posix_time::to_simple_string(now) << "] " << c.samples.size() << " common samples" << std::endl;
+    if (c.samples.size() < 1) {
+      std::cerr << "No common samples detected!" << std::endl;
+      return 1;
+    }	
+
+    // Run comparison
     return compvcfRun(c);
   }
   
