@@ -57,6 +57,8 @@ namespace torali
     std::string id;
     std::string allele;
     std::vector<int32_t> gt;
+
+    CompSVRecord() : match(0), tid(0), svStart(0), svEnd(0), svLen(0), svt(0), qual(0), gtConc(0), nonrefGtConc(0), id(""), allele("") {}
   };
 
   template<typename TSV>
@@ -69,6 +71,7 @@ namespace torali
   
   
   struct CompvcfConfig {
+    typedef std::map<std::string, uint32_t> TChrMap;
     bool filterForPass;
     bool checkID;
     int32_t qualthres;
@@ -81,8 +84,9 @@ namespace torali
     float divergence;
     boost::filesystem::path vcffile;
     boost::filesystem::path base;
+    std::string outprefix;
     std::vector<std::string> samples;
-    std::map<std::string, uint32_t> chrmap;
+    TChrMap chrmap;
   };
 
   inline void
@@ -235,7 +239,7 @@ namespace torali
 	sv.tid = c.chrmap[chrname];
 	sv.svStart = rec->pos;
 	sv.svEnd = svEndVal;
-	sv.svLen = 1;
+	sv.svLen = svLenVal;
 	sv.svt = _decodeOrientation(ctVal, svtVal);
 	sv.qual = qualVal;
 
@@ -332,10 +336,31 @@ namespace torali
     double f1 = 2 * recall * precision / (recall + precision);
     gtconc /= (double) (tp_base);
     nonrefgtconc /= (double) (tp_base);
-    std::cerr << "Size\tAC\tTP_Base\tFN\tTP_Comp\tFP\tRecall\tPrecision\tF1\tRedundancyRatio\tGTConc\tNonRefGTConc" << std::endl;
-    std::cerr << '[' << boost::lexical_cast<std::string>(c.minsize) << ',' << boost::lexical_cast<std::string>(c.maxsize) << '[' << '\t';
-    std::cerr << '[' << boost::lexical_cast<std::string>(c.minac) << ',' << boost::lexical_cast<std::string>(c.maxac) << '[' << '\t';
-    std::cerr << tp_base << '\t' << fn << '\t' << tp_comp << '\t' << fp << '\t' << recall << '\t' << precision << '\t' << f1 << '\t' << redundancyRation << '\t' << gtconc << '\t' << nonrefgtconc << std::endl;
+
+    std::string filename = c.outprefix + ".tsv";
+    std::ofstream ofile(filename.c_str());
+    ofile << "Size\tAC\tTP_Base\tFN\tTP_Comp\tFP\tRecall\tPrecision\tF1\tRedundancyRatio\tGTConc\tNonRefGTConc" << std::endl;
+    ofile << '[' << boost::lexical_cast<std::string>(c.minsize) << ',' << boost::lexical_cast<std::string>(c.maxsize) << '[' << '\t';
+    ofile << '[' << boost::lexical_cast<std::string>(c.minac) << ',' << boost::lexical_cast<std::string>(c.maxac) << '[' << '\t';
+    ofile << tp_base << '\t' << fn << '\t' << tp_comp << '\t' << fp << '\t' << recall << '\t' << precision << '\t' << f1 << '\t' << redundancyRation << '\t' << gtconc << '\t' << nonrefgtconc << std::endl;
+    ofile.close();
+
+    // Output classification
+    std::map<uint32_t, std::string> idxchr;
+    for(typename CompvcfConfig::TChrMap::const_iterator it = c.chrmap.begin(); it != c.chrmap.end(); ++it) idxchr.insert(std::make_pair(it->second, it->first));
+    filename = c.outprefix + ".sv.classification";
+    std::ofstream svfile(filename.c_str());
+    svfile << "ID\tClassification\tChrom\tStart\tEnd\tLength\tSVType\tCT\tQuality\tGTConc\tNonRefGTConc\tMatchCountBase\tAlignmentAllele" << std::endl;
+    for(uint32_t j = 0; j < compsv.size(); ++j) {
+      std::string label;
+      if (compsv[j].match) label="TP";
+      else label="FP";
+      svfile << compsv[j].id << '\t' << label << '\t' << idxchr[compsv[j].tid] << '\t' << compsv[j].svStart << '\t' << compsv[j].svEnd << '\t' << compsv[j].svLen << '\t' << _addID(compsv[j].svt) << '\t' << _addOrientation(compsv[j].svt) << '\t' << compsv[j].qual << '\t' << compsv[j].gtConc << '\t' << compsv[j].nonrefGtConc << '\t' << compsv[j].match << '\t' << compsv[j].allele << std::endl;
+    }
+    svfile.close();
+    
+    // Done
+    std::cerr << '[' << boost::posix_time::to_simple_string(boost::posix_time::second_clock::local_time()) << "] Done." << std::endl;
     return 0;
   }
 
@@ -353,9 +378,10 @@ namespace torali
       ("maxsize,n", boost::program_options::value<int32_t>(&c.maxsize)->default_value(100000), "max. SV size")
       ("minac,e", boost::program_options::value<int32_t>(&c.minac)->default_value(1), "min. allele count")
       ("maxac,f", boost::program_options::value<int32_t>(&c.maxac)->default_value(10000), "max. allele count")
-      ("bpdiff,b", boost::program_options::value<int32_t>(&c.bpdiff)->default_value(500), "max. SV breakpoint offset")
-      ("sizeratio,s", boost::program_options::value<float>(&c.sizeratio)->default_value(0.7), "min. SV size ratio")
-      ("divergence,d", boost::program_options::value<float>(&c.divergence)->default_value(0.2), "max. SV allele divergence")
+      ("bpdiff,b", boost::program_options::value<int32_t>(&c.bpdiff)->default_value(1000), "max. SV breakpoint offset")
+      ("sizeratio,s", boost::program_options::value<float>(&c.sizeratio)->default_value(0.5), "min. SV size ratio")
+      ("divergence,d", boost::program_options::value<float>(&c.divergence)->default_value(0.3), "max. SV allele divergence")
+      ("outprefix,o", boost::program_options::value<std::string>(&c.outprefix)->default_value("out"), "output prefix")
       ("pass,p", "Filter sites for PASS")
       ("ignore,i", "Ignore duplicate IDs")
       ;

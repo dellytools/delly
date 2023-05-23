@@ -51,10 +51,10 @@ displayUsage() {
   std::cerr << "Copy-number variant calling:" << std::endl;
   std::cerr << "    cnv          discover and genotype copy-number variants" << std::endl;
   std::cerr << "    classify     classify somatic or germline copy-number variants" << std::endl;
-  //std::cerr << std::endl;
-  //std::cerr << "Population VCF filtering:" << std::endl;
-  //std::cerr << "    markdup      mark duplicate sites based on SV allele and GT concordance" << std::endl;
-  //std::cerr << "    compvcf      compare population VCF files" << std::endl;
+  std::cerr << std::endl;
+  std::cerr << "Multi-sample VCF operations:" << std::endl;
+  std::cerr << "    markdup      mark duplicate SV sites based on SV allele and GT concordance" << std::endl;
+  std::cerr << "    compvcf      compare multi-sample VCF file to a ground truth VCF file" << std::endl;
   //std::cerr << "Deprecated:" << std::endl;
   //std::cerr << "    dpe          double paired-end signatures" << std::endl;
   //std::cerr << std::endl;
