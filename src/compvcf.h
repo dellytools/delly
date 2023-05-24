@@ -153,7 +153,9 @@ namespace torali
     // VCF fields
     int32_t nsvend = 0;
     int32_t* svend = NULL;
-    int32_t svEndVal;
+    int32_t ninslen = 0;
+    int32_t* inslen = NULL;
+    int32_t svEndVal = -1;
     int32_t nsvt = 0;
     char* svt = NULL;
     std::string svtVal;
@@ -162,7 +164,7 @@ namespace torali
     std::string ctVal;
     int ngt = 0;
     int32_t* gt = NULL;
-    int32_t inslenVal = 0;
+    int32_t inslenVal = -1;
     int32_t svLenVal = 0;
     
     // Parse BCF
@@ -175,6 +177,8 @@ namespace torali
       // Check SV type
       svtVal = "NA";
       ctVal = "NA";
+      svEndVal = -1;
+      inslenVal = -1;
       if (_isKeyPresent(hdr, "SVTYPE")) {
 	bcf_get_info_string(hdr, rec, "SVTYPE", &svt, &nsvt);
 	svtVal = std::string(svt);
@@ -189,47 +193,87 @@ namespace torali
 	}
       }
 
+      // Symbolic ALT?
+      std::string refAllele = rec->d.allele[0];
+      std::string altAllele = rec->d.allele[1];
+      std::string altSymbol = "NA";
+      if ((!altAllele.empty()) && (altAllele[0] == '<') && (altAllele[altAllele.size() - 1] == '>')) {
+	// Symbolic ALT
+	altSymbol = altAllele.substr(1, altAllele.size() - 2);
+	if (svtVal == "NA") svtVal = altSymbol;
+	else {
+	  if (svtVal != altSymbol) {
+	    success=false;
+	    std::cerr << "Error: SV type " << svtVal << " disagrees with symbolic ALT." << std::endl;
+	  }
+	}
+      }
+
+      // Still unknown SV type?
+      if (svtVal == "NA") {
+	if (refAllele.size() > altAllele.size()) {
+	  svtVal = "DEL";
+	  ctVal = "3to5";
+	} else {
+	  svtVal = "INS";
+	  ctVal = "NtoN";
+	}
+      }
+
+      // Check for INS or DEL
+      if ((svtVal != "INS") && (svtVal != "DEL")) {
+	//std::cerr << "Warning: " << svtVal << " not implemented yet!" << std::endl;
+	continue;
+      }
+
       // SV end
       if (_isKeyPresent(hdr, "END")) {
 	bcf_get_info_int32(hdr, rec, "END", &svend, &nsvend);
 	svEndVal = *svend;
       }
-	
-      // SV length
-      std::string refAllele = rec->d.allele[0];
-      std::string altAllele = rec->d.allele[1];
-      if (refAllele.size() > altAllele.size()) {
-	if (svtVal == "NA") svtVal = "DEL";
-	else {
-	  if (svtVal != "DEL") {
-	    success=false;
-	    std::cerr << "Error: SV type " << svtVal << " disagrees with REF and ALT allele." << std::endl;
-	  }
-	}
-	if (ctVal == "NA") ctVal = "3to5";
-	svEndVal = rec->pos + (refAllele.size() - altAllele.size());
-	inslenVal = 0;
-      } else {
-	if (svtVal == "NA") svtVal = "INS";
-	else {
-	  if (svtVal != "INS") {
-	    success=false;
-	    std::cerr << "Error: SV type " << svtVal << " disagrees with REF and ALT allele." << std::endl;
-	  }
-	}
-	if (ctVal == "NA") ctVal = "NtoN";
-	inslenVal = altAllele.size() - refAllele.size();
-	svEndVal = rec->pos + 1;
+
+      // Insertion length
+      if (_isKeyPresent(hdr, "INSLEN")) {
+	if (bcf_get_info_int32(hdr, rec, "INSLEN", &inslen, &ninslen) > 0) inslenVal = *inslen;
       }
+	
+      // Assign SV end position
+      if (svEndVal == -1) {
+	if (altSymbol == "NA") {
+	  if (svtVal == "DEL") svEndVal = rec->pos + (refAllele.size() - altAllele.size());
+	  else if (svtVal == "INS") svEndVal = rec->pos + 1;
+	  else {
+	    success=false;
+	    std::cerr << "Error: SV end position is unknown for " << svtVal << "!" << std::endl;
+	  }
+	} else {
+	  success=false;
+	  std::cerr << "Error: Missing SV end position!" << std::endl;
+	}
+      }
+
+      // Assign insertion length
+      if (inslenVal == -1) {
+	if (svtVal == "INS") inslenVal = altAllele.size() - refAllele.size();
+	else inslenVal = 0;
+      }
+
+      // Assign pass state
       bool pass = true;
       if (c.filterForPass) pass = (bcf_has_filter(hdr, rec, const_cast<char*>("PASS"))==1);
+
+      // Assign site quality
       int32_t qualVal = 0;
       if (!boost::math::isnan(rec->qual)) qualVal = rec->qual;
+
+      // Assign SV length
       if (svtVal != "INS") svLenVal = svEndVal - rec->pos;
       else {
 	svEndVal = rec->pos + 1;
 	svLenVal = inslenVal;
       }
+
+      // Filter sites
       if ((qualVal >= c.qualthres) && (pass) && (svLenVal >= c.minsize) && (svLenVal < c.maxsize)) {
 	// Define SV event
 	CompSVRecord sv;
@@ -260,7 +304,9 @@ namespace torali
 	
 	// Min. and max. allele count
 	if ((gtsum >= c.minac) && (gtsum < c.maxac)) {
-	  if (svtVal == "INS") sv.allele = std::string(rec->d.allele[1]);
+	  if (svtVal == "INS") {
+	    if (altSymbol == "NA") sv.allele = std::string(rec->d.allele[1]);
+	  }
 	  else if (svtVal == "DEL") sv.allele = std::string(rec->d.allele[0]);
 	  else sv.allele = "";
 	  sv.id = std::string(rec->d.id);
@@ -282,6 +328,7 @@ namespace torali
 
     // Clean-up
     if (svend != NULL) free(svend);
+    if (inslen != NULL) free(inslen);
     if (svt != NULL) free(svt);
     if (gt != NULL) free(gt);
     if (ct != NULL) free(ct);
@@ -446,8 +493,7 @@ namespace torali
 	return 1;
       }
       if (!(bcf_hdr_nsamples(hdr)>0)) {
-	std::cerr << "BCF/VCF file has no sample genotypes!" << std::endl;
-	return 1;
+	std::cerr << "Warning: BCF/VCF file has no sample genotypes " << c.base.string() << std::endl;
       }
       for (int i = 0; i < bcf_hdr_nsamples(hdr); ++i) baseSamples.insert(hdr->samples[i]);
       bcf_hdr_destroy(hdr);
@@ -482,8 +528,7 @@ namespace torali
 	return 1;
       }
       if (!(bcf_hdr_nsamples(hdr)>0)) {
-	std::cerr << "BCF/VCF file has no sample genotypes!" << std::endl;
-	return 1;
+	std::cerr << "Warning: BCF/VCF file has no sample genotypes " << c.vcffile.string() << std::endl;
       }
       for (int i = 0; i < bcf_hdr_nsamples(hdr); ++i) compSamples.insert(hdr->samples[i]);
       bcf_hdr_destroy(hdr);
@@ -505,10 +550,7 @@ namespace torali
     std::set_intersection(baseSamples.begin(), baseSamples.end(), compSamples.begin(), compSamples.end(), std::inserter(c.samples, c.samples.begin()));
     //for(uint32_t i = 0; i < c.samples.size(); ++i) std::cerr << c.samples[i] << std::endl;
     std::cerr << '[' << boost::posix_time::to_simple_string(now) << "] " << c.samples.size() << " common samples" << std::endl;
-    if (c.samples.size() < 1) {
-      std::cerr << "No common samples detected!" << std::endl;
-      return 1;
-    }	
+    if (c.samples.size() < 1) std::cerr << "Warning: No common samples detected!" << std::endl;
 
     // Run comparison
     return compvcfRun(c);
