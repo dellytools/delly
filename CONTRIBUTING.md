@@ -18,8 +18,3 @@ Please consider using the Delly discussion group [delly-users](http://groups.goo
 New Features
 ------------
 If you want to suggest a new feature please go ahead and open an [issue](https://github.com/dellytools/delly/issues)!
-
-
-Roadmap
-----------
-Delly still lacks an adequate copy-number segmentation algorithm which is currently under development. We also would love to incorporate the alignment viewers, suave and maze, into our [GEAR genomics](https://www.gear-genomics.com) platform ([https://www.gear-genomics.com](https://www.gear-genomics.com)) but currently lack man-power. If you are interested in contributing please get in touch with <a href="https://www-db.embl.de/EMBLPersonGroup-PersonPicture/MailForm/?recipient=CP-60010497">me</a>, thanks!
