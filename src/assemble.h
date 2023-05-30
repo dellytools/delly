@@ -849,7 +849,7 @@ namespace torali
 			  if (alignConsensus(c, hdr, seq, NULL, svs[svid], true)) msaSuccess = true;
 			} else {
 			  std::string prefix = boost::to_upper_copy(std::string(seq + std::max(svs[svid].svStart - (int32_t) c.minConsWindow, 0), seq + svs[svid].svStart));
-			  std::string suffix = boost::to_upper_copy(std::string(seq + svs[svid].svStart, seq + svs[svid].svStart + c.minConsWindow));
+			  std::string suffix = boost::to_upper_copy(std::string(seq + svs[svid].svStart, seq + std::min(seqlen, svs[svid].svStart + c.minConsWindow)));
 			  msaWfa(c, seqStore[svid], svs[svid].consensus, prefix, suffix);
 			  if ((int32_t) svs[svid].consensus.size() < svs[svid].insLen + 4 * c.minConsWindow) {
 			    if (alignConsensus(c, hdr, seq, NULL, svs[svid], false)) msaSuccess = true;
@@ -902,7 +902,7 @@ namespace torali
 		  if (alignConsensus(c, hdr, seq, sndSeq, svs[svid], true)) msaSuccess = true;
 		} else {
 		  std::string prefix = boost::to_upper_copy(std::string(seq + std::max(svs[svid].svStart - (int32_t) c.minConsWindow, 0), seq + svs[svid].svStart));
-		  std::string suffix = boost::to_upper_copy(std::string(seq + svs[svid].svStart, seq + svs[svid].svStart + c.minConsWindow));
+		  std::string suffix = boost::to_upper_copy(std::string(seq + svs[svid].svStart, seq + std::min(seqlen, svs[svid].svStart + c.minConsWindow)));
 		  msaWfa(c, seqStore[svid], svs[svid].consensus, prefix, suffix);
 		  if ((int32_t) svs[svid].consensus.size() < svs[svid].insLen + 4 * c.minConsWindow) {
 		    if (alignConsensus(c, hdr, seq, NULL, svs[svid], false)) msaSuccess = true;
