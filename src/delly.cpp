@@ -26,6 +26,7 @@
 #include "pangenome.h"
 #include "markdup.h"
 #include "compvcf.h"
+#include "chimera.h"
 
 using namespace torali;
 
@@ -42,12 +43,12 @@ displayUsage() {
   std::cerr << "Long-read SV calling:" << std::endl;
   std::cerr << "    lr           long-read SV discovery" << std::endl;
   std::cerr << std::endl;
-  //std::cerr << "Pan-genome based SV calling:" << std::endl;
-  //std::cerr << "    pg           pan-genome SV discovery" << std::endl;
-  //std::cerr << std::endl;
-  //std::cerr << "Assembly-based SV calling:" << std::endl;
-  //std::cerr << "    asm          assembly SV discovery" << std::endl;
-  //std::cerr << std::endl;
+  std::cerr << "Pan-genome based SV calling (work-in-progress):" << std::endl;
+  std::cerr << "    pg           pan-genome SV discovery" << std::endl;
+  std::cerr << std::endl;
+  std::cerr << "Assembly-based SV calling (work-in-progress):" << std::endl;
+  std::cerr << "    asm          assembly SV discovery" << std::endl;
+  std::cerr << std::endl;
   std::cerr << "Copy-number variant calling:" << std::endl;
   std::cerr << "    cnv          discover and genotype copy-number variants" << std::endl;
   std::cerr << "    classify     classify somatic or germline copy-number variants" << std::endl;
@@ -57,6 +58,7 @@ displayUsage() {
   std::cerr << "    compvcf      compare multi-sample VCF file to a ground truth VCF file" << std::endl;
   //std::cerr << "Deprecated:" << std::endl;
   //std::cerr << "    dpe          double paired-end signatures" << std::endl;
+  //std::cerr << "    chimera      ONT chimera flagging" << std::endl;
   //std::cerr << std::endl;
   std::cerr << std::endl;
   std::cerr << std::endl;
@@ -108,6 +110,9 @@ int main(int argc, char **argv) {
     }
     else if ((std::string(argv[1]) == "dpe")) {
       return dpe(argc-1,argv+1);
+    }
+    else if ((std::string(argv[1]) == "chimera")) {
+      return chimera(argc-1,argv+1);
     }
     else if ((std::string(argv[1]) == "cnv")) {
       return coral(argc-1,argv+1);
