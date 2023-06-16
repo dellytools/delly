@@ -46,13 +46,80 @@ namespace torali
 
   struct ChimeraConfig {
     int32_t minSize;
+    int32_t format;
     float divergence;
     boost::filesystem::path genome;
     boost::filesystem::path file;
   };
 
-  inline int
-  chimeraRun(ChimeraConfig& c) {
+  inline int32_t     // -1: failure, 0: bam, 1: fasta, 2: fastq
+  inputType(std::string const& path) {
+    htsFile *hts_fp = hts_open(path.c_str(), "r");
+    if (hts_fp == NULL) return -1;
+    else {
+      std::string ext = std::string(hts_format_file_extension(hts_get_format(hts_fp)));
+      hts_close(hts_fp);
+      if ((ext == "bam") || (ext == "cram")) return 0;
+      else if (ext == "fa") return 1;
+      else if (ext == "fq") return 2;
+      else {
+	std::cerr << ext << std::endl;
+	return -1;
+      }
+    }
+  }
+
+  inline double
+  computeChimeraScore(std::string const& sequence) {
+    // Split into prefix and suffix
+    int32_t halfPoint = sequence.size() / 2;
+    std::string prefix = sequence.substr(0, halfPoint);
+    std::string suffix = sequence.substr(halfPoint);
+    reverseComplement(suffix);
+
+    // Align
+    EdlibAlignResult cigar = edlibAlign(prefix.c_str(), prefix.size(), suffix.c_str(), suffix.size(), edlibNewAlignConfig(-1, EDLIB_MODE_NW, EDLIB_TASK_DISTANCE, NULL, 0));
+    double score = (double) cigar.editDistance / (double) halfPoint;
+    //printAlignment(prefix, suffix, EDLIB_MODE_NW, cigar);
+    edlibFreeAlignResult(cigar);
+    
+    return score;
+  }
+
+  inline double
+  fastqInputChimera(ChimeraConfig& c) {                                                                                                     
+    std::ifstream file(c.file.string().c_str(), std::ios_base::in | std::ios_base::binary);
+    boost::iostreams::filtering_streambuf<boost::iostreams::input> dataIn;
+    dataIn.push(boost::iostreams::gzip_decompressor());
+    dataIn.push(file);
+    std::istream instream(&dataIn);
+    std::string gline;
+    std::string header;
+    std::string seq;
+    uint64_t lcount = 0;
+    uint64_t chimera = 0;
+    uint64_t total = 0;
+    while(std::getline(instream, gline)) {
+      if (lcount % 4 == 0) header = gline;
+      else if (lcount % 4 == 1) seq = gline;
+      else if (lcount % 4 == 3) {
+	double score = computeChimeraScore(seq);
+	if (score < c.divergence) {
+	  std::cout << header.substr(0, 60) << std::endl;
+	  ++chimera;
+	}
+	++total;
+      }
+      ++lcount;
+    }
+    dataIn.pop();
+    dataIn.pop();
+
+    return (double) chimera / (double) total;
+  }
+
+  inline double
+  bamInputChimera(ChimeraConfig& c) {
     // Open file handles
     samFile* samfile = sam_open(c.file.string().c_str(), "r");
     hts_set_fai_filename(samfile, c.genome.string().c_str());
@@ -77,22 +144,11 @@ namespace torali
 	  uint8_t* seqptr = bam_get_seq(rec);
 	  for (int32_t i = 0; i < rec->core.l_qseq; ++i) sequence[i] = "=ACMGRSVTWYHKDBN"[bam_seqi(seqptr, i)];
 
-	  // Split into prefix and suffix
-	  int32_t halfPoint = sequence.size() / 2;
-	  std::string prefix = sequence.substr(0, halfPoint);
-	  std::string suffix = sequence.substr(halfPoint);
-	  reverseComplement(suffix);
-
-	  // Align
-	  EdlibAlignResult cigar = edlibAlign(prefix.c_str(), prefix.size(), suffix.c_str(), suffix.size(), edlibNewAlignConfig(-1, EDLIB_MODE_NW, EDLIB_TASK_DISTANCE, NULL, 0));
-	  double score = (double) cigar.editDistance / (double) halfPoint;
-	  //std::cerr << bam_get_qname(rec) << ',' << sequence.size() << ',' << prefix.size() << ',' << suffix.size() << ',' << score << std::endl;
+	  double score = computeChimeraScore(sequence);
 	  if (score < c.divergence) {
 	    std::cout << bam_get_qname(rec) << std::endl;
 	    ++chimera;
-	    //printAlignment(prefix, suffix, EDLIB_MODE_NW, cigar);
 	  }
-	  edlibFreeAlignResult(cigar);
 	  ++total;
 	}
       }
@@ -104,8 +160,18 @@ namespace torali
     hts_idx_destroy(idx);
     sam_close(samfile);
 
+    return (double) chimera / (double) total;
+  }
+
+	  
+  inline int
+  chimeraRun(ChimeraConfig& c) {
+    double chimeraRate = 0;
+    if (c.format == 0) chimeraRate = bamInputChimera(c);
+    else chimeraRate = fastqInputChimera(c);
+
     // Chimera fraction
-    std::cerr << "Chimera: " << (double) chimera / (double) total << std::endl;
+    std::cerr << "Chimera: " << chimeraRate << std::endl;
     
     std::cerr << '[' << boost::posix_time::to_simple_string(boost::posix_time::second_clock::local_time()) << "] Done." << std::endl;
     return 0;
@@ -165,48 +231,55 @@ namespace torali
       fai_destroy(fai);
     }
 
-    // Check BAM file
-    if (!(boost::filesystem::exists(c.file) && boost::filesystem::is_regular_file(c.file) && boost::filesystem::file_size(c.file))) {
-       std::cerr << "Alignment file is missing: " << c.file.string() << std::endl;
-       return 1;
-     }
-     samFile* samfile = sam_open(c.file.string().c_str(), "r");
-     if (samfile == NULL) {
-       std::cerr << "Fail to open file " << c.file.string() << std::endl;
-       return 1;
-     }
-     hts_idx_t* idx = sam_index_load(samfile, c.file.string().c_str());
-     if (idx == NULL) {
-       std::cerr << "Fail to open index for " << c.file.string() << std::endl;
-       return 1;
-     }
-     bam_hdr_t* hdr = sam_hdr_read(samfile);
-     if (hdr == NULL) {
-       std::cerr << "Fail to open header for " << c.file.string() << std::endl;
-       return 1;
-     }
-     faidx_t* fai = fai_load(c.genome.string().c_str());
-     for(int32_t refIndex=0; refIndex < hdr->n_targets; ++refIndex) {
-       std::string tname(hdr->target_name[refIndex]);
-       if (!faidx_has_seq(fai, tname.c_str())) {
-	 std::cerr << "BAM file chromosome " << hdr->target_name[refIndex] << " is NOT present in your reference file " << c.genome.string() << std::endl;
-	 return 1;
-       }
-     }
-     fai_destroy(fai);
-     bam_hdr_destroy(hdr);
-     hts_idx_destroy(idx);
-     sam_close(samfile);
-     
-     // Show cmd
-     boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
-     std::cerr << '[' << boost::posix_time::to_simple_string(now) << "] ";
-     std::cerr << "delly ";
-     for(int i=0; i<argc; ++i) { std::cerr << argv[i] << ' '; }
-     std::cerr << std::endl;
-     
-     // Run comparison
-     return chimeraRun(c);
+    // Input format
+    c.format = inputType(c.file.string());
+    if (c.format == -1) {
+      std::cerr << "Unknown input file format!" << std::endl;
+      return 1;
+    } else if (c.format == 0) {
+      // Check BAM file
+      if (!(boost::filesystem::exists(c.file) && boost::filesystem::is_regular_file(c.file) && boost::filesystem::file_size(c.file))) {
+	std::cerr << "Alignment file is missing: " << c.file.string() << std::endl;
+	return 1;
+      }
+      samFile* samfile = sam_open(c.file.string().c_str(), "r");
+      if (samfile == NULL) {
+	std::cerr << "Fail to open file " << c.file.string() << std::endl;
+	return 1;
+      }
+      hts_idx_t* idx = sam_index_load(samfile, c.file.string().c_str());
+      if (idx == NULL) {
+	std::cerr << "Fail to open index for " << c.file.string() << std::endl;
+	return 1;
+      }
+      bam_hdr_t* hdr = sam_hdr_read(samfile);
+      if (hdr == NULL) {
+	std::cerr << "Fail to open header for " << c.file.string() << std::endl;
+	return 1;
+      }
+      faidx_t* fai = fai_load(c.genome.string().c_str());
+      for(int32_t refIndex=0; refIndex < hdr->n_targets; ++refIndex) {
+	std::string tname(hdr->target_name[refIndex]);
+	if (!faidx_has_seq(fai, tname.c_str())) {
+	  std::cerr << "BAM file chromosome " << hdr->target_name[refIndex] << " is NOT present in your reference file " << c.genome.string() << std::endl;
+	  return 1;
+	}
+      }
+      fai_destroy(fai);
+      bam_hdr_destroy(hdr);
+      hts_idx_destroy(idx);
+      sam_close(samfile);
+    }
+      
+    // Show cmd
+    boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
+    std::cerr << '[' << boost::posix_time::to_simple_string(now) << "] ";
+    std::cerr << "delly ";
+    for(int i=0; i<argc; ++i) { std::cerr << argv[i] << ' '; }
+    std::cerr << std::endl;
+    
+    // Run comparison
+    return chimeraRun(c);
   }
   
 }
