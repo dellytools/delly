@@ -106,14 +106,10 @@ namespace torali
 	  std::string shortc;
 	  if (basesv[i].allele.size() > compsv[j].allele.size()) {
 	    longc = basesv[i].allele;
-	    int32_t deslen = 0.8  * compsv[j].allele.size();
-	    int32_t offset = (compsv[j].allele.size() - deslen)/2;
-	    shortc = compsv[j].allele.substr(offset, deslen);
+	    shortc = compsv[j].allele;
 	  } else {
 	    longc = compsv[j].allele;
-	    int32_t deslen = 0.8  * basesv[i].allele.size();
-	    int32_t offset = (basesv[i].allele.size() - deslen)/2;
-	    shortc = basesv[i].allele.substr(offset, deslen);
+	    shortc = basesv[i].allele;
 	  }
 	  EdlibAlignResult cigar = edlibAlign(shortc.c_str(), shortc.size(), longc.c_str(), longc.size(), edlibNewAlignConfig(-1, EDLIB_MODE_HW, EDLIB_TASK_DISTANCE, NULL, 0));
 	  //printAlignment(shortc, longc, EDLIB_MODE_HW, cigar);
@@ -138,7 +134,7 @@ namespace torali
   }
   
   inline bool
-  _loadCompSVs(CompvcfConfig& c, std::string const& filename, std::vector<CompSVRecord>& allsv) {
+  _loadCompSVs(CompvcfConfig& c, std::string const& filename, std::vector<CompSVRecord>& allsv, bool const baseFile) {
     bool success = true;
     std::set<std::string> allIds;
 
@@ -159,6 +155,8 @@ namespace torali
     int32_t nsvt = 0;
     char* svt = NULL;
     std::string svtVal;
+    int32_t ncons = 0;
+    char* cons = NULL;
     int32_t nct = 0;
     char* ct = NULL;
     std::string ctVal;
@@ -309,6 +307,9 @@ namespace torali
 	  }
 	  else if (svtVal == "DEL") sv.allele = std::string(rec->d.allele[0]);
 	  else sv.allele = "";
+	  if ((baseFile) && (_isKeyPresent(hdr, "CONSENSUS"))) {
+	    if (bcf_get_info_string(hdr, rec, "CONSENSUS", &cons, &ncons) > 0) sv.allele = std::string(cons);
+	  }
 	  sv.id = std::string(rec->d.id);
 	  if (sv.id == ".") {
 	    sv.id = std::string(bcf_hdr_id2name(hdr, rec->rid)) + "-" + boost::lexical_cast<std::string>(rec->pos) + "-ID" + boost::lexical_cast<std::string>(++svcounter);
@@ -332,6 +333,7 @@ namespace torali
     if (svt != NULL) free(svt);
     if (gt != NULL) free(gt);
     if (ct != NULL) free(ct);
+    if (cons != NULL) free(cons);
 
     // Close VCF
     bcf_hdr_destroy(hdr);
@@ -345,10 +347,10 @@ namespace torali
 
     // Load SVs
     std::vector<CompSVRecord> basesv;
-    if (!_loadCompSVs(c, c.base.string(), basesv)) return -1;
+    if (!_loadCompSVs(c, c.base.string(), basesv, true)) return -1;
 
     std::vector<CompSVRecord> compsv;
-    if (!_loadCompSVs(c, c.vcffile.string(), compsv)) return -1;
+    if (!_loadCompSVs(c, c.vcffile.string(), compsv, false)) return -1;
 
     // Sort SVs
     sort(basesv.begin(), basesv.end(), SortCompSVRecord<CompSVRecord>());
