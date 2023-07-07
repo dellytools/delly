@@ -106,10 +106,14 @@ namespace torali
 	  std::string shortc;
 	  if (basesv[i].allele.size() > compsv[j].allele.size()) {
 	    longc = basesv[i].allele;
-	    shortc = compsv[j].allele;
+	    int32_t deslen = 0.8  * compsv[j].allele.size();
+	    int32_t offset = (compsv[j].allele.size() - deslen)/2;
+	    shortc = compsv[j].allele.substr(offset, deslen);
 	  } else {
 	    longc = compsv[j].allele;
-	    shortc = basesv[i].allele;
+	    int32_t deslen = 0.8  * basesv[i].allele.size();
+	    int32_t offset = (basesv[i].allele.size() - deslen)/2;
+	    shortc = basesv[i].allele.substr(offset, deslen);
 	  }
 	  EdlibAlignResult cigar = edlibAlign(shortc.c_str(), shortc.size(), longc.c_str(), longc.size(), edlibNewAlignConfig(-1, EDLIB_MODE_HW, EDLIB_TASK_DISTANCE, NULL, 0));
 	  //printAlignment(shortc, longc, EDLIB_MODE_HW, cigar);
@@ -134,7 +138,7 @@ namespace torali
   }
   
   inline bool
-  _loadCompSVs(CompvcfConfig& c, std::string const& filename, std::vector<CompSVRecord>& allsv, bool const baseFile) {
+  _loadCompSVs(CompvcfConfig& c, std::string const& filename, std::vector<CompSVRecord>& allsv) {
     bool success = true;
     std::set<std::string> allIds;
 
@@ -302,12 +306,10 @@ namespace torali
 	
 	// Min. and max. allele count
 	if ((gtsum >= c.minac) && (gtsum < c.maxac)) {
-	  if (svtVal == "INS") {
-	    if (altSymbol == "NA") sv.allele = std::string(rec->d.allele[1]);
-	  }
-	  else if (svtVal == "DEL") sv.allele = std::string(rec->d.allele[0]);
-	  else sv.allele = "";
-	  if ((baseFile) && (_isKeyPresent(hdr, "CONSENSUS"))) {
+	  sv.allele = "";
+	  //if (svtVal == "INS") { if (altSymbol == "NA") sv.allele = std::string(rec->d.allele[1]); }
+	  //else if (svtVal == "DEL") sv.allele = std::string(rec->d.allele[0]);
+	  if (_isKeyPresent(hdr, "CONSENSUS")) {
 	    if (bcf_get_info_string(hdr, rec, "CONSENSUS", &cons, &ncons) > 0) sv.allele = std::string(cons);
 	  }
 	  sv.id = std::string(rec->d.id);
@@ -347,10 +349,10 @@ namespace torali
 
     // Load SVs
     std::vector<CompSVRecord> basesv;
-    if (!_loadCompSVs(c, c.base.string(), basesv, true)) return -1;
+    if (!_loadCompSVs(c, c.base.string(), basesv)) return -1;
 
     std::vector<CompSVRecord> compsv;
-    if (!_loadCompSVs(c, c.vcffile.string(), compsv, false)) return -1;
+    if (!_loadCompSVs(c, c.vcffile.string(), compsv)) return -1;
 
     // Sort SVs
     sort(basesv.begin(), basesv.end(), SortCompSVRecord<CompSVRecord>());
