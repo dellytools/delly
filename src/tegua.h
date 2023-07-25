@@ -38,6 +38,7 @@ namespace torali {
     bool hasDumpFile;
     bool hasExcludeFile;
     bool hasVcfFile;
+    bool skipasm;
     uint16_t minMapQual;
     uint16_t minGenoQual;
     uint32_t minClip;
@@ -110,12 +111,12 @@ namespace torali {
      _clusterSRReads(c, validRegions, svc, srStore);
 
      // Assemble
-     assemble(c, validRegions, svc, srStore);
+     if (!c.skipasm) assemble(c, validRegions, svc, srStore);
 
      // Sort SVs
      sort(svc.begin(), svc.end(), SortSVs<StructuralVariantRecord>());
       
-     // Keep assembled SVs only
+     // Remove duplicates
      StructuralVariantRecord lastSV;
      for(typename TVariants::iterator svIter = svc.begin(); svIter != svc.end(); ++svIter) {
        if ((svIter->srSupport == 0) && (svIter->peSupport == 0)) continue;
@@ -139,7 +140,6 @@ namespace torali {
      // Re-number SVs
      uint32_t cliqueCount = 0;
      for(typename TVariants::iterator svIt = svs.begin(); svIt != svs.end(); ++svIt, ++cliqueCount) svIt->id = cliqueCount;
-     //outputStructuralVariants(c, svs);
    } else vcfParse(c, hdr, svs);
    // Clean-up
    bam_hdr_destroy(hdr);
@@ -166,7 +166,7 @@ namespace torali {
      spanMap[file_c].resize(svs.size(), SpanningCount());
      rcMap[file_c].resize(svs.size(), ReadCount());
    }
-      
+
    // SV Genotyping
    genotypeLR(c, svs, jctMap, rcMap);
 
@@ -199,11 +199,12 @@ namespace torali {
      ("genome,g", boost::program_options::value<boost::filesystem::path>(&c.genome), "genome fasta file")
      ("exclude,x", boost::program_options::value<boost::filesystem::path>(&c.exclude), "file with regions to exclude")
      ("outfile,o", boost::program_options::value<boost::filesystem::path>(&c.outfile), "BCF output file")
+     ("skipasm,k", "skip SV assembly")
      ;
    
    boost::program_options::options_description disc("Discovery options");
    disc.add_options()
-     ("mapqual,q", boost::program_options::value<uint16_t>(&c.minMapQual)->default_value(10), "min. mapping quality")
+     ("mapqual,q", boost::program_options::value<uint16_t>(&c.minMapQual)->default_value(1), "min. mapping quality")
      ("minclip,c", boost::program_options::value<uint32_t>(&c.minClip)->default_value(25), "min. clipping length")
      ("min-clique-size,z", boost::program_options::value<uint32_t>(&c.minCliqueSize)->default_value(3), "min. clique size")     
      ("minrefsep,m", boost::program_options::value<uint32_t>(&c.minRefSep)->default_value(30), "min. reference separation")
@@ -253,6 +254,10 @@ namespace torali {
      std::cerr << visible_options << "\n";
      return 0;
    }
+
+   // Skip assembly
+   if (vm.count("skipasm")) c.skipasm = true;
+   else c.skipasm = false;
 
    // Set alignment score
    _alignmentScore(c, scoring);

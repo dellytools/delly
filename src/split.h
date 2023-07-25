@@ -676,6 +676,7 @@ namespace torali
     //}
     //std::cerr << std::endl;
     //std::cerr << std::endl;
+
     // Check breakpoint
     if (!_findSplit(c, consensus, svRefStr, align, ad, svt)) return false;
 

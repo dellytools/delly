@@ -174,7 +174,7 @@ namespace torali
 
 	  // Check for Ns
 	  if (nContent(svRefStr)) continue;
-	  
+
 	  // Find breakpoint to reference
 	  TAlign align;
 	  if (!_consRefAlignment(itSV->consensus, svRefStr, align, itSV->svt)) continue;
