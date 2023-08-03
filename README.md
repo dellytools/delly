@@ -129,7 +129,7 @@ Read-depth profiles
 
 You can generate read-depth profiles with delly. This requires a mappability map which can be downloaded here:
 
-[Mappability Maps](https://gear.embl.de/data/delly/)
+[Mappability Maps](https://gear-genomics.embl.de/data/delly/)
 
 The command to count reads in 10kbp mappable windows and normalize the coverage is:
 
@@ -158,7 +158,7 @@ Plotting:
 Germline CNV calling
 --------------------
 
-Delly uses GC and mappability fragment correction to call CNVs. This requires a [mappability map](https://gear.embl.de/data/delly/).
+Delly uses GC and mappability fragment correction to call CNVs. This requires a [mappability map](https://gear-genomics.embl.de/data/delly/).
 
 * Call CNVs for each sample and optionally refine breakpoints using delly SV calls
 
