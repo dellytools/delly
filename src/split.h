@@ -443,7 +443,7 @@ namespace torali
 
     // Is this a valid split-read alignment?
     if (!_validSRAlignment(ad.cStart, ad.cEnd, ad.rStart, ad.rEnd, svt)) return false;
-
+    
     // Check percent identity
     _percentIdentity(align, gS, gE, ad.percId);
     //std::cerr << ad.percId << ',' << c.flankQuality << std::endl;
@@ -645,7 +645,7 @@ namespace torali
 
   template<typename TConfig>
   inline bool
-  _alignConsensus(TConfig const& c, std::string& consensus, std::string& svRefStr, int32_t svt, AlignDescriptor& ad, bool const realign) {
+  _alignConsensus(TConfig const& c, std::string& consensus, std::string& svRefStr, StructuralVariantRecord& sv, Breakpoint& bp, bool const realign) {
     // Realign?
     if (realign) {
       std::string revc = consensus;
@@ -665,7 +665,7 @@ namespace torali
     typedef boost::multi_array<char, 2> TAlign;
     TAlign align;
     //std::cerr << "Consensus-to-Reference alignment" << std::endl;
-    if (!_consRefAlignment(consensus, svRefStr, align, svt)) return false;
+    if (!_consRefAlignment(consensus, svRefStr, align, sv.svt)) return false;
     
     // Debug consensus to reference alignment
     //for(uint32_t i = 0; i < align.shape()[0]; ++i) {
@@ -678,10 +678,52 @@ namespace torali
     //std::cerr << std::endl;
 
     // Check breakpoint
-    if (!_findSplit(c, consensus, svRefStr, align, ad, svt)) return false;
+    AlignDescriptor ad;
+    if (!_findSplit(c, consensus, svRefStr, align, ad, sv.svt)) return false;
 
-    // All fine
-    return true;
+    // Transform coordinates
+    unsigned int finalGapStart = 0;
+    unsigned int finalGapEnd = 0;
+    if (!_coordTransform(c, svRefStr, bp, ad, finalGapStart, finalGapEnd, sv.svt)) return false;
+    
+    if ((_translocation(sv.svt)) || (finalGapStart < finalGapEnd)) {
+      sv.precise=true;
+      sv.svStart=finalGapStart;
+      sv.svEnd=finalGapEnd;
+      sv.srAlignQuality = ad.percId;
+      sv.insLen=ad.cEnd - ad.cStart - 1;
+      sv.homLen=std::max(0, ad.homLeft + ad.homRight - 2);
+      int32_t ci_wiggle = std::max(ad.homLeft, ad.homRight);
+      sv.ciposlow = -ci_wiggle;
+      sv.ciposhigh = ci_wiggle;
+      sv.ciendlow = -ci_wiggle;
+      sv.ciendhigh = ci_wiggle;
+
+      // Get exact alleles for INS and DEL
+      if (sv.svEnd - sv.svStart <= c.indelsize) {
+	if ((sv.svt == 2) || (sv.svt == 4)) {
+	  std::string refVCF;
+	  std::string altVCF;
+	  int32_t cpos = 0;
+	  bool inSV = false;
+	  for(uint32_t j = 0; j<align.shape()[1]; ++j) {
+	    if (align[0][j] != '-') {
+	      ++cpos;
+	      if (cpos == ad.cStart) inSV = true;
+	      else if (cpos == ad.cEnd) inSV = false;
+	    }
+	    if (inSV) {
+	      if (align[0][j] != '-') altVCF += align[0][j];
+	      if (align[1][j] != '-') refVCF += align[1][j];
+	    }
+	  }
+	  sv.alleles = _addAlleles(refVCF, altVCF);
+	}
+      }	  
+      return true;
+    } else {
+      return false;
+    }
   }
   
   template<typename TConfig>
@@ -699,30 +741,7 @@ namespace torali
     std::string svRefStr = _getSVRef(c, seq, bp, bp.chr, sv.svt);
 
     // Generate consensus alignment
-    AlignDescriptor ad;
-    if (!_alignConsensus(c, sv.consensus, svRefStr, sv.svt, ad, realign)) return false;
-
-    // Get the start and end of the structural variant
-    unsigned int finalGapStart = 0;
-    unsigned int finalGapEnd = 0;
-    if (!_coordTransform(c, svRefStr, bp, ad, finalGapStart, finalGapEnd, sv.svt)) return false;
-
-    if ((_translocation(sv.svt)) || (finalGapStart < finalGapEnd)) {
-      sv.precise=true;
-      sv.svStart=finalGapStart;
-      sv.svEnd=finalGapEnd;
-      sv.srAlignQuality = ad.percId;
-      sv.insLen=ad.cEnd - ad.cStart - 1;
-      sv.homLen=std::max(0, ad.homLeft + ad.homRight - 2);
-      int32_t ci_wiggle = std::max(ad.homLeft, ad.homRight);
-      sv.ciposlow = -ci_wiggle;
-      sv.ciposhigh = ci_wiggle;
-      sv.ciendlow = -ci_wiggle;
-      sv.ciendhigh = ci_wiggle;
-      return true;
-    } else {
-      return false;
-    }
+    return _alignConsensus(c, sv.consensus, svRefStr, sv, bp, realign);
   }
 
   template<typename TConfig>
