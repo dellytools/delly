@@ -506,6 +506,14 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
 	// Inter-chromosomal
 	if (((svIter->peSupport < 5) || (svIter->peMapQuality < 20)) && ((svIter->srSupport < 5) || (svIter->srMapQuality < 20))) tmpi = bcf_hdr_id2int(hdr, BCF_DT_ID, "LowQual");
       }
+      // In discovery mode, check GT support
+      if (!c.hasVcfFile) {
+	uint32_t totalGtSup = 0;
+	for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
+	  totalGtSup += spanCountMap[file_c][svIter->id].alt.size() + jctCountMap[file_c][svIter->id].alt.size();
+	}
+	if (totalGtSup < 3) tmpi = bcf_hdr_id2int(hdr, BCF_DT_ID, "LowQual");
+      }
       rec->rid = bcf_hdr_name2id(hdr, bamhd->target_name[svIter->chr]);
       int32_t svStartPos = svIter->svStart - 1;
       if (svStartPos < 1) svStartPos = 1;
