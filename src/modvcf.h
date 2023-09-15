@@ -165,6 +165,8 @@ vcfParse(TConfig const& c, bam_hdr_t* hd, std::vector<TStructuralVariantRecord>&
   int32_t* svend = NULL;
   int32_t npos2 = 0;
   int32_t* pos2 = NULL;
+  int32_t nconsbp = 0;
+  int32_t* consbp = NULL;
   int32_t nsvlen = 0;
   int32_t* svlen = NULL;
   int32_t npe = 0;
@@ -257,7 +259,10 @@ vcfParse(TConfig const& c, bam_hdr_t* hd, std::vector<TStructuralVariantRecord>&
 	}
 	if (bcf_get_info_int32(hdr, rec, "POS2", &pos2, &npos2) > 0) svRec.svEnd = *pos2;
       }
-      if (bcf_get_info_string(hdr, rec, "CONSENSUS", &cons, &ncons) > 0) svRec.consensus = std::string(cons);
+      if (bcf_get_info_string(hdr, rec, "CONSENSUS", &cons, &ncons) > 0) {
+	svRec.consensus = std::string(cons);
+	if (bcf_get_info_int32(hdr, rec, "CONSBP", &consbp, &nconsbp) > 0) svRec.consBp = *consbp;
+      }
       else svRec.precise = false;
       if (bcf_get_info_int32(hdr, rec, "CIPOS", &cipos, &ncipos) > 0) {
 	svRec.ciposlow = cipos[0];
@@ -371,6 +376,7 @@ vcfParse(TConfig const& c, bam_hdr_t* hd, std::vector<TStructuralVariantRecord>&
   // Clean-up
   free(svend);
   free(pos2);
+  free(consbp);
   free(svlen);
   free(svt);
   free(method);
@@ -437,6 +443,7 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
   bcf_hdr_append(hdr, "##INFO=<ID=SR,Number=1,Type=Integer,Description=\"Split-read support\">");
   bcf_hdr_append(hdr, "##INFO=<ID=SRQ,Number=1,Type=Float,Description=\"Split-read consensus alignment quality\">");
   bcf_hdr_append(hdr, "##INFO=<ID=CONSENSUS,Number=1,Type=String,Description=\"Split-read consensus sequence\">");
+  bcf_hdr_append(hdr, "##INFO=<ID=CONSBP,Number=1,Type=Integer,Description=\"Consensus SV breakpoint position\">");
   bcf_hdr_append(hdr, "##INFO=<ID=CE,Number=1,Type=Float,Description=\"Consensus sequence entropy\">");
   bcf_hdr_append(hdr, "##INFO=<ID=CT,Number=1,Type=String,Description=\"Paired-end signature induced connection type\">");
   bcf_hdr_append(hdr, "##INFO=<ID=SVLEN,Number=1,Type=Integer,Description=\"Insertion length for SVTYPE=INS.\">");
@@ -496,6 +503,14 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
     bcf1_t *rec = bcf_init();
     for(typename TSVs::const_iterator svIter = svs.begin(); svIter!=svs.end(); ++svIter) {
       if ((svIter->srSupport == 0) && (svIter->peSupport == 0)) continue;
+      // In discovery mode, skip SVs that have less than 2 reads support after genotyping
+      if (!c.hasVcfFile) {
+	uint32_t totalGtSup = 0;
+	for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
+	  totalGtSup += spanCountMap[file_c][svIter->id].alt.size() + jctCountMap[file_c][svIter->id].alt.size();
+	}
+	if (totalGtSup < 2) continue;
+      }
       
       // Output main vcf fields
       int32_t tmpi = bcf_hdr_id2int(hdr, BCF_DT_ID, "PASS");
@@ -505,14 +520,6 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
       } else {
 	// Inter-chromosomal
 	if (((svIter->peSupport < 5) || (svIter->peMapQuality < 20)) && ((svIter->srSupport < 5) || (svIter->srMapQuality < 20))) tmpi = bcf_hdr_id2int(hdr, BCF_DT_ID, "LowQual");
-      }
-      // In discovery mode, check GT support
-      if (!c.hasVcfFile) {
-	uint32_t totalGtSup = 0;
-	for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
-	  totalGtSup += spanCountMap[file_c][svIter->id].alt.size() + jctCountMap[file_c][svIter->id].alt.size();
-	}
-	if (totalGtSup < 3) tmpi = bcf_hdr_id2int(hdr, BCF_DT_ID, "LowQual");
       }
       rec->rid = bcf_hdr_name2id(hdr, bamhd->target_name[svIter->chr]);
       int32_t svStartPos = svIter->svStart - 1;
@@ -580,6 +587,8 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
 	  bcf_update_info_string(hdr, rec, "CONSENSUS", svIter->consensus.c_str());
 	  tmpf = entropy(svIter->consensus);
 	  bcf_update_info_float(hdr, rec, "CE", &tmpf, 1);
+	  tmpi = svIter->consBp;
+	  bcf_update_info_int32(hdr, rec, "CONSBP", &tmpi, 1);
 	}
       }
       

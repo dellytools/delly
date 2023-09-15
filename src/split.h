@@ -692,6 +692,7 @@ namespace torali
       sv.svEnd=finalGapEnd;
       sv.srAlignQuality = ad.percId;
       sv.insLen=ad.cEnd - ad.cStart - 1;
+      sv.consBp = ad.cStart;
       sv.homLen=std::max(0, ad.homLeft + ad.homRight - 2);
       int32_t ci_wiggle = std::max(ad.homLeft, ad.homRight);
       sv.ciposlow = -ci_wiggle;

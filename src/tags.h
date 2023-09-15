@@ -58,6 +58,7 @@ namespace torali {
     int32_t homLen;
     int32_t peSupport;
     int32_t peMapQuality;
+    int32_t consBp;
     float srAlignQuality;
     bool precise;
     std::string alleles;
