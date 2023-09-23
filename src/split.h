@@ -708,8 +708,7 @@ namespace torali
 	  }
 	  sv.alleles = _addAlleles(refVCF, altVCF);
 	}
-      }	  
-      
+      }
       sv.precise=true;
       sv.svStart=finalGapStart;
       sv.svEnd=finalGapEnd;
