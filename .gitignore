@@ -1,5 +1,6 @@
 .htslib
 .wfalib
+.vscode
 *.pyc
 *~
 
