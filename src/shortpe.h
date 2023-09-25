@@ -530,6 +530,7 @@ namespace torali
 	      itOther->srAlignQuality = sr[i].srAlignQuality;
 	      itOther->precise = true;
 	      itOther->consensus = sr[i].consensus;
+	      itOther->consBp = sr[i].consBp;
 	      itOther->mapq += sr[i].mapq;
 	    }
 	  }
