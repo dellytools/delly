@@ -251,6 +251,7 @@ vcfParse(TConfig const& c, bam_hdr_t* hd, std::vector<TStructuralVariantRecord>&
       if (svRec.svt < DELLY_SVT_TRANS) {
 	// Intra-chromosomal SV
 	if (bcf_get_info_int32(hdr, rec, "END", &svend, &nsvend) > 0) svRec.svEnd = *svend;
+	svRec.svEnd += 1;
       } else {
 	// Inter-chromosomal SV
 	if (bcf_get_info_string(hdr, rec, "CHR2", &chr2, &nchr2) > 0) {
@@ -525,6 +526,7 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
       int32_t svStartPos = svIter->svStart - 1;
       if (svStartPos < 1) svStartPos = 1;
       int32_t svEndPos = svIter->svEnd;
+      if (svIter->chr == svIter->chr2) --svEndPos; // To match VCF spec
       if (svEndPos < 1) svEndPos = 1;
       if (svEndPos >= (int32_t) bamhd->target_len[svIter->chr2]) svEndPos = bamhd->target_len[svIter->chr2] - 1;
       rec->pos = svStartPos;
