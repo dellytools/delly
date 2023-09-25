@@ -711,7 +711,7 @@ namespace torali
       }
       sv.precise=true;
       sv.svStart=finalGapStart;
-      sv.svEnd=finalGapEnd - 1;
+      sv.svEnd=finalGapEnd;
       sv.srAlignQuality = ad.percId;
       sv.insLen=ad.cEnd - ad.cStart - 1;
       sv.consBp = ad.cStart;
