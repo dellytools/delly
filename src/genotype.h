@@ -235,12 +235,8 @@ namespace torali
 		uint8_t* seqptr = bam_get_seq(rec);
 		for (int i = 0; i < rec->core.l_qseq; ++i) sequence[i] = "=ACMGRSVTWYHKDBN"[bam_seqi(seqptr, i)];
 	      }
-	      //std::cerr << bam_get_qname(rec) << ',' << sequence.size() << ',' << spBp << ',' << pos << std::endl;
-	      //std::cerr << rStartOffset << ',' << rEndOffset << ',' << cStartOffset << ',' << cEndOffset << ',' << offset << std::endl;
-
 	      //std::cerr << hdr[file_c]->target_name[refIndex] << ":" << svs[svid].svStart << "-" << svs[svid].svEnd << "," << svs[svid].svt << "," << (int) (rec->core.flag & BAM_FREVERSE) << "," << ((pos == svs[svid].svStart) ? "Start" : "End") << std::endl;
 	      std::string ref = boost::to_upper_copy(std::string(seq + pos - offset, seq + pos + offset));
-	      //std::cerr << consBp << ',' << offset << ',' << svs[svid].consensus.size() << std::endl;
 	      std::string alt = svs[svid].consensus.substr(consBp - offset, 2 * offset);
 	      std::string probe = sequence.substr(spBp - offset, 2 * offset);
 
@@ -250,7 +246,7 @@ namespace torali
 		   ((svs[svid].svt == 1) && (pos == svs[svid].svStart)) ||
 		   ((svs[svid].svt == 5) && (pos == svs[svid].svEnd)) ||
 		   ((svs[svid].svt == 6) && (pos == svs[svid].svStart))
-		 ) {
+		   ) {
 		reverseComplement(probe);
 	      }
 	      int32_t altScore = _editDistanceNW(alt, probe);

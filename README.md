@@ -31,7 +31,7 @@ There is a Delly discussion group [delly-users](http://groups.google.com/d/forum
 
 Delly supports parallel computing using the OpenMP API (www.openmp.org).
 
-`make PARALLEL=1 -B src/delly`
+`make PARALLEL=1 src/delly`
 
 You can set the number of threads using the environment variable OMP_NUM_THREADS.
 

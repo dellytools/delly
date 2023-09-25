@@ -38,7 +38,6 @@ namespace torali {
     bool hasDumpFile;
     bool hasExcludeFile;
     bool hasVcfFile;
-    bool skipasm;
     uint16_t minMapQual;
     uint16_t minGenoQual;
     uint32_t minClip;
@@ -111,7 +110,7 @@ namespace torali {
      _clusterSRReads(c, validRegions, svc, srStore);
 
      // Assemble
-     if (!c.skipasm) assemble(c, validRegions, svc, srStore);
+     assemble(c, validRegions, svc, srStore);
 
      // Sort SVs
      sort(svc.begin(), svc.end(), SortSVs<StructuralVariantRecord>());
@@ -199,7 +198,6 @@ namespace torali {
      ("genome,g", boost::program_options::value<boost::filesystem::path>(&c.genome), "genome fasta file")
      ("exclude,x", boost::program_options::value<boost::filesystem::path>(&c.exclude), "file with regions to exclude")
      ("outfile,o", boost::program_options::value<boost::filesystem::path>(&c.outfile), "BCF output file")
-     ("skipasm,k", "skip SV assembly")
      ;
    
    boost::program_options::options_description disc("Discovery options");
@@ -254,10 +252,6 @@ namespace torali {
      std::cerr << visible_options << "\n";
      return 0;
    }
-
-   // Skip assembly
-   if (vm.count("skipasm")) c.skipasm = true;
-   else c.skipasm = false;
 
    // Set alignment score
    _alignmentScore(c, scoring);
