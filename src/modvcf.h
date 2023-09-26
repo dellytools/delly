@@ -155,11 +155,6 @@ vcfParse(TConfig const& c, bam_hdr_t* hd, std::vector<TStructuralVariantRecord>&
   bcf_hdr_t* hdr = bcf_hdr_read(ifile);
   bcf1_t* rec = bcf_init();
 
-  // Parse genome if necessary
-  faidx_t* fai = fai_load(c.genome.string().c_str());
-  char* seq = NULL;
-  int32_t lastRefIndex = -1;
-  
   // Parse bcf
   int32_t nsvend = 0;
   int32_t* svend = NULL;
@@ -193,21 +188,22 @@ vcfParse(TConfig const& c, bam_hdr_t* hd, std::vector<TStructuralVariantRecord>&
   char* cons = NULL;
   int32_t nchr2 = 0;
   char* chr2 = NULL;
-  uint16_t wimethod = 0; 
+  bool dellyVCF = false;
   while (bcf_read(ifile, hdr, rec) == 0) {
     bcf_unpack(rec, BCF_UN_INFO);
 
     // Delly BCF file?
-    if (!wimethod) {
-      wimethod = 2;
+    if (!dellyVCF) {
       if (bcf_get_info_string(hdr, rec, "SVMETHOD", &method, &nmethod) > 0) {
 	std::string mstr = std::string(method);
-	if ((mstr.size() >= 10) && (mstr.substr(0, 10)  == "EMBL.DELLY")) wimethod = 1;
+	if ((mstr.size() >= 10) && (mstr.substr(0, 10)  == "EMBL.DELLY")) {
+	  if (_isKeyPresent(hdr, "CONSBP")) dellyVCF = true;
+	}
       }
     }
 
     // Delly
-    if (wimethod == 1) {
+    if (dellyVCF) {
       // Fill SV record
       StructuralVariantRecord svRec;
       std::string chrName = bcf_hdr_id2name(hdr, rec->rid);
@@ -287,91 +283,9 @@ vcfParse(TConfig const& c, bam_hdr_t* hd, std::vector<TStructuralVariantRecord>&
       else svRec.srAlignQuality = 0;
 
       svs.push_back(svRec);
-    } else if (wimethod == 2) {
-      // Assume precise SV, only deletions supported and INFO:END is required!!!
-      if (rec->n_allele == 2) {
-	std::string refAllele = rec->d.allele[0];
-	std::string altAllele = rec->d.allele[1];
-	StructuralVariantRecord svRec;
-	bool tagUse;
-	bool insertion = false;
-	if (altAllele == "<DEL>") {
-	  svRec.svt = 2;
-	  tagUse = true;
-	} else if (altAllele == "<INS>") {
-	  // No precise insertion sequence, cannot be genotyped by Delly
-	  continue;
-	} else {
-	  if ((refAllele.size() > altAllele.size()) && (_isDNA(refAllele)) && (_isDNA(altAllele))) {
-	    svRec.svt = 2;
-	    tagUse = false;
-	  } else if ((altAllele.size() > refAllele.size()) && (_isDNA(refAllele)) && (_isDNA(altAllele))) {
-	    insertion = true;
-	    svRec.svt = 4;
-	    tagUse = false;
-	  } else continue;
-	}
-	if (tagUse) {
-	  if (bcf_get_info_int32(hdr, rec, "END", &svend, &nsvend) > 0) svRec.svEnd = *svend;
-	  else continue;
-	} else {
-	  if (insertion) {
-	    svRec.svEnd = rec->pos + 2;
-	    int32_t diff =  altAllele.size() - refAllele.size();
-	    svRec.insLen = diff;
-	  } else {
-	    int32_t diff = refAllele.size() - altAllele.size();
-	    svRec.svEnd = rec->pos + diff + 2;
-	    svRec.insLen = 0;
-	  }
-	}
-	std::string chrName = bcf_hdr_id2name(hdr, rec->rid);
-	int32_t tid = bam_name2id(hd, chrName.c_str());
-	svRec.chr = tid;
-	svRec.chr2 = tid;
-	svRec.svStart = rec->pos + 1;
-	svRec.id = svs.size();
-	svRec.alleles = refAllele + "," + altAllele;
-	svRec.precise=true;
-	svRec.peSupport = 0;
-	svRec.homLen = 0;
-	svRec.srSupport = 5;
-	svRec.peMapQuality = 20;
-	svRec.srAlignQuality = 1;
-	svRec.ciposlow = -50;
-	svRec.ciposhigh = 50;
-	svRec.ciendlow = -50;
-	svRec.ciendhigh = 50;
-
-	// Lazy loading of reference sequence
-	if ((seq == NULL) || (tid != lastRefIndex)) {
-	  if (seq != NULL) free(seq);
-	  int32_t seqlen = -1;
-	  seq = faidx_fetch_seq(fai, chrName.c_str(), 0, faidx_seq_len(fai, chrName.c_str()), &seqlen);
-	  lastRefIndex = tid;
-	}
-
-	// Build consensus sequence
-	if ((seq != NULL) && ((svRec.svStart + 15 < svRec.svEnd) || (svRec.insLen >= 15))) {
-	  int32_t buffer = 75;
-	  if (tagUse) {
-	    int32_t prefix = 0;
-	    if (buffer < rec->pos) prefix = rec->pos - buffer;
-	    std::string pref = boost::to_upper_copy(std::string(seq + prefix, seq + rec->pos + 1));
-	    int32_t suffix = svRec.svEnd + buffer;
-	    std::string suf = boost::to_upper_copy(std::string(seq + svRec.svEnd, seq + suffix));
-	    svRec.consensus = pref + suf;
-	  } else {
-	    int32_t prefix = 0;
-	    if (buffer < rec->pos) prefix = rec->pos - buffer;
-	    std::string pref = boost::to_upper_copy(std::string(seq + prefix, seq + rec->pos));
-	    int32_t suffix = svRec.svEnd + buffer;
-	    std::string suf = boost::to_upper_copy(std::string(seq + svRec.svEnd - 1, seq + suffix));
-	    svRec.consensus = pref + altAllele + suf;
-	  }
-	  svs.push_back(svRec);
-	}
-      }
+    } else {
+      std::cerr << "Error: Delly genotyping requires local SV assembly (INFO/CONSENSUS) and breakpoint (INFO/CONSBP) introduced in delly v1.1.7!" << std::endl;
+      break;
     }
   }
   // Clean-up
@@ -392,10 +306,6 @@ vcfParse(TConfig const& c, bam_hdr_t* hd, std::vector<TStructuralVariantRecord>&
   free(ct);
   free(chr2);
 
-  // Clean-up index
-  if (seq != NULL) free(seq);
-  fai_destroy(fai);
-  
   // Close VCF
   bcf_hdr_destroy(hdr);
   bcf_close(ifile);
