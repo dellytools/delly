@@ -366,29 +366,26 @@ namespace torali {
    // Annotate junction reads
    typedef std::vector<JunctionCount> TSVJunctionMap;
    typedef std::vector<TSVJunctionMap> TSampleSVJunctionMap;
-   TSampleSVJunctionMap jctMap;
+   TSampleSVJunctionMap jctMap(c.files.size());
 
    // Annotate spanning coverage
    typedef std::vector<SpanningCount> TSVSpanningMap;
    typedef std::vector<TSVSpanningMap> TSampleSVSpanningMap;
-   TSampleSVSpanningMap spanMap;
+   TSampleSVSpanningMap spanMap(c.files.size());
    
    // Annotate coverage
    typedef std::vector<ReadCount> TSVReadCount;
    typedef std::vector<TSVReadCount> TSampleSVReadCount;
-   TSampleSVReadCount rcMap;
+   TSampleSVReadCount rcMap(c.files.size());
 
    // Initialize count maps
-   /*
    for(uint32_t file_c = 0; file_c < c.files.size(); ++file_c) {
      jctMap[file_c].resize(svs.size(), JunctionCount());
      spanMap[file_c].resize(svs.size(), SpanningCount());
      rcMap[file_c].resize(svs.size(), ReadCount());
    }
-   */
 
    // VCF Output
-   c.files.clear(); // To enforce SV site list
    vcfOutput(c, svs, jctMap, rcMap, spanMap);
    
 #ifdef PROFILE

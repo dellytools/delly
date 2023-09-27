@@ -47,7 +47,7 @@ displayUsage() {
   std::cerr << "    pg           pan-genome SV discovery" << std::endl;
   std::cerr << std::endl;
   std::cerr << "Assembly-based SV calling (work-in-progress):" << std::endl;
-  std::cerr << "    asm          assembly SV discovery" << std::endl;
+  std::cerr << "    asm          assembly SV site discovery" << std::endl;
   std::cerr << std::endl;
   std::cerr << "Copy-number variant calling:" << std::endl;
   std::cerr << "    cnv          discover and genotype copy-number variants" << std::endl;
