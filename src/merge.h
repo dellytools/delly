@@ -283,6 +283,7 @@ void _outputSelectedIntervals(MergeConfig& c, TGenomeIntervals const& iSelected,
   bcf_hdr_append(hdr_out, "##INFO=<ID=SR,Number=1,Type=Integer,Description=\"Split-read support\">");
   bcf_hdr_append(hdr_out, "##INFO=<ID=SRQ,Number=1,Type=Float,Description=\"Split-read consensus alignment quality\">");
   bcf_hdr_append(hdr_out, "##INFO=<ID=CONSENSUS,Number=1,Type=String,Description=\"Split-read consensus sequence\">");
+  bcf_hdr_append(hdr_out, "##INFO=<ID=CONSBP,Number=1,Type=Integer,Description=\"Consensus SV breakpoint position\">");
   bcf_hdr_append(hdr_out, "##INFO=<ID=CE,Number=1,Type=Float,Description=\"Consensus sequence entropy\">");
   bcf_hdr_append(hdr_out, "##INFO=<ID=CT,Number=1,Type=String,Description=\"Paired-end signature induced connection type\">");
   bcf_hdr_append(hdr_out, "##INFO=<ID=SVLEN,Number=1,Type=Integer,Description=\"Insertion length for SVTYPE=INS.\">");
@@ -347,6 +348,8 @@ void _outputSelectedIntervals(MergeConfig& c, TGenomeIntervals const& iSelected,
   int32_t* inslen = NULL;
   int32_t npos2 = 0;
   int32_t* pos2 = NULL;
+  int32_t nconsbp = 0;
+  int32_t* consbp = NULL;
   int32_t nhomlen = 0;
   int32_t* homlen = NULL;
   int32_t nmapq = 0;
@@ -454,9 +457,11 @@ void _outputSelectedIntervals(MergeConfig& c, TGenomeIntervals const& iSelected,
 
 	    std::string consensus;
 	    float ceVal = 0;
+	    int32_t consBpVal = 0;
 	    if (precise) {
 	      if (bcf_get_info_float(hdr[idx], rec[idx], "CE", &ce, &nce) > 0) ceVal = *ce;
 	      if (bcf_get_info_string(hdr[idx], rec[idx], "CONSENSUS", &cons, &ncons) > 0) consensus = boost::to_upper_copy(std::string(cons));
+	      if (bcf_get_info_int32(hdr[idx], rec[idx], "CONSBP", &consbp, &nconsbp) > 0) consBpVal = *consbp;
 	    }
 	    
 	    // Create new record
@@ -511,6 +516,7 @@ void _outputSelectedIntervals(MergeConfig& c, TGenomeIntervals const& iSelected,
 	      if (consensus.size()) {
 		bcf_update_info_string(hdr_out, rout, "CONSENSUS", consensus.c_str());
 		bcf_update_info_float(hdr_out, rout, "CE", &ceVal, 1);
+		bcf_update_info_int32(hdr_out, rout, "CONSBP", &consBpVal, 1);
 	      }
 	    }
 	
@@ -536,6 +542,7 @@ void _outputSelectedIntervals(MergeConfig& c, TGenomeIntervals const& iSelected,
   if (homlen != NULL) free(homlen);
   if (inslen != NULL) free(inslen);
   if (pos2 != NULL) free(pos2);
+  if (consbp != NULL) free(consbp);
   if (mapq != NULL) free(mapq);
   if (srmapq != NULL) free(srmapq);
   if (ct != NULL) free(ct);
@@ -906,10 +913,10 @@ int merge(int argc, char **argv) {
   generic.add_options()
     ("help,?", "show help message")
     ("outfile,o", boost::program_options::value<boost::filesystem::path>(&c.outfile), "Merged SV BCF output file")
-    ("quality,y", boost::program_options::value<int32_t>(&c.qualthres)->default_value(300), "min. SV site quality")
+    ("quality,y", boost::program_options::value<int32_t>(&c.qualthres)->default_value(200), "min. SV site quality")
     ("chunks,u", boost::program_options::value<uint32_t>(&c.chunksize)->default_value(500), "max. chunk size to merge groups of BCF files")
     ("vaf,a", boost::program_options::value<float>(&c.vaf)->default_value(0.15), "min. fractional ALT support")
-    ("coverage,v", boost::program_options::value<uint32_t>(&c.coverage)->default_value(10), "min. coverage")
+    ("coverage,v", boost::program_options::value<uint32_t>(&c.coverage)->default_value(5), "min. coverage")
     ("minsize,m", boost::program_options::value<uint32_t>(&c.minsize)->default_value(0), "min. SV size")
     ("maxsize,n", boost::program_options::value<uint32_t>(&c.maxsize)->default_value(1000000), "max. SV size")
     ("cnvmode,e", "Merge delly CNV files")
