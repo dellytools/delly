@@ -35,12 +35,19 @@ namespace torali {
 
 
   struct AsmConfig {
+    bool hasVcfFile;
     uint16_t minMapQual;
     uint32_t minClip;
+    uint32_t minCliqueSize;
+    uint32_t graphPruning;
     uint32_t minRefSep;
     uint32_t maxReadSep;
+    int32_t minConsWindow;
+    int32_t minimumFlankSize;
+    int32_t indelsize;
     int32_t nchr;
     int32_t maxInsertionSize;
+    float flankQuality;
     std::set<int32_t> svtset;
     boost::filesystem::path outfile;
     std::vector<boost::filesystem::path> files;
@@ -48,72 +55,6 @@ namespace torali {
     std::vector<std::string> sampleName;
   };
 
-  template<typename TConfig>
-  inline void
-  outputAsmSVs(TConfig const& c, std::vector<std::vector<SRBamRecord> > const& br) {
-    // Output file
-    std::streambuf* buf;
-    std::ofstream of;
-    if (c.outfile != "-") {
-      of.open(c.outfile.string().c_str());
-      buf = of.rdbuf();
-    } else {
-      buf = std::cout.rdbuf();
-    }
-    std::ostream sfile(buf);    
-    
-    // Header
-    sfile << "chr1\tpos1\tchr2\tpos2\tsvtype\tct\tqname\tqual\tinslen" << std::endl;
-
-    // Hash reads
-    typedef std::map<std::size_t, std::string> THashMap;
-    THashMap hm;
-    typedef std::vector<samFile*> TSamFile;
-    typedef std::vector<hts_idx_t*> TIndex;
-    TSamFile samfile(c.files.size());
-    TIndex idx(c.files.size());
-    for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
-      samfile[file_c] = sam_open(c.files[file_c].string().c_str(), "r");
-      hts_set_fai_filename(samfile[file_c], c.genome.string().c_str());
-      idx[file_c] = sam_index_load(samfile[file_c], c.files[file_c].string().c_str());
-    }
-    bam_hdr_t* hdr = sam_hdr_read(samfile[0]);
-    for(int32_t refIndex = 0; refIndex < hdr->n_targets; ++refIndex) {
-      for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
-	hts_itr_t* iter = sam_itr_queryi(idx[file_c], refIndex, 0, hdr->target_len[refIndex]);
-	bam1_t* rec = bam_init1();
-	while (sam_itr_next(samfile[file_c], iter, rec) >= 0) {
-	  if (rec->core.flag & (BAM_FQCFAIL | BAM_FDUP | BAM_FUNMAP)) continue;
-	  std::size_t seed = hash_lr(rec);
-	  std::string qname = bam_get_qname(rec);
-	  if (hm.find(seed) == hm.end()) hm.insert(std::make_pair(seed, qname));
-	  else {
-	    if (hm[seed] != qname) {
-	      std::cerr << "Warning: Hash collision! " << seed << ',' << hm[seed] << ',' << c.files[file_c].string() << ',' << qname << std::endl;
-	    }
-	  }
-	}
-	bam_destroy1(rec);
-	hts_itr_destroy(iter);
-      }
-    }
-    
-    // SVs
-    for(uint32_t svt = 0; svt < br.size(); ++svt) {
-      for(uint32_t i = 0; i < br[svt].size(); ++i) {
-	sfile << hdr->target_name[br[svt][i].chr] << '\t' << br[svt][i].pos << '\t' << hdr->target_name[br[svt][i].chr2] << '\t' << br[svt][i].pos2 << '\t' << _addID(svt) << '\t' << _addOrientation(svt) << '\t' << hm[br[svt][i].id] << '\t' << br[svt][i].qual << '\t' << br[svt][i].inslen << std::endl;
-      }
-    }
-
-    // Clean-up
-    bam_hdr_destroy(hdr);
-    for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
-      hts_idx_destroy(idx[file_c]);
-      sam_close(samfile[file_c]);
-    }
-    if (c.outfile != "-") of.close();
-  }
-  
   template<typename TConfig, typename TReadBp>
   inline void
   findAsmJunctions(TConfig const& c, TReadBp& readBp) {
@@ -212,38 +153,244 @@ namespace torali {
     findAsmJunctions(c, readBp);
     fetchSVs(c, readBp, srBR);
   }
+
+
+  template<typename TConfig, typename TSRStore>
+  inline void
+  _findAsmStructuralVariants(TConfig const& c, std::vector<StructuralVariantRecord>& svs, TSRStore& srStore) {
+    // Assembly splits
+    typedef std::vector<SRBamRecord> TSRBamRecord;
+    typedef std::vector<TSRBamRecord> TSvtSRBamRecord;
+    TSvtSRBamRecord srBR(2 * DELLY_SVT_TRANS, TSRBamRecord());
+    
+    // Find SR breakpoints
+    _findAsmBreakpoints(c, srBR);
+   
+    // Cluster SVs
+    int32_t ci = 10;
+    for(uint32_t svt = 0; svt < srBR.size(); ++svt) {
+      if (srBR[svt].empty()) continue;
+      // Sort
+      std::sort(srBR[svt].begin(), srBR[svt].end(), SortSRBamRecord<SRBamRecord>());
+      // Cluster
+      cluster(c, srBR[svt], svs, svt);
+      // Add singletons
+      int32_t svid = svs.size();
+      for(uint32_t i = 0; i<srBR[svt].size(); ++i) {
+	if (srBR[svt][i].svid == -1) {
+	  srBR[svt][i].svid = svid;
+	  svs.push_back(StructuralVariantRecord(srBR[svt][i].chr, srBR[svt][i].pos, srBR[svt][i].chr2, srBR[svt][i].pos2, -ci, ci, -ci, ci, 1,srBR[svt][i].qual, srBR[svt][i].qual, srBR[svt][i].inslen, svt, svid));
+	  ++svid;
+	}
+      }
+      //outputStructuralVariants(c, svs, srBR, svt, true);
+
+      // Track split-reads
+      for(uint32_t i = 0; i < srBR[svt].size(); ++i) {
+	if (srBR[svt][i].svid != -1){
+	  if (srStore.find(srBR[svt][i].id) == srStore.end()) srStore.insert(std::make_pair(srBR[svt][i].id, std::vector<SeqSlice>()));
+	  srStore[srBR[svt][i].id].push_back(SeqSlice(srBR[svt][i].svid, srBR[svt][i].sstart, srBR[svt][i].inslen, srBR[svt][i].qual));
+	}
+      }
+    }
+  }
+
+
+  template<typename TConfig, typename TSRStore>
+  inline void
+  _setAsmConsensus(TConfig const& c, std::vector<StructuralVariantRecord>& svs, TSRStore& srStore) {
+    // Open file handles
+    typedef std::vector<samFile*> TSamFile;
+    typedef std::vector<hts_idx_t*> TIndex;
+    TSamFile samfile(c.files.size());
+    TIndex idx(c.files.size());
+    for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
+      samfile[file_c] = sam_open(c.files[file_c].string().c_str(), "r");
+      hts_set_fai_filename(samfile[file_c], c.genome.string().c_str());
+      idx[file_c] = sam_index_load(samfile[file_c], c.files[file_c].string().c_str());
+    }
+    bam_hdr_t* hdr = sam_hdr_read(samfile[0]);
+
+    // Parse BAM
+    boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
+    std::cerr << '[' << boost::posix_time::to_simple_string(now) << "] " << "Parse assembly alleles" << std::endl;
+
+    // Derive consensus sequences from assemblies
+    for(int32_t refIndex = 0; refIndex < hdr->n_targets; ++refIndex) {
+      for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
+	// Read alignments (full chromosome because primary alignments might be somewhere else)
+	hts_itr_t* iter = sam_itr_queryi(idx[file_c], refIndex, 0, hdr->target_len[refIndex]);
+	bam1_t* rec = bam_init1();
+	while (sam_itr_next(samfile[file_c], iter, rec) >= 0) {
+	  // Only primary alignments with the full sequence information
+	  if (rec->core.flag & (BAM_FQCFAIL | BAM_FDUP | BAM_FUNMAP | BAM_FSECONDARY | BAM_FSUPPLEMENTARY)) continue;
+
+	  std::size_t seed = hash_lr(rec);
+	  if (srStore.find(seed) != srStore.end()) {
+	    // Get sequence
+	    std::string sequence;
+	    sequence.resize(rec->core.l_qseq);
+	    uint8_t* seqptr = bam_get_seq(rec);
+	    for (int i = 0; i < rec->core.l_qseq; ++i) sequence[i] = "=ACMGRSVTWYHKDBN"[bam_seqi(seqptr, i)];
+	    int32_t readlen = sequence.size();
+
+	    // Iterate all spanned SVs
+	    for(uint32_t ri = 0; ri < srStore[seed].size(); ++ri) {
+	      SeqSlice seqsl = srStore[seed][ri];
+	      int32_t svid = seqsl.svid;
+
+	      // Extract subsequence
+	      int32_t window = c.minConsWindow;
+	      // Add breakpoint uncertainty
+	      window += std::max(svs[svid].ciposhigh - svs[svid].ciposlow, svs[svid].ciendhigh - svs[svid].ciendlow);
+	      window += seqsl.inslen;
+	      int32_t sPos = seqsl.sstart - window;
+	      int32_t ePos = seqsl.sstart + window;
+	      if (rec->core.flag & BAM_FREVERSE) {
+		sPos = (readlen - seqsl.sstart) - window;
+		ePos = (readlen - seqsl.sstart) + window;
+	      }
+	      if (sPos < 0) sPos = 0;
+	      if (ePos > (int32_t) readlen) ePos = readlen;
+	      if (((ePos - sPos) > window) && ((ePos - sPos) < 100000)) {
+		if ((ePos - sPos) > (int32_t) svs[svid].consensus.size()) {
+		  svs[svid].consensus = sequence.substr(sPos, (ePos - sPos));
+		  //std::cerr << bam_get_qname(rec) << ',' << sPos << ',' << consBp << ',' << ePos << ":" << window << "\t" << sequence.substr(sPos, (ePos - sPos)) << std::endl;
+		}
+	      }
+	    }
+	  }
+	}
+	bam_destroy1(rec);
+	hts_itr_destroy(iter);
+      }
+    }
+
+    // Align consensus sequences
+    faidx_t* fai = fai_load(c.genome.string().c_str());
+    for(int32_t refIndex=0; refIndex < (int32_t) hdr->n_targets; ++refIndex) {
+      char* seq = NULL;
+      for(int32_t refIndex2 = 0; refIndex2 <= refIndex; ++refIndex2) {
+	char* sndSeq = NULL;
+	for(uint32_t svid = 0; svid < svs.size(); ++svid) {
+	  if (svs[svid].chr == refIndex) {
+	    bool computeAlign = false;
+	    if (!svs[svid].consensus.empty()) {
+	      if (_translocation(svs[svid].svt)) {
+		if ((refIndex2 != refIndex) && (svs[svid].chr2 == refIndex2)) {
+		  // Lazy loading of references
+		  if (sndSeq == NULL) {
+		    int32_t seqlen = -1;
+		    std::string tname(hdr->target_name[refIndex2]);
+		    sndSeq = faidx_fetch_seq(fai, tname.c_str(), 0, hdr->target_len[refIndex2], &seqlen);
+		  }
+		  computeAlign = true;
+		}
+	      } else {
+		if ((refIndex2 == refIndex) && (svs[svid].chr2 == refIndex2)) computeAlign = true;
+	      }
+	      if (computeAlign) {
+		// Lazy loading of references
+		if (seq == NULL) {
+		  int32_t seqlen = -1;
+		  std::string tname(hdr->target_name[refIndex]);
+		  seq = faidx_fetch_seq(fai, tname.c_str(), 0, hdr->target_len[refIndex], &seqlen);
+		}
+		// Align consensus
+		if (!alignConsensus(c, hdr, seq, sndSeq, svs[svid], true)) {
+		  svs[svid].consensus = "";
+		  svs[svid].srSupport = 0;
+		  svs[svid].srAlignQuality = 0;
+		}
+	      }
+	    } else {
+	      svs[svid].consensus = "";
+	      svs[svid].srSupport = 0;
+	      svs[svid].srAlignQuality = 0;
+	    }
+	  }
+	}
+	if (sndSeq != NULL) free(sndSeq);
+      }
+      // Set tag alleles
+      for(uint32_t svid = 0; svid < svs.size(); ++svid) {
+	if ((svs[svid].chr == refIndex) && (svs[svid].alleles.empty())) {
+	  svs[svid].alleles = _addAlleles(boost::to_upper_copy(std::string(seq + svs[svid].svStart - 1, seq + svs[svid].svStart)), std::string(hdr->target_name[svs[svid].chr2]), svs[svid], svs[svid].svt);
+	}
+      }
+      if (seq != NULL) free(seq);
+    }
+
+    // Clean-up
+    bam_hdr_destroy(hdr);
+    for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
+      hts_idx_destroy(idx[file_c]);
+      sam_close(samfile[file_c]);
+    }
+  }
   
  template<typename TConfig>
  inline int32_t
  runAsm(TConfig& c) {
-
+   
 #ifdef PROFILE
    ProfilerStart("delly.prof");
 #endif
-
    // Structural Variants
    typedef std::vector<StructuralVariantRecord> TVariants;
    TVariants svs;
 
-   // Open header
-   samFile* samfile = sam_open(c.files[0].string().c_str(), "r");
-   bam_hdr_t* hdr = sam_hdr_read(samfile);
+   // Split-read store
+   typedef std::vector<SeqSlice> TSeqSliceVector;
+   typedef boost::unordered_map<std::size_t, TSeqSliceVector> TReadSeqSlices;
+   TReadSeqSlices srStore;
 
-   // Assembly splits
-   typedef std::vector<SRBamRecord> TSRBamRecord;
-   typedef std::vector<TSRBamRecord> TSvtSRBamRecord;
-   TSvtSRBamRecord srBR(2 * DELLY_SVT_TRANS, TSRBamRecord());
+   // Find candidate SVs
+   _findAsmStructuralVariants(c, svs, srStore);   
+     
+   // Set consensus sequence
+   _setAsmConsensus(c, svs, srStore);
+   
+   // Sort SVs
+   sort(svs.begin(), svs.end(), SortSVs<StructuralVariantRecord>());
 
-   // Find SR breakpoints
-   _findAsmBreakpoints(c, srBR);
+   // Re-number SVs
+   uint32_t cliqueCount = 0;
+   for(typename TVariants::iterator svIt = svs.begin(); svIt != svs.end(); ++svIt, ++cliqueCount) {
+     svIt->id = cliqueCount;
+     // Some dummy values to get a PASS value
+     svIt->srSupport = 10;
+     svIt->mapq *= 10;
+   }
 
-   // Output SVs
-   outputAsmSVs(c, srBR);
+   // Annotate junction reads
+   typedef std::vector<JunctionCount> TSVJunctionMap;
+   typedef std::vector<TSVJunctionMap> TSampleSVJunctionMap;
+   TSampleSVJunctionMap jctMap;
 
-   // Clean-up
-   bam_hdr_destroy(hdr);
-   sam_close(samfile);
+   // Annotate spanning coverage
+   typedef std::vector<SpanningCount> TSVSpanningMap;
+   typedef std::vector<TSVSpanningMap> TSampleSVSpanningMap;
+   TSampleSVSpanningMap spanMap;
+   
+   // Annotate coverage
+   typedef std::vector<ReadCount> TSVReadCount;
+   typedef std::vector<TSVReadCount> TSampleSVReadCount;
+   TSampleSVReadCount rcMap;
 
+   // Initialize count maps
+   /*
+   for(uint32_t file_c = 0; file_c < c.files.size(); ++file_c) {
+     jctMap[file_c].resize(svs.size(), JunctionCount());
+     spanMap[file_c].resize(svs.size(), SpanningCount());
+     rcMap[file_c].resize(svs.size(), ReadCount());
+   }
+   */
+
+   // VCF Output
+   c.files.clear(); // To enforce SV site list
+   vcfOutput(c, svs, jctMap, rcMap, spanMap);
+   
 #ifdef PROFILE
    ProfilerStop();
 #endif
@@ -257,6 +404,9 @@ namespace torali {
 
  int asmode(int argc, char **argv) {
    AsmConfig c;
+   c.hasVcfFile = true;
+   c.minCliqueSize = 2;
+   c.graphPruning = 1000;
    
    // Parameter
    std::string svtype;
@@ -279,6 +429,14 @@ namespace torali {
      ("max-isize,r", boost::program_options::value<int32_t>(&c.maxInsertionSize)->default_value(10000), "max. insertion size")
      ;
 
+   boost::program_options::options_description cons("Consensus options");
+   cons.add_options()
+     ("cons-window,w", boost::program_options::value<int32_t>(&c.minConsWindow)->default_value(1000), "consensus window")
+     ("flank-size,f", boost::program_options::value<int32_t>(&c.minimumFlankSize)->default_value(100), "min. flank size")
+     ("flank-quality,a", boost::program_options::value<float>(&c.flankQuality)->default_value(0.9), "min. flank quality")
+     ("indel-size,i", boost::program_options::value<int32_t>(&c.indelsize)->default_value(10000), "use exact alleles for InDels <10kbp")
+     ;
+
    boost::program_options::options_description hidden("Hidden options");
    hidden.add_options()
      ("input-file", boost::program_options::value< std::vector<boost::filesystem::path> >(&c.files), "input file")
@@ -288,9 +446,9 @@ namespace torali {
    pos_args.add("input-file", -1);
    
    boost::program_options::options_description cmdline_options;
-   cmdline_options.add(generic).add(disc).add(hidden);
+   cmdline_options.add(generic).add(disc).add(cons).add(hidden);
    boost::program_options::options_description visible_options;
-   visible_options.add(generic).add(disc);
+   visible_options.add(generic).add(disc).add(cons);
    boost::program_options::variables_map vm;
    boost::program_options::store(boost::program_options::command_line_parser(argc, argv).options(cmdline_options).positional(pos_args).run(), vm);
    boost::program_options::notify(vm);
