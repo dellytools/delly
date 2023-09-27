@@ -171,6 +171,8 @@ namespace torali {
       if (srBR[svt].empty()) continue;
       // Sort
       std::sort(srBR[svt].begin(), srBR[svt].end(), SortSRBamRecord<SRBamRecord>());
+      //outputSRBamRecords(c, srBR, true);
+
       // Cluster
       cluster(c, srBR[svt], svs, svt);
       // Add singletons
@@ -242,11 +244,10 @@ namespace torali {
 	      int32_t window = c.minConsWindow;
 	      // Add breakpoint uncertainty
 	      window += std::max(svs[svid].ciposhigh - svs[svid].ciposlow, svs[svid].ciendhigh - svs[svid].ciendlow);
-	      window += seqsl.inslen;
 	      int32_t sPos = seqsl.sstart - window;
-	      int32_t ePos = seqsl.sstart + window;
+	      int32_t ePos = seqsl.sstart + window + seqsl.inslen;
 	      if (rec->core.flag & BAM_FREVERSE) {
-		sPos = (readlen - seqsl.sstart) - window;
+		sPos = (readlen - seqsl.sstart) - window - seqsl.inslen;
 		ePos = (readlen - seqsl.sstart) + window;
 	      }
 	      if (sPos < 0) sPos = 0;
@@ -254,7 +255,7 @@ namespace torali {
 	      if (((ePos - sPos) > window) && ((ePos - sPos) < 100000)) {
 		if ((ePos - sPos) > (int32_t) svs[svid].consensus.size()) {
 		  svs[svid].consensus = sequence.substr(sPos, (ePos - sPos));
-		  //std::cerr << bam_get_qname(rec) << ',' << sPos << ',' << consBp << ',' << ePos << ":" << window << "\t" << sequence.substr(sPos, (ePos - sPos)) << std::endl;
+		  //std::cerr << svs[svid].svStart << ',' << bam_get_qname(rec) << ',' << sPos << ',' << ePos << ":" << window << "\t" << svs[svid].consensus << std::endl;
 		}
 	      }
 	    }
@@ -296,7 +297,9 @@ namespace torali {
 		  seq = faidx_fetch_seq(fai, tname.c_str(), 0, hdr->target_len[refIndex], &seqlen);
 		}
 		// Align consensus
-		if (!alignConsensus(c, hdr, seq, sndSeq, svs[svid], true)) {
+		bool realign = true;
+		if (svs[svid].svt == 4) realign = false;
+		if (!alignConsensus(c, hdr, seq, sndSeq, svs[svid], realign)) {
 		  svs[svid].consensus = "";
 		  svs[svid].srSupport = 0;
 		  svs[svid].srAlignQuality = 0;

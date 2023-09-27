@@ -741,6 +741,12 @@ namespace torali
     if (bp.chr != bp.chr2) bp.part1 = _getSVRef(c, sndSeq, bp, bp.chr2, sv.svt);
     std::string svRefStr = _getSVRef(c, seq, bp, bp.chr, sv.svt);
 
+    // Debug
+    //std::cerr << ">Cons:" << sv.svStart << std::endl;
+    //std::cerr << sv.consensus << std::endl;
+    //std::cerr << ">Ref:" << sv.svStart << std::endl;
+    //std::cerr << svRefStr << std::endl;
+
     // Generate consensus alignment
     return _alignConsensus(c, sv.consensus, svRefStr, sv, bp, realign);
   }
