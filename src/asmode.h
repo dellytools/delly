@@ -46,7 +46,6 @@ namespace torali {
     int32_t minimumFlankSize;
     int32_t indelsize;
     int32_t nchr;
-    int32_t maxInsertionSize;
     float flankQuality;
     std::set<int32_t> svtset;
     boost::filesystem::path outfile;
@@ -340,27 +339,32 @@ namespace torali {
    typedef std::vector<StructuralVariantRecord> TVariants;
    TVariants svs;
 
-   // Split-read store
-   typedef std::vector<SeqSlice> TSeqSliceVector;
-   typedef boost::unordered_map<std::size_t, TSeqSliceVector> TReadSeqSlices;
-   TReadSeqSlices srStore;
-
-   // Find candidate SVs
-   _findAsmStructuralVariants(c, svs, srStore);   
+   {
+     TVariants svc;
      
-   // Set consensus sequence
-   _setAsmConsensus(c, svs, srStore);
-   
-   // Sort SVs
-   sort(svs.begin(), svs.end(), SortSVs<StructuralVariantRecord>());
+     // Split-read store
+     typedef std::vector<SeqSlice> TSeqSliceVector;
+     typedef boost::unordered_map<std::size_t, TSeqSliceVector> TReadSeqSlices;
+     TReadSeqSlices srStore;
 
-   // Re-number SVs
-   uint32_t cliqueCount = 0;
-   for(typename TVariants::iterator svIt = svs.begin(); svIt != svs.end(); ++svIt, ++cliqueCount) {
-     svIt->id = cliqueCount;
-     // Some dummy values to get a PASS value
-     svIt->srSupport = 10;
-     svIt->mapq *= 10;
+     // Find candidate SVs
+     _findAsmStructuralVariants(c, svc, srStore);   
+     
+     // Set consensus sequence
+     _setAsmConsensus(c, svc, srStore);
+   
+     // Sort SVs
+     sort(svc.begin(), svc.end(), SortSVs<StructuralVariantRecord>());
+
+     // Filter SVs
+     uint32_t idCount = 0;
+     for(uint32_t i = 0; i < svc.size(); ++i) {
+       if (svc[i].consensus.empty()) continue;
+       svc[i].srSupport = 10;
+       svc[i].mapq *= 10;
+       svc[i].id = idCount++;
+       svs.push_back(svc[i]);
+     }
    }
 
    // Annotate junction reads
@@ -423,7 +427,6 @@ namespace torali {
      ("minclip,c", boost::program_options::value<uint32_t>(&c.minClip)->default_value(25), "min. clipping length")
      ("minrefsep,m", boost::program_options::value<uint32_t>(&c.minRefSep)->default_value(30), "min. reference separation")
      ("maxreadsep,n", boost::program_options::value<uint32_t>(&c.maxReadSep)->default_value(100), "max. read separation")
-     ("max-isize,r", boost::program_options::value<int32_t>(&c.maxInsertionSize)->default_value(10000), "max. insertion size")
      ;
 
    boost::program_options::options_description cons("Consensus options");
