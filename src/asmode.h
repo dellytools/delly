@@ -330,6 +330,7 @@ namespace torali {
     }
 
     // Clean-up
+    fai_destroy(fai);	
     bam_hdr_destroy(hdr);
     for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
       hts_idx_destroy(idx[file_c]);
