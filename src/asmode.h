@@ -317,6 +317,12 @@ namespace torali {
       // Set tag alleles
       for(uint32_t svid = 0; svid < svs.size(); ++svid) {
 	if ((svs[svid].chr == refIndex) && (svs[svid].alleles.empty())) {
+	  // Lazy loading of references
+	  if (seq == NULL) {
+	    int32_t seqlen = -1;
+	    std::string tname(hdr->target_name[refIndex]);
+	    seq = faidx_fetch_seq(fai, tname.c_str(), 0, hdr->target_len[refIndex], &seqlen);
+	  }
 	  svs[svid].alleles = _addAlleles(boost::to_upper_copy(std::string(seq + svs[svid].svStart - 1, seq + svs[svid].svStart)), std::string(hdr->target_name[svs[svid].chr2]), svs[svid], svs[svid].svt);
 	}
       }
