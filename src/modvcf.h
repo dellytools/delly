@@ -213,8 +213,12 @@ vcfParse(TConfig const& c, bam_hdr_t* hd, std::vector<TStructuralVariantRecord>&
       svRec.id = svs.size();
       svRec.mapq = rec->qual;
       std::string refAllele = rec->d.allele[0];
-      std::string altAllele = rec->d.allele[1];
-      svRec.alleles = refAllele + "," + altAllele;
+      if ((!refAllele.empty()) && (refAllele != ".")) {
+	std::string altAllele = rec->d.allele[1];
+	if ((!altAllele.empty()) && (altAllele != ".")) {
+	  svRec.alleles = refAllele + "," + altAllele;
+	}
+      }
 
       // Parse SV type
       if ((bcf_get_info_string(hdr, rec, "SVTYPE", &svt, &nsvt) > 0) && (bcf_get_info_string(hdr, rec, "CT", &ct, &nct) > 0)) svRec.svt = _decodeOrientation(std::string(ct), std::string(svt));

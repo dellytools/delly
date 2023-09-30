@@ -130,7 +130,6 @@ namespace torali
     
     faidx_t* fai = fai_load(c.genome.string().c_str());
     for(int32_t refIndex=0; refIndex < (int32_t) hdr[0]->n_targets; ++refIndex) {
-
       // Fetch breakpoints
       typedef std::multimap<int32_t, int32_t> TBreakpointMap;
       TBreakpointMap bpMap;
@@ -139,7 +138,7 @@ namespace torali
 	if (itSV->chr2 == refIndex) bpMap.insert(std::make_pair(itSV->svEnd, itSV->id));
       }
       if (bpMap.empty()) continue;
-
+      
       // Load sequence
       int32_t seqlen = -1;
       std::string tname(hdr[0]->target_name[refIndex]);
@@ -180,7 +179,7 @@ namespace torali
 		rp += bam_cigar_oplen(cigar[i]);
 	      }
 	    }
-	  }	  
+	  }
 	  
 	  // Only primary alignments for genotyping (full sequence)
 	  if (rec->core.flag & (BAM_FQCFAIL | BAM_FDUP | BAM_FUNMAP | BAM_FSUPPLEMENTARY | BAM_FSECONDARY)) continue;
@@ -193,9 +192,11 @@ namespace torali
 	  int32_t rEnd = _readEnd(rec);
 	  if (rEnd > c.minimumFlankSize) {
 	    rEnd -= c.minimumFlankSize;
-	    TBreakpointMap::const_iterator itBegin = bpMap.lower_bound(rStart);
-	    TBreakpointMap::const_iterator itEnd = bpMap.upper_bound(rEnd);
-	    for(;itBegin != itEnd; ++itBegin) process.insert(itBegin->second);
+	    if (rStart < rEnd) {
+	      TBreakpointMap::const_iterator itBegin = bpMap.lower_bound(rStart);
+	      TBreakpointMap::const_iterator itEnd = bpMap.upper_bound(rEnd);
+	      for(;((itBegin != itEnd) && (itBegin != bpMap.end())); ++itBegin) process.insert(itBegin->second);
+	    }
 	  }
 
 	  // Genotype SVs
@@ -239,7 +240,7 @@ namespace torali
 	      std::string ref = boost::to_upper_copy(std::string(seq + pos - offset, seq + pos + offset));
 	      std::string alt = svs[svid].consensus.substr(consBp - offset, 2 * offset);
 	      std::string probe = sequence.substr(spBp - offset, 2 * offset);
-
+	      
 	      // Edit distances
 	      int32_t refScore = _editDistanceNW(ref, probe);
 	      if ( ((svs[svid].svt == 0) && (pos == svs[svid].svEnd)) ||

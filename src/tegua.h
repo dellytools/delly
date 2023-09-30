@@ -168,7 +168,7 @@ namespace torali {
 
    // SV Genotyping
    genotypeLR(c, svs, jctMap, rcMap);
-
+   
    // VCF Output
    vcfOutput(c, svs, jctMap, rcMap, spanMap);
 
