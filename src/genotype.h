@@ -109,12 +109,20 @@ namespace torali
       idx[file_c] = sam_index_load(samfile[file_c], c.files[file_c].string().c_str());
       hdr[file_c] = sam_hdr_read(samfile[file_c]);
     }
+
+    // Count aligned reads per SV
+    typedef std::vector<uint32_t> TSVReadCount;
+    typedef std::vector<TSVReadCount> TSVFileReadCount;
+    TSVFileReadCount readSV(c.files.size());
     
     // Ref aligned reads
     typedef std::vector<uint32_t> TRefAlignCount;
     typedef std::vector<TRefAlignCount> TFileRefAlignCount;
     TFileRefAlignCount refAlignedReadCount(c.files.size(), TRefAlignCount());
-    for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) refAlignedReadCount[file_c].resize(svs.size(), 0);
+    for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
+      readSV[file_c].resize(svs.size(), 0);
+      refAlignedReadCount[file_c].resize(svs.size(), 0);
+    }
 
     // Dump file
     boost::iostreams::filtering_ostream dumpOut;
@@ -204,6 +212,9 @@ namespace torali
 	  for(typename TSVSet::const_iterator it = process.begin(); it != process.end(); ++it) {
 	    int32_t svid = *it;
 	    if ((jctMap[file_c][svid].ref.size() + jctMap[file_c][svid].alt.size()) >= c.maxGenoReadCount) continue;
+	    // Enough candidates?
+	    if (readSV[file_c][svid] >= c.maxGenoReadCount) continue;
+	    ++readSV[file_c][svid];
 
 	    // Which SV breakpoint does the read overlap
 	    std::vector<int32_t> candidates;
@@ -229,7 +240,7 @@ namespace torali
 	      int32_t offset = std::min(std::min(rStartOffset, cStartOffset), std::min(rEndOffset, cEndOffset));
 	      if (offset < c.minimumFlankSize) continue;
 	      if (2 * offset < c.minConsWindow) continue;
-	    
+
 	      // Load sequence
 	      if (sequence.empty()) {
 		sequence.resize(rec->core.l_qseq);
