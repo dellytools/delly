@@ -380,15 +380,27 @@ namespace torali
 
 	// Find better SV
 	double gqsum1 = 0;
+	uint32_t gqn1 = 0;
 	double gqsum2 = 0;
+	uint32_t gqn2 = 0;
 	for(uint32_t k = 0; k < allsv[i].gq.size(); ++k) {
-	  gqsum1 += allsv[i].gq[k];
-	  gqsum2 += allsv[j].gq[k];
+	  if (allsv[i].gt[k] != 0) {
+	    gqsum1 += allsv[i].gq[k];
+	    ++gqn1;
+	  }
+	  if (allsv[j].gt[k] != 0) {
+	    gqsum2 += allsv[j].gq[k];
+	    ++gqn2;
+	  }
 	}
+	// Normalize
 	if ((gqsum1 == 0) && (gqsum2 == 0)) {
 	  // Use QUAL
 	  gqsum1 = allsv[i].qual;
 	  gqsum2 = allsv[j].qual;
+	} else {
+	  gqsum1 /= (double) gqn1;
+	  gqsum2 /= (double) gqn2;
 	}
 	double sharedperc = _sharedCarriers(allsv[i].gt, allsv[j].gt);
 	if (sharedperc < c.sharedcarrier) continue;
