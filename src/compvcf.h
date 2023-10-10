@@ -97,6 +97,7 @@ namespace torali
 	if (basesv[i].svt != compsv[j].svt) continue;
 	if (basesv[i].tid != compsv[j].tid) continue;
 	if (std::abs(basesv[i].svStart - compsv[j].svStart) > c.bpdiff) continue;
+	if (std::abs(basesv[i].svEnd - compsv[j].svEnd) > c.bpdiff) continue;
 	float sizerat = (float) basesv[i].svLen / (float) compsv[j].svLen;
 	if (basesv[i].svLen > compsv[j].svLen) sizerat = (float) compsv[j].svLen / (float) basesv[i].svLen;
 	if (sizerat < c.sizeratio) continue;
@@ -224,7 +225,7 @@ namespace torali
 
       // Check for INS or DEL
       if ((svtVal != "INS") && (svtVal != "DEL")) {
-	//std::cerr << "Warning: " << svtVal << " not implemented yet!" << std::endl;
+	std::cerr << "Warning: " << svtVal << " not implemented yet!" << std::endl;
 	continue;
       }
 
@@ -307,8 +308,6 @@ namespace torali
 	// Min. and max. allele count
 	if ((gtsum >= c.minac) && (gtsum < c.maxac)) {
 	  sv.allele = "";
-	  //if (svtVal == "INS") { if (altSymbol == "NA") sv.allele = std::string(rec->d.allele[1]); }
-	  //else if (svtVal == "DEL") sv.allele = std::string(rec->d.allele[0]);
 	  if (_isKeyPresent(hdr, "CONSENSUS")) {
 	    if (bcf_get_info_string(hdr, rec, "CONSENSUS", &cons, &ncons) > 0) sv.allele = std::string(cons);
 	  }
@@ -341,7 +340,7 @@ namespace torali
     bcf_hdr_destroy(hdr);
     bcf_close(ifile);
 
-    return success;    
+    return success;
   }
 
   inline int
