@@ -200,6 +200,8 @@ namespace torali
 	if (svtVal == "NA") svtVal = altSymbol;
 	else {
 	  if ((altSymbol == "CN0") || (altSymbol == "CN1")) altSymbol = "DEL";
+	  if (altSymbol.substr(0,3) == "INS") altSymbol = "INS";
+	  if (altSymbol.substr(0,3) == "DEL") altSymbol = "DEL";
 	  if (svtVal != altSymbol) {
 	    success=false;
 	    std::cerr << "Error: SV type " << svtVal << " disagrees with symbolic ALT." << std::endl;
