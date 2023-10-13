@@ -52,6 +52,7 @@ namespace torali
     int32_t svLen;
     int32_t svt;
     int32_t qual;
+    int32_t consBp;
     double gtConc;
     double nonrefGtConc;
     std::string id;
@@ -103,22 +104,13 @@ namespace torali
 	if (sizerat < c.sizeratio) continue;
 	// Check SV similarity
 	if ((!basesv[i].allele.empty()) && (!compsv[j].allele.empty())) {
-	  std::string longc;
-	  std::string shortc;
-	  if (basesv[i].allele.size() > compsv[j].allele.size()) {
-	    longc = basesv[i].allele;
-	    int32_t deslen = 0.8  * compsv[j].allele.size();
-	    int32_t offset = (compsv[j].allele.size() - deslen)/2;
-	    shortc = compsv[j].allele.substr(offset, deslen);
-	  } else {
-	    longc = compsv[j].allele;
-	    int32_t deslen = 0.8  * basesv[i].allele.size();
-	    int32_t offset = (basesv[i].allele.size() - deslen)/2;
-	    shortc = basesv[i].allele.substr(offset, deslen);
-	  }
-	  EdlibAlignResult cigar = edlibAlign(shortc.c_str(), shortc.size(), longc.c_str(), longc.size(), edlibNewAlignConfig(-1, EDLIB_MODE_HW, EDLIB_TASK_DISTANCE, NULL, 0));
-	  //printAlignment(shortc, longc, EDLIB_MODE_HW, cigar);
-	  double score = (double) cigar.editDistance / (double) shortc.size();
+	  int32_t leftOffset = std::min(basesv[i].consBp, compsv[j].consBp);
+	  int32_t rightOffset = std::min(basesv[i].allele.size() - basesv[i].consBp, compsv[j].allele.size() - compsv[j].consBp);
+	  std::string seqI = basesv[i].allele.substr(basesv[i].consBp - leftOffset, leftOffset+rightOffset);
+	  std::string seqJ = compsv[j].allele.substr(compsv[j].consBp - leftOffset, leftOffset+rightOffset);
+	  EdlibAlignResult cigar = edlibAlign(seqI.c_str(), seqI.size(), seqJ.c_str(), seqJ.size(), edlibNewAlignConfig(-1, EDLIB_MODE_NW, EDLIB_TASK_DISTANCE, NULL, 0));
+	  //printAlignment(seqI, seqJ, EDLIB_MODE_NW, cigar);
+	  double score = (double) cigar.editDistance / (double) (leftOffset + rightOffset);
 	  edlibFreeAlignResult(cigar);
 	  if (score > c.divergence) continue;
 	}
@@ -156,6 +148,8 @@ namespace torali
     int32_t* svend = NULL;
     int32_t ninslen = 0;
     int32_t* inslen = NULL;
+    int32_t nconsbp = 0;
+    int32_t* consbp = NULL;
     int32_t svEndVal = -1;
     int32_t nsvt = 0;
     char* svt = NULL;
@@ -205,6 +199,7 @@ namespace torali
 	altSymbol = altAllele.substr(1, altAllele.size() - 2);
 	if (svtVal == "NA") svtVal = altSymbol;
 	else {
+	  if ((altSymbol == "CN0") || (altSymbol == "CN1")) altSymbol = "DEL";
 	  if (svtVal != altSymbol) {
 	    success=false;
 	    std::cerr << "Error: SV type " << svtVal << " disagrees with symbolic ALT." << std::endl;
@@ -309,7 +304,12 @@ namespace torali
 	if ((gtsum >= c.minac) && (gtsum < c.maxac)) {
 	  sv.allele = "";
 	  if (_isKeyPresent(hdr, "CONSENSUS")) {
-	    if (bcf_get_info_string(hdr, rec, "CONSENSUS", &cons, &ncons) > 0) sv.allele = std::string(cons);
+	    if (bcf_get_info_string(hdr, rec, "CONSENSUS", &cons, &ncons) > 0) {
+	      if (bcf_get_info_int32(hdr, rec, "CONSBP", &consbp, &nconsbp) > 0) {
+		sv.allele = std::string(cons);
+		sv.consBp = *consbp;
+	      }
+	    }
 	  }
 	  sv.id = std::string(rec->d.id);
 	  if (sv.id == ".") {
@@ -331,6 +331,7 @@ namespace torali
     // Clean-up
     if (svend != NULL) free(svend);
     if (inslen != NULL) free(inslen);
+    if (consbp != NULL) free(consbp);
     if (svt != NULL) free(svt);
     if (gt != NULL) free(gt);
     if (ct != NULL) free(ct);
