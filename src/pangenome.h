@@ -37,10 +37,7 @@ namespace torali {
 
 
   struct GraphConfig {
-    bool hasDumpFile;
-    bool hasVcfFile;
     uint16_t minMapQual;
-    uint16_t minGenoQual;
     uint32_t minClip;
     uint32_t minRefSep;
     uint32_t maxReadSep;
@@ -49,14 +46,11 @@ namespace torali {
     uint32_t maxReadPerSV;
     int32_t nchr;
     int32_t minimumFlankSize;
-    float indelExtension;
     float flankQuality;
     std::set<int32_t> svtset;
     DnaScore<int> aliscore;
-    boost::filesystem::path dumpfile;
     boost::filesystem::path outfile;
     boost::filesystem::path fastqfile;
-    boost::filesystem::path vcffile;
     std::vector<boost::filesystem::path> files;
     boost::filesystem::path genome;
     boost::filesystem::path exclude;
@@ -696,7 +690,7 @@ namespace torali {
    TVariants svs;
 
    // SV Discovery
-   if (!c.hasVcfFile) {
+   if (svs.empty()) {
        
      // Structural Variant Candidates
      typedef std::vector<StructuralVariantRecord> TVariants;
@@ -745,39 +739,8 @@ namespace torali {
      uint32_t cliqueCount = 0;
      for(typename TVariants::iterator svIt = svs.begin(); svIt != svs.end(); ++svIt, ++cliqueCount) svIt->id = cliqueCount;
      outputGraphStructuralVariants(g, svs);
-   } else {
-     // ToDo: Parse VCF
-     //vcfParse(c, hdr, svs);
    }
 
-   // Annotate junction reads
-   typedef std::vector<JunctionCount> TSVJunctionMap;
-   typedef std::vector<TSVJunctionMap> TSampleSVJunctionMap;
-   TSampleSVJunctionMap jctMap(c.files.size());
-
-   // Annotate spanning coverage
-   typedef std::vector<SpanningCount> TSVSpanningMap;
-   typedef std::vector<TSVSpanningMap> TSampleSVSpanningMap;
-   TSampleSVSpanningMap spanMap(c.files.size());
-   
-   // Annotate coverage
-   typedef std::vector<ReadCount> TSVReadCount;
-   typedef std::vector<TSVReadCount> TSampleSVReadCount;
-   TSampleSVReadCount rcMap(c.files.size());
-
-   // Initialize count maps
-   for(uint32_t file_c = 0; file_c < c.files.size(); ++file_c) {
-     jctMap[file_c].resize(svs.size(), JunctionCount());
-     spanMap[file_c].resize(svs.size(), SpanningCount());
-     rcMap[file_c].resize(svs.size(), ReadCount());
-   }
-      
-   // ToDo: SV Genotyping
-   //genotypeLR(c, svs, jctMap, rcMap);
-
-   // VCF Output
-   //vcfOutput(c, svs, jctMap, rcMap, spanMap);
-   
 #ifdef PROFILE
    ProfilerStop();
 #endif
@@ -811,7 +774,6 @@ namespace torali {
      ("mapqual,q", boost::program_options::value<uint16_t>(&c.minMapQual)->default_value(10), "min. mapping quality")
      ("minclip,c", boost::program_options::value<uint32_t>(&c.minClip)->default_value(25), "min. clipping length")
      ("min-clique-size,z", boost::program_options::value<uint32_t>(&c.minCliqueSize)->default_value(3), "min. clique size")
-     ("extension,e", boost::program_options::value<float>(&c.indelExtension)->default_value(0.5), "indel extension penalty")
      ("minrefsep,m", boost::program_options::value<uint32_t>(&c.minRefSep)->default_value(30), "min. graph separation")
      ("maxreadsep,n", boost::program_options::value<uint32_t>(&c.maxReadSep)->default_value(100), "max. read separation")
      ;
@@ -823,13 +785,6 @@ namespace torali {
      ("flank-quality,a", boost::program_options::value<float>(&c.flankQuality)->default_value(0.9), "min. flank quality")
      ;     
    
-   boost::program_options::options_description geno("Genotyping options");
-   geno.add_options()
-     ("vcffile,v", boost::program_options::value<boost::filesystem::path>(&c.vcffile), "input VCF/BCF file for genotyping")
-     ("geno-qual,u", boost::program_options::value<uint16_t>(&c.minGenoQual)->default_value(5), "min. mapping quality for genotyping")
-     ("dump,d", boost::program_options::value<boost::filesystem::path>(&c.dumpfile), "gzipped output file for SV-reads")
-     ;
-
    boost::program_options::options_description hidden("Hidden options");
    hidden.add_options()
      ("input-file", boost::program_options::value< std::vector<boost::filesystem::path> >(&c.files), "input file")
@@ -841,9 +796,9 @@ namespace torali {
    pos_args.add("input-file", -1);
    
    boost::program_options::options_description cmdline_options;
-   cmdline_options.add(generic).add(disc).add(cons).add(geno).add(hidden);
+   cmdline_options.add(generic).add(disc).add(cons).add(hidden);
    boost::program_options::options_description visible_options;
-   visible_options.add(generic).add(disc).add(cons).add(geno);
+   visible_options.add(generic).add(disc).add(cons);
    boost::program_options::variables_map vm;
    boost::program_options::store(boost::program_options::command_line_parser(argc, argv).options(cmdline_options).positional(pos_args).run(), vm);
    boost::program_options::notify(vm);
@@ -865,10 +820,6 @@ namespace torali {
      return 1;
    }
 
-   // Dump reads
-   if (vm.count("dump")) c.hasDumpFile = true;
-   else c.hasDumpFile = false;
-
    // Clique size
    if (c.minCliqueSize < 2) c.minCliqueSize = 2;
 
@@ -888,35 +839,6 @@ namespace torali {
      c.sampleName[file_c] = c.files[file_c].stem().string();
    }
    checkSampleNames(c);
-
-   // Check input VCF file
-   if (vm.count("vcffile")) {
-     if (!(boost::filesystem::exists(c.vcffile) && boost::filesystem::is_regular_file(c.vcffile) && boost::filesystem::file_size(c.vcffile))) {
-       std::cerr << "Input VCF/BCF file is missing: " << c.vcffile.string() << std::endl;
-       return 1;
-     }
-     htsFile* ifile = bcf_open(c.vcffile.string().c_str(), "r");
-     if (ifile == NULL) {
-       std::cerr << "Fail to open file " << c.vcffile.string() << std::endl;
-       return 1;
-     }
-     bcf_hdr_t* hdr = bcf_hdr_read(ifile);
-     if (hdr == NULL) {
-       std::cerr << "Fail to open index file " << c.vcffile.string() << std::endl;
-       return 1;
-     }
-     bcf_hdr_destroy(hdr);
-     bcf_close(ifile);
-     c.hasVcfFile = true;
-   } else c.hasVcfFile = false;
-
-   // Check outfile
-   if (!vm.count("outfile")) c.outfile = "-";
-   else {
-     if (c.outfile.string() != "-") {
-       if (!_outfileValid(c.outfile)) return 1;
-     }
-   }
 
    // Show cmd
    boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();

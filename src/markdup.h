@@ -51,6 +51,7 @@ namespace torali
     int32_t svLen;
     int32_t svt;
     int32_t qual;
+    int32_t consBp;
     std::string id;
     std::string consensus;
     std::vector<float> vaf;
@@ -117,6 +118,8 @@ namespace torali
     // VCF fields
     int32_t nsvend = 0;
     int32_t* svend = NULL;
+    int32_t nconsbp = 0;
+    int32_t* consbp = NULL;
     int32_t svEndVal;
     int32_t nsvt = 0;
     char* svt = NULL;
@@ -209,7 +212,10 @@ namespace torali
 	}
 	if (precise) {
 	  if (bcf_get_info_string(hdr, rec, "CONSENSUS", &cons, &ncons) > 0) {
-	    sv.consensus = boost::to_upper_copy(std::string(cons));
+	    if (bcf_get_info_int32(hdr, rec, "CONSBP", &consbp, &nconsbp) > 0) {
+	      sv.consensus = boost::to_upper_copy(std::string(cons));
+	      sv.consBp = *consbp;
+	    }
 	  }
 	}
 	
@@ -261,6 +267,7 @@ namespace torali
 
     // Clean-up
     if (svend != NULL) free(svend);
+    if (consbp != NULL) free(consbp);
     if (svt != NULL) free(svt);
     if (ct != NULL) free(ct);
     if (inslen != NULL) free(inslen);
@@ -356,27 +363,26 @@ namespace torali
       for(uint32_t j = i + 1; j < allsv.size(); ++j) {
 	if (allsv[i].tid != allsv[j].tid) break;
 	if (allsv[j].svStart - allsv[i].svStart > c.bpdiff) break;
+	if (allsv[i].svt != allsv[j].svt) continue;
+	if (std::abs(allsv[i].svEnd - allsv[j].svEnd) > c.bpdiff) continue;
 	float sizerat = (float) allsv[i].svLen / (float) allsv[j].svLen;
 	if (allsv[i].svLen > allsv[j].svLen) sizerat = (float) allsv[j].svLen / (float) allsv[i].svLen;
 	if (sizerat < c.sizeratio) continue;
-	std::string longc;
-	std::string shortc;
-	if (allsv[i].consensus.size() > allsv[j].consensus.size()) {
-	  longc = allsv[i].consensus;
-	  int32_t deslen = 0.8  * allsv[j].consensus.size();
-	  int32_t offset = (allsv[j].consensus.size() - deslen)/2;
-	  shortc = allsv[j].consensus.substr(offset, deslen);
-	} else {
-	  longc = allsv[j].consensus;
-	  int32_t deslen = 0.8  * allsv[i].consensus.size();
-	  int32_t offset = (allsv[i].consensus.size() - deslen)/2;
-	  shortc = allsv[i].consensus.substr(offset, deslen);
+	// Check SV similarity
+	if ((!allsv[i].consensus.empty()) && (!allsv[j].consensus.empty())) {
+	  int32_t leftOffset = std::min(allsv[i].consBp, allsv[j].consBp);
+	  int32_t rightOffset = std::min(allsv[i].consensus.size() - allsv[i].consBp, allsv[j].consensus.size() - allsv[j].consBp);
+	  std::string seqI = allsv[i].consensus.substr(allsv[i].consBp - leftOffset, leftOffset+rightOffset);
+	  std::string seqJ = allsv[j].consensus.substr(allsv[j].consBp - leftOffset, leftOffset+rightOffset);
+	  EdlibAlignResult cigar = edlibAlign(seqI.c_str(), seqI.size(), seqJ.c_str(), seqJ.size(), edlibNewAlignConfig(-1, EDLIB_MODE_NW, EDLIB_TASK_DISTANCE, NULL, 0));
+	  //printAlignment(seqI, seqJ, EDLIB_MODE_NW, cigar);
+	  double score = (double) cigar.editDistance / (double) (leftOffset + rightOffset);
+	  edlibFreeAlignResult(cigar);
+	  if (score > c.divergence) continue;
 	}
-	EdlibAlignResult cigar = edlibAlign(shortc.c_str(), shortc.size(), longc.c_str(), longc.size(), edlibNewAlignConfig(-1, EDLIB_MODE_HW, EDLIB_TASK_DISTANCE, NULL, 0));
-	//printAlignment(shortc, longc, EDLIB_MODE_HW, cigar);
-	double score = (double) cigar.editDistance / (double) shortc.size();
-	edlibFreeAlignResult(cigar);
-	if (score > c.divergence) continue;
+	// Shared carrier
+	double sharedperc = _sharedCarriers(allsv[i].gt, allsv[j].gt);
+	if (sharedperc < c.sharedcarrier) continue;
 
 	// Find better SV
 	double gqsum1 = 0;
@@ -402,8 +408,6 @@ namespace torali
 	  gqsum1 /= (double) gqn1;
 	  gqsum2 /= (double) gqn2;
 	}
-	double sharedperc = _sharedCarriers(allsv[i].gt, allsv[j].gt);
-	if (sharedperc < c.sharedcarrier) continue;
 
 	// Mark as duplicate
 	// Debug
