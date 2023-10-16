@@ -53,13 +53,15 @@ namespace torali
     int32_t svt;
     int32_t qual;
     int32_t consBp;
+    int32_t score;
+    int32_t bestMatchId;
     double gtConc;
     double nonrefGtConc;
     std::string id;
     std::string allele;
     std::vector<int32_t> gt;
 
-    CompSVRecord() : match(0), tid(0), svStart(0), svEnd(0), svLen(0), svt(0), qual(0), gtConc(0), nonrefGtConc(0), id(""), allele("") {}
+    CompSVRecord() : match(0), tid(0), svStart(0), svEnd(0), svLen(0), svt(0), qual(0), consBp(0), score(0), bestMatchId(0), gtConc(0), nonrefGtConc(0), id(""), allele("") {}
   };
 
   template<typename TSV>
@@ -99,10 +101,12 @@ namespace torali
 	if (basesv[i].tid != compsv[j].tid) continue;
 	if (std::abs(basesv[i].svStart - compsv[j].svStart) > c.bpdiff) continue;
 	if (std::abs(basesv[i].svEnd - compsv[j].svEnd) > c.bpdiff) continue;
+	float bprat = 1 - (float) std::max(std::abs(basesv[i].svStart - compsv[j].svStart), std::abs(basesv[i].svEnd - compsv[j].svEnd)) / (float) (c.bpdiff);
 	float sizerat = (float) basesv[i].svLen / (float) compsv[j].svLen;
 	if (basesv[i].svLen > compsv[j].svLen) sizerat = (float) compsv[j].svLen / (float) basesv[i].svLen;
 	if (sizerat < c.sizeratio) continue;
 	// Check SV similarity
+	float scorerat = 0;
 	if ((!basesv[i].allele.empty()) && (!compsv[j].allele.empty())) {
 	  int32_t leftOffset = std::min(basesv[i].consBp, compsv[j].consBp);
 	  int32_t rightOffset = std::min(basesv[i].allele.size() - basesv[i].consBp, compsv[j].allele.size() - compsv[j].consBp);
@@ -113,6 +117,7 @@ namespace torali
 	  double score = (double) cigar.editDistance / (double) (leftOffset + rightOffset);
 	  edlibFreeAlignResult(cigar);
 	  if (score > c.divergence) continue;
+	  scorerat = 1 - score / c.divergence;
 	}
 	// Match
 	++basesv[i].match;
@@ -123,7 +128,17 @@ namespace torali
 	double nonrefgtconc = nonrefGtConc(basesv[i].gt, compsv[j].gt);
 	if (nonrefgtconc > basesv[i].nonrefGtConc) basesv[i].nonrefGtConc = nonrefgtconc;
 	if (nonrefgtconc > compsv[j].nonrefGtConc) compsv[j].nonrefGtConc = nonrefgtconc;
-	
+
+	// Update best match
+	int32_t matchScore = (int32_t) ((bprat + sizerat + scorerat + gtconc) * 100);
+	if (compsv[j].score < matchScore) {
+	  compsv[j].score = matchScore;
+	  compsv[j].bestMatchId = i;
+	}
+	if (basesv[i].score < matchScore) {
+	  basesv[i].score = (int32_t) ((bprat + sizerat + scorerat + gtconc) * 100);
+	  basesv[i].bestMatchId = j;
+	}
 	//std::cerr << basesv[i].tid << ',' << basesv[i].svStart << ',' << basesv[i].svEnd << ',' << basesv[i].id << ',' << basesv[i].svLen << std::endl;
 	//std::cerr << compsv[j].tid << ',' << compsv[j].svStart << ',' << compsv[j].svEnd << ',' << compsv[j].id << ',' << compsv[j].svLen << std::endl;
       }
@@ -403,12 +418,15 @@ namespace torali
     for(typename CompvcfConfig::TChrMap::const_iterator it = c.chrmap.begin(); it != c.chrmap.end(); ++it) idxchr.insert(std::make_pair(it->second, it->first));
     filename = c.outprefix + ".sv.classification";
     std::ofstream svfile(filename.c_str());
-    svfile << "ID\tClassification\tChrom\tStart\tEnd\tLength\tSVType\tCT\tQuality\tGTConc\tNonRefGTConc\tMatchCountBase\tAlignmentAllele" << std::endl;
+    svfile << "ID\tClassification\tScore\tBestMatchId\tChrom\tStart\tEnd\tLength\tSVType\tCT\tQuality\tGTConc\tNonRefGTConc\tMatchCountBase\tAlignmentAllele" << std::endl;
     for(uint32_t j = 0; j < compsv.size(); ++j) {
       std::string label;
-      if (compsv[j].match) label="TP";
-      else label="FP";
-      svfile << compsv[j].id << '\t' << label << '\t' << idxchr[compsv[j].tid] << '\t' << compsv[j].svStart << '\t' << compsv[j].svEnd << '\t' << compsv[j].svLen << '\t' << _addID(compsv[j].svt) << '\t' << _addOrientation(compsv[j].svt) << '\t' << compsv[j].qual << '\t' << compsv[j].gtConc << '\t' << compsv[j].nonrefGtConc << '\t' << compsv[j].match << '\t' << compsv[j].allele << std::endl;
+      std::string baseSVLabel = "NA";
+      if (compsv[j].match) {
+	label="TP";
+	baseSVLabel = basesv[compsv[j].bestMatchId].id;
+      } else label="FP";
+      svfile << compsv[j].id << '\t' << label << '\t' << compsv[j].score << "\tbase" << baseSVLabel << '\t' << idxchr[compsv[j].tid] << '\t' << compsv[j].svStart << '\t' << compsv[j].svEnd << '\t' << compsv[j].svLen << '\t' << _addID(compsv[j].svt) << '\t' << _addOrientation(compsv[j].svt) << '\t' << compsv[j].qual << '\t' << compsv[j].gtConc << '\t' << compsv[j].nonrefGtConc << '\t' << compsv[j].match << '\t' << compsv[j].allele << std::endl;
     }
     svfile.close();
     
@@ -458,9 +476,9 @@ namespace torali
     
 
     // Check command line arguments
-    if ((vm.count("help")) || (!vm.count("input-file"))) {
+    if ((vm.count("help")) || (!vm.count("input-file")) || (!vm.count("base"))) {
       std::cerr << std::endl;
-      std::cerr << "Usage: delly " << argv[0] << " [OPTIONS] <input.bcf>" << std::endl;
+      std::cerr << "Usage: delly " << argv[0] << " [OPTIONS] -a <base.bcf> <input.bcf>" << std::endl;
       std::cerr << visible_options << "\n";
       return 0;
     }
