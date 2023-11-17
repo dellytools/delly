@@ -41,15 +41,16 @@ RUN cd /opt \
 
 # Multi-stage build
 FROM alpine:latest
+RUN apk add --no-cache bash
 RUN mkdir -p /opt/delly/bin
 WORKDIR /opt/delly/bin
 COPY --from=0 /opt/delly/bin/delly .
 
 # Workdir
-WORKDIR /root/
+WORKDIR /home
 
 # Add Delly to PATH
 ENV PATH="/opt/delly/bin:${PATH}"
 
 # by default /bin/sh is executed
-CMD ["/bin/sh"]
+CMD ["/bin/bash"]
