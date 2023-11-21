@@ -47,6 +47,7 @@ namespace torali
   struct CompSVRecord {
     int32_t match;
     int32_t tid;
+    int32_t mtid;
     int32_t svStart;
     int32_t svEnd;
     int32_t svLen;
@@ -77,6 +78,7 @@ namespace torali
     typedef std::map<std::string, uint32_t> TChrMap;
     bool filterForPass;
     bool checkID;
+    bool checkCT;
     int32_t qualthres;
     int32_t bpdiff;
     int32_t minsize;
@@ -97,13 +99,21 @@ namespace torali
     std::cerr << '[' << boost::posix_time::to_simple_string(boost::posix_time::second_clock::local_time()) << "] " << "Comparing " << compsv.size() << " SVs with " << basesv.size() << " SVs in the base VCF/BCF file " << std::endl;
     for(uint32_t i = 0; i < basesv.size(); ++i) {
       for(uint32_t j = 0; j < compsv.size(); ++j) {
-	if (basesv[i].svt != compsv[j].svt) continue;
+	if (c.checkCT) {
+	  if (basesv[i].svt != compsv[j].svt) continue;
+	} else {
+	  if (_addID(basesv[i].svt) != _addID(compsv[j].svt)) continue;  // Compare SV types (BND, INV,...) but not CT
+	}
 	if (basesv[i].tid != compsv[j].tid) continue;
+	if (basesv[i].mtid != compsv[j].mtid) continue;
 	if (std::abs(basesv[i].svStart - compsv[j].svStart) > c.bpdiff) continue;
 	if (std::abs(basesv[i].svEnd - compsv[j].svEnd) > c.bpdiff) continue;
 	float bprat = 1 - (float) std::max(std::abs(basesv[i].svStart - compsv[j].svStart), std::abs(basesv[i].svEnd - compsv[j].svEnd)) / (float) (c.bpdiff);
-	float sizerat = (float) basesv[i].svLen / (float) compsv[j].svLen;
-	if (basesv[i].svLen > compsv[j].svLen) sizerat = (float) compsv[j].svLen / (float) basesv[i].svLen;
+	float sizerat = 1;
+	if ((basesv[i].svLen) && (compsv[j].svLen)) {
+	  sizerat = (float) basesv[i].svLen / (float) compsv[j].svLen;
+	  if (basesv[i].svLen > compsv[j].svLen) sizerat = (float) compsv[j].svLen / (float) basesv[i].svLen;
+	}
 	if (sizerat < c.sizeratio) continue;
 	// Check SV similarity
 	float scorerat = 0;
@@ -171,6 +181,10 @@ namespace torali
     std::string svtVal;
     int32_t ncons = 0;
     char* cons = NULL;
+    int32_t nchr2 = 0;
+    char* chr2 = NULL;
+    int32_t npos2 = 0;
+    int32_t* pos2 = NULL;
     int32_t nct = 0;
     char* ct = NULL;
     std::string ctVal;
@@ -178,6 +192,7 @@ namespace torali
     int32_t* gt = NULL;
     int32_t inslenVal = -1;
     int32_t svLenVal = 0;
+    std::string chr2Name;
     
     // Parse BCF
     std::cerr << '[' << boost::posix_time::to_simple_string(boost::posix_time::second_clock::local_time()) << "] " << "Parsing VCF/BCF file " << filename << std::endl;
@@ -235,23 +250,52 @@ namespace torali
 	}
       }
 
-      // Check for INS or DEL
-      if ((svtVal != "INS") && (svtVal != "DEL")) {
-	std::cerr << "Warning: " << svtVal << " not implemented yet!" << std::endl;
-	continue;
-      }
-
       // SV end
       if (_isKeyPresent(hdr, "END")) {
-	bcf_get_info_int32(hdr, rec, "END", &svend, &nsvend);
-	svEndVal = *svend;
+	if (bcf_get_info_int32(hdr, rec, "END", &svend, &nsvend) > 0) svEndVal = *svend;
       }
 
       // Insertion length
       if (_isKeyPresent(hdr, "INSLEN")) {
 	if (bcf_get_info_int32(hdr, rec, "INSLEN", &inslen, &ninslen) > 0) inslenVal = *inslen;
       }
-	
+
+      // BNDs
+      if (svtVal == "BND") {
+	int32_t pos2val = -1;
+	if ((_isKeyPresent(hdr, "CHR2")) && (_isKeyPresent(hdr, "POS2"))) {
+	  if (bcf_get_info_int32(hdr, rec, "POS2", &pos2, &npos2) > 0) pos2val = *pos2;
+	  if (bcf_get_info_string(hdr, rec, "CHR2", &chr2, &nchr2) > 0) chr2Name = std::string(chr2);
+	} else {
+	  // Parse ALT
+	  std::vector<std::size_t> posBND;
+	  std::size_t found = altAllele.find('[');
+	  while (found!=std::string::npos) {
+	    posBND.push_back(found);
+	    found = altAllele.find('[', found+1);
+	  }
+	  found = altAllele.find(']');
+	  while (found!=std::string::npos) {
+	    posBND.push_back(found);
+	    found = altAllele.find(']', found+1);
+	  }
+	  std::sort(posBND.begin(), posBND.end());
+	  altAllele = altAllele.substr(posBND[0] + 1, posBND[1] - posBND[0] - 1);
+	  found = altAllele.find(':');
+	  if (found!=std::string::npos) {
+	    chr2Name = altAllele.substr(0, found);
+	    pos2val = boost::lexical_cast<int32_t>(altAllele.substr(found + 1));
+	  }
+	}
+	if ((!chr2Name.empty()) && (pos2val != -1)) {
+	  svEndVal = pos2val;
+	  svLenVal = 0;
+	} else {
+	  success=false;
+	  std::cerr << "Error: Could not parse BND ALT allele " << rec->d.allele[1] << std::endl;
+	}
+      }
+      
       // Assign SV end position
       if (svEndVal == -1) {
 	if (altSymbol == "NA") {
@@ -282,8 +326,9 @@ namespace torali
       if (!boost::math::isnan(rec->qual)) qualVal = rec->qual;
 
       // Assign SV length
-      if (svtVal != "INS") svLenVal = svEndVal - rec->pos;
-      else {
+      if (svtVal != "INS") {
+	if (svtVal != "BND") svLenVal = svEndVal - rec->pos;
+      } else {
 	svEndVal = rec->pos + 1;
 	svLenVal = inslenVal;
       }
@@ -296,8 +341,22 @@ namespace torali
 	std::string chrname = std::string(bcf_hdr_id2name(hdr, rec->rid));
 	if (c.chrmap.find(chrname) == c.chrmap.end()) c.chrmap.insert(std::make_pair(chrname, c.chrmap.size()));
 	sv.tid = c.chrmap[chrname];
+	sv.mtid = sv.tid;
+	if (svtVal == "BND") {
+	  if (c.chrmap.find(chr2Name) == c.chrmap.end()) c.chrmap.insert(std::make_pair(chr2Name, c.chrmap.size()));
+	  sv.mtid = c.chrmap[chr2Name];
+	}
 	sv.svStart = rec->pos;
 	sv.svEnd = svEndVal;
+	// Use some canonical ordering, swap if necessary
+	if ((svtVal == "BND") && (sv.tid > sv.mtid)) {
+	  int32_t tmp = sv.tid;
+	  sv.tid = sv.mtid;
+	  sv.mtid = tmp;
+	  tmp = sv.svStart;
+	  sv.svStart = sv.svEnd;
+	  sv.svEnd = tmp;
+	}
 	sv.svLen = svLenVal;
 	sv.svt = _decodeOrientation(ctVal, svtVal);
 	sv.qual = qualVal;
@@ -353,6 +412,8 @@ namespace torali
     if (gt != NULL) free(gt);
     if (ct != NULL) free(ct);
     if (cons != NULL) free(cons);
+    if (chr2 != NULL) free(chr2);
+    if (pos2 != NULL) free(pos2);
 
     // Close VCF
     bcf_hdr_destroy(hdr);
@@ -455,6 +516,7 @@ namespace torali
       ("outprefix,o", boost::program_options::value<std::string>(&c.outprefix)->default_value("out"), "output prefix")
       ("pass,p", "Filter sites for PASS")
       ("ignore,i", "Ignore duplicate IDs")
+      ("ct,c", "Require matching CT value in addition to SV type")
       ;
     
     // Define hidden options
@@ -490,6 +552,10 @@ namespace torali
     // Check duplicate IDs
     if (vm.count("ignore")) c.checkID = false;
     else c.checkID = true;
+
+    // Check CT
+    if (vm.count("ct")) c.checkCT = true;
+    else c.checkCT = false;
 
     // Check base VCF file
     std::set<std::string> baseSamples;

@@ -9,7 +9,7 @@ chrNamesShort = c("1","2","3","4","5","6","7","8","9","10","11","12","13","14","
 args = commandArgs(trailingOnly=TRUE)
 x = read.table(args[1], header=T)
 minCN = 0
-maxCN = 12
+maxCN = 8
 seg = data.frame()
 if (length(args)>1) {
    seg = read.table(args[2], header=F, sep="\t")
