@@ -375,6 +375,7 @@ namespace torali
 	    }
 	  }
 	}
+	if (gtsum < 0) gtsum = 0;
 	
 	// Min. and max. allele count
 	if ((gtsum >= c.minac) && (gtsum < c.maxac)) {
@@ -428,7 +429,7 @@ namespace torali
     // Load SVs
     std::vector<CompSVRecord> basesv;
     if (!_loadCompSVs(c, c.base.string(), basesv)) return -1;
-
+    
     std::vector<CompSVRecord> compsv;
     if (!_loadCompSVs(c, c.vcffile.string(), compsv)) return -1;
 
