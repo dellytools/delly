@@ -63,6 +63,7 @@ namespace torali
     std::vector<int32_t> gt;
 
     CompSVRecord() : match(0), tid(0), svStart(0), svEnd(0), svLen(0), svt(0), qual(0), consBp(0), score(0), bestMatchId(0), gtConc(0), nonrefGtConc(0), id(""), allele("") {}
+    CompSVRecord(int32_t const t, int32_t const svS) : match(0), tid(t), svStart(svS), svEnd(0), svLen(0), svt(0), qual(0), consBp(0), score(0), bestMatchId(0), gtConc(0), nonrefGtConc(0), id(""), allele("") {}
   };
 
   template<typename TSV>
@@ -96,17 +97,24 @@ namespace torali
 
   inline void
   compareSVs(CompvcfConfig const& c, std::vector<CompSVRecord>& basesv, std::vector<CompSVRecord>& compsv) {
+    typedef std::vector<CompSVRecord> TCompSVType;
+    
     std::cerr << '[' << boost::posix_time::to_simple_string(boost::posix_time::second_clock::local_time()) << "] " << "Comparing " << compsv.size() << " SVs with " << basesv.size() << " SVs in the base VCF/BCF file " << std::endl;
     for(uint32_t i = 0; i < basesv.size(); ++i) {
-      for(uint32_t j = 0; j < compsv.size(); ++j) {
+      int32_t earliestStart = std::max(basesv[i].svStart - (c.bpdiff + 1), 0);
+      typename TCompSVType::const_iterator itsv = std::lower_bound(compsv.begin(), compsv.end(), CompSVRecord(basesv[i].tid, earliestStart), SortCompSVRecord<CompSVRecord>());
+      for(uint32_t j = (itsv - compsv.begin()); j < compsv.size(); ++j) {
+	if (basesv[i].tid < compsv[j].tid) break;  // Sorted by tid
 	if (c.checkCT) {
 	  if (basesv[i].svt != compsv[j].svt) continue;
 	} else {
 	  if (_addID(basesv[i].svt) != _addID(compsv[j].svt)) continue;  // Compare SV types (BND, INV,...) but not CT
 	}
-	if (basesv[i].tid != compsv[j].tid) continue;
 	if (basesv[i].mtid != compsv[j].mtid) continue;
-	if (std::abs(basesv[i].svStart - compsv[j].svStart) > c.bpdiff) continue;
+	if (std::abs(basesv[i].svStart - compsv[j].svStart) > c.bpdiff) {
+	  if ((compsv[j].svStart > basesv[i].svStart) && ((compsv[j].svStart - basesv[i].svStart) > c.bpdiff)) break; // Sorted by tid & svStart
+	  continue;
+	}
 	if (std::abs(basesv[i].svEnd - compsv[j].svEnd) > c.bpdiff) continue;
 	float bprat = 1 - (float) std::max(std::abs(basesv[i].svStart - compsv[j].svStart), std::abs(basesv[i].svEnd - compsv[j].svEnd)) / (float) (c.bpdiff);
 	float sizerat = 1;
