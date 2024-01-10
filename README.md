@@ -149,7 +149,7 @@ Read-depth profiles can also be segmented at the same time.
 
 The segmentation is in VCF format but you can extract a BED-like file using bcftools.
 
-`bcftools query -f "%CHROM\t%POS\t%INFO/END\t%ID\t[%RDCN]\n" cnv.bcf > segmentation.bed`
+`bcftools query -f "%CHROM\t%POS\t%INFO/END\t%ID[\t%RDCN]\n" cnv.bcf > segmentation.bed`
 
 Plotting:
 
@@ -208,7 +208,7 @@ Somatic copy-number alterations (SCNAs)
 
 * Optional: Plot the SCNAs using bcftools and R.
 
-`bcftools query -s tumor -f "%CHROM\t%POS\t%INFO/END\t%ID\t[%RDCN]\n" somatic.bcf > segmentation.bed`
+`bcftools query -s tumor -f "%CHROM\t%POS\t%INFO/END\t%ID[\t%RDCN]\n" somatic.bcf > segmentation.bed`
 
 `Rscript R/rd.R tumor.cov.gz segmentation.bed`
 
