@@ -40,7 +40,7 @@ namespace torali
     uint32_t minCnvSize;
     uint16_t minQual;
     uint16_t mad;
-    uint16_t ploidy;
+    float ploidy;
     float exclgc;
     float uniqueToTotalCovRatio;
     float fracWindow;
@@ -460,7 +460,7 @@ namespace torali
       ("genome,g", boost::program_options::value<boost::filesystem::path>(&c.genome), "genome file")
       ("quality,q", boost::program_options::value<uint16_t>(&c.minQual)->default_value(10), "min. mapping quality")
       ("mappability,m", boost::program_options::value<boost::filesystem::path>(&c.mapFile), "input mappability map")
-      ("ploidy,y", boost::program_options::value<uint16_t>(&c.ploidy)->default_value(2), "baseline ploidy")
+      ("ploidy,y", boost::program_options::value<float>(&c.ploidy)->default_value(2), "baseline ploidy")
       ("outfile,o", boost::program_options::value<boost::filesystem::path>(&c.outfile), "BCF output file")
       ("covfile,c", boost::program_options::value<boost::filesystem::path>(&c.covfile), "gzipped coverage file")
       ;
