@@ -116,7 +116,7 @@ struct BoLog {
     double glObs = std::log10(boost::math::pdf(s, mean));
     glObs = (glObs > SMALLEST_GL) ? glObs : SMALLEST_GL;
     uint32_t plVariant = (uint32_t) boost::math::round(-10 * glObs);
-    uint32_t plPloidy = (uint32_t) boost::math::round(-10 * gl[file_c * MAX_CN + (int) std::round(c.ploidy)]);
+    uint32_t plPloidy = (uint32_t) boost::math::round(-10 * gl[file_c * MAX_CN + boost::math::iround(c.ploidy)]);
     int32_t varqual = plPloidy - plVariant;
     
     // GQ
