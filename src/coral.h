@@ -41,6 +41,9 @@ namespace torali
     uint16_t minQual;
     uint16_t mad;
     float ploidy;
+    float ctrlPloidy;
+    float expectedCN;
+    float purity;
     float exclgc;
     float uniqueToTotalCovRatio;
     float fracWindow;
@@ -59,6 +62,7 @@ namespace torali
     boost::filesystem::path bamFile;
     boost::filesystem::path bedFile;
     boost::filesystem::path scanFile;
+    std::set<int32_t> refIdx;
   };
   
   struct CountDNAConfigLib {
@@ -123,6 +127,14 @@ namespace torali
     faidx_t* faiRef = fai_load(c.genome.string().c_str());
     for(int32_t refIndex=0; refIndex < (int32_t) hdr->n_targets; ++refIndex) {
       if ((!c.hasGenoFile) && (chrNoData(c, refIndex, idx))) continue;
+
+      // Haploid chromosome?
+      float chrCtrlPloidy = c.ctrlPloidy;
+      float chrPloidy = c.ploidy;
+      if (c.refIdx.find(refIndex) != c.refIdx.end()) {
+	chrCtrlPloidy = c.ctrlPloidy - 1;
+	chrPloidy = c.ploidy - 1;
+      }
       
       // Check presence in mappability map
       std::string tname(hdr->target_name[refIndex]);
@@ -288,8 +300,8 @@ namespace torali
 		    if (winlen == c.window_size) {
 		      obsexp /= (double) winlen;
 		      double count = ((double) covsum / obsexp ) * (double) c.window_size / (double) winlen;
-		      double cn = c.ploidy;
-		      if (expcov > 0) cn = c.ploidy * covsum / expcov;
+		      double cn = chrPloidy;
+		      if (expcov > 0) cn = (c.expectedCN * covsum / expcov - chrCtrlPloidy * (1 - c.purity)) / c.purity;
 		      if (!c.covfile.empty()) dataOut << std::string(hdr->target_name[refIndex]) << "\t" << start << "\t" << (pos + 1) << "\t" << winlen << "\t" << count << "\t" << cn << std::endl;
 		      // reset
 		      covsum = 0;
@@ -344,8 +356,8 @@ namespace torali
 	      if (winlen >= c.fracWindow * (it->second - it->first)) {
 		obsexp /= (double) winlen;
 		double count = ((double) covsum / obsexp ) * (double) (it->second - it->first) / (double) winlen;
-		double cn = c.ploidy;
-		if (expcov > 0) cn = c.ploidy * covsum / expcov;
+		double cn = chrPloidy;
+		if (expcov > 0) cn = (c.expectedCN * covsum / expcov - chrCtrlPloidy * (1 - c.purity)) / c.purity;
 		if (!c.covfile.empty()) dataOut << std::string(hdr->target_name[refIndex]) << "\t" << it->first << "\t" << it->second << "\t" << winlen << "\t" << count << "\t" << cn << std::endl;
 	      } else {
 		if (!c.covfile.empty()) dataOut << std::string(hdr->target_name[refIndex]) << "\t" << it->first << "\t" << it->second << "\tNA\tNA\tNA" << std::endl;
@@ -371,8 +383,8 @@ namespace torali
 	      if (winlen == c.window_size) {
 		obsexp /= (double) winlen;
 		double count = ((double) covsum / obsexp ) * (double) c.window_size / (double) winlen;
-		double cn = c.ploidy;
-		if (expcov > 0) cn = c.ploidy * covsum / expcov;
+		double cn = chrPloidy;
+		if (expcov > 0) cn = (c.expectedCN * covsum / expcov - chrCtrlPloidy * (1 - c.purity)) / c.purity;
 		if (!c.covfile.empty()) dataOut << std::string(hdr->target_name[refIndex]) << "\t" << start << "\t" << (pos + 1) << "\t" << winlen << "\t" << count << "\t" << cn << std::endl;
 		// reset
 		covsum = 0;
@@ -419,8 +431,8 @@ namespace torali
 	      if (winlen >= c.fracWindow * c.window_size) {
 		obsexp /= (double) winlen;
 		double count = ((double) covsum / obsexp ) * (double) c.window_size / (double) winlen;
-		double cn = c.ploidy;
-		if (expcov > 0) cn = c.ploidy * covsum / expcov;
+		double cn = chrPloidy;
+		if (expcov > 0) cn = (c.expectedCN * covsum / expcov - chrCtrlPloidy * (1 - c.purity)) / c.purity;
 		if (!c.covfile.empty()) dataOut << std::string(hdr->target_name[refIndex]) << "\t" << start << "\t" << (start + c.window_size) << "\t" << winlen << "\t" << count << "\t" << cn << std::endl;
 	      }
 	    }
@@ -452,6 +464,7 @@ namespace torali
   
   int coral(int argc, char **argv) {
     CountDNAConfig c;
+    std::string haploidChr;
 
     // Parameter
     boost::program_options::options_description generic("Generic options");
@@ -460,7 +473,6 @@ namespace torali
       ("genome,g", boost::program_options::value<boost::filesystem::path>(&c.genome), "genome file")
       ("quality,q", boost::program_options::value<uint16_t>(&c.minQual)->default_value(10), "min. mapping quality")
       ("mappability,m", boost::program_options::value<boost::filesystem::path>(&c.mapFile), "input mappability map")
-      ("ploidy,y", boost::program_options::value<float>(&c.ploidy)->default_value(2), "baseline ploidy")
       ("outfile,o", boost::program_options::value<boost::filesystem::path>(&c.outfile), "BCF output file")
       ("covfile,c", boost::program_options::value<boost::filesystem::path>(&c.covfile), "gzipped coverage file")
       ;
@@ -474,6 +486,14 @@ namespace torali
       ("vcffile,v", boost::program_options::value<boost::filesystem::path>(&c.genofile), "input VCF/BCF file for re-genotyping")
       ("segmentation,u", "copy-number segmentation")
       ;
+
+    boost::program_options::options_description cancer("Ploidy/purity correction");
+    cancer.add_options()
+      ("ploidy,y", boost::program_options::value<float>(&c.ploidy)->default_value(2), "sample ploidy")
+      ("purity,p", boost::program_options::value<float>(&c.purity)->default_value(1), "sample purity [0.1, 1]")
+      ("ctrl-ploidy", boost::program_options::value<float>(&c.ctrlPloidy)->default_value(2), "control ploidy")
+      ("haploid-chr", boost::program_options::value<std::string>(&haploidChr), "haploid chromosomes, e.g. chrX,chrY")
+      ;
     
     boost::program_options::options_description window("Read-depth windows");
     window.add_options()
@@ -481,7 +501,7 @@ namespace torali
       ("window-offset,j", boost::program_options::value<uint32_t>(&c.window_offset)->default_value(10000), "window offset")
       ("bed-intervals,b", boost::program_options::value<boost::filesystem::path>(&c.bedFile), "input BED file")
       ("fraction-window,k", boost::program_options::value<float>(&c.fracWindow)->default_value(0.25), "min. callable window fraction [0,1]")
-      ("adaptive-windowing,a", "use mappable bases for window size")
+      ("adaptive-windowing,a", "use mappable bases for adaptive window size")
       ;
 
     boost::program_options::options_description gcopt("GC fragment normalization");
@@ -490,14 +510,14 @@ namespace torali
       ("fraction-unique,f", boost::program_options::value<float>(&c.uniqueToTotalCovRatio)->default_value(0.8), "uniqueness filter for scan windows [0,1]")
       ("scan-regions,r", boost::program_options::value<boost::filesystem::path>(&c.scanFile), "scanning regions in BED format")
       ("mad-cutoff,d", boost::program_options::value<uint16_t>(&c.mad)->default_value(3), "median + 3 * mad count cutoff")
-      ("percentile,p", boost::program_options::value<float>(&c.exclgc)->default_value(0.0005), "excl. extreme GC fraction")
       ("no-window-selection,n", "no scan window selection")
+      ("percentile", boost::program_options::value<float>(&c.exclgc)->default_value(0.0005), "excl. extreme GC fraction")
       ;
     
     boost::program_options::options_description hidden("Hidden options");
     hidden.add_options()
       ("input-file", boost::program_options::value<boost::filesystem::path>(&c.bamFile), "input bam file")
-      ("fragment,e", boost::program_options::value<float>(&c.fragmentUnique)->default_value(0.97), "min. fragment uniqueness [0,1]")
+      ("fragment", boost::program_options::value<float>(&c.fragmentUnique)->default_value(0.97), "min. fragment uniqueness [0,1]")
       ("statsfile,s", boost::program_options::value<boost::filesystem::path>(&c.statsFile), "gzipped stats output file (optional)")
       ;
 
@@ -506,9 +526,9 @@ namespace torali
 
     // Set the visibility
     boost::program_options::options_description cmdline_options;
-    cmdline_options.add(generic).add(cnv).add(window).add(gcopt).add(hidden);
+    cmdline_options.add(generic).add(cnv).add(cancer).add(window).add(gcopt).add(hidden);
     boost::program_options::options_description visible_options;
-    visible_options.add(generic).add(cnv).add(window).add(gcopt);
+    visible_options.add(generic).add(cnv).add(cancer).add(window).add(gcopt);
 
     // Parse command-line
     boost::program_options::variables_map vm;
@@ -550,6 +570,13 @@ namespace torali
     if (vm.count("adaptive-windowing")) c.adaptive = true;
     else c.adaptive = false;
 
+    // Purity
+    if (c.purity > 1) c.purity = 1;
+    if (c.purity < 0.1) c.purity = 0.1;
+
+    // Expected ploidy
+    c.expectedCN = c.purity * c.ploidy + (1.0 - c.purity) * c.ctrlPloidy;
+    
     // Segmentation
     if (vm.count("segmentation")) c.segmentation = true;
     else c.segmentation = false;
@@ -644,6 +671,9 @@ namespace torali
       std::string sampleName = "unknown";
       getSMTag(std::string(hdr->text), c.bamFile.stem().string(), sampleName);
       c.sampleName = sampleName;
+
+      // Check special chromosomes
+      if (haploidChr.size()) _selectedRefIndices(c, hdr, haploidChr);
 
       // Check matching chromosome names
       faidx_t* faiRef = fai_load(c.genome.string().c_str());

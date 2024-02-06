@@ -375,6 +375,22 @@ namespace torali
     return true;    
   }
 
+  template<typename TConfig>
+  inline void
+  _selectedRefIndices(TConfig& c, bam_hdr_t const* hdr, std::string const& chrNames) {
+    std::map<std::string, int32_t> all;
+    for(int32_t refIndex=0; refIndex < hdr->n_targets; ++refIndex) {
+      all.insert(std::make_pair(std::string(hdr->target_name[refIndex]), refIndex));
+    }
+    
+    typedef boost::tokenizer< boost::char_separator<char> > Tokenizer;
+    boost::char_separator<char> sep(",");
+    Tokenizer tokens(chrNames, sep);
+    for(Tokenizer::iterator tokIter = tokens.begin(); tokIter!=tokens.end(); ++tokIter) {
+      if (all.find(*tokIter) != all.end()) c.refIdx.insert(all[*tokIter]);
+    }
+  }
+
   inline uint32_t sequenceLength(bam1_t const* rec) {
     uint32_t* cigar = bam_get_cigar(rec);
     uint32_t slen = 0;
