@@ -124,8 +124,8 @@ Delly also supports long-reads for SV discovery.
 `delly lr -y pb -o delly.bcf -g hg38.fa input.bam`
 
 
-Read-depth profiles
--------------------
+Read-depth profiles and copy-number variant calling
+---------------------------------------------------
 
 You can generate read-depth profiles with delly. This requires a mappability map which can be downloaded here:
 
@@ -138,6 +138,12 @@ The command to count reads in 10kbp mappable windows and normalize the coverage 
 The output file `out.cov.gz` can be plotted using [R](https://www.r-project.org/) to generate normalized copy-number profiles and segment the read-depth information:
 
 `Rscript R/rd.R out.cov.gz`
+
+Instead of segmenting the read-depth information, you can also visualize the CNV calls.
+
+`bcftools query -f "%CHROM\t%POS\t%INFO/END\t%ID[\t%RDCN]\n" out.bcf > seg.bed`
+
+`Rscript R/rd.R out.cov.gz seg.bed`
 
 With `-s` you can output a statistics file with GC bias information.
 
