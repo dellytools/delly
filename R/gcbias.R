@@ -3,7 +3,6 @@ library(reshape2)
 
 args = commandArgs(trailingOnly=TRUE)
 x = read.table(args[1], header=T)
-x = read.table("gc.table", header=T)
 x$gc = x$gcsum / (nrow(x)-1)
 x$fractionSample = x$fractionSample * 100
 x$fractionReference = x$fractionReference * 100

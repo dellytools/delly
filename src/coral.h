@@ -101,7 +101,7 @@ namespace torali
     if (!c.covfile.empty()) {
       dataOut.push(boost::iostreams::gzip_compressor());
       dataOut.push(boost::iostreams::file_sink(c.covfile.c_str(), std::ios_base::out | std::ios_base::binary));
-      dataOut << "chr\tstart\tend\t" << c.sampleName << "_mappable\t" << c.sampleName << "_counts\t" << c.sampleName << "_CN" << std::endl;
+      dataOut << "chr\tstart\tend\t" << c.sampleName << "_mappable\t" << c.sampleName << "_logR\t" << c.sampleName << "_CN" << std::endl;
     }
 
     // CNVs
@@ -299,10 +299,14 @@ namespace torali
 		    ++winlen;
 		    if (winlen == c.window_size) {
 		      obsexp /= (double) winlen;
-		      double count = ((double) covsum / obsexp ) * (double) c.window_size / (double) winlen;
+		      // Normalized counts: double count = ((double) covsum / obsexp ) * (double) c.window_size / (double) winlen;
 		      double cn = chrPloidy;
-		      if (expcov > 0) cn = (c.expectedCN * covsum / expcov - chrCtrlPloidy * (1 - c.purity)) / c.purity;
-		      if (!c.covfile.empty()) dataOut << std::string(hdr->target_name[refIndex]) << "\t" << start << "\t" << (pos + 1) << "\t" << winlen << "\t" << count << "\t" << cn << std::endl;
+		      double logR = 0;
+		      if (expcov > 0) {
+			cn = (c.expectedCN * covsum / expcov - chrCtrlPloidy * (1 - c.purity)) / c.purity;
+			logR = std::log2(covsum / expcov);
+		      }
+		      if (!c.covfile.empty()) dataOut << std::string(hdr->target_name[refIndex]) << "\t" << start << "\t" << (pos + 1) << "\t" << winlen << "\t" << logR << "\t" << cn << std::endl;
 		      // reset
 		      covsum = 0;
 		      expcov = 0;
@@ -355,10 +359,14 @@ namespace torali
 	      }
 	      if (winlen >= c.fracWindow * (it->second - it->first)) {
 		obsexp /= (double) winlen;
-		double count = ((double) covsum / obsexp ) * (double) (it->second - it->first) / (double) winlen;
+		// Normalized counts: double count = ((double) covsum / obsexp ) * (double) (it->second - it->first) / (double) winlen;
 		double cn = chrPloidy;
-		if (expcov > 0) cn = (c.expectedCN * covsum / expcov - chrCtrlPloidy * (1 - c.purity)) / c.purity;
-		if (!c.covfile.empty()) dataOut << std::string(hdr->target_name[refIndex]) << "\t" << it->first << "\t" << it->second << "\t" << winlen << "\t" << count << "\t" << cn << std::endl;
+		double logR = 0;
+		if (expcov > 0) {
+		  cn = (c.expectedCN * covsum / expcov - chrCtrlPloidy * (1 - c.purity)) / c.purity;
+		  logR = std::log2(covsum / expcov);
+		}
+		if (!c.covfile.empty()) dataOut << std::string(hdr->target_name[refIndex]) << "\t" << it->first << "\t" << it->second << "\t" << winlen << "\t" << logR << "\t" << cn << std::endl;
 	      } else {
 		if (!c.covfile.empty()) dataOut << std::string(hdr->target_name[refIndex]) << "\t" << it->first << "\t" << it->second << "\tNA\tNA\tNA" << std::endl;
 	      }
@@ -382,10 +390,14 @@ namespace torali
 	      ++winlen;
 	      if (winlen == c.window_size) {
 		obsexp /= (double) winlen;
-		double count = ((double) covsum / obsexp ) * (double) c.window_size / (double) winlen;
+		// Normalized counts: double count = ((double) covsum / obsexp ) * (double) c.window_size / (double) winlen;
 		double cn = chrPloidy;
-		if (expcov > 0) cn = (c.expectedCN * covsum / expcov - chrCtrlPloidy * (1 - c.purity)) / c.purity;
-		if (!c.covfile.empty()) dataOut << std::string(hdr->target_name[refIndex]) << "\t" << start << "\t" << (pos + 1) << "\t" << winlen << "\t" << count << "\t" << cn << std::endl;
+		double logR = 0;
+		if (expcov > 0) {
+		  cn = (c.expectedCN * covsum / expcov - chrCtrlPloidy * (1 - c.purity)) / c.purity;
+		  logR = std::log2(covsum / expcov);
+		}
+		if (!c.covfile.empty()) dataOut << std::string(hdr->target_name[refIndex]) << "\t" << start << "\t" << (pos + 1) << "\t" << winlen << "\t" << logR << "\t" << cn << std::endl;
 		// reset
 		covsum = 0;
 		expcov = 0;
@@ -430,10 +442,14 @@ namespace torali
 	      }
 	      if (winlen >= c.fracWindow * c.window_size) {
 		obsexp /= (double) winlen;
-		double count = ((double) covsum / obsexp ) * (double) c.window_size / (double) winlen;
+		// Normalized counts: double count = ((double) covsum / obsexp ) * (double) c.window_size / (double) winlen;
 		double cn = chrPloidy;
-		if (expcov > 0) cn = (c.expectedCN * covsum / expcov - chrCtrlPloidy * (1 - c.purity)) / c.purity;
-		if (!c.covfile.empty()) dataOut << std::string(hdr->target_name[refIndex]) << "\t" << start << "\t" << (start + c.window_size) << "\t" << winlen << "\t" << count << "\t" << cn << std::endl;
+		double logR = 0;
+		if (expcov > 0) {
+		  cn = (c.expectedCN * covsum / expcov - chrCtrlPloidy * (1 - c.purity)) / c.purity;
+		  logR = std::log2(covsum / expcov);
+		}
+		if (!c.covfile.empty()) dataOut << std::string(hdr->target_name[refIndex]) << "\t" << start << "\t" << (start + c.window_size) << "\t" << winlen << "\t" << logR << "\t" << cn << std::endl;
 	      }
 	    }
 	  }

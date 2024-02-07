@@ -46,11 +46,11 @@ Delly needs a sorted, indexed and duplicate marked bam file for every input samp
 An indexed reference genome is required to identify split-reads.
 Common workflows for germline and somatic SV calling are outlined below.
 
-`delly call -g hg19.fa input.bam > delly.vcf`
+`delly call -g hg38.fa input.bam > delly.vcf`
 
 You can also specify an output file in [BCF](http://samtools.github.io/bcftools/) format.
 
-`delly call -o delly.bcf -g hg19.fa input.bam`
+`delly call -o delly.bcf -g hg38.fa input.bam`
 
 `bcftools view delly.bcf > delly.vcf`
 
@@ -60,11 +60,11 @@ Example
 
 A small example is included for short-read, long-read and copy-number variant calling.
 
-`delly call -g example/ref.fa example/sr.bam > sr.vcf`
+`delly call -g example/ref.fa -o sr.bcf example/sr.bam`
 
-`delly lr -g example/ref.fa example/lr.bam > lr.vcf`
+`delly lr -g example/ref.fa -o lr.bcf example/lr.bam`
 
-`delly cnv -g example/ref.fa -m example/map.fa.gz example/sr.bam > cnv.vcf`
+`delly cnv -g example/ref.fa -m example/map.fa.gz -c out.cov.gz -o cnv.bcf example/sr.bam`
 
 
 Somatic SV calling
@@ -72,7 +72,7 @@ Somatic SV calling
 
 * At least one tumor sample and a matched control sample are required for SV discovery
 
-`delly call -x hg19.excl -o t1.bcf -g hg19.fa tumor1.bam control1.bam`
+`delly call -x hg38.excl -o t1.bcf -g hg38.fa tumor1.bam control1.bam`
 
 * Somatic pre-filtering requires a tab-delimited sample description file where the first column is the sample id (as in the VCF/BCF file) and the second column is either tumor or control.
 
@@ -80,7 +80,7 @@ Somatic SV calling
 
 * Genotype pre-filtered somatic sites across a larger panel of control samples to efficiently filter false postives and germline SVs. For performance reasons, this can be run in parallel for each sample of the control panel and you may want to combine multiple pre-filtered somatic site lists from multiple tumor samples.
 
-`delly call -g hg19.fa -v t1.pre.bcf -o geno.bcf -x hg19.excl tumor1.bam control1.bam ... controlN.bam`
+`delly call -g hg38.fa -v t1.pre.bcf -o geno.bcf -x hg38.excl tumor1.bam control1.bam ... controlN.bam`
 
 * Post-filter for somatic SVs using all control samples.
 
@@ -93,7 +93,7 @@ Germline SV calling
 
 * SV calling is done by sample for high-coverage genomes or in small batches for low-coverage genomes
 
-`delly call -g hg19.fa -o s1.bcf -x hg19.excl sample1.bam`
+`delly call -g hg38.fa -o s1.bcf -x hg38.excl sample1.bam`
 
 * Merge SV sites into a unified site list 
 
@@ -101,9 +101,9 @@ Germline SV calling
 
 * Genotype this merged SV site list across all samples. This can be run in parallel for each sample.
 
-`delly call -g hg19.fa -v sites.bcf -o s1.geno.bcf -x hg19.excl s1.bam`
+`delly call -g hg38.fa -v sites.bcf -o s1.geno.bcf -x hg38.excl s1.bam`
 
-`delly call -g hg19.fa -v sites.bcf -o sN.geno.bcf -x hg19.excl sN.bam`
+`delly call -g hg38.fa -v sites.bcf -o sN.geno.bcf -x hg38.excl sN.bam`
 
 * Merge all genotyped samples to get a single VCF/BCF using bcftools merge
 
@@ -119,9 +119,9 @@ Delly for long reads from PacBio or ONT
 
 Delly also supports long-reads for SV discovery.
 
-`delly lr -y ont -o delly.bcf -g hg19.fa input.bam`
+`delly lr -y ont -o delly.bcf -g hg38.fa input.bam`
 
-`delly lr -y pb -o delly.bcf -g hg19.fa input.bam`
+`delly lr -y pb -o delly.bcf -g hg38.fa input.bam`
 
 
 Read-depth profiles
@@ -133,11 +133,19 @@ You can generate read-depth profiles with delly. This requires a mappability map
 
 The command to count reads in 10kbp mappable windows and normalize the coverage is:
 
-`delly cnv -a -g hg19.fa -m hg19.map input.bam`
+`delly cnv -a -g hg38.fa -m hg38.map -c out.cov.gz -o out.bcf input.bam`
 
 The output file `out.cov.gz` can be plotted using [R](https://www.r-project.org/) to generate normalized copy-number profiles:
 
 `Rscript R/rd.R out.cov.gz`
+
+With `-s` you can output a statistics file with GC bias information.
+
+`delly cnv -g hg38.fa -m hg38.map -c out.cov.gz -o out.bcf -s stats.gz input.bam`
+
+`zcat stats.gz | grep "^GC" > gc.bias.tsv`
+
+`Rscript R/gcbias.R gc.bias.tsv`
 
 
 Copy-number segmentation
@@ -145,11 +153,11 @@ Copy-number segmentation
 
 Read-depth profiles can also be segmented at the same time.
 
-`delly cnv -a -u -g hg19.fa -m hg19.map input.bam`
+`delly cnv -a -u -g hg38.fa -m hg38.map -c out.cov.gz -o out.bcf input.bam`
 
 The segmentation is in VCF format but you can extract a BED-like file using bcftools.
 
-`bcftools query -f "%CHROM\t%POS\t%INFO/END\t%ID[\t%RDCN]\n" cnv.bcf > segmentation.bed`
+`bcftools query -f "%CHROM\t%POS\t%INFO/END\t%ID[\t%RDCN]\n" out.bcf > segmentation.bed`
 
 Plotting:
 
@@ -162,7 +170,7 @@ Delly uses GC and mappability fragment correction to call CNVs. This requires a 
 
 * Call CNVs for each sample and optionally refine breakpoints using delly SV calls
 
-`delly cnv -o c1.bcf -g hg19.fa -m hg19.map -l delly.sv.bcf input.bam`
+`delly cnv -o c1.bcf -g hg38.fa -m hg38.map -l delly.sv.bcf input.bam`
 
 * Merge CNVs into a unified site list
 
@@ -170,7 +178,7 @@ Delly uses GC and mappability fragment correction to call CNVs. This requires a 
 
 * Genotype CNVs for each sample
 
-`delly cnv -u -v sites.bcf -g hg19.fa -m hg19.map -o geno1.bcf input.bam`
+`delly cnv -u -v sites.bcf -g hg38.fa -m hg38.map -o geno1.bcf input.bam`
 
 * Merge genotypes using [bcftools](https://github.com/samtools/bcftools)
 
@@ -192,11 +200,11 @@ Somatic copy-number alterations (SCNAs)
 
 * For somatic copy-number alterations, delly first segments the tumor genome (`-u` is required). Depending on the coverage, tumor purity and heterogeneity you can adapt parameters `-z`, `-t` and `-x` which control the sensitivity of SCNA detection.
 
-`delly cnv -u -z 10000 -o tumor.bcf -c tumor.cov.gz -g hg19.fa -m hg19.map tumor.bam`
+`delly cnv -u -z 10000 -o tumor.bcf -c tumor.cov.gz -g hg38.fa -m hg38.map tumor.bam`
 
 * Then these tumor SCNAs are genotyped in the control sample (`-u` is required).
 
-`delly cnv -u -v tumor.bcf -o control.bcf -g hg19.fa -m hg19.map control.bam`
+`delly cnv -u -v tumor.bcf -o control.bcf -g hg38.fa -m hg38.map control.bam`
 
 * The VCF IDs are matched between tumor and control. Thus, you can merge both files using [bcftools](https://github.com/samtools/bcftools).
 
