@@ -24,8 +24,6 @@
 #include "asmode.h"
 #include "dpe.h"
 #include "pangenome.h"
-#include "markdup.h"
-#include "compvcf.h"
 #include "chimera.h"
 
 using namespace torali;
@@ -53,15 +51,10 @@ displayUsage() {
   std::cerr << "    cnv          discover and genotype copy-number variants" << std::endl;
   std::cerr << "    classify     classify somatic or germline copy-number variants" << std::endl;
   std::cerr << std::endl;
-  std::cerr << "Multi-sample VCF operations:" << std::endl;
-  std::cerr << "    markdup      mark duplicate SV sites based on SV allele and GT concordance" << std::endl;
-  std::cerr << "    compvcf      compare multi-sample VCF file to a ground truth VCF file" << std::endl;
   //std::cerr << "Deprecated:" << std::endl;
   //std::cerr << "    dpe          double paired-end signatures" << std::endl;
   //std::cerr << "    chimera      ONT chimera flagging" << std::endl;
   //std::cerr << std::endl;
-  std::cerr << std::endl;
-  std::cerr << std::endl;
 }
 
 int main(int argc, char **argv) {
@@ -99,12 +92,6 @@ int main(int argc, char **argv) {
     else if ((std::string(argv[1]) == "asm")) {
       return asmode(argc-1,argv+1);
     }
-    else if ((std::string(argv[1]) == "markdup")) {
-      return markdup(argc-1,argv+1);
-    }
-    else if ((std::string(argv[1]) == "compvcf")) {
-      return compvcf(argc-1,argv+1);
-    }
     else if ((std::string(argv[1]) == "pg")) {
       return pg(argc-1,argv+1);
     }
@@ -126,7 +113,6 @@ int main(int argc, char **argv) {
     else if ((std::string(argv[1]) == "merge")) {
       return merge(argc-1,argv+1);
     }
-
     std::cerr << "Unrecognized command " << std::string(argv[1]) << std::endl;
     return 1;
 }

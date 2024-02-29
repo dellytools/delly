@@ -413,44 +413,6 @@ namespace torali
     return alen;
   }
 
-  inline double
-  _sharedCarriers(std::vector<int32_t> const& gt1, std::vector<int32_t> const& gt2) {
-    // Percentage of shared carriers
-    uint32_t carnum = 0;
-    uint32_t carshared = 0;
-    for(uint32_t k = 0; k < gt1.size(); ++k) {
-      if ((gt1[k] != 0) || (gt2[k] != 0)) {
-	++carnum;
-	if ((gt1[k] != 0) && (gt2[k] != 0)) ++carshared;
-      }
-    }
-    return (double) (carshared) / (double) (carnum);
-  }
-
-  inline double
-  nonrefGtConc(std::vector<int32_t> const& gt1, std::vector<int32_t> const& gt2) {
-    uint32_t totgt = 0;
-    uint32_t matchgt = 0;
-    for(uint32_t k = 0; k < gt1.size(); ++k) {
-      if ((gt1[k] != 0) || (gt2[k] != 0)) {
-	++totgt;
-	if (gt1[k] == gt2[k]) ++matchgt;
-      }
-    }
-    return (double) (matchgt) / (double) (totgt);
-  }
-  
-  inline double
-  gtConc(std::vector<int32_t> const& gt1, std::vector<int32_t> const& gt2) {
-    uint32_t totgt = 0;
-    uint32_t matchgt = 0;
-    for(uint32_t k = 0; k < gt1.size(); ++k) {
-      ++totgt;
-      if (gt1[k] == gt2[k]) ++matchgt;
-    }
-    return (double) (matchgt) / (double) (totgt);
-  }
-  
   inline uint32_t halfAlignmentLength(bam1_t const* rec) {
     return (alignmentLength(rec) / 2);
   }
