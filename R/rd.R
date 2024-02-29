@@ -38,6 +38,7 @@ if (length(args)>1) {
  seg = data.frame(segments.summary(cnaSegments))
  colnames(seg) = c("ID", "chr", "start", "end", "num.mark", "seg.mean", "seg.sd", "seg.median", "seg.mad")
  seg$cn = 2^seg$seg.median * baseCN
+ seg$chr = factor(seg$chr, levels=chrs)
 }
 
 # Whole genome
