@@ -66,6 +66,12 @@ A small example is included for short-read, long-read and copy-number variant ca
 
 `delly cnv -g example/ref.fa -m example/map.fa.gz -c out.cov.gz -o cnv.bcf example/sr.bam`
 
+More in-depth tutorials for SV calling are available here:
+
+* Short-read SV calling: [https://github.com/tobiasrausch/vc](https://github.com/tobiasrausch/vc)
+
+* Long-read SV calling: [https://github.com/tobiasrausch/sv](https://github.com/tobiasrausch/sv)
+
 
 Somatic SV calling
 ------------------

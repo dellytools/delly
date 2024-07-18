@@ -9,7 +9,6 @@ chrNamesShort = c("1","2","3","4","5","6","7","8","9","10","11","12","13","14","
 
 # Params
 minCN = 0
-maxCN = 14
 sdUNDO = 1.5
 
 # Parse coverage table
@@ -42,6 +41,7 @@ if (length(args)>1) {
 }
 
 # Whole genome
+maxCN = as.integer(max(x[,6])+1)
 p = ggplot(data=x, aes(x=start, y=x[,6]))
 p = p + geom_point(pch=21, color="black", fill="black", size=0.5)
 p = p + xlab("Chromosome")
@@ -60,6 +60,7 @@ for(chrname in unique(x$chr)) {
  print(chrname)
  sub = x[x$chr == chrname,]
  sl = seg[seg$chr == chrname,]
+ maxCN = as.integer(max(sub[,6])+1)
  p = ggplot(data=sub, aes(x=start, y=sub[,6]))
  p = p + geom_point(pch=21, color="black", fill="black", size=0.5)
  p = p + ylab("Copy-number") + xlab(chrname)
@@ -67,6 +68,7 @@ for(chrname in unique(x$chr)) {
  p = p + scale_y_continuous(labels=comma, breaks = c(minCN:maxCN), limits=c(minCN, maxCN))
  if (nrow(sl)) { p = p + geom_segment(data=sl, aes(x=start, y=cn, xend=end, yend=cn), color="#31a354", size=1.2); }
  p = p + theme(axis.text.x = element_text(angle=45, hjust=1))
+ p = p + ggtitle(args[1])
  ggsave(p, file=paste0("plot.", chrname, ".png"), width=24, height=6)
  print(warnings())
 }
