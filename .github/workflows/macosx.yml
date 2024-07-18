@@ -14,6 +14,6 @@ jobs:
     - name: make
       run: |
         brew install boost@1.76 htslib
-	export CXXFLAGS='-I/opt/homebrew/opt/boost@1.76/include -I/opt/homebrew/opt/htslib/include'
-	export LDFLAGS='-L/opt/homebrew/opt/boost@1.76/lib -L/opt/homebrew/opt/htslib/lib'
+        export CXXFLAGS='-I/opt/homebrew/opt/boost@1.76/include -I/opt/homebrew/opt/htslib/include'
+        export LDFLAGS='-L/opt/homebrew/opt/boost@1.76/lib -L/opt/homebrew/opt/htslib/lib'
         make
