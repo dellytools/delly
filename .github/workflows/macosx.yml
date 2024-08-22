@@ -13,7 +13,7 @@ jobs:
     - uses: actions/checkout@v2
     - name: make
       run: |
-        brew install boost@1.76 htslib
-        export CXXFLAGS='-I/opt/homebrew/opt/boost@1.76/include -I/opt/homebrew/opt/htslib/include'
-        export LDFLAGS='-L/opt/homebrew/opt/boost@1.76/lib -L/opt/homebrew/opt/htslib/lib'
+        brew install boost@1.74 htslib
+        export CXXFLAGS='-I/opt/homebrew/opt/boost@1.74/include -I/opt/homebrew/opt/htslib/include'
+        export LDFLAGS='-L/opt/homebrew/opt/boost@1.74/lib -L/opt/homebrew/opt/htslib/lib'
         make
