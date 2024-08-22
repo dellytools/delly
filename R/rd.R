@@ -42,6 +42,7 @@ if (length(args)>1) {
 
 # Whole genome
 maxCN = as.integer(max(x[,6])+1)
+#maxCN = 16
 p = ggplot(data=x, aes(x=start, y=x[,6]))
 p = p + geom_point(pch=21, color="black", fill="black", size=0.5)
 p = p + xlab("Chromosome")
