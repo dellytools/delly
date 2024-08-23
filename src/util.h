@@ -332,6 +332,49 @@ namespace torali
     return true;
   }
 
+
+  template<typename TConfig>
+  inline bool
+  _alternateAlignments(TConfig& c, std::vector<boost::filesystem::path>& align, std::vector<boost::filesystem::path>& genome) {
+    std::ifstream altfile(c.altfile.string().c_str());
+    if (altfile.good()) {
+      std::string line;
+      while(std::getline(altfile, line)) {
+	if (!line.empty()) {
+	  typedef boost::tokenizer< boost::char_separator<char> > Tokenizer;
+	  boost::char_separator<char> sep("\t");
+	  Tokenizer tokens(line, sep);
+	  uint32_t ct = 0;
+	  for(Tokenizer::iterator tokIter = tokens.begin(); tokIter!=tokens.end(); ++tokIter, ++ct) {
+	    boost::filesystem::path ft(*tokIter);
+	    if (!(boost::filesystem::exists(ft) && boost::filesystem::is_regular_file(ft) && boost::filesystem::file_size(ft))) {
+	      if (ct==0) std::cerr << "Alternate alignment file is missing: " << ft.string() << std::endl;
+	      else if (ct==1) std::cerr << "Genome file is missing: " << ft.string() << std::endl;
+	      return false;
+	    }
+	    if (ct == 0) align.push_back(ft);
+	    else if (ct == 1) genome.push_back(ft);
+	  }
+	  if (ct < 2) {
+	    std::cerr << "Alternate alignment config file needs 2 columns '<align.bam> <genome.fa>' for each alternate alignment." << std::endl;
+	    return false;
+	  }
+	}
+      }
+      altfile.close();
+      return true;
+    }
+    return false;    
+  }
+
+  template<typename TConfig>
+  inline bool
+  _checkAlternateAlignments(TConfig& c) {
+    std::vector<boost::filesystem::path> align;
+    std::vector<boost::filesystem::path> genome;
+    return _alternateAlignments(c, align, genome);
+  }
+  
   template<typename TConfig>
   inline bool
     _svTypesToCompute(TConfig& c, std::string const& svtype) {
@@ -537,7 +580,39 @@ namespace torali
     }
     return minChrLen;
   }
-  
+
+  inline bool
+  isBamCram(std::string const& path) {
+    htsFile *hts_fp = hts_open(path.c_str(), "r");
+    if (hts_fp != NULL) {
+      std::string ext = std::string(hts_format_file_extension(hts_get_format(hts_fp)));
+      hts_close(hts_fp);
+      if ((ext == "bam") || (ext == "cram")) return true;
+    }
+    return false;
+  }
+
+  inline bool
+  isBam(std::string const& path) {
+    htsFile *hts_fp = hts_open(path.c_str(), "r");
+    if (hts_fp != NULL) {
+      std::string ext = std::string(hts_format_file_extension(hts_get_format(hts_fp)));
+      hts_close(hts_fp);
+      if (ext == "bam") return true;
+    }
+    return false;
+  }
+
+  inline bool
+  isCram(std::string const& path) {
+    htsFile *hts_fp = hts_open(path.c_str(), "r");
+    if (hts_fp != NULL) {
+      std::string ext = std::string(hts_format_file_extension(hts_get_format(hts_fp)));
+      hts_close(hts_fp);
+      if (ext == "cram") return true;
+    }
+    return false;
+  }
   
   template<typename TConfig>
   inline bool

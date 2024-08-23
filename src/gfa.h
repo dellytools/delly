@@ -172,8 +172,8 @@ namespace torali
     gfaFile.close();
 
     // Graph statistics
-    std::cerr << "Parsed: " << g.offset.size() << " segments, " << g.links.size() << " links" << std::endl;
-    std::cerr << "Total sequence size: " << g.sequence.size() << std::endl;
+    boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
+    std::cerr << '[' << boost::posix_time::to_simple_string(now) << "] " << "GFA loaded: " << g.offset.size() << " segments, " << g.links.size() << " links, seq.size: " << g.sequence.size() << std::endl;
 
     return true;
   }

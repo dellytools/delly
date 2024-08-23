@@ -38,6 +38,7 @@ namespace torali {
     bool hasDumpFile;
     bool hasExcludeFile;
     bool hasVcfFile;
+    bool hasAltFile;
     uint16_t minMapQual;
     uint16_t minGenoQual;
     uint32_t minClip;
@@ -59,6 +60,7 @@ namespace torali {
     boost::filesystem::path outfile;
     boost::filesystem::path vcffile;
     std::vector<boost::filesystem::path> files;
+    boost::filesystem::path altfile;
     boost::filesystem::path genome;
     boost::filesystem::path exclude;
     std::vector<std::string> sampleName;
@@ -202,6 +204,7 @@ namespace torali {
    
    boost::program_options::options_description disc("Discovery options");
    disc.add_options()
+     ("alt-align,l", boost::program_options::value<boost::filesystem::path>(&c.altfile), "alternate alignments config file")
      ("mapqual,q", boost::program_options::value<uint16_t>(&c.minMapQual)->default_value(1), "min. mapping quality")
      ("minclip,c", boost::program_options::value<uint32_t>(&c.minClip)->default_value(25), "min. clipping length")
      ("min-clique-size,z", boost::program_options::value<uint32_t>(&c.minCliqueSize)->default_value(3), "min. clique size")     
@@ -269,6 +272,15 @@ namespace torali {
    // Clique size
    if (c.minCliqueSize < 2) c.minCliqueSize = 2;
 
+   // Alternate alignments
+   if (vm.count("alt-align")) {
+     if (!_checkAlternateAlignments(c)) {
+       std::cerr << "Invalid alternate alignments config file!" << std::endl;
+       return 1;
+     }
+     c.hasAltFile = true;	  
+   } else c.hasAltFile = false;
+   
    // Check reference
    if (!(boost::filesystem::exists(c.genome) && boost::filesystem::is_regular_file(c.genome) && boost::filesystem::file_size(c.genome))) {
      std::cerr << "Reference file is missing: " << c.genome.string() << std::endl;

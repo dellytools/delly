@@ -39,6 +39,53 @@ namespace torali {
     }
   }
 
+  // Junction record
+  struct Junction {
+    bool forward;
+    bool scleft;
+    int32_t refidx;
+    int32_t rstart;
+    int32_t refpos;
+    int32_t seqpos;
+    uint16_t qual;
+    
+    Junction(bool const fw, bool const cl, int32_t const idx, int32_t const rst, int32_t const r, int32_t const s, uint16_t const qval) : forward(fw), scleft(cl), refidx(idx), rstart(rst), refpos(r), seqpos(s), qual(qval) {}
+  };
+
+  
+  template<typename TJunction>
+  struct SortJunction : public std::binary_function<TJunction, TJunction, bool>
+  {
+    inline bool operator()(TJunction const& j1, TJunction const& j2) {
+      return ((j1.seqpos<j2.seqpos) || ((j1.seqpos==j2.seqpos) && (j1.refidx<j2.refidx)) || ((j1.seqpos==j2.seqpos) && (j1.refidx==j2.refidx) && (j1.refpos<j2.refpos)) || ((j1.seqpos==j2.seqpos) && (j1.refidx==j2.refidx) && (j1.refpos==j2.refpos) && (j1.scleft < j2.scleft)));
+    }
+  };
+
+  // Split-read record
+  struct SRBamRecord {
+    int32_t chr;
+    int32_t pos;
+    int32_t chr2;
+    int32_t pos2;
+    int32_t rstart;
+    int32_t sstart;
+    int32_t qual;
+    int32_t inslen;
+    int32_t svid;
+    std::size_t id;
+        
+    SRBamRecord(int32_t const c, int32_t const p, int32_t const c2, int32_t const p2, int32_t const rst, int32_t const sst, int32_t const qval, int32_t const il, std::size_t const idval) : chr(c), pos(p), chr2(c2), pos2(p2), rstart(rst), sstart(sst), qual(qval), inslen(il), svid(-1), id(idval) {}
+  };
+
+  template<typename TSRBamRecord>
+  struct SortSRBamRecord : public std::binary_function<TSRBamRecord, TSRBamRecord, bool>
+  {
+    inline bool operator()(TSRBamRecord const& sv1, TSRBamRecord const& sv2) {
+      return ((sv1.chr<sv2.chr) || ((sv1.chr==sv2.chr) && (sv1.pos<sv2.pos)) || ((sv1.chr==sv2.chr) && (sv1.pos==sv2.pos) && (sv1.chr2<sv2.chr2)) || ((sv1.chr==sv2.chr) && (sv1.pos==sv2.pos) && (sv1.chr2==sv2.chr2) && (sv1.pos2 < sv2.pos2)));
+    }
+  };
+    
+  
   // Structural variant record
   struct StructuralVariantRecord {
     int32_t chr;

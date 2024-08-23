@@ -14,46 +14,10 @@
 
 #include "util.h"
 #include "assemble.h"
+#include "pangenome.h"
 
 namespace torali
 {
-
-  struct SRBamRecord {
-    int32_t chr;
-    int32_t pos;
-    int32_t chr2;
-    int32_t pos2;
-    int32_t rstart;
-    int32_t sstart;
-    int32_t qual;
-    int32_t inslen;
-    int32_t svid;
-    std::size_t id;
-        
-    SRBamRecord(int32_t const c, int32_t const p, int32_t const c2, int32_t const p2, int32_t const rst, int32_t const sst, int32_t const qval, int32_t const il, std::size_t const idval) : chr(c), pos(p), chr2(c2), pos2(p2), rstart(rst), sstart(sst), qual(qval), inslen(il), svid(-1), id(idval) {}
-  };
-
-  template<typename TSRBamRecord>
-  struct SortSRBamRecord : public std::binary_function<TSRBamRecord, TSRBamRecord, bool>
-  {
-    inline bool operator()(TSRBamRecord const& sv1, TSRBamRecord const& sv2) {
-      return ((sv1.chr<sv2.chr) || ((sv1.chr==sv2.chr) && (sv1.pos<sv2.pos)) || ((sv1.chr==sv2.chr) && (sv1.pos==sv2.pos) && (sv1.chr2<sv2.chr2)) || ((sv1.chr==sv2.chr) && (sv1.pos==sv2.pos) && (sv1.chr2==sv2.chr2) && (sv1.pos2 < sv2.pos2)));
-    }
-  };
-  
-  
-  struct Junction {
-    bool forward;
-    bool scleft;
-    int32_t refidx;
-    int32_t rstart;
-    int32_t refpos;
-    int32_t seqpos;
-    uint16_t qual;
-    
-    Junction(bool const fw, bool const cl, int32_t const idx, int32_t const rst, int32_t const r, int32_t const s, uint16_t const qval) : forward(fw), scleft(cl), refidx(idx), rstart(rst), refpos(r), seqpos(s), qual(qval) {}
-  };
-
 
   template<typename TReadBp>
   inline void
@@ -75,15 +39,6 @@ namespace torali
       }
     }
   }
-
-  template<typename TJunction>
-  struct SortJunction : public std::binary_function<TJunction, TJunction, bool>
-  {
-    inline bool operator()(TJunction const& j1, TJunction const& j2) {
-      return ((j1.seqpos<j2.seqpos) || ((j1.seqpos==j2.seqpos) && (j1.refidx<j2.refidx)) || ((j1.seqpos==j2.seqpos) && (j1.refidx==j2.refidx) && (j1.refpos<j2.refpos)) || ((j1.seqpos==j2.seqpos) && (j1.refidx==j2.refidx) && (j1.refpos==j2.refpos) && (j1.scleft < j2.scleft)));
-    }
-  };
-
 
   inline int32_t
   _selectReadStart(std::vector<Junction> const& jcvec) {
@@ -524,8 +479,87 @@ namespace torali
     typedef std::vector<TSRBamRecord> TSvtSRBamRecord;
     TSvtSRBamRecord srBR(2 * DELLY_SVT_TRANS, TSRBamRecord());
     _findSRBreakpoints(c, validRegions, srBR);
-	 	 
+
+    // Alternate alignments
+    if (c.hasAltFile) {
+      std::set<std::size_t> validSR;  // Set of split-reads in ALL alternate alignments
+      // Parse alternate alignments
+      std::vector<boost::filesystem::path> align;
+      std::vector<boost::filesystem::path> genome;
+      _alternateAlignments(c, align, genome);
+      for(uint32_t i = 0; i < align.size(); ++i) {
+	std::cerr << '[' << boost::posix_time::to_simple_string(boost::posix_time::second_clock::local_time()) << "] " << "Parsing alternate alignment " << align[i] << std::endl;
+	
+	TSvtSRBamRecord altSR(2 * DELLY_SVT_TRANS, TSRBamRecord());
+	TConfig altConfig(c);
+	altConfig.genome = genome[i];
+	altConfig.files.clear();
+	altConfig.files.push_back(align[i]);
+	if (isBamCram(align[i].string())) {
+	  // Alternate alignment in BAM/CRAM format
+	  samFile* samfile = sam_open(c.files[0].string().c_str(), "r");
+	  bam_hdr_t* hdr = sam_hdr_read(samfile);
+	  TValidRegions vR;
+	  _parseExcludeIntervals(altConfig, hdr, vR);
+	  bam_hdr_destroy(hdr);
+	  sam_close(samfile);
+	  _findSRBreakpoints(altConfig, vR, altSR);
+
+	  // Debug
+	  //std::cerr << "AltAlign: " << align[i] << std::endl;
+	  //outputSRBamRecords(altConfig, altSR, true);
+	} else {
+	  Graph g;
+	  parseGfa(altConfig, g);
+	  altConfig.nchr = g.smap.size();
+
+	  // Alternate alignment in GAF format
+	  _findGraphSRBreakpoints(altConfig, g, altSR);
+
+	  // Debug
+	  //std::cerr << "AltAlign: " << align[i] << std::endl;
+	  //outputGraphSRBamRecords(altConfig, g, altSR);
+	}
+
+	// Update valid SR set
+	std::set<std::size_t> newValidSR;
+	for(uint32_t svt = 0; svt < altSR.size(); ++svt) {
+	  if (altSR[svt].empty()) continue;
+	  for(uint32_t i = 0; i < altSR[svt].size(); ++i) {
+	    if (validSR.empty()) newValidSR.insert(altSR[svt][i].id);
+	    else {
+	      if (validSR.find(altSR[svt][i].id) != validSR.end()) newValidSR.insert(altSR[svt][i].id);
+	    }
+	  }
+	}
+	validSR = newValidSR;
+
+	// Debug
+	//std::cerr << validSR.size() << std::endl;
+      }
+
+      // Filter primary SR records
+      uint32_t origSRsize = 0;
+      uint32_t newSRsize = 0;
+      TSvtSRBamRecord copySR(2 * DELLY_SVT_TRANS, TSRBamRecord());
+      for(uint32_t svt = 0; svt < srBR.size(); ++svt) {
+	origSRsize += srBR[svt].size();
+	copySR[svt] = srBR[svt];
+	srBR[svt].clear();
+	for(uint32_t i = 0; i < copySR[svt].size(); ++i) {
+	  if (validSR.find(copySR[svt][i].id) != validSR.end()) srBR[svt].push_back(copySR[svt][i]);
+	}
+	newSRsize += srBR[svt].size();
+      }
+      uint32_t filtSR = origSRsize - newSRsize;
+      double filtRatio = 0;
+      if (origSRsize) filtRatio = (double) filtSR / (double) origSRsize;
+      std::cerr << '[' << boost::posix_time::to_simple_string(boost::posix_time::second_clock::local_time()) << "] " << "Filtered " << filtSR << " out of " << origSRsize << " split-read records (" << (filtRatio * 100) << "%)" << std::endl;      
+    }
+
+
     // Debug
+    //std::cerr << "MainAlign: " << std::endl;
     //outputSRBamRecords(c, srBR, true);
 
     // Cluster BAM records
