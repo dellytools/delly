@@ -270,3 +270,7 @@ Bioinformatics. 2012 Sep 15;28(18):i333-i339.
 License
 -------
 Delly is distributed under the BSD 3-Clause license. Consult the accompanying [LICENSE](https://github.com/dellytools/delly/blob/main/LICENSE) file for more details.
+
+Credits
+-------
+[HTSlib](https://github.com/samtools/htslib) is heavily used for all genomic alignment and variant processing. [Boost](https://www.boost.org/) for various data structures and algorithms and [Edlib](https://github.com/Martinsos/edlib) for pairwise alignments using edit distance.
