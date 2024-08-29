@@ -513,6 +513,9 @@ namespace torali
 	  parseGfa(altConfig, g);
 	  altConfig.nchr = g.smap.size();
 
+	  // Minigraph lacks alignment extension so larger BP separation expected?
+	  altConfig.maxReadSep = 2000;
+	  
 	  // Alternate alignment in GAF format
 	  _findGraphSRBreakpoints(altConfig, g, altSR);
 
