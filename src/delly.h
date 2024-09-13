@@ -5,9 +5,6 @@
 #include <iostream>
 #include <fstream>
 
-#include <boost/graph/adjacency_list.hpp>
-#include <boost/graph/graphviz.hpp>
-#include <boost/graph/connected_components.hpp>
 #include <boost/container/flat_set.hpp>
 #include <boost/unordered_map.hpp>
 #include <boost/program_options/cmdline.hpp>
