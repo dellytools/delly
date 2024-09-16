@@ -23,6 +23,10 @@ namespace torali
 
     Link() {}
     Link(bool const fv, bool const tv, uint32_t const fr, uint32_t tos) : fromfwd(fv), tofwd(tv), from(fr), to(tos) {}
+
+    bool operator<(const Link& l2) const {
+      return ((from < l2.from) || ((from==l2.from) && (to < l2.to)));
+    }
   };
 
   struct LinkCargo {
@@ -36,18 +40,11 @@ namespace torali
     LinkCargo() {}
     LinkCargo(Link const lk) : fromfwd(lk.fromfwd), tofwd(lk.tofwd), from(lk.from), to(lk.to), support(0), mapq(0) {}
     LinkCargo(bool const fv, bool const tv, uint32_t const fr, uint32_t tos) : fromfwd(fv), tofwd(tv), from(fr), to(tos), support(0) {}
-  };
 
-
-  template<typename TLink>
-  struct SortLinks : public std::binary_function<TLink, TLink, bool>
-  {
-    inline bool operator()(TLink const& l1, TLink const& l2) {
-      return ((l1.from < l2.from) || ((l1.from==l2.from) && (l1.to < l2.to)));
+    bool operator<(const LinkCargo& l2) const {
+      return ((from < l2.from) || ((from==l2.from) && (to < l2.to)));
     }
   };
-
-  
 
   struct Graph {
     typedef std::map<std::string, uint32_t> TSegmentIdMap;

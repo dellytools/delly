@@ -35,25 +35,19 @@ namespace torali
     uint8_t MapQuality;
   
     BamAlignRecord(bam1_t* rec, uint8_t pairQuality, uint16_t a, uint16_t ma, int32_t median, int32_t mad, int32_t maxISize) : tid(rec->core.tid), pos(rec->core.pos), mtid(rec->core.mtid), mpos(rec->core.mpos), alen(a), malen(ma), Median(median), Mad(mad), maxNormalISize(maxISize), flag(rec->core.flag), MapQuality(pairQuality) {}
-  };
 
-  // Sort reduced bam alignment records
-  template<typename TRecord>
-  struct SortBamRecords : public std::binary_function<TRecord, TRecord, bool>
-  {
-    inline bool operator()(TRecord const& s1, TRecord const& s2) const {
-      if (s1.tid==s1.mtid) {
-	return ((std::min(s1.pos, s1.mpos) < std::min(s2.pos, s2.mpos)) || 
-		((std::min(s1.pos, s1.mpos) == std::min(s2.pos, s2.mpos)) && (std::max(s1.pos, s1.mpos) < std::max(s2.pos, s2.mpos))) ||
-		((std::min(s1.pos, s1.mpos) == std::min(s2.pos, s2.mpos)) && (std::max(s1.pos, s1.mpos) == std::max(s2.pos, s2.mpos)) && (s1.maxNormalISize < s2.maxNormalISize)));
+    bool operator<(const BamAlignRecord& s2) const {
+      if (tid==mtid) {
+	return ((std::min(pos, mpos) < std::min(s2.pos, s2.mpos)) || 
+		((std::min(pos, mpos) == std::min(s2.pos, s2.mpos)) && (std::max(pos, mpos) < std::max(s2.pos, s2.mpos))) ||
+		((std::min(pos, mpos) == std::min(s2.pos, s2.mpos)) && (std::max(pos, mpos) == std::max(s2.pos, s2.mpos)) && (maxNormalISize < s2.maxNormalISize)));
       } else {
-	return ((s1.pos < s2.pos) ||
-		((s1.pos == s2.pos) && (s1.mpos < s2.mpos)) ||
-		((s1.pos == s2.pos) && (s1.mpos == s2.mpos) && (s1.maxNormalISize < s2.maxNormalISize)));
+	return ((pos < s2.pos) ||
+		((pos == s2.pos) && (mpos < s2.mpos)) ||
+		((pos == s2.pos) && (mpos == s2.mpos) && (maxNormalISize < s2.maxNormalISize)));
       }
     }
   };
-  
 
   // Edge struct
   template<typename TWeight, typename TVertex>
@@ -64,14 +58,9 @@ namespace torali
     TWeight weight;
     
     EdgeRecord(TVertex s, TVertex t, TWeight w) : source(s), target(t), weight(w) {}
-  };
 
-  // Sort edge records
-  template<typename TRecord>
-  struct SortEdgeRecords : public std::binary_function<TRecord, TRecord, bool>
-  {
-    inline bool operator()(TRecord const& e1, TRecord const& e2) const {
-      return ((e1.weight < e2.weight) || ((e1.weight == e2.weight) && (e1.source < e2.source)) || ((e1.weight == e2.weight) && (e1.source == e2.source) && (e1.target < e2.target)));
+    bool operator<(const EdgeRecord e2) const {
+      return ((weight < e2.weight) || ((weight == e2.weight) && (source < e2.source)) || ((weight == e2.weight) && (source == e2.source) && (target < e2.target)));
     }
   };
 
@@ -225,7 +214,7 @@ namespace torali
     // Iterate all components
     for(typename TCompEdgeList::iterator compIt = compEdge.begin(); compIt != compEdge.end(); ++compIt) {
       // Sort edges by weight
-      std::sort(compIt->second.begin(), compIt->second.end(), SortEdgeRecords<TEdgeRecord>());
+      std::sort(compIt->second.begin(), compIt->second.end());
 
       // Find a large clique
       typename TEdgeList::const_iterator itWEdge = compIt->second.begin();
@@ -454,12 +443,11 @@ namespace torali
   inline void
   _searchCliques(TConfig const& c, TCompEdgeList& compEdge, TBamRecord const& bamRecord, TSVs& svs, int32_t const svt) {
     typedef typename TCompEdgeList::mapped_type TEdgeList;
-    typedef typename TEdgeList::value_type TEdgeRecord;
 
     // Iterate all components
     for(typename TCompEdgeList::iterator compIt = compEdge.begin(); compIt != compEdge.end(); ++compIt) {
       // Sort edges by weight
-      std::sort(compIt->second.begin(), compIt->second.end(), SortEdgeRecords<TEdgeRecord>());
+      std::sort(compIt->second.begin(), compIt->second.end());
       
       // Find a large clique
       typename TEdgeList::const_iterator itWEdge = compIt->second.begin();

@@ -432,9 +432,7 @@ namespace torali
     }
 
     // Sort junctions
-    for(typename TReadBp::iterator it = readBp.begin(); it != readBp.end(); ++it) {
-      std::sort(it->second.begin(), it->second.end(), SortJunction<Junction>());
-    }
+    for(typename TReadBp::iterator it = readBp.begin(); it != readBp.end(); ++it) std::sort(it->second.begin(), it->second.end());
 
     // Clean-up
     bam_hdr_destroy(hdr);
@@ -570,7 +568,7 @@ namespace torali
       if (srBR[svt].empty()) continue;
       
       // Sort
-      std::sort(srBR[svt].begin(), srBR[svt].end(), SortSRBamRecord<SRBamRecord>());
+      std::sort(srBR[svt].begin(), srBR[svt].end());
       
       // Cluster
       cluster(c, srBR[svt], svc, svt);

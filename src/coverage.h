@@ -30,6 +30,10 @@ namespace torali {
     SpanPoint() : bppos(0), svt(0), id(0), chr2(0), otherBppos(0) {}
     explicit SpanPoint(int32_t const bp) : bppos(bp), svt(0), id(0), chr2(0), otherBppos(0) {}
     SpanPoint(int32_t const bp, int32_t const s, uint32_t const identifier, int32_t const tid, int32_t const obp) : bppos(bp), svt(s), id(identifier), chr2(tid), otherBppos(obp) {}
+
+    bool operator<(const SpanPoint& s2) const {
+      return (bppos < s2.bppos);
+    }
   };
   
   struct BpRegion {
@@ -45,15 +49,12 @@ namespace torali {
     BpRegion() : regionStart(0), regionEnd(0), bppos(0), homLeft(0), homRight(0), svt(0), id(0), bpPoint(0) {}
     explicit BpRegion(int32_t bp) : regionStart(0), regionEnd(0), bppos(bp), homLeft(0), homRight(0), svt(0), id(0), bpPoint(0) {}
   BpRegion(int32_t rs, int32_t re, int32_t bpos, int32_t hl, int32_t hr, int32_t s, uint32_t identifier, uint8_t bpp) : regionStart(rs), regionEnd(re), bppos(bpos), homLeft(hl), homRight(hr), svt(s), id(identifier), bpPoint(bpp) {}
-  };
 
-  template<typename TRecord>
-  struct SortBp : public std::binary_function<TRecord, TRecord, bool> {
-    inline bool operator()(TRecord const& s1, TRecord const& s2) const {
-      return (s1.bppos < s2.bppos);
+    bool operator<(const BpRegion& s2) const {
+      return (bppos < s2.bppos);
     }
   };
-  
+
   struct SpanningCount {
     std::vector<uint8_t> ref;
     std::vector<uint8_t> alt;
@@ -228,7 +229,7 @@ namespace torali {
     fai_destroy(fai);
     for(int32_t refIndex=0; refIndex < (int32_t) hdr->n_targets; ++refIndex) {
       // Sort breakpoint regions
-      std::sort(bpRegion[refIndex].begin(), bpRegion[refIndex].end(), SortBp<BpRegion>());
+      std::sort(bpRegion[refIndex].begin(), bpRegion[refIndex].end());
     }
   }
 
@@ -236,7 +237,6 @@ namespace torali {
   inline void
   annotateCoverage(TConfig& c, TSampleLibrary& sampleLib, TSVs& svs, TCoverageCount& covCount, TCountMap& countMap, TSpanMap& spanMap)
   {
-    typedef typename TCoverageCount::value_type::value_type TCovPair;
     typedef typename TSpanMap::value_type::value_type TSpanPair;
     typedef typename TCountMap::value_type::value_type TCountPair;
     typedef std::vector<uint8_t> TQuality;
@@ -262,7 +262,7 @@ namespace torali {
     countMap.resize(c.files.size());
     spanMap.resize(c.files.size());
     for(uint32_t file_c = 0; file_c < c.files.size(); ++file_c) {
-      covCount[file_c].resize(svs.size(), TCovPair());
+      covCount[file_c].resize(svs.size());
       countMap[file_c].resize(svs.size(), TCountPair());
       spanMap[file_c].resize(svs.size(), TSpanPair());
     }
@@ -372,7 +372,7 @@ namespace torali {
 	    spanPoint.push_back(SpanPoint(itSV->svEnd, itSV->svt, itSV->id, itSV->chr, itSV->svStart));
 	  }
 	}
-	std::sort(spanPoint.begin(), spanPoint.end(), SortBp<SpanPoint>());
+	std::sort(spanPoint.begin(), spanPoint.end());
       
 	// Count reads
 	hts_itr_t* iter = sam_itr_queryi(idx[file_c], refIndex, 0, hdr[file_c]->target_len[refIndex]);
@@ -426,7 +426,7 @@ namespace torali {
 	    }
 	    if (bpvalid) {
 	      // Fetch all relevant SVs
-	      typename TBpRegion::iterator itBp = std::lower_bound(bpRegion[refIndex].begin(), bpRegion[refIndex].end(), BpRegion(rbegin), SortBp<BpRegion>());
+	      typename TBpRegion::iterator itBp = std::lower_bound(bpRegion[refIndex].begin(), bpRegion[refIndex].end(), BpRegion(rbegin));
 	      for(; ((itBp != bpRegion[refIndex].end()) && (rec->core.pos + rec->core.l_qseq >= itBp->bppos)); ++itBp) {
 		if ((countMap[file_c][itBp->id].ref.size() + countMap[file_c][itBp->id].alt.size()) >= c.maxGenoReadCount) continue;
 		// Read spans breakpoint?
@@ -582,7 +582,7 @@ namespace torali {
 	      }
 	      if (spanvalid) {
 		// Fetch all relevant SVs
-		typename TSpanPoint::iterator itSpan = std::lower_bound(spanPoint.begin(), spanPoint.end(), SpanPoint(st), SortBp<SpanPoint>());
+		typename TSpanPoint::iterator itSpan = std::lower_bound(spanPoint.begin(), spanPoint.end(), SpanPoint(st));
 		for(; ((itSpan != spanPoint.end()) && (st + spanlen >= itSpan->bppos)); ++itSpan) {
 		  // Account for reference bias
 		  if (++refAlignedSpanCount[file_c][itSpan->id] % 2) {
@@ -617,7 +617,7 @@ namespace torali {
 	      }
 	      if (spanvalid) {
 		// Fetch all relevant SVs
-		typename TSpanPoint::iterator itSpan = std::lower_bound(spanPoint.begin(), spanPoint.end(), SpanPoint(pbegin), SortBp<SpanPoint>());
+		typename TSpanPoint::iterator itSpan = std::lower_bound(spanPoint.begin(), spanPoint.end(), SpanPoint(pbegin));
 		for(; ((itSpan != spanPoint.end()) && (pend >= itSpan->bppos)); ++itSpan) {
 		  if (svt == itSpan->svt) {
 		    // Make sure, mate is correct

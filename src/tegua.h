@@ -115,7 +115,7 @@ namespace torali {
      assemble(c, validRegions, svc, srStore);
 
      // Sort SVs
-     sort(svc.begin(), svc.end(), SortSVs<StructuralVariantRecord>());
+     sort(svc.begin(), svc.end());
       
      // Remove duplicates
      StructuralVariantRecord lastSV;
@@ -136,7 +136,7 @@ namespace torali {
      }
 
      // Sort
-     sort(svs.begin(), svs.end(), SortSVs<StructuralVariantRecord>());
+     sort(svs.begin(), svs.end());
      
      // Re-number SVs
      uint32_t cliqueCount = 0;
@@ -165,7 +165,7 @@ namespace torali {
    for(uint32_t file_c = 0; file_c < c.files.size(); ++file_c) {
      jctMap[file_c].resize(svs.size(), JunctionCount());
      spanMap[file_c].resize(svs.size(), SpanningCount());
-     rcMap[file_c].resize(svs.size(), ReadCount());
+     rcMap[file_c].resize(svs.size());
    }
 
    // SV Genotyping

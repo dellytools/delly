@@ -209,9 +209,7 @@ namespace torali {
       }
 
       // Sort junctions
-      for(typename TReadBp::iterator it = readBp.begin(); it != readBp.end(); ++it) {
-	std::sort(it->second.begin(), it->second.end(), SortJunction<Junction>());
-      }
+      for(typename TReadBp::iterator it = readBp.begin(); it != readBp.end(); ++it) std::sort(it->second.begin(), it->second.end());
       
       // Close file
       dataIn.pop();

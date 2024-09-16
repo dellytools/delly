@@ -414,9 +414,7 @@ namespace torali
       }
 
       // Process all junctions for this BAM file
-      for(typename TReadBp::iterator it = readBp.begin(); it != readBp.end(); ++it) {
-	std::sort(it->second.begin(), it->second.end(), SortJunction<Junction>());
-      }
+      for(typename TReadBp::iterator it = readBp.begin(); it != readBp.end(); ++it) std::sort(it->second.begin(), it->second.end());
 	
       // Collect split-read SVs
 #pragma omp critical
@@ -440,7 +438,7 @@ namespace torali
       if (srBR[svt].empty()) continue;
       
       // Sort
-      std::sort(srBR[svt].begin(), srBR[svt].end(), SortSRBamRecord<SRBamRecord>());
+      std::sort(srBR[svt].begin(), srBR[svt].end());
 
       // Cluster
       cluster(c, srBR[svt], srSVs, svt);
@@ -460,7 +458,7 @@ namespace torali
       if (bamRecord[svt].empty()) continue;
 	
       // Sort BAM records according to position
-      std::sort(bamRecord[svt].begin(), bamRecord[svt].end(), SortBamRecords<BamAlignRecord>());
+      std::sort(bamRecord[svt].begin(), bamRecord[svt].end());
 
       // Cluster
       cluster(c, bamRecord[svt], svs, varisize, svt);
@@ -493,10 +491,10 @@ namespace torali
   mergeSort(std::vector<StructuralVariantRecord>& pe, std::vector<StructuralVariantRecord>& sr) {
     typedef typename std::vector<StructuralVariantRecord> TVariants;
     // Sort PE records for look-up
-    sort(pe.begin(), pe.end(), SortSVs<StructuralVariantRecord>());
+    sort(pe.begin(), pe.end());
 
     // Sort SR records for look-up
-    sort(sr.begin(), sr.end(), SortSVs<StructuralVariantRecord>());
+    sort(sr.begin(), sr.end());
     
     // Augment PE SVs and append missing SR SVs
     for(int32_t svt = 0; svt < 10; ++svt) {
@@ -507,7 +505,7 @@ namespace torali
 	// Precise duplicates
 	int32_t searchWindow = 500;
 	bool svExists = false;
-	typename TVariants::iterator itOther = std::lower_bound(pe.begin(), pe.end(), StructuralVariantRecord(sr[i].chr, std::max(0, sr[i].svStart - searchWindow), sr[i].svEnd), SortSVs<StructuralVariantRecord>());
+	typename TVariants::iterator itOther = std::lower_bound(pe.begin(), pe.end(), StructuralVariantRecord(sr[i].chr, std::max(0, sr[i].svStart - searchWindow), sr[i].svEnd));
 	for(; ((itOther != pe.end()) && (std::abs(itOther->svStart - sr[i].svStart) < searchWindow)); ++itOther) {
 	  if ((itOther->svt != svt) || (itOther->precise)) continue; 
 	  if ((sr[i].chr != itOther->chr) || (sr[i].chr2 != itOther->chr2)) continue;  // Mismatching chr
@@ -569,7 +567,7 @@ namespace torali
 	  }
 	  if (!preciseDuplicate) {
 	    pe.push_back(sr[i]);
-	    sort(pe.begin(), pe.end(), SortSVs<StructuralVariantRecord>());
+	    sort(pe.begin(), pe.end());
 	  }
 	}
       }

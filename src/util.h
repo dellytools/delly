@@ -55,18 +55,11 @@ namespace torali
 
     CNV() : chr(0), start(0), end(0), ciposlow(0), ciposhigh(0), ciendlow(0), ciendhigh(0), qval(0), cn(-1), mappable(0), sd(1) {}
     CNV(int32_t const c, int32_t const s, int32_t const e, int32_t const cil, int32_t const cih, int32_t const cel, int32_t ceh, double const estcn, double const mp) : chr(c), start(s), end(e), ciposlow(cil), ciposhigh(cih), ciendlow(cel), ciendhigh(ceh), qval(0), cn(estcn), mappable(mp), sd(1) {}
-  };
 
-  template<typename TCNV>
-  struct SortCNVs : public std::binary_function<TCNV, TCNV, bool>
-  {
-    inline bool operator()(TCNV const& sv1, TCNV const& sv2) {
-      return ((sv1.chr<sv2.chr) || ((sv1.chr==sv2.chr) && (sv1.start<sv2.start)) || ((sv1.chr==sv2.chr) && (sv1.start==sv2.start) && (sv1.end<sv2.end)) || ((sv1.chr==sv2.chr) && (sv1.start==sv2.start) && (sv1.end==sv2.end) && (sv1.cn < sv2.cn)));
+    bool operator<(const CNV& sv2) const {
+      return ((chr<sv2.chr) || ((chr==sv2.chr) && (start<sv2.start)) || ((chr==sv2.chr) && (start==sv2.start) && (end<sv2.end)) || ((chr==sv2.chr) && (start==sv2.start) && (end==sv2.end) && (cn < sv2.cn)));
     }
   };
-
-
-
 
   // Read count struct
   struct ReadCount {

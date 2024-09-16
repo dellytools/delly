@@ -48,18 +48,15 @@ namespace torali {
     int32_t refpos;
     int32_t seqpos;
     uint16_t qual;
-    
-    Junction(bool const fw, bool const cl, int32_t const idx, int32_t const rst, int32_t const r, int32_t const s, uint16_t const qval) : forward(fw), scleft(cl), refidx(idx), rstart(rst), refpos(r), seqpos(s), qual(qval) {}
-  };
 
-  
-  template<typename TJunction>
-  struct SortJunction : public std::binary_function<TJunction, TJunction, bool>
-  {
-    inline bool operator()(TJunction const& j1, TJunction const& j2) {
-      return ((j1.seqpos<j2.seqpos) || ((j1.seqpos==j2.seqpos) && (j1.refidx<j2.refidx)) || ((j1.seqpos==j2.seqpos) && (j1.refidx==j2.refidx) && (j1.refpos<j2.refpos)) || ((j1.seqpos==j2.seqpos) && (j1.refidx==j2.refidx) && (j1.refpos==j2.refpos) && (j1.scleft < j2.scleft)));
+    Junction(bool const fw, bool const cl, int32_t const idx, int32_t const rst, int32_t const r, int32_t const s, uint16_t const qval) : forward(fw), scleft(cl), refidx(idx), rstart(rst), refpos(r), seqpos(s), qual(qval) {}
+
+    bool operator<(const Junction& j2) const {
+      return ((seqpos<j2.seqpos) || ((seqpos==j2.seqpos) && (refidx<j2.refidx)) || ((seqpos==j2.seqpos) && (refidx==j2.refidx) && (refpos<j2.refpos)) || ((seqpos==j2.seqpos) && (refidx==j2.refidx) && (refpos==j2.refpos) && (scleft < j2.scleft)));
     }
   };
+  
+
 
   // Split-read record
   struct SRBamRecord {
@@ -75,17 +72,12 @@ namespace torali {
     std::size_t id;
         
     SRBamRecord(int32_t const c, int32_t const p, int32_t const c2, int32_t const p2, int32_t const rst, int32_t const sst, int32_t const qval, int32_t const il, std::size_t const idval) : chr(c), pos(p), chr2(c2), pos2(p2), rstart(rst), sstart(sst), qual(qval), inslen(il), svid(-1), id(idval) {}
-  };
 
-  template<typename TSRBamRecord>
-  struct SortSRBamRecord : public std::binary_function<TSRBamRecord, TSRBamRecord, bool>
-  {
-    inline bool operator()(TSRBamRecord const& sv1, TSRBamRecord const& sv2) {
-      return ((sv1.chr<sv2.chr) || ((sv1.chr==sv2.chr) && (sv1.pos<sv2.pos)) || ((sv1.chr==sv2.chr) && (sv1.pos==sv2.pos) && (sv1.chr2<sv2.chr2)) || ((sv1.chr==sv2.chr) && (sv1.pos==sv2.pos) && (sv1.chr2==sv2.chr2) && (sv1.pos2 < sv2.pos2)));
+    bool operator<(const SRBamRecord& sv2) const {
+      return ((chr<sv2.chr) || ((chr==sv2.chr) && (pos<sv2.pos)) || ((chr==sv2.chr) && (pos==sv2.pos) && (chr2<sv2.chr2)) || ((chr==sv2.chr) && (pos==sv2.pos) && (chr2==sv2.chr2) && (pos2 < sv2.pos2)));
     }
   };
-    
-  
+
   // Structural variant record
   struct StructuralVariantRecord {
     int32_t chr;
@@ -117,16 +109,12 @@ namespace torali {
     StructuralVariantRecord(int32_t const c, int32_t const s, int32_t const e) : chr(c), svStart(s), chr2(c), svEnd(e), ciposlow(0), ciposhigh(0), ciendlow(0), ciendhigh(0), srSupport(0), srMapQuality(0), mapq(0), insLen(0), svt(-1), id(0), homLen(0), peSupport(0), peMapQuality(0), consBp(0), srAlignQuality(0), precise(false) {}
 
     StructuralVariantRecord(int32_t const c1, int32_t const s, int32_t const c2, int32_t const e, int32_t const cipl, int32_t const ciph, int32_t const ciel, int32_t const cieh, int32_t const sup, int32_t const srmapq, int32_t const qval, int32_t const ilen, int32_t const svtype, int32_t const idval): chr(c1), svStart(s), chr2(c2), svEnd(e), ciposlow(cipl), ciposhigh(ciph), ciendlow(ciel), ciendhigh(cieh), srSupport(sup), srMapQuality(srmapq), mapq(qval), insLen(ilen), svt(svtype), id(idval), homLen(0), peSupport(0), peMapQuality(0), consBp(0), srAlignQuality(0), precise(true) {}
-  };
 
-  template<typename TSV>
-  struct SortSVs : public std::binary_function<TSV, TSV, bool>
-  {
-    inline bool operator()(TSV const& sv1, TSV const& sv2) {
-      return ((sv1.chr<sv2.chr) || ((sv1.chr==sv2.chr) && (sv1.svStart<sv2.svStart)) || ((sv1.chr==sv2.chr) && (sv1.svStart==sv2.svStart) && (sv1.chr2<sv2.chr2)) || ((sv1.chr==sv2.chr) && (sv1.svStart==sv2.svStart) && (sv1.chr2==sv2.chr2) && (sv1.svEnd<sv2.svEnd)) || ((sv1.chr==sv2.chr) && (sv1.svStart==sv2.svStart) && (sv1.chr2==sv2.chr2) && (sv1.svEnd==sv2.svEnd) && (sv1.peSupport > sv2.peSupport)) || ((sv1.chr==sv2.chr) && (sv1.svStart==sv2.svStart) && (sv1.chr2==sv2.chr2) && (sv1.svEnd==sv2.svEnd) && (sv1.peSupport == sv2.peSupport) && (sv1.srSupport > sv2.srSupport)));
+    bool operator<(const StructuralVariantRecord& sv2) const {
+      return ((chr<sv2.chr) || ((chr==sv2.chr) && (svStart<sv2.svStart)) || ((chr==sv2.chr) && (svStart==sv2.svStart) && (chr2<sv2.chr2)) || ((chr==sv2.chr) && (svStart==sv2.svStart) && (chr2==sv2.chr2) && (svEnd<sv2.svEnd)) || ((chr==sv2.chr) && (svStart==sv2.svStart) && (chr2==sv2.chr2) && (svEnd==sv2.svEnd) && (peSupport > sv2.peSupport)) || ((chr==sv2.chr) && (svStart==sv2.svStart) && (chr2==sv2.chr2) && (svEnd==sv2.svEnd) && (peSupport == sv2.peSupport) && (srSupport > sv2.srSupport)));
     }
+    
   };
-
 
   struct Breakpoint {
     int32_t svStartBeg;

@@ -119,7 +119,7 @@ namespace torali
 	svbp[svs[i].chr].push_back(SVBreakpoint(svs[i].svStart, svs[i].ciposlow, svs[i].ciposhigh, svs[i].mapq));
 	svbp[svs[i].chr2].push_back(SVBreakpoint(svs[i].svEnd, svs[i].ciendlow, svs[i].ciendhigh, svs[i].mapq));
       }
-      for (uint32_t i = 0; i < svbp.size(); ++i) sort(svbp[i].begin(), svbp[i].end(), SortSVBreakpoint<SVBreakpoint>());
+      for (uint32_t i = 0; i < svbp.size(); ++i) sort(svbp[i].begin(), svbp[i].end());
     }
     
     // Iterate chromosomes
@@ -458,7 +458,7 @@ namespace torali
     }
 
     // Sort CNVs
-    sort(cnvs.begin(), cnvs.end(), SortCNVs<CNV>());
+    sort(cnvs.begin(), cnvs.end());
 
     // Genotype CNVs
     cnvVCF(c, cnvs);

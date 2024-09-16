@@ -27,16 +27,11 @@ namespace torali
 
     ScanWindow() : select(false), start(0), end(0), cov(0), uniqcov(0) {}
     explicit ScanWindow(int32_t const s) : select(false), start(s), end(s+1), cov(0), uniqcov(0) {}
-  };
 
-  template<typename TScanWindow>
-  struct SortScanWindow : public std::binary_function<TScanWindow, TScanWindow, bool>
-  {
-    inline bool operator()(TScanWindow const& sw1, TScanWindow const& sw2) {
-      return ((sw1.start<sw2.start) || ((sw1.start == sw2.start) && (sw1.end < sw2.end)));
+    bool operator<(const ScanWindow& sw2) const {
+      return ((start<sw2.start) || ((start == sw2.start) && (end < sw2.end)));
     }
   };
-
 
   template<typename TConfig>
   inline int32_t
@@ -105,7 +100,7 @@ namespace torali
 	  }
 	}
 	// Sort scan windows
-	sort(scanCounts[refIndex].begin(), scanCounts[refIndex].end(), SortScanWindow<ScanWindow>());
+	sort(scanCounts[refIndex].begin(), scanCounts[refIndex].end());
       }
     }
     

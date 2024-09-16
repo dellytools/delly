@@ -129,9 +129,7 @@ namespace torali {
     }
 
     // Sort junctions
-    for(typename TReadBp::iterator it = readBp.begin(); it != readBp.end(); ++it) {
-      std::sort(it->second.begin(), it->second.end(), SortJunction<Junction>());
-    }
+    for(typename TReadBp::iterator it = readBp.begin(); it != readBp.end(); ++it) std::sort(it->second.begin(), it->second.end());
 
     // Clean-up
     bam_hdr_destroy(hdr);
@@ -170,7 +168,7 @@ namespace torali {
     for(uint32_t svt = 0; svt < srBR.size(); ++svt) {
       if (srBR[svt].empty()) continue;
       // Sort
-      std::sort(srBR[svt].begin(), srBR[svt].end(), SortSRBamRecord<SRBamRecord>());
+      std::sort(srBR[svt].begin(), srBR[svt].end());
       //outputSRBamRecords(c, srBR, true);
 
       // Cluster
@@ -364,7 +362,7 @@ namespace torali {
      _setAsmConsensus(c, svc, srStore);
    
      // Sort SVs
-     sort(svc.begin(), svc.end(), SortSVs<StructuralVariantRecord>());
+     sort(svc.begin(), svc.end());
 
      // Filter SVs
      uint32_t idCount = 0;
@@ -396,7 +394,7 @@ namespace torali {
    for(uint32_t file_c = 0; file_c < c.files.size(); ++file_c) {
      jctMap[file_c].resize(svs.size(), JunctionCount());
      spanMap[file_c].resize(svs.size(), SpanningCount());
-     rcMap[file_c].resize(svs.size(), ReadCount());
+     rcMap[file_c].resize(svs.size());
    }
 
    // VCF Output

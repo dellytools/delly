@@ -148,7 +148,7 @@ namespace torali
     sam_close(samfile);
 
     // Re-number SVs
-    sort(svs.begin(), svs.end(), SortSVs<StructuralVariantRecord>());    
+    sort(svs.begin(), svs.end());
     uint32_t cliqueCount = 0;
     for(typename TVariants::iterator svIt = svs.begin(); svIt != svs.end(); ++svIt, ++cliqueCount) svIt->id = cliqueCount;
     

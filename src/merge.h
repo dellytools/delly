@@ -62,15 +62,10 @@ struct IntervalScore {
   int32_t score;
   
   IntervalScore(uint32_t s, uint32_t e, int32_t c) : start(s), end(e), score(c) {}
-};
 
-template<typename TRecord>
-struct SortIScores : public std::binary_function<TRecord, TRecord, bool>
-{
-  inline bool operator()(TRecord const& s1, TRecord const& s2) const {
-    return ((s1.start < s2.start) || ((s1.start == s2.start) && (s1.end < s2.end)));
+  bool operator<(const IntervalScore& s2) const {
+    return ((start < s2.start) || ((start == s2.start) && (end < s2.end)));
   }
-
 };
 
 template<typename TPos>
@@ -434,7 +429,7 @@ void _outputSelectedIntervals(MergeConfig& c, TGenomeIntervals const& iSelected,
 	  int32_t score = rec[idx]->qual;
 	  
 	  // Is this a selected interval
-	  typename TIntervalScores::const_iterator iter = std::lower_bound(iSelected[tid].begin(), iSelected[tid].end(), IntervalScore(svStart, svEnd, score), SortIScores<IntervalScore>());
+	  typename TIntervalScores::const_iterator iter = std::lower_bound(iSelected[tid].begin(), iSelected[tid].end(), IntervalScore(svStart, svEnd, score));
 	  bool foundInterval = false;
 	  for(; (iter != iSelected[tid].end()) && (iter->start == svStart); ++iter) {
 	    if ((iter->start == svStart) && (iter->end == svEnd) && (iter->score == score)) {
@@ -693,7 +688,7 @@ void _outputSelectedIntervals(MergeConfig& c, TGenomeIntervals const& iSelected,
 	    int32_t score = rec[idx]->qual;
 	  
 	    // Is this a selected interval
-	    typename TIntervalScores::const_iterator iter = std::lower_bound(iSelected[tid].begin(), iSelected[tid].end(), IntervalScore(svStart, svEnd, score), SortIScores<IntervalScore>());
+	    typename TIntervalScores::const_iterator iter = std::lower_bound(iSelected[tid].begin(), iSelected[tid].end(), IntervalScore(svStart, svEnd, score));
 	    bool foundInterval = false;
 	    for(; (iter != iSelected[tid].end()) && (iter->start == svStart); ++iter) {
 	      if ((iter->start == svStart) && (iter->end == svEnd) && (iter->score == score)) {
@@ -884,14 +879,14 @@ mergeRun(MergeConfig& c, int32_t const svt) {
   TGenomeIntervals iScore;
   iScore.resize(numseq, TIntervalScores());
   _fillIntervalMap(c, iScore, contigMap, svt);
-  for(uint32_t i = 0; i<numseq; ++i) std::sort(iScore[i].begin(), iScore[i].end(), SortIScores<IntervalScore>());
+  for(uint32_t i = 0; i<numseq; ++i) std::sort(iScore[i].begin(), iScore[i].end());
 
   // Filter intervals
   TGenomeIntervals iSelected;
   iSelected.resize(numseq, TIntervalScores());
   _processIntervalMap(c, iScore, iSelected, svt);
   iScore.clear();
-  for(uint32_t i = 0; i<numseq; ++i) std::sort(iSelected[i].begin(), iSelected[i].end(), SortIScores<IntervalScore>());
+  for(uint32_t i = 0; i<numseq; ++i) std::sort(iSelected[i].begin(), iSelected[i].end());
 
   // Output best intervals
   if (svt == 9) _outputSelectedIntervalsCNVs(c, iSelected, contigMap);

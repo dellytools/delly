@@ -35,18 +35,13 @@ namespace torali
 
     explicit SVBreakpoint(int32_t const p) : pos(p), cilow(0), cihigh(0), qual(0) {}
     SVBreakpoint(int32_t const p, int32_t const cil, int32_t const cih, int32_t q) : pos(p), cilow(cil), cihigh(cih), qual(q) {}
-  };
 
-
-  template<typename TSVBp>
-  struct SortSVBreakpoint : public std::binary_function<TSVBp, TSVBp, bool>
-  {
-    inline bool operator()(TSVBp const& sv1, TSVBp const& sv2) {
-      return ((sv1.pos<sv2.pos) || ((sv1.pos==sv2.pos) && (sv1.qual<sv2.qual)));
+    bool operator<(const SVBreakpoint& sv2) const {
+      return ((pos<sv2.pos) || ((pos==sv2.pos) && (qual<sv2.qual)));
     }
   };
 
-  
+
   struct BpCNV {
     int32_t start;
     int32_t end;
@@ -139,7 +134,7 @@ namespace torali
       midpoint = (int32_t) ((cnvs[n].start + cnvs[n].end) / 2);
       if (searchEnd > midpoint) searchEnd = midpoint;
       // Current CNV start for this breakpoint
-      typename TSVs::const_iterator itsv = std::lower_bound(svbp[refIndex].begin(), svbp[refIndex].end(), SVBreakpoint(searchStart), SortSVBreakpoint<SVBreakpoint>());
+      auto itsv = std::lower_bound(svbp[refIndex].begin(), svbp[refIndex].end(), SVBreakpoint(searchStart));
       for(; itsv != svbp[refIndex].end(); ++itsv) {
 	if (itsv->pos > searchEnd) break;
 	if ((itbest == svbp[refIndex].end()) || (itsv->qual > itbest->qual)) itbest = itsv;
