@@ -23,7 +23,7 @@ namespace torali
 
   template<typename TAlign>
   inline void
-  convertAlignment(std::string const& query, TAlign& align, EdlibAlignMode const modeCode, EdlibAlignResult& cigar) {
+  convertAlignment(std::string const& query, TAlign& align, EdlibAlignMode const modeCode, EdlibAlignResult const& cigar) {
     // Input alignment
     TAlign alignIn;
     alignIn.resize(boost::extents[align.shape()[0]][align.shape()[1]]);
@@ -88,7 +88,7 @@ namespace torali
   }
 
   inline void
-  buildSuperstring(std::string const& seqI, std::string const& seqJ, std::string& outStr, EdlibAlignResult& cigar, uint32_t const preI, uint32_t const postI, uint32_t const preJ, uint32_t const postJ) {
+  buildSuperstring(std::string const& seqI, std::string const& seqJ, std::string& outStr, EdlibAlignResult const& cigar, uint32_t const preI, uint32_t const postI, uint32_t const preJ, uint32_t const postJ) {
     int32_t iIdx = 0;
     int32_t jIdx = 0;
     // prefix
@@ -135,7 +135,7 @@ namespace torali
   
   template<typename TAlign>
   inline void
-  convertAlignment(std::string const& query, TAlign& align, EdlibAlignMode const modeCode, EdlibAlignResult& cigar, uint32_t const preI, uint32_t const postI, uint32_t const preJ, uint32_t const postJ) {
+  convertAlignment(std::string const& query, TAlign& align, EdlibAlignMode const modeCode, EdlibAlignResult const& cigar, uint32_t const preI, uint32_t const postI, uint32_t const preJ, uint32_t const postJ) {
     // Input alignment
     TAlign alignIn;
     alignIn.resize(boost::extents[align.shape()[0]][align.shape()[1]]);
@@ -811,7 +811,7 @@ namespace torali
 	    // Get sequence
 	    std::string sequence;
 	    sequence.resize(rec->core.l_qseq);
-	    uint8_t* seqptr = bam_get_seq(rec);
+	    const uint8_t* seqptr = bam_get_seq(rec);
 	    for (int i = 0; i < rec->core.l_qseq; ++i) sequence[i] = "=ACMGRSVTWYHKDBN"[bam_seqi(seqptr, i)];
 	    int32_t readlen = sequence.size();
 
@@ -899,9 +899,9 @@ namespace torali
 		  computeMSA = true;
 		  // Lazy loading of references
 		  if (sndSeq == NULL) {
-		    int32_t seqlen = -1;
-		    std::string tname(hdr->target_name[refIndex2]);
-		    sndSeq = faidx_fetch_seq(fai, tname.c_str(), 0, hdr->target_len[refIndex2], &seqlen);
+		    int32_t seqlen2 = -1;
+		    std::string tname2(hdr->target_name[refIndex2]);
+		    sndSeq = faidx_fetch_seq(fai, tname2.c_str(), 0, hdr->target_len[refIndex2], &seqlen2);
 		  }
 		}
 	      } else {

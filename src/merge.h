@@ -502,7 +502,7 @@ void _outputSelectedIntervals(MergeConfig& c, TGenomeIntervals const& iSelected,
 	    bcf_update_info_int32(hdr_out, rout, "CIPOS", cipos, 2);
 	    bcf_update_info_int32(hdr_out, rout, "CIEND", ciend, 2);
 	    if (precise) {
-	      int32_t tmpi = srMapQuality;
+	      tmpi = srMapQuality;
 	      bcf_update_info_int32(hdr_out, rout, "SRMAPQ", &tmpi, 1);
 	      bcf_update_info_int32(hdr_out, rout, "INSLEN", &inslenVal, 1);
 	      bcf_update_info_int32(hdr_out, rout, "HOMLEN", &homlenVal, 1);
@@ -1064,8 +1064,8 @@ int merge(int argc, char **argv) {
       uint32_t chunks = ((c.files.size() - 1) / c.chunksize) + 1;
       std::vector<boost::filesystem::path> chunkCollect(chunks);
       for(uint32_t ic = 0; ic < chunks; ++ic) {
-	boost::uuids::uuid uuid = boost::uuids::random_generator()();
-	std::string chunkfile = "chunk" + boost::lexical_cast<std::string>(ic) + "_" + boost::lexical_cast<std::string>(uuid) + ".bcf";
+	boost::uuids::uuid uuid2 = boost::uuids::random_generator()();
+	std::string chunkfile = "chunk" + boost::lexical_cast<std::string>(ic) + "_" + boost::lexical_cast<std::string>(uuid2) + ".bcf";
 	chunkCollect[ic] = chunkfile;
 	c.files.clear();
 	for(uint32_t k = ic * c.chunksize; ((k < ((ic+1) * c.chunksize)) && (k < fileRestore.size())); ++k) c.files.push_back(fileRestore[k]);

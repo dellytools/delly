@@ -33,8 +33,8 @@ namespace torali
     std::vector<int8_t> cigarop;
     std::vector<uint32_t> cigarlen;
 
-    AlignRecord() : qstart(0), hap('*'), seed(0) {}
-    AlignRecord(int32_t const q, std::size_t const s) : qstart(q), hap('*'), seed(s) {}
+    AlignRecord() : qlen(0), qstart(0), qend(0), plen(0), pstart(0), pend(0), matches(0), alignlen(0), mapq(0), strand('*'), hap('*'), seed(0) {}
+    AlignRecord(int32_t const q, std::size_t const s) : qlen(0), qstart(q), qend(0), plen(0), pstart(0), pend(0), matches(0), alignlen(0), mapq(0), strand('*'), hap('*'), seed(s) {}
 
     bool operator<(const AlignRecord& s2) const {
       return ((seed < s2.seed) || ((seed == s2.seed) && (qstart < s2.qstart)));

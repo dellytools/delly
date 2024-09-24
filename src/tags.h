@@ -137,7 +137,7 @@ namespace torali {
   // Initialize breakpoint
   template<typename TBreakpoint>
   inline void
-  _initBreakpoint(bam_hdr_t* hdr, TBreakpoint& bp, int32_t const boundary, int32_t const svt) {
+  _initBreakpoint(bam_hdr_t const* hdr, TBreakpoint& bp, int32_t const boundary, int32_t const svt) {
     if (_translocation(svt)) {
         bp.svStartBeg = std::max(0, bp.svStart - boundary);
 	bp.svStartEnd = std::min((int32_t) (hdr->target_len[bp.chr]), bp.svStart + boundary);

@@ -350,7 +350,7 @@ namespace torali
 	    uint32_t sp = 0; // sequence pointer
 	    
 	    // Parse the CIGAR
-	    uint32_t* cigar = bam_get_cigar(rec);
+	    const uint32_t* cigar = bam_get_cigar(rec);
 	    for (std::size_t i = 0; i < rec->core.n_cigar; ++i) {
 	      if ((bam_cigar_op(cigar[i]) == BAM_CMATCH) || (bam_cigar_op(cigar[i]) == BAM_CEQUAL) || (bam_cigar_op(cigar[i]) == BAM_CDIFF)) {
 		sp += bam_cigar_oplen(cigar[i]);
@@ -546,8 +546,8 @@ namespace torali
 	for(uint32_t svt = 0; svt < altSR.size(); ++svt) {
 	  //std::cerr << '[' << boost::posix_time::to_simple_string(boost::posix_time::second_clock::local_time()) << "] " << "SVT Size: " << svt << ',' << altSR[svt].size() << std::endl;
 	  if (altSR[svt].empty()) continue;
-	  for(uint32_t i = 0; i < altSR[svt].size(); ++i) {
-	    if (validSR.find(altSR[svt][i].id) != validSR.end()) newValidSR.insert(altSR[svt][i].id);
+	  for(uint32_t ik = 0; ik < altSR[svt].size(); ++ik) {
+	    if (validSR.find(altSR[svt][ik].id) != validSR.end()) newValidSR.insert(altSR[svt][ik].id);
 	  }
 	}
 	validSR = newValidSR;

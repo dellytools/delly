@@ -38,8 +38,8 @@ namespace torali
     uint32_t mapq;
 
     LinkCargo() {}
-    LinkCargo(Link const lk) : fromfwd(lk.fromfwd), tofwd(lk.tofwd), from(lk.from), to(lk.to), support(0), mapq(0) {}
-    LinkCargo(bool const fv, bool const tv, uint32_t const fr, uint32_t tos) : fromfwd(fv), tofwd(tv), from(fr), to(tos), support(0) {}
+    explicit LinkCargo(Link const lk) : fromfwd(lk.fromfwd), tofwd(lk.tofwd), from(lk.from), to(lk.to), support(0), mapq(0) {}
+    LinkCargo(bool const fv, bool const tv, uint32_t const fr, uint32_t tos) : fromfwd(fv), tofwd(tv), from(fr), to(tos), support(0), mapq(0) {}
 
     bool operator<(const LinkCargo& l2) const {
       return ((from < l2.from) || ((from==l2.from) && (to < l2.to)));

@@ -30,7 +30,7 @@ namespace torali
   inline int32_t
   _readStart(bam1_t* rec) {
     uint32_t rp = rec->core.pos;
-    uint32_t* cigar = bam_get_cigar(rec);
+    const uint32_t* cigar = bam_get_cigar(rec);
     if (rec->core.n_cigar) {
       if ((bam_cigar_op(cigar[0]) == BAM_CSOFT_CLIP) || (bam_cigar_op(cigar[0]) == BAM_CHARD_CLIP)) {
 	if (rp > bam_cigar_oplen(cigar[0])) rp -= bam_cigar_oplen(cigar[0]);
@@ -43,7 +43,7 @@ namespace torali
   inline int32_t
   _readEnd(bam1_t* rec) {
     uint32_t rp = rec->core.pos;
-    uint32_t* cigar = bam_get_cigar(rec);
+    const uint32_t* cigar = bam_get_cigar(rec);
     if (rec->core.n_cigar) {
       for (uint32_t i = 0; i < rec->core.n_cigar; ++i) {
 	if ((bam_cigar_op(cigar[i]) == BAM_CMATCH) || (bam_cigar_op(cigar[i]) == BAM_CEQUAL) || (bam_cigar_op(cigar[i]) == BAM_CDIFF) || (bam_cigar_op(cigar[i]) == BAM_CDEL) || (bam_cigar_op(cigar[i]) == BAM_CREF_SKIP)) rp += bam_cigar_oplen(cigar[i]);
@@ -61,7 +61,7 @@ namespace torali
     uint32_t sp = 0; // sequence pointer
 
     // Parse the CIGAR
-    uint32_t* cigar = bam_get_cigar(rec);
+    const uint32_t* cigar = bam_get_cigar(rec);
     if (rec->core.n_cigar) {
       for (std::size_t i = 0; i < rec->core.n_cigar; ++i) {
 	if ((bam_cigar_op(cigar[i]) == BAM_CMATCH) || (bam_cigar_op(cigar[i]) == BAM_CEQUAL) || (bam_cigar_op(cigar[i]) == BAM_CDIFF)) {
@@ -93,7 +93,6 @@ namespace torali
   inline void
   genotypeLR(TConfig& c, std::vector<StructuralVariantRecord>& svs, TJunctionMap& jctMap, TReadCountMap& covMap) {
     typedef std::vector<StructuralVariantRecord> TSVs;
-    typedef std::vector<uint8_t> TQuality;
     if (svs.empty()) return;
 
     // Open file handles
@@ -136,7 +135,7 @@ namespace torali
     boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
     std::cerr << '[' << boost::posix_time::to_simple_string(now) << "] " << "SV annotation" << std::endl;
     
-    faidx_t* fai = fai_load(c.genome.string().c_str());
+    const faidx_t* fai = fai_load(c.genome.string().c_str());
     for(int32_t refIndex=0; refIndex < (int32_t) hdr[0]->n_targets; ++refIndex) {
       // Fetch breakpoints
       typedef std::multimap<int32_t, int32_t> TBreakpointMap;
@@ -177,7 +176,7 @@ namespace torali
 	  // Annotate coverage
 	  {
 	    uint32_t rp = rec->core.pos; // reference pointer
-	    uint32_t* cigar = bam_get_cigar(rec);
+	    const uint32_t* cigar = bam_get_cigar(rec);
 	    for (std::size_t i = 0; i < rec->core.n_cigar; ++i) {
 	      if ((bam_cigar_op(cigar[i]) == BAM_CMATCH) || (bam_cigar_op(cigar[i]) == BAM_CEQUAL) || (bam_cigar_op(cigar[i]) == BAM_CDIFF)) {
 		for(uint32_t k = 0; k < bam_cigar_oplen(cigar[i]); ++k, ++rp) {
@@ -244,8 +243,8 @@ namespace torali
 	      // Load sequence
 	      if (sequence.empty()) {
 		sequence.resize(rec->core.l_qseq);
-		uint8_t* seqptr = bam_get_seq(rec);
-		for (int i = 0; i < rec->core.l_qseq; ++i) sequence[i] = "=ACMGRSVTWYHKDBN"[bam_seqi(seqptr, i)];
+		const uint8_t* seqptr = bam_get_seq(rec);
+		for (int ik = 0; ik < rec->core.l_qseq; ++ik) sequence[ik] = "=ACMGRSVTWYHKDBN"[bam_seqi(seqptr, ik)];
 	      }
 	      //std::cerr << hdr[file_c]->target_name[refIndex] << ":" << svs[svid].svStart << "-" << svs[svid].svEnd << "," << svs[svid].svt << "," << (int) (rec->core.flag & BAM_FREVERSE) << "," << ((pos == svs[svid].svStart) ? "Start" : "End") << std::endl;
 	      std::string ref = boost::to_upper_copy(std::string(seq + pos - offset, seq + pos + offset));

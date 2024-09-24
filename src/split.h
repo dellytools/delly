@@ -80,7 +80,7 @@ namespace torali
 
     // Check for single soft-clip
     unsigned int numSoftClip = 0;
-    uint32_t* cigar = bam_get_cigar(rec);
+    const uint32_t* cigar = bam_get_cigar(rec);
     for (unsigned int i = 0; i < rec->core.n_cigar; ++i) {
       if (bam_cigar_op(cigar[i]) == BAM_CSOFT_CLIP) {
 	++numSoftClip;
@@ -96,7 +96,7 @@ namespace torali
     typedef std::vector<uint8_t> TQuality;
     TQuality quality;
     quality.resize(rec->core.l_qseq);
-    uint8_t* qualptr = bam_get_qual(rec);
+    const uint8_t* qualptr = bam_get_qual(rec);
     for (int i = 0; i < rec->core.l_qseq; ++i) quality[i] = qualptr[i];
     
     // Get soft-clips
@@ -114,7 +114,7 @@ namespace torali
 	else leadingSC = false;
 	splitPoint = rec->core.pos + alen;
 	unsigned int qualSum = 0;
-	for(unsigned int i = alen; i < (alen+clipSize); ++i) qualSum += quality[i];
+	for(unsigned int ik = alen; ik < (alen+clipSize); ++ik) qualSum += quality[ik];
 	meanQuality = qualSum / clipSize;
       }
     }
@@ -462,7 +462,7 @@ namespace torali
 
 
   inline void
-  editDistanceVec(std::string const& seqI, std::string const& seqJ, EdlibAlignResult& cigar, std::vector<uint32_t>& dist) {
+  editDistanceVec(std::string const& seqI, std::string const& seqJ, EdlibAlignResult const& cigar, std::vector<uint32_t>& dist) {
     // Fill edit distance vector
     dist.resize(seqI.size());
     std::fill(dist.begin(), dist.end(), 0);

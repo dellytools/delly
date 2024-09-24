@@ -386,7 +386,7 @@ namespace torali {
 	  // Count aligned basepair (small InDels)
 	  {
 	    uint32_t rp = 0; // reference pointer
-	    uint32_t* cigar = bam_get_cigar(rec);
+	    const uint32_t* cigar = bam_get_cigar(rec);
 	    for (std::size_t i = 0; i < rec->core.n_cigar; ++i) {
 	      if (bam_cigar_op(cigar[i]) == BAM_CMATCH) {
 		for(std::size_t k = 0; k<bam_cigar_oplen(cigar[i]);++k) {
@@ -405,7 +405,7 @@ namespace torali {
 	  bool hasSoftClip = false;
 	  bool hasClip = false;
 	  int32_t leadingSC = 0;
-	  uint32_t* cigar = bam_get_cigar(rec);
+	  const uint32_t* cigar = bam_get_cigar(rec);
 	  for (std::size_t i = 0; i < rec->core.n_cigar; ++i) {
 	    if (bam_cigar_op(cigar[i]) == BAM_CSOFT_CLIP) {
 	      hasClip = true;
@@ -437,7 +437,7 @@ namespace torali {
 		  // Get sequence
 		  std::string sequence;
 		  sequence.resize(rec->core.l_qseq);
-		  uint8_t* seqptr = bam_get_seq(rec);
+		  const uint8_t* seqptr = bam_get_seq(rec);
 		  for (int i = 0; i < rec->core.l_qseq; ++i) sequence[i] = "=ACMGRSVTWYHKDBN"[bam_seqi(seqptr, i)];
 		  _adjustOrientation(sequence, itBp->bpPoint, itBp->svt);
 		
@@ -474,7 +474,7 @@ namespace torali {
 		      if (++refAlignedReadCount[file_c][itBp->id] % 2) {
 			TQuality quality;
 			quality.resize(rec->core.l_qseq);
-			uint8_t* qualptr = bam_get_qual(rec);
+			const uint8_t* qualptr = bam_get_qual(rec);
 			for (int i = 0; i < rec->core.l_qseq; ++i) quality[i] = qualptr[i];
 			uint32_t rq = _getAlignmentQual(alignRef, quality);
 			if (rq >= c.minGenoQual) {
@@ -487,7 +487,7 @@ namespace torali {
 		    } else {
 		      TQuality quality;
 		      quality.resize(rec->core.l_qseq);
-		      uint8_t* qualptr = bam_get_qual(rec);
+		      const uint8_t* qualptr = bam_get_qual(rec);
 		      for (int i = 0; i < rec->core.l_qseq; ++i) quality[i] = qualptr[i];
 		      uint32_t aq = _getAlignmentQual(alignAlt, quality);
 		      if (aq >= c.minGenoQual) {

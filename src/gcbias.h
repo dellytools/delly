@@ -72,7 +72,7 @@ namespace torali
     // Sequence
     std::string sequence;
     sequence.resize(rec->core.l_qseq);
-    uint8_t* seqptr = bam_get_seq(rec);
+    const uint8_t* seqptr = bam_get_seq(rec);
     for (int i = 0; i < rec->core.l_qseq; ++i) sequence[i] = "=ACMGRSVTWYHKDBN"[bam_seqi(seqptr, i)];
 
     // Reference slice
@@ -81,7 +81,7 @@ namespace torali
     // Percent identity
     uint32_t rp = 0; // reference pointer
     uint32_t sp = 0; // sequence pointer
-    uint32_t* cigar = bam_get_cigar(rec);
+    const uint32_t* cigar = bam_get_cigar(rec);
     int32_t matchCount = 0;
     int32_t mismatchCount = 0;
     for (std::size_t i = 0; i < rec->core.n_cigar; ++i) {

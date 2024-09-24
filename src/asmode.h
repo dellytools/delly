@@ -93,7 +93,7 @@ namespace torali {
 	  uint32_t sp = 0; // sequence pointer
 	    
 	  // Parse the CIGAR
-	  uint32_t* cigar = bam_get_cigar(rec);
+	  const uint32_t* cigar = bam_get_cigar(rec);
 	  for (std::size_t i = 0; i < rec->core.n_cigar; ++i) {
 	    if ((bam_cigar_op(cigar[i]) == BAM_CMATCH) || (bam_cigar_op(cigar[i]) == BAM_CEQUAL) || (bam_cigar_op(cigar[i]) == BAM_CDIFF)) {
 	      sp += bam_cigar_oplen(cigar[i]);
@@ -229,7 +229,7 @@ namespace torali {
 	    // Get sequence
 	    std::string sequence;
 	    sequence.resize(rec->core.l_qseq);
-	    uint8_t* seqptr = bam_get_seq(rec);
+	    const uint8_t* seqptr = bam_get_seq(rec);
 	    for (int i = 0; i < rec->core.l_qseq; ++i) sequence[i] = "=ACMGRSVTWYHKDBN"[bam_seqi(seqptr, i)];
 	    int32_t readlen = sequence.size();
 

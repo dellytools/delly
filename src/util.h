@@ -73,7 +73,7 @@ namespace torali
 
 
   inline uint32_t
-  infixStart(EdlibAlignResult& cigar) {
+  infixStart(EdlibAlignResult const& cigar) {
     int32_t tIdx = cigar.endLocations[0];
     for (int32_t i = 0; i < cigar.alignmentLength; i++) {
       if (cigar.alignment[i] != EDLIB_EDOP_INSERT) tIdx--;
@@ -83,12 +83,12 @@ namespace torali
   }
 
   inline uint32_t
-  infixEnd(EdlibAlignResult& cigar) {
+  infixEnd(EdlibAlignResult const& cigar) {
     return cigar.endLocations[0];
   }
   
   inline void
-  printAlignmentPretty(std::string const& query, std::string const& target, EdlibAlignMode const modeCode, EdlibAlignResult& align) {
+  printAlignmentPretty(std::string const& query, std::string const& target, EdlibAlignMode const modeCode, EdlibAlignResult const& align) {
     int32_t tIdx = -1;
     int32_t qIdx = -1;
     if (modeCode == EDLIB_MODE_HW) {
@@ -130,7 +130,7 @@ namespace torali
   }
 
   inline void
-  printAlignment(std::string const& seqI, std::string const& seqJ, EdlibAlignMode const modeCode, EdlibAlignResult& cigar) {
+  printAlignment(std::string const& seqI, std::string const& seqJ, EdlibAlignMode const modeCode, EdlibAlignResult const& cigar) {
     int32_t tIdx = -1;
     int32_t qIdx = -1;
     uint32_t missingEnd = 0;
@@ -142,9 +142,6 @@ namespace torali
 	if (cigar.alignment[i] != EDLIB_EDOP_INSERT) tIdx--;
       }
       if (tIdx >= 0) missingStart = tIdx + 1;
-    }
-    // infix alignment, fix start
-    if ((modeCode == EDLIB_MODE_HW) || (modeCode == EDLIB_MODE_SHW)) {
       if (missingStart) {
 	for (uint32_t j = 0; j < missingStart; ++j) std::cerr << '-';
       }
@@ -428,7 +425,7 @@ namespace torali
   }
 
   inline uint32_t sequenceLength(bam1_t const* rec) {
-    uint32_t* cigar = bam_get_cigar(rec);
+    const uint32_t* cigar = bam_get_cigar(rec);
     uint32_t slen = 0;
     for (uint32_t i = 0; i < rec->core.n_cigar; ++i)
       if ((bam_cigar_op(cigar[i]) == BAM_CMATCH) || (bam_cigar_op(cigar[i]) == BAM_CEQUAL) || (bam_cigar_op(cigar[i]) == BAM_CDIFF) || (bam_cigar_op(cigar[i]) == BAM_CINS) || (bam_cigar_op(cigar[i]) == BAM_CSOFT_CLIP) || (bam_cigar_op(cigar[i]) == BAM_CHARD_CLIP)) slen += bam_cigar_oplen(cigar[i]);
@@ -442,7 +439,7 @@ namespace torali
   }
     
   inline uint32_t alignmentLength(bam1_t const* rec) {
-    uint32_t* cigar = bam_get_cigar(rec);
+    const uint32_t* cigar = bam_get_cigar(rec);
     uint32_t alen = 0;
     for (uint32_t i = 0; i < rec->core.n_cigar; ++i)
       if ((bam_cigar_op(cigar[i]) == BAM_CMATCH) || (bam_cigar_op(cigar[i]) == BAM_CEQUAL) || (bam_cigar_op(cigar[i]) == BAM_CDIFF) || (bam_cigar_op(cigar[i]) == BAM_CDEL) || (bam_cigar_op(cigar[i]) == BAM_CREF_SKIP)) alen += bam_cigar_oplen(cigar[i]);
