@@ -271,7 +271,7 @@ namespace torali
 	  // Tile merged intervals
 	  double covsum = 0;
 	  double expcov = 0;
-	  double obsexp = 0;
+	  //double obsexp = 0;
 	  uint32_t winlen = 0;
 	  uint32_t start = 0;
 	  bool endOfWindow = true;
@@ -294,11 +294,11 @@ namespace torali
 		  if (pos < start) continue;
 		  if ((gcContent[pos] > gcbound.first) && (gcContent[pos] < gcbound.second) && (uniqContent[pos] >= c.fragmentUnique * c.meanisize)) {
 		    covsum += cov[pos];
-		    obsexp += gcbias[gcContent[pos]].obsexp;
+		    //obsexp += gcbias[gcContent[pos]].obsexp;
 		    expcov += gcbias[gcContent[pos]].coverage;
 		    ++winlen;
 		    if (winlen == c.window_size) {
-		      obsexp /= (double) winlen;
+		      //obsexp /= (double) winlen;
 		      // Normalized counts: double count = ((double) covsum / obsexp ) * (double) c.window_size / (double) winlen;
 		      double cn = chrPloidy;
 		      double logR = 0;
@@ -310,7 +310,7 @@ namespace torali
 		      // reset
 		      covsum = 0;
 		      expcov = 0;
-		      obsexp = 0;
+		      //obsexp = 0;
 		      winlen = 0;
 		      if (c.window_offset == c.window_size) {
 			// Move on
@@ -347,18 +347,18 @@ namespace torali
 	    if ((it->first < it->second) && (it->second <= hdr->target_len[refIndex])) {
 	      double covsum = 0;
 	      double expcov = 0;
-	      double obsexp = 0;
+	      //double obsexp = 0;
 	      uint32_t winlen = 0;
 	      for(uint32_t pos = it->first; pos < it->second; ++pos) {
 		if ((gcContent[pos] > gcbound.first) && (gcContent[pos] < gcbound.second) && (uniqContent[pos] >= c.fragmentUnique * c.meanisize)) {
 		  covsum += cov[pos];
-		  obsexp += gcbias[gcContent[pos]].obsexp;
+		  //obsexp += gcbias[gcContent[pos]].obsexp;
 		  expcov += gcbias[gcContent[pos]].coverage;
 		  ++winlen;
 		}
 	      }
 	      if (winlen >= c.fracWindow * (it->second - it->first)) {
-		obsexp /= (double) winlen;
+		//obsexp /= (double) winlen;
 		// Normalized counts: double count = ((double) covsum / obsexp ) * (double) (it->second - it->first) / (double) winlen;
 		double cn = chrPloidy;
 		double logR = 0;
@@ -378,18 +378,18 @@ namespace torali
 	if (c.adaptive) {
 	  double covsum = 0;
 	  double expcov = 0;
-	  double obsexp = 0;
+	  //double obsexp = 0;
 	  uint32_t winlen = 0;
 	  uint32_t start = 0;
 	  uint32_t pos = 0;
 	  while(pos < hdr->target_len[refIndex]) {
 	    if ((gcContent[pos] > gcbound.first) && (gcContent[pos] < gcbound.second) && (uniqContent[pos] >= c.fragmentUnique * c.meanisize)) {
 	      covsum += cov[pos];
-	      obsexp += gcbias[gcContent[pos]].obsexp;
+	      //obsexp += gcbias[gcContent[pos]].obsexp;
 	      expcov += gcbias[gcContent[pos]].coverage;
 	      ++winlen;
 	      if (winlen == c.window_size) {
-		obsexp /= (double) winlen;
+		//obsexp /= (double) winlen;
 		// Normalized counts: double count = ((double) covsum / obsexp ) * (double) c.window_size / (double) winlen;
 		double cn = chrPloidy;
 		double logR = 0;
@@ -401,7 +401,7 @@ namespace torali
 		// reset
 		covsum = 0;
 		expcov = 0;
-		obsexp = 0;
+		//obsexp = 0;
 		winlen = 0;
 		if (c.window_offset == c.window_size) {
 		  // Move on
@@ -430,18 +430,18 @@ namespace torali
 	    if (start + c.window_size < hdr->target_len[refIndex]) {
 	      double covsum = 0;
 	      double expcov = 0;
-	      double obsexp = 0;
+	      //double obsexp = 0;
 	      uint32_t winlen = 0;
 	      for(uint32_t pos = start; pos < start + c.window_size; ++pos) {
 		if ((gcContent[pos] > gcbound.first) && (gcContent[pos] < gcbound.second) && (uniqContent[pos] >= c.fragmentUnique * c.meanisize)) {
 		  covsum += cov[pos];
-		  obsexp += gcbias[gcContent[pos]].obsexp;
+		  //obsexp += gcbias[gcContent[pos]].obsexp;
 		  expcov += gcbias[gcContent[pos]].coverage;
 		  ++winlen;
 		}
 	      }
 	      if (winlen >= c.fracWindow * c.window_size) {
-		obsexp /= (double) winlen;
+		//obsexp /= (double) winlen;
 		// Normalized counts: double count = ((double) covsum / obsexp ) * (double) c.window_size / (double) winlen;
 		double cn = chrPloidy;
 		double logR = 0;

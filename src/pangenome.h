@@ -77,7 +77,7 @@ namespace torali {
 	  uint32_t refstart = 0;
 	  for(uint32_t pi = 0; pi < ar.path.size(); ++pi) {
 	    // Vertex coordinates
-	    std::string seqname = idSegment[ar.path[pi].second];
+	    //std::string seqname = idSegment[ar.path[pi].second];
 	    uint32_t seqlen = g.nodelen(ar.path[pi].second);
 	    uint32_t pstart = 0;
 	    uint32_t plen = seqlen;

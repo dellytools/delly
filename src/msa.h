@@ -12,16 +12,14 @@ namespace torali {
     uint32_t m = s1.size();
     uint32_t n = s2.size();
     int32_t prevdiag = 0;
-    int32_t prevprevdiag = 0;
     std::vector<int32_t> onecol(n+1, 0);
     for(uint32_t i = 0; i <= m; ++i) {
       for(uint32_t j = 0; j <= n; ++j) {
 	if ((i==0) || (j==0)) {
 	  onecol[j] = 0;
-	  prevprevdiag = 0;
 	  prevdiag = 0;
 	} else {
-	  prevprevdiag = prevdiag;
+	  int32_t prevprevdiag = prevdiag;
 	  prevdiag = onecol[j];
 	  if (s1[i-1] == s2[j-1]) onecol[j] = prevprevdiag + 1;
 	  else onecol[j] = (onecol[j] > onecol[j-1]) ? onecol[j] : onecol[j-1];

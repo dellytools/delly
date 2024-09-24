@@ -205,14 +205,12 @@ namespace torali
 	}
 	++pos;
       }
-      double precn = c.ploidy * precovsum / preexpcov;
-      double succn = c.ploidy * succovsum / sucexpcov;
       // Shift Bp
       std::vector<double> diffcn(validpos.size(), 0);
       for(uint32_t idx = 0; idx < validpos.size(); ++idx) {
 	if ((preexpcov > 0) && (sucexpcov > 0)) {
-	  precn = c.ploidy * precovsum / preexpcov;
-	  succn = c.ploidy * succovsum / sucexpcov;
+	  double precn = c.ploidy * precovsum / preexpcov;
+	  double succn = c.ploidy * succovsum / sucexpcov;
 	  diffcn[idx] = std::abs(precn - succn);
 	  //if (validpos[idx] == cnvs[n-1].end) std::cerr << "-->";
 	  //std::cerr << validpos[idx] << ',' << precn << ',' << succn << ',' << diffcn[idx] << std::endl;

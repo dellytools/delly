@@ -266,18 +266,22 @@ namespace torali
 
 
   // Insertion junctions
-  template<typename TConfig, typename TReadBp>
+  template<typename TReadBp>
   inline void
-  bridgeInsertions(TConfig const& c, TReadBp const& readBp, std::vector<std::vector<SRBamRecord> >& br) {
+  bridgeInsertions(TReadBp const& readBp, std::vector<std::vector<SRBamRecord> >& br) {
     // Insertion map
     std::set<std::size_t> readIds;
     typedef std::map<uint32_t, int32_t> TPosInsMap;
     TPosInsMap pins;
-    for(int32_t refIndex = 0; refIndex < c.nchr; ++refIndex) {
+
+    // Iterate all chromosomes with insertions
+    std::set<int32_t> refIndices;
+    for(uint32_t i = 0; i < br[4].size(); ++i) refIndices.insert(br[4][i].chr);
+    for(std::set<int32_t>::const_iterator refIndex = refIndices.begin(); refIndex != refIndices.end(); ++refIndex) {
       pins.clear();
       readIds.clear();
       for(uint32_t i = 0; i < br[4].size(); ++i) {
-	if (br[4][i].chr == refIndex) {
+	if (br[4][i].chr == *refIndex) {
 	  readIds.insert(br[4][i].id);
 	  for(int32_t k = br[4][i].pos; k <= br[4][i].pos2; ++k) {
 	    typename TPosInsMap::iterator it = pins.find(k);
@@ -286,13 +290,15 @@ namespace torali
 	  }
 	}
       }
-      for(typename TReadBp::const_iterator it = readBp.begin(); it != readBp.end(); ++it) {
-	int32_t rst = _selectReadStart(it->second);
-	for(uint32_t i = 0; i < it->second.size(); ++i) {
-	  // Any insertion?
-	  if ((it->second[i].refidx == refIndex) && (readIds.find(it->first) == readIds.end()) && (pins.find(it->second[i].refpos) != pins.end())) {
-	    int32_t qval = (int32_t) it->second[i].qual;
-	    br[4].push_back(SRBamRecord(it->second[i].refidx, it->second[i].refpos, it->second[i].refidx, it->second[i].refpos + 1, rst, it->second[i].seqpos, qval, pins[it->second[i].refpos], it->first));
+      if (!pins.empty()) {
+	for(typename TReadBp::const_iterator it = readBp.begin(); it != readBp.end(); ++it) {
+	  int32_t rst = _selectReadStart(it->second);
+	  for(uint32_t i = 0; i < it->second.size(); ++i) {
+	    // Any insertion?
+	    if ((it->second[i].refidx == *refIndex) && (readIds.find(it->first) == readIds.end()) && (pins.find(it->second[i].refpos) != pins.end())) {
+	      int32_t qval = (int32_t) it->second[i].qual;
+	      br[4].push_back(SRBamRecord(it->second[i].refidx, it->second[i].refpos, it->second[i].refidx, it->second[i].refpos + 1, rst, it->second[i].seqpos, qval, pins[it->second[i].refpos], it->first));
+	    }
 	  }
 	}
       }
@@ -453,7 +459,7 @@ namespace torali
     if ((c.svtset.empty()) || (c.svtset.find(0) != c.svtset.end()) || (c.svtset.find(1) != c.svtset.end())) selectInversions(c, readBp, br);
     if ((c.svtset.empty()) || (c.svtset.find(4) != c.svtset.end())) {
       selectInsertions(c, readBp, br);
-      bridgeInsertions(c, readBp, br);
+      bridgeInsertions(readBp, br);
     }
     if ((c.svtset.empty()) || (c.svtset.find(5) != c.svtset.end()) || (c.svtset.find(6) != c.svtset.end()) || (c.svtset.find(7) != c.svtset.end()) || (c.svtset.find(8) != c.svtset.end())) selectTranslocations(c, readBp, br);
   }

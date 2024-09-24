@@ -283,10 +283,10 @@ namespace torali
 	      if (scoreRef > scoreAlt) {
 		// Account for reference bias
 		if (++refAlignedReadCount[file_c][svid] % 2) {
-		  TQuality quality;
-		  quality.resize(rec->core.l_qseq);
-		  uint8_t* qualptr = bam_get_qual(rec);
-		  for (int i = 0; i < rec->core.l_qseq; ++i) quality[i] = qualptr[i];
+		  //TQuality quality;
+		  //quality.resize(rec->core.l_qseq);
+		  //uint8_t* qualptr = bam_get_qual(rec);
+		  //for (int i = 0; i < rec->core.l_qseq; ++i) quality[i] = qualptr[i];
 		  uint32_t rq = scoreRef * 35;
 		  if (rq >= c.minGenoQual) {
 #pragma omp critical
@@ -296,10 +296,10 @@ namespace torali
 		  }
 		}
 	      } else {
-		TQuality quality;
-		quality.resize(rec->core.l_qseq);
-		uint8_t* qualptr = bam_get_qual(rec);
-		for (int i = 0; i < rec->core.l_qseq; ++i) quality[i] = qualptr[i];
+		//TQuality quality;
+		//quality.resize(rec->core.l_qseq);
+		//uint8_t* qualptr = bam_get_qual(rec);
+		//for (int i = 0; i < rec->core.l_qseq; ++i) quality[i] = qualptr[i];
 		uint32_t aq = scoreAlt * 35;
 		if (aq >= c.minGenoQual) {
 #pragma omp critical
