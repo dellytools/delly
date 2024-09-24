@@ -450,12 +450,12 @@ void _outputSelectedIntervals(MergeConfig& c, TGenomeIntervals const& iSelected,
 	    float srAlignQuality = 0;
 	    if (bcf_get_info_float(hdr[idx], rec[idx], "SRQ", &srq, &nsrq) > 0) srAlignQuality = *srq;
 
-	    std::string consensus;
+	    std::string consStr;
 	    float ceVal = 0;
 	    int32_t consBpVal = 0;
 	    if (precise) {
 	      if (bcf_get_info_float(hdr[idx], rec[idx], "CE", &ce, &nce) > 0) ceVal = *ce;
-	      if (bcf_get_info_string(hdr[idx], rec[idx], "CONSENSUS", &cons, &ncons) > 0) consensus = boost::to_upper_copy(std::string(cons));
+	      if (bcf_get_info_string(hdr[idx], rec[idx], "CONSENSUS", &cons, &ncons) > 0) consStr = boost::to_upper_copy(std::string(cons));
 	      if (bcf_get_info_int32(hdr[idx], rec[idx], "CONSBP", &consbp, &nconsbp) > 0) consBpVal = *consbp;
 	    }
 	    
@@ -508,8 +508,8 @@ void _outputSelectedIntervals(MergeConfig& c, TGenomeIntervals const& iSelected,
 	      bcf_update_info_int32(hdr_out, rout, "HOMLEN", &homlenVal, 1);
 	      bcf_update_info_int32(hdr_out, rout, "SR", &srSupport, 1);
 	      bcf_update_info_float(hdr_out, rout, "SRQ", &srAlignQuality, 1);
-	      if (consensus.size()) {
-		bcf_update_info_string(hdr_out, rout, "CONSENSUS", consensus.c_str());
+	      if (consStr.size()) {
+		bcf_update_info_string(hdr_out, rout, "CONSENSUS", consStr.c_str());
 		bcf_update_info_float(hdr_out, rout, "CE", &ceVal, 1);
 		bcf_update_info_int32(hdr_out, rout, "CONSBP", &consBpVal, 1);
 	      }

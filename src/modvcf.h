@@ -12,11 +12,11 @@ namespace torali
 {
 
 
-void _remove_info_tag(bcf_hdr_t* hdr, bcf1_t* rec, std::string const& tag) {
+void _remove_info_tag(bcf_hdr_t const* hdr, bcf1_t* rec, std::string const& tag) {
   bcf_update_info(hdr, rec, tag.c_str(), NULL, 0, BCF_HT_INT);  // Type does not matter for n = 0
 }
 
-void _remove_format_tag(bcf_hdr_t* hdr, bcf1_t* rec, std::string const& tag) {
+void _remove_format_tag(bcf_hdr_t const* hdr, bcf1_t* rec, std::string const& tag) {
   bcf_update_format(hdr, rec, tag.c_str(), NULL, 0, BCF_HT_INT);  // Type does not matter for n = 0
 }
 

@@ -729,7 +729,7 @@ namespace torali
   
   template<typename TConfig>
   inline bool
-  alignConsensus(TConfig const& c, bam_hdr_t* hdr, char const* seq, char const* sndSeq, StructuralVariantRecord& sv, bool const realign) {
+  alignConsensus(TConfig const& c, bam_hdr_t const* hdr, char const* seq, char const* sndSeq, StructuralVariantRecord& sv, bool const realign) {
     if ( (int32_t) sv.consensus.size() < (2 * c.minimumFlankSize + sv.insLen)) return false;
     
     // Get reference slice
