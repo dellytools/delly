@@ -92,9 +92,16 @@ namespace torali
   }
 
   inline bool
-  parseAlignRecord(std::istream& instream, Graph const& g, AlignRecord& ar, std::string& qname) {
+  parseAlignRecord(std::istream& instream, Graph const& g, AlignRecord& ar, std::string& qname, std::set<std::size_t>& validSR) {
     std::string gline;
-    if(std::getline(instream, gline)) {      
+    if(std::getline(instream, gline)) {
+      if (!validSR.empty()) {
+	std::size_t found = gline.find('\t');
+	if (found != std::string::npos) {
+	  if (validSR.find(hash_lr(gline.substr(0, found))) == validSR.end()) return false;
+	}
+      }
+  
       typedef boost::tokenizer< boost::char_separator<char> > Tokenizer;
       boost::char_separator<char> sep("\t");
       Tokenizer tokens(gline, sep);
@@ -141,6 +148,12 @@ namespace torali
     } else return false;
   }
 
+  inline bool
+  parseAlignRecord(std::istream& instream, Graph const& g, AlignRecord& ar, std::string& qname) {
+    std::set<std::size_t> validSR;
+    return parseAlignRecord(instream, g, ar, qname, validSR);
+  }
+  
   inline bool
   parseAlignRecord(std::istream& instream, Graph const& g, AlignRecord& ar) {
     std::string qname;

@@ -45,7 +45,7 @@ namespace torali {
   
   template<typename TConfig, typename TReadBp>
   inline bool
-  findGraphJunctions(TConfig& c, Graph const& g, TReadBp& readBp) {
+  findGraphJunctions(TConfig& c, Graph const& g, TReadBp& readBp, std::set<std::size_t>& validSR) {
     boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
     std::cerr << '[' << boost::posix_time::to_simple_string(now) << "] " << "Split-read scanning" << std::endl;
     
@@ -67,11 +67,10 @@ namespace torali {
 
       // Parse GAF
       std::istream instream(&dataIn);
-      bool parseAR = true;
-      while (parseAR) {
+      while (!instream.eof()) {
 	AlignRecord ar;
 	std::string qname;
-	if (parseAlignRecord(instream, g, ar, qname)) {
+	if (parseAlignRecord(instream, g, ar, qname, validSR)) {
 	  if (ar.mapq < c.minMapQual) continue;
 
 	  // Iterate path alignments
@@ -205,7 +204,7 @@ namespace torali {
 	  }
 	  
 	  //std::cerr << ar.seed << ',' << ar.qlen << ',' << ar.qstart << ',' << ar.qend << ',' << ar.strand << ',' << ar.plen << ',' << ar.pstart << ',' << ar.pend << ',' << ar.matches << ',' << ar.alignlen << ',' << ar.mapq << std::endl;
-	} else parseAR = false;
+	}
       }
 
       // Sort junctions
@@ -222,12 +221,12 @@ namespace torali {
 
   template<typename TConfig, typename TSvtSRBamRecord>
   inline void
-  _findGraphSRBreakpoints(TConfig const& c, Graph const& g, TSvtSRBamRecord& srBR) {
+  _findGraphSRBreakpoints(TConfig const& c, Graph const& g, TSvtSRBamRecord& srBR, std::set<std::size_t>& validSR) {
     // Breakpoints
     typedef std::vector<Junction> TJunctionVector;
     typedef std::map<std::size_t, TJunctionVector> TReadBp;
     TReadBp readBp;
-    findGraphJunctions(c, g, readBp);
+    findGraphJunctions(c, g, readBp, validSR);
     fetchSVs(c, readBp, srBR);
   }
 
@@ -255,8 +254,7 @@ namespace torali {
 
       // Parse GAF
       std::istream instream(&dataIn);
-      bool parseAR = true;
-      while (parseAR) {
+      while (!instream.eof()) {
 	AlignRecord ar;
 	std::string qname;
 	if (parseAlignRecord(instream, g, ar, qname)) {
@@ -266,7 +264,7 @@ namespace torali {
 	      std::cerr << "Warning: Hash collision! " << ar.seed << ',' << hm[ar.seed] << ',' << qname << std::endl;
 	    }
 	  }
-	} else parseAR = false;
+	}
       }
 
       // Close file

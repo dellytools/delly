@@ -302,7 +302,7 @@ namespace torali
 
   template<typename TConfig, typename TValidRegion, typename TReadBp>
   inline void
-  findJunctions(TConfig const& c, TValidRegion const& validRegions, TReadBp& readBp) {
+  findJunctions(TConfig const& c, TValidRegion const& validRegions, TReadBp& readBp, std::set<size_t>& validSR) {
     typedef typename TValidRegion::value_type TChrIntervals;
 
     // Open file handles
@@ -338,6 +338,7 @@ namespace torali
 	    if ((rec->core.qual < c.minMapQual) || (rec->core.tid<0)) continue;
 
 	    std::size_t seed = hash_lr(rec);
+	    if ((!validSR.empty()) && (validSR.find(seed) == validSR.end())) continue;
 	    //std::cerr << bam_get_qname(rec) << '\t' << seed << std::endl;
 	    uint32_t rp = rec->core.pos; // reference pointer
 	    uint32_t sp = 0; // sequence pointer
@@ -459,15 +460,21 @@ namespace torali
 
   template<typename TConfig, typename TValidRegions, typename TSvtSRBamRecord>
   inline void
-    _findSRBreakpoints(TConfig const& c, TValidRegions const& validRegions, TSvtSRBamRecord& srBR) {
+  _findSRBreakpoints(TConfig const& c, TValidRegions const& validRegions, TSvtSRBamRecord& srBR, std::set<size_t>& validSR) {
     // Breakpoints
     typedef std::vector<Junction> TJunctionVector;
     typedef std::map<std::size_t, TJunctionVector> TReadBp;
     TReadBp readBp;
-    findJunctions(c, validRegions, readBp);
+    findJunctions(c, validRegions, readBp, validSR);
     fetchSVs(c, readBp, srBR);
   }
 
+  template<typename TConfig, typename TValidRegions, typename TSvtSRBamRecord>
+  inline void
+  _findSRBreakpoints(TConfig const& c, TValidRegions const& validRegions, TSvtSRBamRecord& srBR) {
+    std::set<size_t> validSR;
+    _findSRBreakpoints(c, validRegions, srBR, validSR);
+  }
 
   template<typename TConfig, typename TValidRegions, typename TSVs, typename TSRStore>
   inline void
@@ -480,7 +487,13 @@ namespace torali
 
     // Alternate alignments
     if (c.hasAltFile) {
-      std::set<std::size_t> validSR;  // Set of split-reads in ALL alternate alignments
+
+      // Insert all split-reads
+      std::set<std::size_t> validSR;
+      for(uint32_t svt = 0; svt < srBR.size(); ++svt) {
+	for(uint32_t i = 0; i < srBR[svt].size(); ++i) validSR.insert(srBR[svt][i].id);
+      }
+      
       // Parse alternate alignments
       std::vector<boost::filesystem::path> align;
       std::vector<boost::filesystem::path> genome;
@@ -501,10 +514,10 @@ namespace torali
 	  _parseExcludeIntervals(altConfig, hdr, vR);
 	  bam_hdr_destroy(hdr);
 	  sam_close(samfile);
-	  _findSRBreakpoints(altConfig, vR, altSR);
+	  _findSRBreakpoints(altConfig, vR, altSR, validSR);
 
 	  // Debug
-	  //std::cerr << "AltAlign: " << align[i] << std::endl;
+	  //std::cerr << '[' << boost::posix_time::to_simple_string(boost::posix_time::second_clock::local_time()) << "] " << "AltLinearAlign: " << align[i] << std::endl;
 	  //outputSRBamRecords(altConfig, altSR, true);
 	} else {
 	  Graph g;
@@ -515,28 +528,26 @@ namespace torali
 	  altConfig.maxReadSep = 2000;
 	  
 	  // Alternate alignment in GAF format
-	  _findGraphSRBreakpoints(altConfig, g, altSR);
+	  _findGraphSRBreakpoints(altConfig, g, altSR, validSR);
 
 	  // Debug
-	  //std::cerr << "AltAlign: " << align[i] << std::endl;
+	  //std::cerr << '[' << boost::posix_time::to_simple_string(boost::posix_time::second_clock::local_time()) << "] " << "AltGraphAlign: " << align[i] << std::endl;
 	  //outputGraphSRBamRecords(altConfig, g, altSR);
 	}
 
 	// Update valid SR set
 	std::set<std::size_t> newValidSR;
 	for(uint32_t svt = 0; svt < altSR.size(); ++svt) {
+	  //std::cerr << '[' << boost::posix_time::to_simple_string(boost::posix_time::second_clock::local_time()) << "] " << "SVT Size: " << svt << ',' << altSR[svt].size() << std::endl;
 	  if (altSR[svt].empty()) continue;
 	  for(uint32_t i = 0; i < altSR[svt].size(); ++i) {
-	    if (validSR.empty()) newValidSR.insert(altSR[svt][i].id);
-	    else {
-	      if (validSR.find(altSR[svt][i].id) != validSR.end()) newValidSR.insert(altSR[svt][i].id);
-	    }
+	    if (validSR.find(altSR[svt][i].id) != validSR.end()) newValidSR.insert(altSR[svt][i].id);
 	  }
 	}
 	validSR = newValidSR;
 
 	// Debug
-	//std::cerr << validSR.size() << std::endl;
+	//std::cerr << '[' << boost::posix_time::to_simple_string(boost::posix_time::second_clock::local_time()) << "] " << "SR size: " << validSR.size() << std::endl;
       }
 
       // Filter primary SR records
@@ -560,7 +571,7 @@ namespace torali
 
 
     // Debug
-    //std::cerr << "MainAlign: " << std::endl;
+    //std::cerr << '[' << boost::posix_time::to_simple_string(boost::posix_time::second_clock::local_time()) << "] " << "MainAlign: " << std::endl;
     //outputSRBamRecords(c, srBR, true);
 
     // Cluster BAM records
