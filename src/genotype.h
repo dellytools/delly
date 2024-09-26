@@ -135,7 +135,7 @@ namespace torali
     boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
     std::cerr << '[' << boost::posix_time::to_simple_string(now) << "] " << "SV annotation" << std::endl;
     
-    const faidx_t* fai = fai_load(c.genome.string().c_str());
+    faidx_t* fai = fai_load(c.genome.string().c_str());
     for(int32_t refIndex=0; refIndex < (int32_t) hdr[0]->n_targets; ++refIndex) {
       // Fetch breakpoints
       typedef std::multimap<int32_t, int32_t> TBreakpointMap;
@@ -362,6 +362,7 @@ namespace torali
       if (seq != NULL) free(seq);
     }
     // Clean-up
+    fai_destroy(fai);
     for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
       bam_hdr_destroy(hdr[file_c]);	  
       hts_idx_destroy(idx[file_c]);
