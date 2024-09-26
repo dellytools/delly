@@ -271,33 +271,30 @@ namespace torali
   bridgeInsertions(TReadBp const& readBp, std::vector<std::vector<SRBamRecord> >& br) {
     // Insertion map
     std::set<std::size_t> readIds;
-    typedef std::map<uint32_t, int32_t> TPosInsMap;
+    typedef std::pair<uint32_t, uint32_t> TRefCoord;
+    typedef std::map<TRefCoord, int32_t> TPosInsMap;
     TPosInsMap pins;
 
-    // Iterate all chromosomes with insertions
-    std::set<int32_t> refIndices;
-    for(uint32_t i = 0; i < br[4].size(); ++i) refIndices.insert(br[4][i].chr);
-    for(std::set<int32_t>::const_iterator refIndex = refIndices.begin(); refIndex != refIndices.end(); ++refIndex) {
-      pins.clear();
-      readIds.clear();
-      for(uint32_t i = 0; i < br[4].size(); ++i) {
-	if (br[4][i].chr == *refIndex) {
-	  readIds.insert(br[4][i].id);
-	  for(int32_t k = br[4][i].pos; k <= br[4][i].pos2; ++k) {
-	    typename TPosInsMap::iterator it = pins.find(k);
-	    if (it == pins.end()) pins.insert(std::make_pair(k, br[4][i].inslen));
-	    else it->second = (it->second + br[4][i].inslen) / 2;
-	  }
-	}
+    // Iterate all split-reads with insertions
+    for(uint32_t i = 0; i < br[4].size(); ++i) {
+      readIds.insert(br[4][i].id);
+      for(int32_t k = br[4][i].pos; k <= br[4][i].pos2; ++k) {
+	TRefCoord rc = std::make_pair(br[4][i].chr, k);
+	typename TPosInsMap::iterator it = pins.find(rc);
+	if (it == pins.end()) pins.insert(std::make_pair(rc, br[4][i].inslen));
+	else it->second = (it->second + br[4][i].inslen) / 2;
       }
-      if (!pins.empty()) {
-	for(typename TReadBp::const_iterator it = readBp.begin(); it != readBp.end(); ++it) {
-	  int32_t rst = _selectReadStart(it->second);
+    }
+    if (!pins.empty()) {
+      for(typename TReadBp::const_iterator it = readBp.begin(); it != readBp.end(); ++it) {
+	if (readIds.find(it->first) == readIds.end()) {
 	  for(uint32_t i = 0; i < it->second.size(); ++i) {
 	    // Any insertion?
-	    if ((it->second[i].refidx == *refIndex) && (readIds.find(it->first) == readIds.end()) && (pins.find(it->second[i].refpos) != pins.end())) {
+	    TRefCoord rc = std::make_pair(it->second[i].refidx, it->second[i].refpos);
+	    if (pins.find(rc) != pins.end()) {
 	      int32_t qval = (int32_t) it->second[i].qual;
-	      br[4].push_back(SRBamRecord(it->second[i].refidx, it->second[i].refpos, it->second[i].refidx, it->second[i].refpos + 1, rst, it->second[i].seqpos, qval, pins[it->second[i].refpos], it->first));
+	      int32_t rst = _selectReadStart(it->second);	      
+	      br[4].push_back(SRBamRecord(it->second[i].refidx, it->second[i].refpos, it->second[i].refidx, it->second[i].refpos + 1, rst, it->second[i].seqpos, qval, pins[rc], it->first));
 	    }
 	  }
 	}
