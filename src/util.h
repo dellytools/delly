@@ -354,7 +354,8 @@ namespace torali
       altfile.close();
       return true;
     }
-    return false;    
+    std::cerr << "Config file does not exist: " << c.altfile.string() << std::endl;    
+    return false;
   }
 
   template<typename TConfig>
