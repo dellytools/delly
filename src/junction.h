@@ -506,12 +506,14 @@ namespace torali
 	
 	TSvtSRBamRecord altSR(2 * DELLY_SVT_TRANS, TSRBamRecord());
 	TConfig altConfig(c);
+	altConfig.hasExcludeFile = false;
+	altConfig.exclude.clear();
 	altConfig.genome = genome[i];
 	altConfig.files.clear();
 	altConfig.files.push_back(align[i]);
 	if (isBamCram(align[i].string())) {
 	  // Alternate alignment in BAM/CRAM format
-	  samFile* samfile = sam_open(c.files[0].string().c_str(), "r");
+	  samFile* samfile = sam_open(altConfig.files[0].string().c_str(), "r");
 	  bam_hdr_t* hdr = sam_hdr_read(samfile);
 	  TValidRegions vR;
 	  _parseExcludeIntervals(altConfig, hdr, vR);
