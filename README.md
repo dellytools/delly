@@ -130,6 +130,32 @@ Delly also supports long-reads for SV discovery.
 `delly lr -y pb -o delly.bcf -g hg38.fa input.bam`
 
 
+Alternate alignments for genome graphs
+--------------------------------------
+
+Instead of providing only one input alignment, delly supports now multiple alternate alignments on different linear reference genomes using minimap2 or pan-genome graphs using minigraph.
+
+```
+minimap2 -ax map-pb -L chm13.fa sample.fq.gz
+minigraph --vc -cx lr pangenome.gfa.gz sample.fq.gz
+```
+
+If the above alignment files are then stored as `sample.chm13.bam` and `sample.gaf.gz` you can use a simple tab-delimited config file for all alternate alignments with delly.
+
+`cat align.config`
+
+```
+sample.chm13.bam   chm13.fa
+sample.gaf.gz   pangenome.gfa.gz
+```
+
+`delly lr -y pb -o delly.bcf -g hg38.fa -l align.config sample.hg38.bam`
+
+Structural variants are still reported with respect to GRCh38 coordinates but the output will only contain SVs that are not present in any of the alternate alignments. For pangenome graphs you may want to try the [augmented graph](https://ftp.1000genomes.ebi.ac.uk/vol1/ftp/data_collections/1KG_ONT_VIENNA/release/v1.0/augmented_graph/) from this [study](https://www.biorxiv.org/content/10.1101/2024.04.18.590093v1). Please note that this graph contains only SVs greater 50bp so you need to filter the above delly output to match the size range using [bcftools](https://github.com/samtools/bcftools).
+
+`bcftools view -i '(QUAL>=300) && ( ((SVTYPE=="INS") && (INFO/SVLEN>50)) || (SVTYPE="BND") || ((INFO/END - POS)>50) )' delly.bcf`
+
+
 Read-depth profiles and copy-number variant calling
 ---------------------------------------------------
 
