@@ -133,7 +133,7 @@ Delly also supports long-reads for SV discovery.
 Alternate alignments for genome graphs
 --------------------------------------
 
-Instead of providing only one input alignment, delly supports now multiple alternate alignments on different linear reference genomes using minimap2 or pan-genome graphs using minigraph.
+Instead of providing only one input alignment, delly supports now multiple alternate alignments on different linear reference genomes using [minimap2](https://github.com/lh3/minimap2) or pan-genome graphs using [minigraph](https://github.com/lh3/minigraph).
 
 ```
 minimap2 -ax map-pb -L chm13.fa sample.fq.gz
