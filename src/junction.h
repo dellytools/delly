@@ -620,7 +620,7 @@ namespace torali
   inline void
   outputSRBamRecords(TConfig const& c, std::vector<std::vector<SRBamRecord> > const& br, bool const longread) {
     // Header
-    std::cerr << "qname\tid\tchr1\tpos1\tchr2\tpos2\tsvtype\tct\tqual\tinslen" << std::endl;
+    std::cerr << "qname\tid\tchr1\tpos1\tchr2\tpos2\tsvtype\tct\tqual\tseqpos\tinslen" << std::endl;
 
     // Hash reads
     typedef std::map<std::size_t, std::string> THashMap;
@@ -660,7 +660,7 @@ namespace torali
     // SVs
     for(uint32_t svt = 0; svt < br.size(); ++svt) {
       for(uint32_t i = 0; i < br[svt].size(); ++i) {
-	std::cerr << hm[br[svt][i].id] << '\t' << br[svt][i].id << '\t' << hdr->target_name[br[svt][i].chr] << '\t' << br[svt][i].pos << '\t' << hdr->target_name[br[svt][i].chr2] << '\t' << br[svt][i].pos2 << '\t' << _addID(svt) << '\t' << _addOrientation(svt) << '\t' << br[svt][i].qual << '\t' << br[svt][i].inslen << std::endl;
+	std::cerr << hm[br[svt][i].id] << '\t' << br[svt][i].id << '\t' << hdr->target_name[br[svt][i].chr] << '\t' << br[svt][i].pos << '\t' << hdr->target_name[br[svt][i].chr2] << '\t' << br[svt][i].pos2 << '\t' << _addID(svt) << '\t' << _addOrientation(svt) << '\t' << br[svt][i].qual << '\t' << br[svt][i].sstart << '\t' << br[svt][i].inslen << std::endl;
       }
     }
 
