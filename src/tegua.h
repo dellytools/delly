@@ -39,6 +39,7 @@ namespace torali {
     bool hasExcludeFile;
     bool hasVcfFile;
     bool hasAltFile;
+    bool skipGenotyping;
     uint16_t minMapQual;
     uint16_t minGenoQual;
     uint32_t minClip;
@@ -169,7 +170,7 @@ namespace torali {
    }
 
    // SV Genotyping
-   genotypeLR(c, svs, jctMap, rcMap);
+   if (!c.skipGenotyping) genotypeLR(c, svs, jctMap, rcMap);
    
    // VCF Output
    vcfOutput(c, svs, jctMap, rcMap, spanMap);
@@ -235,6 +236,7 @@ namespace torali {
      ("pruning,j", boost::program_options::value<uint32_t>(&c.graphPruning)->default_value(1000), "graph pruning cutoff")
      ("extension,e", boost::program_options::value<float>(&c.indelExtension)->default_value(0.5), "enforce indel extension")
      ("scoring,s", boost::program_options::value<std::string>(&scoring)->default_value("3,-2,-3,-1"), "alignment scoring")
+     ("skipGT,k", "skip consensus realignment and genotyping (useful for complex SVs)")
      ;
    
    boost::program_options::positional_options_description pos_args;
@@ -381,6 +383,10 @@ namespace torali {
        if (!_outfileValid(c.outfile)) return 1;
      }
    }
+
+   // Consensus alignment?
+   if (vm.count("skipGT")) c.skipGenotyping = true;
+   else c.skipGenotyping = false;
 
    // Show cmd
    boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();

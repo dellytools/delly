@@ -319,7 +319,7 @@ vcfParse(TConfig const& c, bam_hdr_t* hd, std::vector<TStructuralVariantRecord>&
 
 template<typename TConfig, typename TStructuralVariantRecord, typename TJunctionCountMap, typename TReadCountMap, typename TCountMap>
 inline void
-vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJunctionCountMap const& jctCountMap, TReadCountMap const& readCountMap, TCountMap const& spanCountMap)
+vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord>& svs, TJunctionCountMap const& jctCountMap, TReadCountMap const& readCountMap, TCountMap const& spanCountMap)
 {
   // BoLog class
   BoLog<double> bl;
@@ -416,10 +416,10 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
     now = boost::posix_time::second_clock::local_time();
     std::cerr << '[' << boost::posix_time::to_simple_string(now) << "] " << "Genotyping" << std::endl;
     bcf1_t *rec = bcf_init();
-    for(typename TSVs::const_iterator svIter = svs.begin(); svIter!=svs.end(); ++svIter) {
+    for(typename TSVs::iterator svIter = svs.begin(); svIter!=svs.end(); ++svIter) {
       if ((svIter->srSupport == 0) && (svIter->peSupport == 0)) continue;
       // In discovery mode, skip SVs that have less than 2 reads support after genotyping
-      if (!c.hasVcfFile) {
+      if ((!c.hasVcfFile) && (!c.skipGenotyping)) {
 	uint32_t totalGtSup = 0;
 	for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
 	  totalGtSup += spanCountMap[file_c][svIter->id].alt.size() + jctCountMap[file_c][svIter->id].alt.size();
@@ -449,6 +449,7 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
       padNumber.insert(padNumber.begin(), 8 - padNumber.length(), '0');
       id += padNumber;
       bcf_update_id(hdr, rec, id.c_str());
+      if (c.skipGenotyping) svIter->alleles = _addAlleles("N", std::string(bamhd->target_name[svIter->chr2]), *svIter, svIter->svt);
       std::string alleles = _replaceIUPAC(svIter->alleles);
       bcf_update_alleles_str(hdr, rec, alleles.c_str());
       bcf_update_filter(hdr, rec, &tmpi, 1);
@@ -461,6 +462,7 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
       dellyVersion += dellyVersionNumber;
       bcf_update_info_string(hdr,rec, "SVMETHOD", dellyVersion.c_str());
       if (svIter->svt < DELLY_SVT_TRANS) {
+	if (svEndPos <= svStartPos) svEndPos = svStartPos + 1;
 	tmpi = svEndPos;
 	bcf_update_info_int32(hdr, rec, "END", &tmpi, 1);
       } else {

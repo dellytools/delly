@@ -36,6 +36,7 @@ namespace torali {
 
   struct AsmConfig {
     bool hasVcfFile;
+    bool skipGenotyping;
     uint16_t minMapQual;
     uint32_t minClip;
     uint32_t minCliqueSize;

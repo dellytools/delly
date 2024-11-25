@@ -65,6 +65,7 @@ namespace torali
     bool hasExcludeFile;
     bool hasVcfFile;
     bool hasDumpFile;
+    bool skipGenotyping;
     std::set<int32_t> svtset;
     DnaScore<int> aliscore;
     boost::filesystem::path outfile;

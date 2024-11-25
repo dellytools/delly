@@ -855,7 +855,7 @@ namespace torali
 			    tmpCons = svs[svid].consensus;
 			    svs[svid].consensus = svs[svid].consensus.substr(offsetTmpCons, svSize);
 			  }
-			  if (alignConsensus(c, hdr, seq, NULL, svs[svid], true)) msaSuccess = true;
+			  if ((c.skipGenotyping) || (alignConsensus(c, hdr, seq, NULL, svs[svid], true))) msaSuccess = true;
 			  if (!tmpCons.empty()) {
 			    svs[svid].consensus = tmpCons;
 			    svs[svid].consBp += offsetTmpCons;
@@ -865,7 +865,7 @@ namespace torali
 			  std::string suffix = boost::to_upper_copy(std::string(seq + svs[svid].svStart, seq + std::min(seqlen, svs[svid].svStart + c.minConsWindow)));
 			  msaWfa(c, seqStore[svid], svs[svid].consensus, prefix, suffix);
 			  if ((int32_t) svs[svid].consensus.size() < svs[svid].insLen + 4 * c.minConsWindow) {
-			    if (alignConsensus(c, hdr, seq, NULL, svs[svid], false)) msaSuccess = true;
+			    if ((c.skipGenotyping) || (alignConsensus(c, hdr, seq, NULL, svs[svid], false))) msaSuccess = true;
 			  }
 			}
 			//std::cerr << msaSuccess << std::endl;
@@ -921,7 +921,7 @@ namespace torali
 		    tmpCons = svs[svid].consensus;
 		    svs[svid].consensus = svs[svid].consensus.substr(offsetTmpCons, svSize);
 		  }
-		  if (alignConsensus(c, hdr, seq, sndSeq, svs[svid], true)) msaSuccess = true;
+		  if ((c.skipGenotyping) || (alignConsensus(c, hdr, seq, sndSeq, svs[svid], true))) msaSuccess = true;
 		  if (!tmpCons.empty()) {
 		    svs[svid].consensus = tmpCons;
 		    svs[svid].consBp += offsetTmpCons;
@@ -931,7 +931,7 @@ namespace torali
 		  std::string suffix = boost::to_upper_copy(std::string(seq + svs[svid].svStart, seq + std::min(seqlen, svs[svid].svStart + c.minConsWindow)));
 		  msaWfa(c, seqStore[svid], svs[svid].consensus, prefix, suffix);
 		  if ((int32_t) svs[svid].consensus.size() < svs[svid].insLen + 4 * c.minConsWindow) {
-		    if (alignConsensus(c, hdr, seq, NULL, svs[svid], false)) msaSuccess = true;
+		    if ((c.skipGenotyping) || (alignConsensus(c, hdr, seq, NULL, svs[svid], false))) msaSuccess = true;
 		  }
 		}
 		//std::cerr << msaSuccess << std::endl;
