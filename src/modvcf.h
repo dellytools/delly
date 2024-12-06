@@ -419,7 +419,7 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord>& svs, TJunctio
     for(typename TSVs::iterator svIter = svs.begin(); svIter!=svs.end(); ++svIter) {
       if ((svIter->srSupport == 0) && (svIter->peSupport == 0)) continue;
       // In discovery mode, skip SVs that have less than 2 reads support after genotyping
-      if ((!c.hasVcfFile) && (!c.skipGenotyping)) {
+      if (!c.hasVcfFile) {
 	uint32_t totalGtSup = 0;
 	for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
 	  totalGtSup += spanCountMap[file_c][svIter->id].alt.size() + jctCountMap[file_c][svIter->id].alt.size();
@@ -449,7 +449,6 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord>& svs, TJunctio
       padNumber.insert(padNumber.begin(), 8 - padNumber.length(), '0');
       id += padNumber;
       bcf_update_id(hdr, rec, id.c_str());
-      if (c.skipGenotyping) svIter->alleles = _addAlleles("N", std::string(bamhd->target_name[svIter->chr2]), *svIter, svIter->svt);
       std::string alleles = _replaceIUPAC(svIter->alleles);
       bcf_update_alleles_str(hdr, rec, alleles.c_str());
       bcf_update_filter(hdr, rec, &tmpi, 1);

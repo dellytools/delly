@@ -155,6 +155,10 @@ Structural variants are still reported with respect to GRCh38 coordinates but th
 
 `bcftools view -i '(QUAL>=300) && ( ((SVTYPE=="INS") && (INFO/SVLEN>50)) || (SVTYPE="BND") || ((INFO/END - POS)>50) )' delly.bcf`
 
+Please note that for inter-chromosomal translocations, delly uses `INFO/CHR2` for the second chromosome. You can convert an inter-chromosomal translocation to the two-record breakend format using:
+
+`python scripts/delly2bnd.py -v delly.bcf -r hg38.fa -o delly.bnd.bcf`
+
 
 Read-depth profiles and copy-number variant calling
 ---------------------------------------------------
