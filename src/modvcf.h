@@ -319,7 +319,7 @@ vcfParse(TConfig const& c, bam_hdr_t* hd, std::vector<TStructuralVariantRecord>&
 
 template<typename TConfig, typename TStructuralVariantRecord, typename TJunctionCountMap, typename TReadCountMap, typename TCountMap>
 inline void
-vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord>& svs, TJunctionCountMap const& jctCountMap, TReadCountMap const& readCountMap, TCountMap const& spanCountMap)
+vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJunctionCountMap const& jctCountMap, TReadCountMap const& readCountMap, TCountMap const& spanCountMap)
 {
   // BoLog class
   BoLog<double> bl;
@@ -416,7 +416,7 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord>& svs, TJunctio
     now = boost::posix_time::second_clock::local_time();
     std::cerr << '[' << boost::posix_time::to_simple_string(now) << "] " << "Genotyping" << std::endl;
     bcf1_t *rec = bcf_init();
-    for(typename TSVs::iterator svIter = svs.begin(); svIter!=svs.end(); ++svIter) {
+    for(typename TSVs::const_iterator svIter = svs.begin(); svIter!=svs.end(); ++svIter) {
       if ((svIter->srSupport == 0) && (svIter->peSupport == 0)) continue;
       // In discovery mode, skip SVs that have less than 2 reads support after genotyping
       if (!c.hasVcfFile) {
