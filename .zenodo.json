@@ -1,0 +1,22 @@
+{
+  "creators": [
+    {
+      "orcid": "0000-0001-5773-5620",
+      "affiliation": "European Molecular Biology Laboratory (EMBL)",
+      "name": "Rausch, Tobias"
+    }
+  ],
+  "title": "DELLY: structural variant discovery by integrated paired-end and split-read analysis.",
+  "upload_type": "software",
+    "access_right": "open",
+    "description": "<a href=\"https://github.com/dellytools/delly\">Delly</a> is an integrated structural variant (SV) prediction method that can discover and genotype deletions, insertions, duplications, inversions and translocations at single-nucleotide resolution in short-read and long-read massively parallel sequencing data. It uses paired-ends, split-reads and read-depth to sensitively and accurately delineate genomic rearrangements throughout the genome.",
+  "keywords": [
+    "structural-variants",
+    "genomic-rearrangements",  
+    "cancer-genomics",      
+    "genomics",
+    "short-reads",  
+    "long-reads",
+    "sequencing"
+  ]
+}
