@@ -33,6 +33,8 @@ ifeq ($(OS), Darwin)
         ifeq ($(HAS_BREW), no)
             $(error Homebrew is required on macOS but not found. Please install it from https://brew.sh/)
         endif
+
+        BREW_DEPENDENCIES := autoconf automake boost llvm libomp
     
         BREW_PREFIX := $(shell brew --prefix)
 
@@ -48,8 +50,9 @@ ifeq ($(OS), Darwin)
             $(if $(wildcard ${BREW_BOOST_PREFIX}),,boost) \
             $(if $(wildcard ${BREW_LLVM_PREFIX}),,llvm) \
             $(if $(wildcard ${BREW_LIBOMP_PREFIX}),,libomp)
-        ifneq ($(MISSING),)
-            $(error Install missing dependencies `brew install $(strip $(MISSING))`) # Remove extra spaces
+        MISSING :=$(strip $(MISSING))
+        ifneq (${MISSING},)
+            $(error Install missing dependencies `brew install ${MISSING}`)
         endif
 
         CC = ${BREW_LLVM_PREFIX}/bin/clang
