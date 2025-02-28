@@ -13,5 +13,5 @@ jobs:
     - uses: actions/checkout@v2
     - name: make
       run: |
-        brew install autoconf automake boost llvm libomp
+        brew install autoconf automake boost htslib llvm libomp
         make
