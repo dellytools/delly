@@ -205,7 +205,7 @@ namespace torali {
    boost::program_options::options_description disc("Discovery options");
    disc.add_options()
      ("alt-align,l", boost::program_options::value<boost::filesystem::path>(&c.altfile), "alternate alignments config file")
-     ("mapqual,q", boost::program_options::value<uint16_t>(&c.minMapQual)->default_value(1), "min. mapping quality")
+     ("map-qual,q", boost::program_options::value<uint16_t>(&c.minMapQual)->default_value(1), "min. mapping quality")
      ("minclip,c", boost::program_options::value<uint32_t>(&c.minClip)->default_value(25), "min. clipping length")
      ("min-clique-size,z", boost::program_options::value<uint32_t>(&c.minCliqueSize)->default_value(3), "min. clique size")     
      ("minrefsep,m", boost::program_options::value<uint32_t>(&c.minRefSep)->default_value(30), "min. reference separation")
