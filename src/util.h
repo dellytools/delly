@@ -547,7 +547,7 @@ namespace torali
       for (std::vector<char>::const_iterator s = stvec.begin(); s != stvec.end(); ++s)
 	if (*s == *c) ++ctr;
       TPrecision freq = (TPrecision) ctr / (TPrecision) stvec.size();
-      ent += (freq) * log(freq)/log(2);
+      ent += (freq) * log2(freq);
     }
     return -ent;
   }
