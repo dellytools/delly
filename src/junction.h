@@ -449,7 +449,172 @@ namespace torali
 
   template<typename TConfig, typename TReadBp>
   inline void
+  findL1(TConfig const& c, TReadBp& readBp) {
+    std::string line1 = boost::to_upper_copy(std::string("gggggaggagccaagatggccgaataggaacagctccggtctacagctcccagcgtgagcgacgcagaagacggtgatttctgcatttccatctgaggtaccgggttcatctcactagggagtgccagacagtgggcgcaggccagtgtgtgtgcgcaccgtgcgcgagccgaagcagggcgaggcattgcctcacctgggaagcgcaaggggtcagggagttccctttctgagtcaaagaaaggggtgacggtcgcacctggaaaatcgggtcactcccacccgaatattgcgcttttcagaccggcttaagaaacggcgcaccacgagactatatcccacacctggctcggagggtcctacgcccacggaatctcgctgattgctagcacagcagtctgagatcaaactgcaaggcggcaacgaggctgggggaggggcgcccgccattgcccaggcttgcttaggtaaacaaagcagccgggaagctcgaactgggtggagcccaccacagctcaaggaggcctgcctgcctctgtaggctccacctctgggggcagggcacagacaaacaaaaagacagcagtaacctctgcagacttaagtgtccctgtctgacagctttgaagagagcagtggttctcccagcacgcagctggagatctgagaacgggcagacagactgcctcctcaagtgggtccctgactcctgacccccgagcagcctaactgggaggcaccccccagcaggggcacactgacacctcacacggcagggtattccaacagacctgcagctgagggtcctgtctgttagaaggaaaactaacaaccagaaaggacatctacaccgaaaacccatctgtacatcaccatcatcaaagaccaaaagtagataaaaccacaaagatggggaaaaaacagaacagaaaaactggaaactctaaaacgcagagcgcctctcctcctccaaaggaacgcagttcctcaccagcaacggaacaaagctggatggagaatgattttgacgagctgagagaagaaggcttcagacgatcaaattactctgagctacgggaggacattcaaaccaaaggcaaagaagttgaaaactttgaaaaaaatttagaagaatgtataactagaataaccaatacagagaagtgcttaaaggagctgatggagctgaaaaccaaggctcgagaactacgtgaagaatgcagaagcctcaggagccgatgcgatcaactggaagaaagggtatcagcaatggaagatgaaatgaatgaaatgaagcgagaagggaagtttagagaaaaaagaataaaaagaaatgagcaaagcctccaagaaatatgggactatgtgaaaagaccaaatctacgtctgattggtgtacctgaaagtgatgtggagaatggaaccaagttggaaaacactctgcaggatattatccaggagaacttccccaatctagcaaggcaggccaacgttcagattcaggaaatacagagaacgccacaaagatactcctcgagaagagcaactccaagacacataattgtcagattcaccaaagttgaaatgaaggaaaaaatgttaagggcagccagagagaaaggtcgggttaccctcaaaggaaagcccatcagactaacagtggatctctcggcagaaaccctacaagccagaagagagtgggggccaatattcaacattcttaaagaaaagaattttcaacccagaatttcatatccagccaaactaagcttcataagtgaaggagaaataaaatactttatagacaagcaaatgttgagagattttgtcaccaccaggcctgccctaaaagagctcctgaaggaagcgctaaacatggaaaggaacaaccggtaccagccgctgcaaaatcatgccaaaatgtaaagaccatcgagactaggaagaaactgcatcaactaatgagcaaaatcaccagctaacatcataatgacaggatcaaattcacacataacaatattaactttaaatataaatggactaaattctgcaattaaaagacacagactggcaagttggataaagagtcaagacccatcagtgtgctgtattcaggaaacccatctcacgtgcagagacacacataggctcaaaataaaaggatggaggaagatctaccaagccaatggaaaacaaaaaaaggcaggggttgcaatcctagtctctgataaaacagactttaaaccaacaaagatcaaaagagacaaagaaggccattacataatggtaaagggatcaattcaacaagaggagctaactatcctaaatatttatgcacccaatacaggagcacccagattcataaagcaagtcctcagtgacctacaaagagacttagactcccacacattaataatgggagactttaacaccccactgtcaacattagacagatcaacgagacagaaagtcaacaaggatacccaggaattgaactcagctctgcaccaagcagacctaatagacatctacagaactctccaccccaaatcaacagaatatacctttttttcagcaccacaccacacctattccaaaattgaccacatagttggaagtaaagctctcctcagcaaatgtaaaagaacagaaattataacaaactatctctcagaccacagtgcaatcaaactagaactcaggattaagaatctcactcaaagccgctcaactacatggaaactgaacaacctgctcctgaatgactactgggtacataacgaaatgaaggcagaaataaagatgttctttgaaaccaacgagaacaaagacaccacataccagaatctctgggacgcattcaaagcagtgtgtagagggaaatttatagcactaaatgcctacaagagaaagcaggaaagatccaaaattgacaccctaacatcacaattaaaagaactagaaaagcaagagcaaacacattcaaaagctagcagaaggcaagaaataactaaaatcagagcagaactgaaggaaatagagacacaaaaaacccttcaaaaaatcaatgaatccaggagctggttttttgaaaggatcaacaaaattgatagaccgctagcaagactaataaagaaaaaaagagagaagaatcaaatagacacaataaaaaatgataaaggggatatcaccaccgatcccacagaaatacaaactaccatcagagaatactacaaacacctctacgcaaataaactagaaaatctagaagaaatggatacattcctcgacacatacactctcccaagactaaaccaggaagaagttgaatctctgaatagaccaataacaggctctgaaattgtggcaataatcaatagtttaccaaccaaaaagagtccaggaccagatggattcacagccgaattctaccagaggtacatggaggaactggtaccattccttctgaaactattccaatcaatagaaaaagagggaatcctccctaactcattttatgaggccagcatcattctgataccaaagccgggcagagacacaaccaaaaaagagaattttagaccaatatccttgatgaacattgatgcaaaaatcctcaataaaatactggcaaaccgaatccagcagcacatcaaaaagcttatccaccatgatcaagtgggcttcatccctgggatgcaaggctggttcaatatacgcaaatcaataaatgtaatccagcatataaacagagccaaagacaaaaaccacatgattatctcaatagatgcagaaaaagcctttgacaaaattcaacaacccttcatgctaaaaactctcaataaattaggtattgatgggacgtatttcaaaataataagagctatctatgacaaacccacagccaatatcatactgaatgggcaaaaactggaagcattccctttgaaaaccggcacaagacagggatgccctctctcaccgctcctattcaacatagtgttggaagttctggccagggcaatcaggcaggagaaggaaataaagggtattcaattaggaaaagaggaagtcaaattgtccctgtttgcagacgacatgattgtatatctagaaaaccccatcgtctcagcccaaaatctccttaagctgataagcaacttcagcaaagtctcaggatacaaaatcaatgtacaaaaatcacaagcattcttatacaccaacaacagacaaacagagagccaaatcatgggtgaactcccattcgtaattgcttcaaagagaataaaatacctaggaatccaacttacaagggatgtgaaggacctcttcaaggagaactacaaaccactgctcaaggaaataaaagaggacacaaacaaatggaagaacattccatgctcatgggtaggaagaatcaatatcgtgaaaatggccatactgcccaaggtaatttacagattcaatgccatccccatcaagctaccaatgactttcttcacagaattggaaaaaactactttaaagttcatatggaaccaaaaaagagcccgcattgccaagtcaatcctaagccaaaagaacaaagctggaggcatcacactacctgacttcaaactatactacaaggctacagtaaccaaaacagcatggtactggtaccaaaacagagatatagatcaatggaacagaacagagccctcagaaataatgccgcatatctacaactatctgatctttgacaaacctgagaaaaacaagcaatggggaaaggattccctatttaataaatggtgctgggaaaactggctagccatatgtagaaagctgaaactggatcccttccttacaccttatacaaaaatcaattcaagatggattaaagatttaaacgttaaacctaaaaccataaaaaccctagaagaaaacctaggcattaccattcaggacataggcgtgggcaaggacttcatgtccaaaacaccaaaagcaatggcaacaaaagacaaaattgacaaatgggatctaattaaactaaagagcttctgcacagcaaaagaaactaccatcagagtgaacaggcaacctacaacatgggagaaaattttcgcaacctactcatctgacaaagggctaatatccagaatctacaatgaacttaaacaaatttacaagaaaaaaacaaacaaccccatcaaaaagtgggcgaaggacatgaacagacacttctcaaaagaagacatttatgcagccaaaaaacacatgaagaaatgctcatcatcactggccatcagagaaatgcaaatcaaaaccactatgagatatcatctcacaccagttagaatggcaatcattaaaaagtcaggaaacaacaggtgctggagaggatgcggagaaataggaacacttttacactgttggtgggactgtaaactagttcaaccattgtggaagtcagtgtggcgattcctcagggatctagaactagaaataccatttgacccagccatcccattactgggtatatacccaaatgagtataaatcatgctgctataaagacacatgcacacgtatgtttattgcggcactattcacaatagcaaagacttggaaccaacccaaatgtccaacaatgatagactggattaagaaaatgtggcacatatacaccatggaatactatgcagccataaaaaatgatgagttcatatcctttgtagggacatggatgaaattggaaaccatcattctcagtaaactatcgcaagaacaaaaaaccaaacaccgcatattctcactcataggtgggaattgaacaatgagatcacatggacacaggaaggggaatatcacactctggggactgtggtggggtcgggggaggggggagggatagcattgggagatatacctaatgctagatgacacattagtgggtgcagcgcaccagcatggcacatgtatacatatgtaactaacctgcacaatgtgcacatgtaccctaaaacttagagtat"));
+    std::string line1Rev = line1;
+    reverseComplement(line1Rev);
+
+    // Open file handles
+    typedef std::vector<samFile*> TSamFile;
+    typedef std::vector<hts_idx_t*> TIndex;
+    TSamFile samfile(c.files.size());
+    TIndex idx(c.files.size());
+    for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
+      samfile[file_c] = sam_open(c.files[file_c].string().c_str(), "r");
+      hts_set_fai_filename(samfile[file_c], c.genome.string().c_str());
+      idx[file_c] = sam_index_load(samfile[file_c], c.files[file_c].string().c_str());
+    }
+    bam_hdr_t* hdr = sam_hdr_read(samfile[0]);
+    
+    // Parse genome chr-by-chr
+    boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
+    std::cerr << '[' << boost::posix_time::to_simple_string(now) << "] " << "L1 serach" << std::endl;
+
+    // L1 candidate read search
+    std::set<std::size_t> clusteredReads;
+    for(int32_t refIndex=0; refIndex < (int32_t) hdr->n_targets; ++refIndex) {
+      typedef boost::dynamic_bitset<> TBitSet;
+      TBitSet bp(hdr->target_len[refIndex], false);
+      TBitSet firstHit(hdr->target_len[refIndex], false);
+      TBitSet secondHit(hdr->target_len[refIndex], false);
+
+      // Cluster breakpoints +/-5bp
+      for(typename TReadBp::const_iterator it = readBp.begin(); it != readBp.end(); ++it) {
+	if (it->second.size() > 1) {
+	  for(uint32_t i = 0; i < it->second.size(); ++i) {
+	    if (it->second[i].refidx == refIndex) {
+	      int32_t refStart = 0;
+	      if (it->second[i].refpos > 5) refStart = it->second[i].refpos - 5;
+	      int32_t refEnd = hdr->target_len[refIndex];
+	      if (it->second[i].refpos + 5 < refEnd) refEnd = it->second[i].refpos + 5;
+	      for(int32_t k = refStart; k < refEnd; ++k) {
+		if (secondHit[k]) bp[k] = true;
+		else {
+		  if (firstHit[k]) secondHit[k] = true;
+		  else firstHit[k] = true;
+		}
+	      }
+	    }
+	  }
+	}
+      }
+      
+      // 2nd pass to fetch reads
+      for(typename TReadBp::const_iterator it = readBp.begin(); it != readBp.end(); ++it) {
+	if (it->second.size() > 1) {
+	  for(uint32_t i = 0; i < it->second.size(); ++i) {
+	    if (it->second[i].refidx == refIndex) {
+	      int32_t refStart = 0;
+	      if (it->second[i].refpos > 5) refStart = it->second[i].refpos - 5;
+	      int32_t refEnd = hdr->target_len[refIndex];
+	      if (it->second[i].refpos + 5 < refEnd) refEnd = it->second[i].refpos + 5;
+	      for(int32_t k = refStart; k < refEnd; ++k) {
+		if (bp[k]) clusteredReads.insert(it->first);
+	      }
+	    }
+	  }
+	}
+      }
+      //std::cerr << refIndex << ',' << clusteredReads.size() << std::endl;
+    }
+
+    // Find L1
+    if (!clusteredReads.empty()) {
+      for(int32_t refIndex=0; refIndex < (int32_t) hdr->n_targets; ++refIndex) {
+	// Collect reads from all samples
+	for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
+	  // Read alignments
+	  hts_itr_t* iter = sam_itr_queryi(idx[file_c], refIndex, 0, hdr->target_len[refIndex]);
+	  bam1_t* rec = bam_init1();
+	  while (sam_itr_next(samfile[file_c], iter, rec) >= 0) {
+	    // Keep only primary alignments
+	    if (rec->core.flag & (BAM_FQCFAIL | BAM_FDUP | BAM_FUNMAP | BAM_FSECONDARY | BAM_FSUPPLEMENTARY)) continue;
+	    std::size_t seed = hash_lr(rec);
+
+	    if (clusteredReads.find(seed) != clusteredReads.end()) {
+	      if (readBp[seed].size()>1) {
+		std::string sequence;
+		
+		// Get all sequences embedded in breakpoints
+		for(uint32_t k = 1; k < readBp[seed].size(); ++k) {
+		  int32_t fragsize = readBp[seed][k].seqpos - readBp[seed][k-1].seqpos;
+		  if ((fragsize > 500) && (fragsize < 7000)) {
+		    // L1 fragment?
+		    if (sequence.empty()) {
+		      sequence.resize(rec->core.l_qseq);
+		      const uint8_t* seqptr = bam_get_seq(rec);
+		      for (int i = 0; i < rec->core.l_qseq; ++i) sequence[i] = "=ACMGRSVTWYHKDBN"[bam_seqi(seqptr, i)];
+		    }
+
+		    // Get subsequence
+		    std::string subseq = sequence.substr(readBp[seed][k-1].seqpos, fragsize);
+
+		    // Align to L1
+		    EdlibAlignResult cigarFwd = edlibAlign(subseq.c_str(), subseq.size(), line1.c_str(), line1.size(), edlibNewAlignConfig(-1, EDLIB_MODE_HW, EDLIB_TASK_PATH, NULL, 0));
+		    int32_t alignStartFwd = infixStart(cigarFwd);
+		    int32_t alignEndFwd = infixEnd(cigarFwd);
+		    double percentIdentityFwd = 1.0 - (double) (cigarFwd.editDistance) / (double) (alignEndFwd - alignStartFwd);
+		  
+		    // Align to L1 (reverse)
+		    EdlibAlignResult cigarRev = edlibAlign(subseq.c_str(), subseq.size(), line1Rev.c_str(), line1Rev.size(), edlibNewAlignConfig(-1, EDLIB_MODE_HW, EDLIB_TASK_PATH, NULL, 0));
+		    int32_t alignStartRev = infixStart(cigarRev);
+		    int32_t alignEndRev = infixEnd(cigarRev);
+		    double percentIdentityRev = 1.0 - (double) (cigarRev.editDistance) / (double) (alignEndRev - alignStartRev);
+		  
+		    if ( ((percentIdentityFwd > 0.9) && ((alignEndFwd - alignStartFwd) > 500)) || ((percentIdentityRev > 0.9) && ((alignEndRev - alignStartRev) > 500)) ) {
+		      std::string l1Type = "L1 insertion";
+		      if (readBp[seed][k-1].refidx != readBp[seed][k].refidx) {
+			l1Type = "Inter-chromosomal SV with L1 fragment";
+		      } else {
+			int32_t offset = std::abs(readBp[seed][k].refpos - readBp[seed][k-1].refpos);
+			if (offset > 1000) {
+			  l1Type = "Intra-chromosomal SV with L1 fragment";
+			}
+		      }
+		      std::cout << l1Type << '\t';
+		      std::cout << bam_get_qname(rec) << '\t';
+		      std::cout << hdr->target_name[readBp[seed][k-1].refidx] << ':' << readBp[seed][k-1].refpos << " (ReadPos: " << readBp[seed][k-1].seqpos << ')' << '\t';
+		      std::cout << hdr->target_name[readBp[seed][k].refidx] << ':' << readBp[seed][k].refpos << " (ReadPos: " << readBp[seed][k].seqpos << ')' << '\t';
+		      if ((percentIdentityFwd > 0.9) && ((alignEndFwd - alignStartFwd) > 500)) {
+			std::cout << alignStartFwd << '-' << alignEndFwd << '\t';
+			std::cout << (alignEndFwd - alignStartFwd) << '\t';
+			std::cout << "fwd" << '\t';
+			std::cout << percentIdentityFwd << std::endl;
+			//printAlignment(subseq, line1, EDLIB_MODE_HW, cigarFwd);
+		      } else {
+			std::cout << alignStartRev << '-' << alignEndRev << '\t';
+			std::cout << (alignEndRev - alignStartRev) << '\t';
+			std::cout << "rev" << '\t';
+			std::cout << percentIdentityRev << std::endl;
+			//printAlignment(subseq, line1Rev, EDLIB_MODE_HW, cigarRev);
+		      }
+		    }
+		    edlibFreeAlignResult(cigarFwd);
+		    edlibFreeAlignResult(cigarRev);
+		  }
+		}
+	      }
+	    }
+	  }
+	  bam_destroy1(rec);
+	  hts_itr_destroy(iter);
+	}
+      }
+    }
+
+    // Clean-up
+    bam_hdr_destroy(hdr);
+    for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
+      hts_idx_destroy(idx[file_c]);
+      sam_close(samfile[file_c]);
+    }
+  }   
+  
+  template<typename TConfig, typename TReadBp>
+  inline void
   fetchSVs(TConfig const& c, TReadBp& readBp, std::vector<std::vector<SRBamRecord> >& br) {
+    //std::cout << "L1InsType\tReadName\tRefCoordBefore\tRefCoordAfter\tL1Coord\tL1FragmentSize\tL1Direction\tL1Similarity" << std::endl;
+    //findL1(c, readBp);
     // Extract BAM records
     if ((c.svtset.empty()) || (c.svtset.find(2) != c.svtset.end())) selectDeletions(c, readBp, br);
     if ((c.svtset.empty()) || (c.svtset.find(3) != c.svtset.end())) selectDuplications(c, readBp, br);
