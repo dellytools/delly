@@ -544,10 +544,14 @@ namespace torali
 		      sequence.resize(rec->core.l_qseq);
 		      const uint8_t* seqptr = bam_get_seq(rec);
 		      for (int i = 0; i < rec->core.l_qseq; ++i) sequence[i] = "=ACMGRSVTWYHKDBN"[bam_seqi(seqptr, i)];
+		      // Reverse complement if necessary
+		      if (rec->core.flag & BAM_FREVERSE) reverseComplement(sequence);
 		    }
 
 		    // Get subsequence
 		    std::string subseq = sequence.substr(readBp[seed][k-1].seqpos, fragsize);
+		    //std::cerr << ">" << bam_get_qname(rec) << "_" << readBp[seed][k-1].seqpos << "_" << subseq.size() << std::endl;
+		    //std::cerr << subseq << std::endl;
 
 		    // Align to L1
 		    EdlibAlignResult cigarFwd = edlibAlign(subseq.c_str(), subseq.size(), line1.c_str(), line1.size(), edlibNewAlignConfig(-1, EDLIB_MODE_HW, EDLIB_TASK_PATH, NULL, 0));
