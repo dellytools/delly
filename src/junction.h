@@ -536,9 +536,26 @@ namespace torali
 		std::string sequence;
 		
 		// Get all sequences embedded in breakpoints
+		uint32_t prevHit = 0;
+		uint32_t l1Type = 0; // 0: No hit, 1: L1 insertion, 2: L1 fragment (BND), 3: L1 fragment (non-BND)
+		uint32_t refidx1 = 0;
+		uint32_t refpos1 = 0;
+		uint32_t readpos1 = 0;
+		uint32_t refidx2 = 0;
+		uint32_t refpos2 = 0;
+		uint32_t readpos2 = 0;
+		uint32_t l1Start = 0;
+		uint32_t l1End = 0;
+		uint32_t kLow = 0;
+		uint32_t kHigh = 0;
+		bool l1Fwd = false;
+		double pid = 0;
 		for(uint32_t k = 1; k < readBp[seed].size(); ++k) {
-		  int32_t fragsize = readBp[seed][k].seqpos - readBp[seed][k-1].seqpos;
-		  if ((fragsize > 500) && (fragsize < 7000)) {
+		  if (readBp[seed][k].seqpos < 300) continue;
+		  if (readBp[seed][k].seqpos + 300 > rec->core.l_qseq) continue;
+		  if (!l1Type) prevHit = k;
+		  int32_t fragsize = readBp[seed][k].seqpos - readBp[seed][prevHit-1].seqpos;
+		  if ((fragsize > 300) && (fragsize < 7000)) {
 		    // L1 fragment?
 		    if (sequence.empty()) {
 		      sequence.resize(rec->core.l_qseq);
@@ -549,8 +566,8 @@ namespace torali
 		    }
 
 		    // Get subsequence
-		    std::string subseq = sequence.substr(readBp[seed][k-1].seqpos, fragsize);
-		    //std::cerr << ">" << bam_get_qname(rec) << "_" << readBp[seed][k-1].seqpos << "_" << subseq.size() << std::endl;
+		    std::string subseq = sequence.substr(readBp[seed][prevHit-1].seqpos, fragsize);
+		    //std::cerr << ">" << bam_get_qname(rec) << "_" << readBp[seed][prevHit-1].seqpos << "_" << subseq.size() << std::endl;
 		    //std::cerr << subseq << std::endl;
 
 		    // Align to L1
@@ -565,36 +582,88 @@ namespace torali
 		    int32_t alignEndRev = infixEnd(cigarRev);
 		    double percentIdentityRev = 1.0 - (double) (cigarRev.editDistance) / (double) (alignEndRev - alignStartRev);
 		  
-		    if ( ((percentIdentityFwd > 0.9) && ((alignEndFwd - alignStartFwd) > 500)) || ((percentIdentityRev > 0.9) && ((alignEndRev - alignStartRev) > 500)) ) {
-		      std::string l1Type = "L1 insertion";
-		      if (readBp[seed][k-1].refidx != readBp[seed][k].refidx) {
-			l1Type = "Inter-chromosomal SV with L1 fragment";
-		      } else {
-			int32_t offset = std::abs(readBp[seed][k].refpos - readBp[seed][k-1].refpos);
-			if (offset > 1000) {
-			  l1Type = "Intra-chromosomal SV with L1 fragment";
-			}
+		    if ( ((percentIdentityFwd > 0.9) && ((alignEndFwd - alignStartFwd) > 300)) || ((percentIdentityRev > 0.9) && ((alignEndRev - alignStartRev) > 300)) ) {
+		      bool newValidHit = true;
+		      if (l1Type) {
+			// At least 25% larger hit?
+			double l1NewSize = alignEndRev - alignStartRev;
+			if ((percentIdentityFwd > 0.9) && ((alignEndFwd - alignStartFwd) > 300)) l1NewSize = alignEndFwd - alignStartFwd;
+			double l1OldSize = l1End - l1Start;
+			if (l1NewSize < ((0.25 * l1OldSize) + l1OldSize)) newValidHit = false;
 		      }
-		      std::cout << l1Type << '\t';
-		      std::cout << bam_get_qname(rec) << '\t';
-		      std::cout << hdr->target_name[readBp[seed][k-1].refidx] << ':' << readBp[seed][k-1].refpos << " (ReadPos: " << readBp[seed][k-1].seqpos << ')' << '\t';
-		      std::cout << hdr->target_name[readBp[seed][k].refidx] << ':' << readBp[seed][k].refpos << " (ReadPos: " << readBp[seed][k].seqpos << ')' << '\t';
-		      if ((percentIdentityFwd > 0.9) && ((alignEndFwd - alignStartFwd) > 500)) {
-			std::cout << alignStartFwd << '-' << alignEndFwd << '\t';
-			std::cout << (alignEndFwd - alignStartFwd) << '\t';
-			std::cout << "fwd" << '\t';
-			std::cout << percentIdentityFwd << std::endl;
-			//printAlignment(subseq, line1, EDLIB_MODE_HW, cigarFwd);
-		      } else {
-			std::cout << alignStartRev << '-' << alignEndRev << '\t';
-			std::cout << (alignEndRev - alignStartRev) << '\t';
-			std::cout << "rev" << '\t';
-			std::cout << percentIdentityRev << std::endl;
-			//printAlignment(subseq, line1Rev, EDLIB_MODE_HW, cigarRev);
+		      if (newValidHit) {
+			l1Type = 1;
+			if (readBp[seed][prevHit-1].refidx != readBp[seed][k].refidx) l1Type = 2;
+			else {
+			  int32_t offset = std::abs(readBp[seed][k].refpos - readBp[seed][prevHit-1].refpos);
+			  if (offset > 1000) l1Type = 3;
+			}
+			kLow = prevHit-1;
+			refidx1 = readBp[seed][prevHit-1].refidx;
+			refpos1 = readBp[seed][prevHit-1].refpos;
+			readpos1 = readBp[seed][prevHit-1].seqpos;
+			kHigh = k;
+			refidx2 = readBp[seed][k].refidx;
+			refpos2 = readBp[seed][k].refpos;
+			readpos2 = readBp[seed][k].seqpos;
+			if ((percentIdentityFwd > 0.9) && ((alignEndFwd - alignStartFwd) > 300)) {
+			  l1Start = alignStartFwd;
+			  l1End = alignEndFwd;
+			  l1Fwd = true;
+			  pid = percentIdentityFwd;
+			  //printAlignment(subseq, line1, EDLIB_MODE_HW, cigarFwd);			
+			} else {
+			  l1Start = alignStartRev;
+			  l1End = alignEndRev;
+			  l1Fwd = false;
+			  pid = percentIdentityRev;
+			  //printAlignment(subseq, line1Rev, EDLIB_MODE_HW, cigarRev);
+			}
 		      }
 		    }
 		    edlibFreeAlignResult(cigarFwd);
 		    edlibFreeAlignResult(cigarRev);
+		  }
+		}
+		if (l1Type) {
+		  // Make sure the leading and trailing sequence is NOT L1 sequence
+		  bool validRead = true;
+		  for(int32_t bp = 0; ((bp < 4) && (validRead)); ++bp) {
+		    int32_t fragsize = readBp[seed][kLow].seqpos;
+		    int32_t sCoord = 0;
+		    if (bp>=2) {
+		      sCoord = readBp[seed][kHigh].seqpos;
+		      fragsize = sequence.size() - sCoord;
+		    }
+		    if (fragsize < 7000) {   // Otherwise clearly more than L1 content
+		      std::string subseq = sequence.substr(sCoord, fragsize);
+		      std::string l1seq = line1;
+		      if ((bp == 1) || (bp == 3)) l1seq = line1Rev;
+		      
+		      // Align to L1
+		      EdlibAlignResult cigar = edlibAlign(subseq.c_str(), subseq.size(), l1seq.c_str(), l1seq.size(), edlibNewAlignConfig(-1, EDLIB_MODE_HW, EDLIB_TASK_PATH, NULL, 0));
+		      int32_t alignStart = infixStart(cigar);
+		      int32_t alignEnd = infixEnd(cigar);
+		      double percentIdentity = 1.0 - (double) (cigar.editDistance) / (double) (alignEnd - alignStart);
+		      if (percentIdentity > 0.9) {
+			validRead = false;
+			//printAlignment(subseq, l1seq, EDLIB_MODE_HW, cigar);
+		      }
+		      edlibFreeAlignResult(cigar);
+		    }
+		  }
+		  if (validRead) {
+		    if (l1Type == 1) std::cout << "L1 insertion" << '\t';
+		    else if (l1Type == 2) std::cout << "Inter-chromosomal SV with L1 fragment" << '\t';
+		    else std::cout << "Intra-chromosomal SV with L1 fragment" << '\t';
+		    std::cout << bam_get_qname(rec) << '\t';
+		    std::cout << hdr->target_name[refidx1] << ':' << refpos1 << " (ReadPos: " << readpos1 << ')' << '\t';
+		    std::cout << hdr->target_name[refidx2] << ':' << refpos2 << " (ReadPos: " << readpos2 << ')' << '\t';
+		    std::cout << l1Start << '-' << l1End << '\t';
+		    std::cout << (l1End - l1Start) << '\t';
+		    if (l1Fwd) std::cout << "fwd" << '\t';
+		    else std::cout << "rev" << '\t';
+		    std::cout << pid << std::endl;
 		  }
 		}
 	      }
