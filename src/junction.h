@@ -450,9 +450,7 @@ namespace torali
   template<typename TConfig, typename TReadBp>
   inline void
   findL1(TConfig const& c, TReadBp& readBp) {
-    std::string line1 = boost::to_upper_copy(std::string("gggggaggagccaagatggccgaataggaacagctccggtctacagctcccagcgtgagcgacgcagaagacggtgatttctgcatttccatctgaggtaccgggttcatctcactagggagtgccagacagtgggcgcaggccagtgtgtgtgcgcaccgtgcgcgagccgaagcagggcgaggcattgcctcacctgggaagcgcaaggggtcagggagttccctttctgagtcaaagaaaggggtgacggtcgcacctggaaaatcgggtcactcccacccgaatattgcgcttttcagaccggcttaagaaacggcgcaccacgagactatatcccacacctggctcggagggtcctacgcccacggaatctcgctgattgctagcacagcagtctgagatcaaactgcaaggcggcaacgaggctgggggaggggcgcccgccattgcccaggcttgcttaggtaaacaaagcagccgggaagctcgaactgggtggagcccaccacagctcaaggaggcctgcctgcctctgtaggctccacctctgggggcagggcacagacaaacaaaaagacagcagtaacctctgcagacttaagtgtccctgtctgacagctttgaagagagcagtggttctcccagcacgcagctggagatctgagaacgggcagacagactgcctcctcaagtgggtccctgactcctgacccccgagcagcctaactgggaggcaccccccagcaggggcacactgacacctcacacggcagggtattccaacagacctgcagctgagggtcctgtctgttagaaggaaaactaacaaccagaaaggacatctacaccgaaaacccatctgtacatcaccatcatcaaagaccaaaagtagataaaaccacaaagatggggaaaaaacagaacagaaaaactggaaactctaaaacgcagagcgcctctcctcctccaaaggaacgcagttcctcaccagcaacggaacaaagctggatggagaatgattttgacgagctgagagaagaaggcttcagacgatcaaattactctgagctacgggaggacattcaaaccaaaggcaaagaagttgaaaactttgaaaaaaatttagaagaatgtataactagaataaccaatacagagaagtgcttaaaggagctgatggagctgaaaaccaaggctcgagaactacgtgaagaatgcagaagcctcaggagccgatgcgatcaactggaagaaagggtatcagcaatggaagatgaaatgaatgaaatgaagcgagaagggaagtttagagaaaaaagaataaaaagaaatgagcaaagcctccaagaaatatgggactatgtgaaaagaccaaatctacgtctgattggtgtacctgaaagtgatgtggagaatggaaccaagttggaaaacactctgcaggatattatccaggagaacttccccaatctagcaaggcaggccaacgttcagattcaggaaatacagagaacgccacaaagatactcctcgagaagagcaactccaagacacataattgtcagattcaccaaagttgaaatgaaggaaaaaatgttaagggcagccagagagaaaggtcgggttaccctcaaaggaaagcccatcagactaacagtggatctctcggcagaaaccctacaagccagaagagagtgggggccaatattcaacattcttaaagaaaagaattttcaacccagaatttcatatccagccaaactaagcttcataagtgaaggagaaataaaatactttatagacaagcaaatgttgagagattttgtcaccaccaggcctgccctaaaagagctcctgaaggaagcgctaaacatggaaaggaacaaccggtaccagccgctgcaaaatcatgccaaaatgtaaagaccatcgagactaggaagaaactgcatcaactaatgagcaaaatcaccagctaacatcataatgacaggatcaaattcacacataacaatattaactttaaatataaatggactaaattctgcaattaaaagacacagactggcaagttggataaagagtcaagacccatcagtgtgctgtattcaggaaacccatctcacgtgcagagacacacataggctcaaaataaaaggatggaggaagatctaccaagccaatggaaaacaaaaaaaggcaggggttgcaatcctagtctctgataaaacagactttaaaccaacaaagatcaaaagagacaaagaaggccattacataatggtaaagggatcaattcaacaagaggagctaactatcctaaatatttatgcacccaatacaggagcacccagattcataaagcaagtcctcagtgacctacaaagagacttagactcccacacattaataatgggagactttaacaccccactgtcaacattagacagatcaacgagacagaaagtcaacaaggatacccaggaattgaactcagctctgcaccaagcagacctaatagacatctacagaactctccaccccaaatcaacagaatatacctttttttcagcaccacaccacacctattccaaaattgaccacatagttggaagtaaagctctcctcagcaaatgtaaaagaacagaaattataacaaactatctctcagaccacagtgcaatcaaactagaactcaggattaagaatctcactcaaagccgctcaactacatggaaactgaacaacctgctcctgaatgactactgggtacataacgaaatgaaggcagaaataaagatgttctttgaaaccaacgagaacaaagacaccacataccagaatctctgggacgcattcaaagcagtgtgtagagggaaatttatagcactaaatgcctacaagagaaagcaggaaagatccaaaattgacaccctaacatcacaattaaaagaactagaaaagcaagagcaaacacattcaaaagctagcagaaggcaagaaataactaaaatcagagcagaactgaaggaaatagagacacaaaaaacccttcaaaaaatcaatgaatccaggagctggttttttgaaaggatcaacaaaattgatagaccgctagcaagactaataaagaaaaaaagagagaagaatcaaatagacacaataaaaaatgataaaggggatatcaccaccgatcccacagaaatacaaactaccatcagagaatactacaaacacctctacgcaaataaactagaaaatctagaagaaatggatacattcctcgacacatacactctcccaagactaaaccaggaagaagttgaatctctgaatagaccaataacaggctctgaaattgtggcaataatcaatagtttaccaaccaaaaagagtccaggaccagatggattcacagccgaattctaccagaggtacatggaggaactggtaccattccttctgaaactattccaatcaatagaaaaagagggaatcctccctaactcattttatgaggccagcatcattctgataccaaagccgggcagagacacaaccaaaaaagagaattttagaccaatatccttgatgaacattgatgcaaaaatcctcaataaaatactggcaaaccgaatccagcagcacatcaaaaagcttatccaccatgatcaagtgggcttcatccctgggatgcaaggctggttcaatatacgcaaatcaataaatgtaatccagcatataaacagagccaaagacaaaaaccacatgattatctcaatagatgcagaaaaagcctttgacaaaattcaacaacccttcatgctaaaaactctcaataaattaggtattgatgggacgtatttcaaaataataagagctatctatgacaaacccacagccaatatcatactgaatgggcaaaaactggaagcattccctttgaaaaccggcacaagacagggatgccctctctcaccgctcctattcaacatagtgttggaagttctggccagggcaatcaggcaggagaaggaaataaagggtattcaattaggaaaagaggaagtcaaattgtccctgtttgcagacgacatgattgtatatctagaaaaccccatcgtctcagcccaaaatctccttaagctgataagcaacttcagcaaagtctcaggatacaaaatcaatgtacaaaaatcacaagcattcttatacaccaacaacagacaaacagagagccaaatcatgggtgaactcccattcgtaattgcttcaaagagaataaaatacctaggaatccaacttacaagggatgtgaaggacctcttcaaggagaactacaaaccactgctcaaggaaataaaagaggacacaaacaaatggaagaacattccatgctcatgggtaggaagaatcaatatcgtgaaaatggccatactgcccaaggtaatttacagattcaatgccatccccatcaagctaccaatgactttcttcacagaattggaaaaaactactttaaagttcatatggaaccaaaaaagagcccgcattgccaagtcaatcctaagccaaaagaacaaagctggaggcatcacactacctgacttcaaactatactacaaggctacagtaaccaaaacagcatggtactggtaccaaaacagagatatagatcaatggaacagaacagagccctcagaaataatgccgcatatctacaactatctgatctttgacaaacctgagaaaaacaagcaatggggaaaggattccctatttaataaatggtgctgggaaaactggctagccatatgtagaaagctgaaactggatcccttccttacaccttatacaaaaatcaattcaagatggattaaagatttaaacgttaaacctaaaaccataaaaaccctagaagaaaacctaggcattaccattcaggacataggcgtgggcaaggacttcatgtccaaaacaccaaaagcaatggcaacaaaagacaaaattgacaaatgggatctaattaaactaaagagcttctgcacagcaaaagaaactaccatcagagtgaacaggcaacctacaacatgggagaaaattttcgcaacctactcatctgacaaagggctaatatccagaatctacaatgaacttaaacaaatttacaagaaaaaaacaaacaaccccatcaaaaagtgggcgaaggacatgaacagacacttctcaaaagaagacatttatgcagccaaaaaacacatgaagaaatgctcatcatcactggccatcagagaaatgcaaatcaaaaccactatgagatatcatctcacaccagttagaatggcaatcattaaaaagtcaggaaacaacaggtgctggagaggatgcggagaaataggaacacttttacactgttggtgggactgtaaactagttcaaccattgtggaagtcagtgtggcgattcctcagggatctagaactagaaataccatttgacccagccatcccattactgggtatatacccaaatgagtataaatcatgctgctataaagacacatgcacacgtatgtttattgcggcactattcacaatagcaaagacttggaaccaacccaaatgtccaacaatgatagactggattaagaaaatgtggcacatatacaccatggaatactatgcagccataaaaaatgatgagttcatatcctttgtagggacatggatgaaattggaaaccatcattctcagtaaactatcgcaagaacaaaaaaccaaacaccgcatattctcactcataggtgggaattgaacaatgagatcacatggacacaggaaggggaatatcacactctggggactgtggtggggtcgggggaggggggagggatagcattgggagatatacctaatgctagatgacacattagtgggtgcagcgcaccagcatggcacatgtatacatatgtaactaacctgcacaatgtgcacatgtaccctaaaacttagagtat"));
-    std::string line1Rev = line1;
-    reverseComplement(line1Rev);
+    std::string line1("GGGGGAGGAGCCAAGATGGCCGAATAGGAACAGCTCCGGTCTACAGCTCCCAGCGTGAGCGACGCAGAAGACGGTGATTTCTGCATTTCCATCTGAGGTACCGGGTTCATCTCACTAGGGAGTGCCAGACAGTGGGCGCAGGCCAGTGTGTGTGCGCACCGTGCGCGAGCCGAAGCAGGGCGAGGCATTGCCTCACCTGGGAAGCGCAAGGGGTCAGGGAGTTCCCTTTCTGAGTCAAAGAAAGGGGTGACGGTCGCACCTGGAAAATCGGGTCACTCCCACCCGAATATTGCGCTTTTCAGACCGGCTTAAGAAACGGCGCACCACGAGACTATATCCCACACCTGGCTCGGAGGGTCCTACGCCCACGGAATCTCGCTGATTGCTAGCACAGCAGTCTGAGATCAAACTGCAAGGCGGCAACGAGGCTGGGGGAGGGGCGCCCGCCATTGCCCAGGCTTGCTTAGGTAAACAAAGCAGCCGGGAAGCTCGAACTGGGTGGAGCCCACCACAGCTCAAGGAGGCCTGCCTGCCTCTGTAGGCTCCACCTCTGGGGGCAGGGCACAGACAAACAAAAAGACAGCAGTAACCTCTGCAGACTTAAGTGTCCCTGTCTGACAGCTTTGAAGAGAGCAGTGGTTCTCCCAGCACGCAGCTGGAGATCTGAGAACGGGCAGACAGACTGCCTCCTCAAGTGGGTCCCTGACTCCTGACCCCCGAGCAGCCTAACTGGGAGGCACCCCCCAGCAGGGGCACACTGACACCTCACACGGCAGGGTATTCCAACAGACCTGCAGCTGAGGGTCCTGTCTGTTAGAAGGAAAACTAACAACCAGAAAGGACATCTACACCGAAAACCCATCTGTACATCACCATCATCAAAGACCAAAAGTAGATAAAACCACAAAGATGGGGAAAAAACAGAACAGAAAAACTGGAAACTCTAAAACGCAGAGCGCCTCTCCTCCTCCAAAGGAACGCAGTTCCTCACCAGCAACGGAACAAAGCTGGATGGAGAATGATTTTGACGAGCTGAGAGAAGAAGGCTTCAGACGATCAAATTACTCTGAGCTACGGGAGGACATTCAAACCAAAGGCAAAGAAGTTGAAAACTTTGAAAAAAATTTAGAAGAATGTATAACTAGAATAACCAATACAGAGAAGTGCTTAAAGGAGCTGATGGAGCTGAAAACCAAGGCTCGAGAACTACGTGAAGAATGCAGAAGCCTCAGGAGCCGATGCGATCAACTGGAAGAAAGGGTATCAGCAATGGAAGATGAAATGAATGAAATGAAGCGAGAAGGGAAGTTTAGAGAAAAAAGAATAAAAAGAAATGAGCAAAGCCTCCAAGAAATATGGGACTATGTGAAAAGACCAAATCTACGTCTGATTGGTGTACCTGAAAGTGATGTGGAGAATGGAACCAAGTTGGAAAACACTCTGCAGGATATTATCCAGGAGAACTTCCCCAATCTAGCAAGGCAGGCCAACGTTCAGATTCAGGAAATACAGAGAACGCCACAAAGATACTCCTCGAGAAGAGCAACTCCAAGACACATAATTGTCAGATTCACCAAAGTTGAAATGAAGGAAAAAATGTTAAGGGCAGCCAGAGAGAAAGGTCGGGTTACCCTCAAAGGAAAGCCCATCAGACTAACAGTGGATCTCTCGGCAGAAACCCTACAAGCCAGAAGAGAGTGGGGGCCAATATTCAACATTCTTAAAGAAAAGAATTTTCAACCCAGAATTTCATATCCAGCCAAACTAAGCTTCATAAGTGAAGGAGAAATAAAATACTTTATAGACAAGCAAATGTTGAGAGATTTTGTCACCACCAGGCCTGCCCTAAAAGAGCTCCTGAAGGAAGCGCTAAACATGGAAAGGAACAACCGGTACCAGCCGCTGCAAAATCATGCCAAAATGTAAAGACCATCGAGACTAGGAAGAAACTGCATCAACTAATGAGCAAAATCACCAGCTAACATCATAATGACAGGATCAAATTCACACATAACAATATTAACTTTAAATATAAATGGACTAAATTCTGCAATTAAAAGACACAGACTGGCAAGTTGGATAAAGAGTCAAGACCCATCAGTGTGCTGTATTCAGGAAACCCATCTCACGTGCAGAGACACACATAGGCTCAAAATAAAAGGATGGAGGAAGATCTACCAAGCCAATGGAAAACAAAAAAAGGCAGGGGTTGCAATCCTAGTCTCTGATAAAACAGACTTTAAACCAACAAAGATCAAAAGAGACAAAGAAGGCCATTACATAATGGTAAAGGGATCAATTCAACAAGAGGAGCTAACTATCCTAAATATTTATGCACCCAATACAGGAGCACCCAGATTCATAAAGCAAGTCCTCAGTGACCTACAAAGAGACTTAGACTCCCACACATTAATAATGGGAGACTTTAACACCCCACTGTCAACATTAGACAGATCAACGAGACAGAAAGTCAACAAGGATACCCAGGAATTGAACTCAGCTCTGCACCAAGCAGACCTAATAGACATCTACAGAACTCTCCACCCCAAATCAACAGAATATACCTTTTTTTCAGCACCACACCACACCTATTCCAAAATTGACCACATAGTTGGAAGTAAAGCTCTCCTCAGCAAATGTAAAAGAACAGAAATTATAACAAACTATCTCTCAGACCACAGTGCAATCAAACTAGAACTCAGGATTAAGAATCTCACTCAAAGCCGCTCAACTACATGGAAACTGAACAACCTGCTCCTGAATGACTACTGGGTACATAACGAAATGAAGGCAGAAATAAAGATGTTCTTTGAAACCAACGAGAACAAAGACACCACATACCAGAATCTCTGGGACGCATTCAAAGCAGTGTGTAGAGGGAAATTTATAGCACTAAATGCCTACAAGAGAAAGCAGGAAAGATCCAAAATTGACACCCTAACATCACAATTAAAAGAACTAGAAAAGCAAGAGCAAACACATTCAAAAGCTAGCAGAAGGCAAGAAATAACTAAAATCAGAGCAGAACTGAAGGAAATAGAGACACAAAAAACCCTTCAAAAAATCAATGAATCCAGGAGCTGGTTTTTTGAAAGGATCAACAAAATTGATAGACCGCTAGCAAGACTAATAAAGAAAAAAAGAGAGAAGAATCAAATAGACACAATAAAAAATGATAAAGGGGATATCACCACCGATCCCACAGAAATACAAACTACCATCAGAGAATACTACAAACACCTCTACGCAAATAAACTAGAAAATCTAGAAGAAATGGATACATTCCTCGACACATACACTCTCCCAAGACTAAACCAGGAAGAAGTTGAATCTCTGAATAGACCAATAACAGGCTCTGAAATTGTGGCAATAATCAATAGTTTACCAACCAAAAAGAGTCCAGGACCAGATGGATTCACAGCCGAATTCTACCAGAGGTACATGGAGGAACTGGTACCATTCCTTCTGAAACTATTCCAATCAATAGAAAAAGAGGGAATCCTCCCTAACTCATTTTATGAGGCCAGCATCATTCTGATACCAAAGCCGGGCAGAGACACAACCAAAAAAGAGAATTTTAGACCAATATCCTTGATGAACATTGATGCAAAAATCCTCAATAAAATACTGGCAAACCGAATCCAGCAGCACATCAAAAAGCTTATCCACCATGATCAAGTGGGCTTCATCCCTGGGATGCAAGGCTGGTTCAATATACGCAAATCAATAAATGTAATCCAGCATATAAACAGAGCCAAAGACAAAAACCACATGATTATCTCAATAGATGCAGAAAAAGCCTTTGACAAAATTCAACAACCCTTCATGCTAAAAACTCTCAATAAATTAGGTATTGATGGGACGTATTTCAAAATAATAAGAGCTATCTATGACAAACCCACAGCCAATATCATACTGAATGGGCAAAAACTGGAAGCATTCCCTTTGAAAACCGGCACAAGACAGGGATGCCCTCTCTCACCGCTCCTATTCAACATAGTGTTGGAAGTTCTGGCCAGGGCAATCAGGCAGGAGAAGGAAATAAAGGGTATTCAATTAGGAAAAGAGGAAGTCAAATTGTCCCTGTTTGCAGACGACATGATTGTATATCTAGAAAACCCCATCGTCTCAGCCCAAAATCTCCTTAAGCTGATAAGCAACTTCAGCAAAGTCTCAGGATACAAAATCAATGTACAAAAATCACAAGCATTCTTATACACCAACAACAGACAAACAGAGAGCCAAATCATGGGTGAACTCCCATTCGTAATTGCTTCAAAGAGAATAAAATACCTAGGAATCCAACTTACAAGGGATGTGAAGGACCTCTTCAAGGAGAACTACAAACCACTGCTCAAGGAAATAAAAGAGGACACAAACAAATGGAAGAACATTCCATGCTCATGGGTAGGAAGAATCAATATCGTGAAAATGGCCATACTGCCCAAGGTAATTTACAGATTCAATGCCATCCCCATCAAGCTACCAATGACTTTCTTCACAGAATTGGAAAAAACTACTTTAAAGTTCATATGGAACCAAAAAAGAGCCCGCATTGCCAAGTCAATCCTAAGCCAAAAGAACAAAGCTGGAGGCATCACACTACCTGACTTCAAACTATACTACAAGGCTACAGTAACCAAAACAGCATGGTACTGGTACCAAAACAGAGATATAGATCAATGGAACAGAACAGAGCCCTCAGAAATAATGCCGCATATCTACAACTATCTGATCTTTGACAAACCTGAGAAAAACAAGCAATGGGGAAAGGATTCCCTATTTAATAAATGGTGCTGGGAAAACTGGCTAGCCATATGTAGAAAGCTGAAACTGGATCCCTTCCTTACACCTTATACAAAAATCAATTCAAGATGGATTAAAGATTTAAACGTTAAACCTAAAACCATAAAAACCCTAGAAGAAAACCTAGGCATTACCATTCAGGACATAGGCGTGGGCAAGGACTTCATGTCCAAAACACCAAAAGCAATGGCAACAAAAGACAAAATTGACAAATGGGATCTAATTAAACTAAAGAGCTTCTGCACAGCAAAAGAAACTACCATCAGAGTGAACAGGCAACCTACAACATGGGAGAAAATTTTCGCAACCTACTCATCTGACAAAGGGCTAATATCCAGAATCTACAATGAACTTAAACAAATTTACAAGAAAAAAACAAACAACCCCATCAAAAAGTGGGCGAAGGACATGAACAGACACTTCTCAAAAGAAGACATTTATGCAGCCAAAAAACACATGAAGAAATGCTCATCATCACTGGCCATCAGAGAAATGCAAATCAAAACCACTATGAGATATCATCTCACACCAGTTAGAATGGCAATCATTAAAAAGTCAGGAAACAACAGGTGCTGGAGAGGATGCGGAGAAATAGGAACACTTTTACACTGTTGGTGGGACTGTAAACTAGTTCAACCATTGTGGAAGTCAGTGTGGCGATTCCTCAGGGATCTAGAACTAGAAATACCATTTGACCCAGCCATCCCATTACTGGGTATATACCCAAATGAGTATAAATCATGCTGCTATAAAGACACATGCACACGTATGTTTATTGCGGCACTATTCACAATAGCAAAGACTTGGAACCAACCCAAATGTCCAACAATGATAGACTGGATTAAGAAAATGTGGCACATATACACCATGGAATACTATGCAGCCATAAAAAATGATGAGTTCATATCCTTTGTAGGGACATGGATGAAATTGGAAACCATCATTCTCAGTAAACTATCGCAAGAACAAAAAACCAAACACCGCATATTCTCACTCATAGGTGGGAATTGAACAATGAGATCACATGGACACAGGAAGGGGAATATCACACTCTGGGGACTGTGGTGGGGTCGGGGGAGGGGGGAGGGATAGCATTGGGAGATATACCTAATGCTAGATGACACATTAGTGGGTGCAGCGCACCAGCATGGCACATGTATACATATGTAACTAACCTGCACAATGTGCACATGTACCCTAAAACTTAGAGTATATACTCTAAGTTTTAGGGTACATGTGCACATTGTGCAGGTTAGTTACATATGTATACATGTGCCATGCTGGTGCGCTGCACCCACTAATGTGTCATCTAGCATTAGGTATATCTCCCAATGCTATCCCTCCCCCCTCCCCCGACCCCACCACAGTCCCCAGAGTGTGATATTCCCCTTCCTGTGTCCATGTGATCTCATTGTTCAATTCCCACCTATGAGTGAGAATATGCGGTGTTTGGTTTTTTGTTCTTGCGATAGTTTACTGAGAATGATGGTTTCCAATTTCATCCATGTCCCTACAAAGGATATGAACTCATCATTTTTTATGGCTGCATAGTATTCCATGGTGTATATGTGCCACATTTTCTTAATCCAGTCTATCATTGTTGGACATTTGGGTTGGTTCCAAGTCTTTGCTATTGTGAATAGTGCCGCAATAAACATACGTGTGCATGTGTCTTTATAGCAGCATGATTTATACTCATTTGGGTATATACCCAGTAATGGGATGGCTGGGTCAAATGGTATTTCTAGTTCTAGATCCCTGAGGAATCGCCACACTGACTTCCACAATGGTTGAACTAGTTTACAGTCCCACCAACAGTGTAAAAGTGTTCCTATTTCTCCGCATCCTCTCCAGCACCTGTTGTTTCCTGACTTTTTAATGATTGCCATTCTAACTGGTGTGAGATGATATCTCATAGTGGTTTTGATTTGCATTTCTCTGATGGCCAGTGATGATGAGCATTTCTTCATGTGTTTTTTGGCTGCATAAATGTCTTCTTTTGAGAAGTGTCTGTTCATGTCCTTCGCCCACTTTTTGATGGGGTTGTTTGTTTTTTTCTTGTAAATTTGTTTAAGTTCATTGTAGATTCTGGATATTAGCCCTTTGTCAGATGAGTAGGTTGCGAAAATTTTCTCCCATGTTGTAGGTTGCCTGTTCACTCTGATGGTAGTTTCTTTTGCTGTGCAGAAGCTCTTTAGTTTAATTAGATCCCATTTGTCAATTTTGTCTTTTGTTGCCATTGCTTTTGGTGTTTTGGACATGAAGTCCTTGCCCACGCCTATGTCCTGAATGGTAATGCCTAGGTTTTCTTCTAGGGTTTTTATGGTTTTAGGTTTAACGTTTAAATCTTTAATCCATCTTGAATTGATTTTTGTATAAGGTGTAAGGAAGGGATCCAGTTTCAGCTTTCTACATATGGCTAGCCAGTTTTCCCAGCACCATTTATTAAATAGGGAATCCTTTCCCCATTGCTTGTTTTTCTCAGGTTTGTCAAAGATCAGATAGTTGTAGATATGCGGCATTATTTCTGAGGGCTCTGTTCTGTTCCATTGATCTATATCTCTGTTTTGGTACCAGTACCATGCTGTTTTGGTTACTGTAGCCTTGTAGTATAGTTTGAAGTCAGGTAGTGTGATGCCTCCAGCTTTGTTCTTTTGGCTTAGGATTGACTTGGCAATGCGGGCTCTTTTTTGGTTCCATATGAACTTTAAAGTAGTTTTTTCCAATTCTGTGAAGAAAGTCATTGGTAGCTTGATGGGGATGGCATTGAATCTGTAAATTACCTTGGGCAGTATGGCCATTTTCACGATATTGATTCTTCCTACCCATGAGCATGGAATGTTCTTCCATTTGTTTGTGTCCTCTTTTATTTCCTTGAGCAGTGGTTTGTAGTTCTCCTTGAAGAGGTCCTTCACATCCCTTGTAAGTTGGATTCCTAGGTATTTTATTCTCTTTGAAGCAATTACGAATGGGAGTTCACCCATGATTTGGCTCTCTGTTTGTCTGTTGTTGGTGTATAAGAATGCTTGTGATTTTTGTACATTGATTTTGTATCCTGAGACTTTGCTGAAGTTGCTTATCAGCTTAAGGAGATTTTGGGCTGAGACGATGGGGTTTTCTAGATATACAATCATGTCGTCTGCAAACAGGGACAATTTGACTTCCTCTTTTCCTAATTGAATACCCTTTATTTCCTTCTCCTGCCTGATTGCCCTGGCCAGAACTTCCAACACTATGTTGAATAGGAGCGGTGAGAGAGGGCATCCCTGTCTTGTGCCGGTTTTCAAAGGGAATGCTTCCAGTTTTTGCCCATTCAGTATGATATTGGCTGTGGGTTTGTCATAGATAGCTCTTATTATTTTGAAATACGTCCCATCAATACCTAATTTATTGAGAGTTTTTAGCATGAAGGGTTGTTGAATTTTGTCAAAGGCTTTTTCTGCATCTATTGAGATAATCATGTGGTTTTTGTCTTTGGCTCTGTTTATATGCTGGATTACATTTATTGATTTGCGTATATTGAACCAGCCTTGCATCCCAGGGATGAAGCCCACTTGATCATGGTGGATAAGCTTTTTGATGTGCTGCTGGATTCGGTTTGCCAGTATTTTATTGAGGATTTTTGCATCAATGTTCATCAAGGATATTGGTCTAAAATTCTCTTTTTTGGTTGTGTCTCTGCCCGGCTTTGGTATCAGAATGATGCTGGCCTCATAAAATGAGTTAGGGAGGATTCCCTCTTTTTCTATTGATTGGAATAGTTTCAGAAGGAATGGTACCAGTTCCTCCATGTACCTCTGGTAGAATTCGGCTGTGAATCCATCTGGTCCTGGACTCTTTTTGGTTGGTAAACTATTGATTATTGCCACAATTTCAGAGCCTGTTATTGGTCTATTCAGAGATTCAACTTCTTCCTGGTTTAGTCTTGGGAGAGTGTATGTGTCGAGGAATGTATCCATTTCTTCTAGATTTTCTAGTTTATTTGCGTAGAGGTGTTTGTAGTATTCTCTGATGGTAGTTTGTATTTCTGTGGGATCGGTGGTGATATCCCCTTTATCATTTTTTATTGTGTCTATTTGATTCTTCTCTCTTTTTTTCTTTATTAGTCTTGCTAGCGGTCTATCAATTTTGTTGATCCTTTCAAAAAACCAGCTCCTGGATTCATTGATTTTTTGAAGGGTTTTTTGTGTCTCTATTTCCTTCAGTTCTGCTCTGATTTTAGTTATTTCTTGCCTTCTGCTAGCTTTTGAATGTGTTTGCTCTTGCTTTTCTAGTTCTTTTAATTGTGATGTTAGGGTGTCAATTTTGGATCTTTCCTGCTTTCTCTTGTAGGCATTTAGTGCTATAAATTTCCCTCTACACACTGCTTTGAATGCGTCCCAGAGATTCTGGTATGTGGTGTCTTTGTTCTCGTTGGTTTCAAAGAACATCTTTATTTCTGCCTTCATTTCGTTATGTACCCAGTAGTCATTCAGGAGCAGGTTGTTCAGTTTCCATGTAGTTGAGCGGCTTTGAGTGAGATTCTTAATCCTGAGTTCTAGTTTGATTGCACTGTGGTCTGAGAGATAGTTTGTTATAATTTCTGTTCTTTTACATTTGCTGAGGAGAGCTTTACTTCCAACTATGTGGTCAATTTTGGAATAGGTGTGGTGTGGTGCTGAAAAAAAGGTATATTCTGTTGATTTGGGGTGGAGAGTTCTGTAGATGTCTATTAGGTCTGCTTGGTGCAGAGCTGAGTTCAATTCCTGGGTATCCTTGTTGACTTTCTGTCTCGTTGATCTGTCTAATGTTGACAGTGGGGTGTTAAAGTCTCCCATTATTAATGTGTGGGAGTCTAAGTCTCTTTGTAGGTCACTGAGGACTTGCTTTATGAATCTGGGTGCTCCTGTATTGGGTGCATAAATATTTAGGATAGTTAGCTCCTCTTGTTGAATTGATCCCTTTACCATTATGTAATGGCCTTCTTTGTCTCTTTTGATCTTTGTTGGTTTAAAGTCTGTTTTATCAGAGACTAGGATTGCAACCCCTGCCTTTTTTTGTTTTCCATTGGCTTGGTAGATCTTCCTCCATCCTTTTATTTTGAGCCTATGTGTGTCTCTGCACGTGAGATGGGTTTCCTGAATACAGCACACTGATGGGTCTTGACTCTTTATCCAACTTGCCAGTCTGTGTCTTTTAATTGCAGAATTTAGTCCATTTATATTTAAAGTTAATATTGTTATGTGTGAATTTGATCCTGTCATTATGATGTTAGCTGGTGATTTTGCTCATTAGTTGATGCAGTTTCTTCCTAGTCTCGATGGTCTTTACATTTTGGCATGATTTTGCAGCGGCTGGTACCGGTTGTTCCTTTCCATGTTTAGCGCTTCCTTCAGGAGCTCTTTTAGGGCAGGCCTGGTGGTGACAAAATCTCTCAACATTTGCTTGTCTATAAAGTATTTTATTTCTCCTTCACTTATGAAGCTTAGTTTGGCTGGATATGAAATTCTGGGTTGAAAATTCTTTTCTTTAAGAATGTTGAATATTGGCCCCCACTCTCTTCTGGCTTGTAGGGTTTCTGCCGAGAGATCCACTGTTAGTCTGATGGGCTTTCCTTTGAGGGTAACCCGACCTTTCTCTCTGGCTGCCCTTAACATTTTTTCCTTCATTTCAACTTTGGTGAATCTGACAATTATGTGTCTTGGAGTTGCTCTTCTCGAGGAGTATCTTTGTGGCGTTCTCTGTATTTCCTGAATCTGAACGTTGGCCTGCCTTGCTAGATTGGGGAAGTTCTCCTGGATAATATCCTGCAGAGTGTTTTCCAACTTGGTTCCATTCTCCACATCACTTTCAGGTACACCAATCAGACGTAGATTTGGTCTTTTCACATAGTCCCATATTTCTTGGAGGCTTTGCTCATTTCTTTTTATTCTTTTTTCTCTAAACTTCCCTTCTCGCTTCATTTCATTCATTTCATCTTCCATTGCTGATACCCTTTCTTCCAGTTGATCGCATCGGCTCCTGAGGCTTCTGCATTCTTCACGTAGTTCTCGAGCCTTGGTTTTCAGCTCCATCAGCTCCTTTAAGCACTTCTCTGTATTGGTTATTCTAGTTATACATTCTTCTAAATTTTTTTCAAAGTTTTCAACTTCTTTGCCTTTGGTTTGAATGTCCTCCCGTAGCTCAGAGTAATTTGATCGTCTGAAGCCTTCTTCTCTCAGCTCGTCAAAATCATTCTCCATCCAGCTTTGTTCCGTTGCTGGTGAGGAACTGCGTTCCTTTGGAGGAGGAGAGGCGCTCTGCGTTTTAGAGTTTCCAGTTTTTCTGTTCTGTTTTTTCCCCATCTTTGTGGTTTTATCTACTTTTGGTCTTTGATGATGGTGATGTACAGATGGGTTTTCGGTGTAGATGTCCTTTCTGGTTGTTAGTTTTCCTTCTAACAGACAGGACCCTCAGCTGCAGGTCTGTTGGAATACCCTGCCGTGTGAGGTGTCAGTGTGCCCCTGCTGGGGGGTGCCTCCCAGTTAGGCTGCTCGGGGGTCAGGAGTCAGGGACCCACTTGAGGAGGCAGTCTGTCTGCCCGTTCTCAGATCTCCAGCTGCGTGCTGGGAGAACCACTGCTCTCTTCAAAGCTGTCAGACAGGGACACTTAAGTCTGCAGAGGTTACTGCTGTCTTTTTGTTTGTCTGTGCCCTGCCCCCAGAGGTGGAGCCTACAGAGGCAGGCAGGCCTCCTTGAGCTGTGGTGGGCTCCACCCAGTTCGAGCTTCCCGGCTGCTTTGTTTACCTAAGCAAGCCTGGGCAATGGCGGGCGCCCCTCCCCCAGCCTCGTTGCCGCCTTGCAGTTTGATCTCAGACTGCTGTGCTAGCAATCAGCGAGATTCCGTGGGCGTAGGACCCTCCGAGCCAGGTGTGGGATATAGTCTCGTGGTGCGCCGTTTCTTAAGCCGGTCTGAAAAGCGCAATATTCGGGTGGGAGTGACCCGATTTTCCAGGTGCGACCGTCACCCCTTTCTTTGACTCAGAAAGGGAACTCCCTGACCCCTTGCGCTTCCCAGGTGAGGCAATGCCTCGCCCTGCTTCGGCTCGCGCACGGTGCGCACACACACTGGCCTGCGCCCACTGTCTGGCACTCCCTAGTGAGATGAACCCGGTACCTCAGATGGAAATGCAGAAATCACCGTCTTCTGCGTCGCTCACGCTGGGAGCTGTAGACCGGAGCTGTTCCTATTCGGCCATCTTGGCTCCTCCCCC");
 
     // Open file handles
     typedef std::vector<samFile*> TSamFile;
@@ -537,23 +535,14 @@ namespace torali
 		
 		// Get all sequences embedded in breakpoints
 		uint32_t prevHit = 0;
-		uint32_t l1Type = 0; // 0: No hit, 1: L1 insertion, 2: L1 fragment (BND), 3: L1 fragment (non-BND)
-		uint32_t refidx1 = 0;
-		uint32_t refpos1 = 0;
-		uint32_t readpos1 = 0;
-		uint32_t refidx2 = 0;
-		uint32_t refpos2 = 0;
-		uint32_t readpos2 = 0;
-		uint32_t l1Start = 0;
-		uint32_t l1End = 0;
+		uint32_t l1AlignLength = 0;
 		uint32_t kLow = 0;
 		uint32_t kHigh = 0;
-		bool l1Fwd = false;
 		double pid = 0;
 		for(uint32_t k = 1; k < readBp[seed].size(); ++k) {
 		  if (readBp[seed][k].seqpos < 300) continue;
 		  if (readBp[seed][k].seqpos + 300 > rec->core.l_qseq) continue;
-		  if (!l1Type) prevHit = k;
+		  if (!kHigh) prevHit = k;
 		  int32_t fragsize = readBp[seed][k].seqpos - readBp[seed][prevHit-1].seqpos;
 		  if ((fragsize > 300) && (fragsize < 7000)) {
 		    // L1 fragment?
@@ -571,98 +560,56 @@ namespace torali
 		    //std::cerr << subseq << std::endl;
 
 		    // Align to L1
-		    EdlibAlignResult cigarFwd = edlibAlign(subseq.c_str(), subseq.size(), line1.c_str(), line1.size(), edlibNewAlignConfig(-1, EDLIB_MODE_HW, EDLIB_TASK_PATH, NULL, 0));
-		    int32_t alignStartFwd = infixStart(cigarFwd);
-		    int32_t alignEndFwd = infixEnd(cigarFwd);
-		    double percentIdentityFwd = 1.0 - (double) (cigarFwd.editDistance) / (double) (alignEndFwd - alignStartFwd);
-		  
-		    // Align to L1 (reverse)
-		    EdlibAlignResult cigarRev = edlibAlign(subseq.c_str(), subseq.size(), line1Rev.c_str(), line1Rev.size(), edlibNewAlignConfig(-1, EDLIB_MODE_HW, EDLIB_TASK_PATH, NULL, 0));
-		    int32_t alignStartRev = infixStart(cigarRev);
-		    int32_t alignEndRev = infixEnd(cigarRev);
-		    double percentIdentityRev = 1.0 - (double) (cigarRev.editDistance) / (double) (alignEndRev - alignStartRev);
-		  
-		    if ( ((percentIdentityFwd > 0.9) && ((alignEndFwd - alignStartFwd) > 300)) || ((percentIdentityRev > 0.9) && ((alignEndRev - alignStartRev) > 300)) ) {
-		      bool newValidHit = true;
-		      if (l1Type) {
-			// At least 25% larger hit?
-			double l1NewSize = alignEndRev - alignStartRev;
-			if ((percentIdentityFwd > 0.9) && ((alignEndFwd - alignStartFwd) > 300)) l1NewSize = alignEndFwd - alignStartFwd;
-			double l1OldSize = l1End - l1Start;
-			if (l1NewSize < ((0.25 * l1OldSize) + l1OldSize)) newValidHit = false;
-		      }
-		      if (newValidHit) {
-			l1Type = 1;
-			if (readBp[seed][prevHit-1].refidx != readBp[seed][k].refidx) l1Type = 2;
-			else {
-			  int32_t offset = std::abs(readBp[seed][k].refpos - readBp[seed][prevHit-1].refpos);
-			  if (offset > 1000) l1Type = 3;
-			}
+		    EdlibAlignResult cigar = edlibAlign(subseq.c_str(), subseq.size(), line1.c_str(), line1.size(), edlibNewAlignConfig(-1, EDLIB_MODE_HW, EDLIB_TASK_DISTANCE, NULL, 0));
+		    double percentIdentity = 1.0 - ( (double) (cigar.editDistance) / (double) (fragsize) );
+		    //printAlignment(subseq, line1, EDLIB_MODE_HW, cigar);
+		    edlibFreeAlignResult(cigar);
+
+		    // L1 hit?
+		    if ((percentIdentity > 0.9) && (fragsize > 300)) {
+		      // At least 25% larger hit?
+		      if ( (double) (fragsize) > ((0.25 * (double) (l1AlignLength)) + l1AlignLength) ) { 
 			kLow = prevHit-1;
-			refidx1 = readBp[seed][prevHit-1].refidx;
-			refpos1 = readBp[seed][prevHit-1].refpos;
-			readpos1 = readBp[seed][prevHit-1].seqpos;
 			kHigh = k;
-			refidx2 = readBp[seed][k].refidx;
-			refpos2 = readBp[seed][k].refpos;
-			readpos2 = readBp[seed][k].seqpos;
-			if ((percentIdentityFwd > 0.9) && ((alignEndFwd - alignStartFwd) > 300)) {
-			  l1Start = alignStartFwd;
-			  l1End = alignEndFwd;
-			  l1Fwd = true;
-			  pid = percentIdentityFwd;
-			  //printAlignment(subseq, line1, EDLIB_MODE_HW, cigarFwd);			
-			} else {
-			  l1Start = alignStartRev;
-			  l1End = alignEndRev;
-			  l1Fwd = false;
-			  pid = percentIdentityRev;
-			  //printAlignment(subseq, line1Rev, EDLIB_MODE_HW, cigarRev);
-			}
+			l1AlignLength = fragsize;
+			pid = percentIdentity;
+
 		      }
 		    }
-		    edlibFreeAlignResult(cigarFwd);
-		    edlibFreeAlignResult(cigarRev);
 		  }
 		}
-		if (l1Type) {
+		if (kHigh) {
 		  // Make sure the leading and trailing sequence is NOT L1 sequence
 		  bool validRead = true;
-		  for(int32_t bp = 0; ((bp < 4) && (validRead)); ++bp) {
+		  for(int32_t bp = 0; ((bp < 2) && (validRead)); ++bp) {
 		    int32_t fragsize = readBp[seed][kLow].seqpos;
 		    int32_t sCoord = 0;
-		    if (bp>=2) {
+		    if (bp) {
 		      sCoord = readBp[seed][kHigh].seqpos;
 		      fragsize = sequence.size() - sCoord;
 		    }
 		    if (fragsize < 7000) {   // Otherwise clearly more than L1 content
 		      std::string subseq = sequence.substr(sCoord, fragsize);
-		      std::string l1seq = line1;
-		      if ((bp == 1) || (bp == 3)) l1seq = line1Rev;
 		      
 		      // Align to L1
-		      EdlibAlignResult cigar = edlibAlign(subseq.c_str(), subseq.size(), l1seq.c_str(), l1seq.size(), edlibNewAlignConfig(-1, EDLIB_MODE_HW, EDLIB_TASK_PATH, NULL, 0));
-		      int32_t alignStart = infixStart(cigar);
-		      int32_t alignEnd = infixEnd(cigar);
-		      double percentIdentity = 1.0 - (double) (cigar.editDistance) / (double) (alignEnd - alignStart);
-		      if (percentIdentity > 0.9) {
-			validRead = false;
-			//printAlignment(subseq, l1seq, EDLIB_MODE_HW, cigar);
-		      }
-		      edlibFreeAlignResult(cigar);
+		      EdlibAlignResult cigar = edlibAlign(subseq.c_str(), subseq.size(), line1.c_str(), line1.size(), edlibNewAlignConfig(-1, EDLIB_MODE_HW, EDLIB_TASK_DISTANCE, NULL, 0));
+		      double percentIdentity = 1.0 - ( (double) (cigar.editDistance) / (double) (fragsize) );
+		      //printAlignment(subseq, line1, EDLIB_MODE_HW, cigar);
+		      edlibFreeAlignResult(cigar);		      
+		      if (percentIdentity > 0.9) validRead = false;
 		    }
 		  }
+
+		  // Output read
 		  if (validRead) {
-		    if (l1Type == 1) std::cout << "L1 insertion" << '\t';
-		    else if (l1Type == 2) std::cout << "Inter-chromosomal SV with L1 fragment" << '\t';
-		    else std::cout << "Intra-chromosomal SV with L1 fragment" << '\t';
+		    int32_t offset = std::abs(readBp[seed][kLow].refpos - readBp[seed][kHigh].refpos);
+		    if (readBp[seed][kLow].refidx != readBp[seed][kHigh].refidx) std::cout << "Inter-chromosomal SV with L1 fragment" << '\t';
+		    else if (offset > 1000) std::cout << "Intra-chromosomal SV with L1 fragment" << '\t';
+		    else std::cout << "L1 insertion" << '\t';
 		    std::cout << bam_get_qname(rec) << '\t';
-		    std::cout << hdr->target_name[refidx1] << ':' << refpos1 << " (ReadPos: " << readpos1 << ')' << '\t';
-		    std::cout << hdr->target_name[refidx2] << ':' << refpos2 << " (ReadPos: " << readpos2 << ')' << '\t';
-		    std::cout << l1Start << '-' << l1End << '\t';
-		    std::cout << (l1End - l1Start) << '\t';
-		    if (l1Fwd) std::cout << "fwd" << '\t';
-		    else std::cout << "rev" << '\t';
+		    std::cout << hdr->target_name[readBp[seed][kLow].refidx] << ':' << readBp[seed][kLow].refpos << " (ReadPos: " << readBp[seed][kLow].seqpos << ')' << '\t';
+		    std::cout << hdr->target_name[readBp[seed][kHigh].refidx] << ':' << readBp[seed][kHigh].refpos << " (ReadPos: " << readBp[seed][kHigh].seqpos << ')' << '\t';
+		    std::cout << l1AlignLength << '\t';
 		    std::cout << pid << std::endl;
 		  }
 		}
@@ -686,7 +633,7 @@ namespace torali
   template<typename TConfig, typename TReadBp>
   inline void
   fetchSVs(TConfig const& c, TReadBp& readBp, std::vector<std::vector<SRBamRecord> >& br) {
-    //std::cout << "L1InsType\tReadName\tRefCoordBefore\tRefCoordAfter\tL1Coord\tL1FragmentSize\tL1Direction\tL1Similarity" << std::endl;
+    //std::cout << "L1InsType\tReadName\tRefCoordBefore\tRefCoordAfter\tL1FragmentSize\tL1Similarity" << std::endl;
     //findL1(c, readBp);
     // Extract BAM records
     if ((c.svtset.empty()) || (c.svtset.find(2) != c.svtset.end())) selectDeletions(c, readBp, br);
