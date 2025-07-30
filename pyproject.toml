@@ -1,0 +1,45 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "delly-scripts"
+dynamic = ["version"]
+description = 'Python scripts to do with delly.'
+readme = "scripts/README.md"
+requires-python = ">=3.8"
+license = {file = "LICENSE"}
+keywords = []
+authors = [
+  { name = "Tobias Rausch", email = "rauschtobi@gmail.com" },
+]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Programming Language :: Python",
+  "Programming Language :: Python :: 3.8",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: Implementation :: CPython",
+  "Programming Language :: Python :: Implementation :: PyPy",
+]
+
+dependencies = [
+  "cyvcf2>=0.31.1, <0.32"
+]
+
+[project.urls]
+Documentation = "https://github.com/dellytools/delly/tree/main/scripts#readme"
+Issues = "https://github.com/dellytools/delly/issues"
+Source = "https://github.com/dellytools/delly"
+
+[project.scripts]
+delly2bnd = "scripts.delly2bnd:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["scripts"]
+
+[tool.hatch.version]
+path = "src/version.h"
+pattern = "std::string dellyVersionNumber = \"(?P<version>[^\"]+)\";"
