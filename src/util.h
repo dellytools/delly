@@ -194,14 +194,6 @@ namespace torali
     }
   }
 
-  inline bool
-  nContent(std::string const& s) {
-    for(uint32_t i = 0; i < s.size(); ++i) {
-      if ((s[i] == 'N') || (s[i] == 'n')) return true;
-    }
-    return false;
-  }
-  
   // Decode Orientation
   inline int32_t
     _decodeOrientation(std::string const& value) {
@@ -451,11 +443,6 @@ namespace torali
     return (alignmentLength(rec) / 2);
   }
 
-  inline uint32_t
-  lastAlignedPosition(bam1_t const* rec) {
-    return rec->core.pos + alignmentLength(rec);
-  }
-  
   inline std::size_t hash_pair(bam1_t* rec) {
     std::size_t seed = hash_string(bam_get_qname(rec));
     boost::hash_combine(seed, rec->core.tid);
@@ -514,28 +501,6 @@ namespace torali
     }
   }
 
-  inline std::string
-  compressStr(std::string const& data) {
-    std::stringstream compressed;
-    std::stringstream origin(data);
-    boost::iostreams::filtering_streambuf<boost::iostreams::input> out;
-    out.push(boost::iostreams::gzip_compressor(boost::iostreams::gzip_params(boost::iostreams::gzip::best_speed)));
-    out.push(origin);
-    boost::iostreams::copy(out, compressed);
-    return compressed.str();
-  }
-
-  inline std::string
-  decompressStr(std::string const& data) {
-    std::stringstream compressed(data);
-    std::stringstream decompressed;
-    boost::iostreams::filtering_streambuf<boost::iostreams::input> out;
-    out.push(boost::iostreams::gzip_decompressor());
-    out.push(compressed);
-    boost::iostreams::copy(out, decompressed);
-    return decompressed.str();
-  }
-
   inline double
   entropy(std::string const& st) {
     typedef double TPrecision;
@@ -583,28 +548,6 @@ namespace torali
     return false;
   }
 
-  inline bool
-  isBam(std::string const& path) {
-    htsFile *hts_fp = hts_open(path.c_str(), "r");
-    if (hts_fp != NULL) {
-      std::string ext = std::string(hts_format_file_extension(hts_get_format(hts_fp)));
-      hts_close(hts_fp);
-      if (ext == "bam") return true;
-    }
-    return false;
-  }
-
-  inline bool
-  isCram(std::string const& path) {
-    htsFile *hts_fp = hts_open(path.c_str(), "r");
-    if (hts_fp != NULL) {
-      std::string ext = std::string(hts_format_file_extension(hts_get_format(hts_fp)));
-      hts_close(hts_fp);
-      if (ext == "cram") return true;
-    }
-    return false;
-  }
-  
   template<typename TConfig>
   inline bool
   chrNoData(TConfig const& c, uint32_t const refIndex, hts_idx_t const* idx) {
@@ -618,13 +561,6 @@ namespace torali
     if (mapped) return false;
     else return true;
   }    
-  
-  inline std::size_t hash_se(bam1_t* rec) {
-    std::size_t seed = hash_string(bam_get_qname(rec));
-    boost::hash_combine(seed, rec->core.tid);
-    boost::hash_combine(seed, rec->core.pos);
-    return seed;
-  }
   
   inline void
   getSMTag(std::string const& header, std::string const& fileName, std::string& sampleName) {
@@ -771,36 +707,6 @@ namespace torali
   }
 
   
-  template<typename TIterator, typename TValue>
-  inline void
-  getMAD(TIterator begin, TIterator end, TValue median, TValue& mad) 
-  {
-    std::vector<TValue> absDev;
-    for(;begin<end;++begin) 
-      absDev.push_back(std::abs((TValue)*begin - median));
-    getMedian(absDev.begin(), absDev.end(), mad);
-  }
-
-  template<typename TIterator, typename TValue>
-  inline void
-  getMean(TIterator begin, TIterator end, TValue& mean) 
-  {
-    mean = 0;
-    unsigned int count = 0;
-    for(; begin<end; ++begin,++count) mean += *begin;
-    mean /= count;
-  }
-
-  template<typename TIterator, typename TValue>
-  inline void
-  getStdDev(TIterator begin, TIterator end, TValue mean, TValue& stdDev) 
-  {
-    stdDev = 0;
-    unsigned int count = 0;
-    for(;begin<end;++begin,++count) stdDev += ((TValue)*begin - mean) * ((TValue)*begin - mean);
-    stdDev = sqrt(stdDev / (TValue) count);
-  }
-
   template<typename TConfig, typename TValidRegion, typename TSampleLibrary>
   inline void
   getLibraryParams(TConfig const& c, TValidRegion const& validRegions, TSampleLibrary& sampleLib) {

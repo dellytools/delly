@@ -173,18 +173,6 @@ namespace torali {
   }
 
 
-  // Deletions, duplications and inversions
-  template<typename TRef, typename TPos>
-  inline bool
-  _mappingPosGeno(TRef const refID, TRef const mateRefID, TPos const position, TPos const matePosition, int32_t const svt) {
-    if (_translocation(svt)) return ((refID==mateRefID) && (position==matePosition));
-    else {
-      if (svt == 3) return ((refID!=mateRefID) || (std::abs(position - matePosition) < 100 ));
-      else return ((refID!=mateRefID) || (position==matePosition));
-    }
-  }
-  
-
   template<typename TSize>
   inline bool
   _svSizeCheck(TSize const s, TSize const e, int32_t const svt) {

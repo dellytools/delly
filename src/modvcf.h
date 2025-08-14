@@ -98,14 +98,6 @@ _isKeyPresent(bcf_hdr_t const* hdr, std::string const& key) {
   return (bcf_hdr_id2int(hdr, BCF_DT_ID, key.c_str())>=0);
 }
 
-inline bool
-_isDNA(std::string const& allele) {
-  for(uint32_t i = 0; i<allele.size(); ++i) {
-    if ((allele[i] != 'A') && (allele[i] != 'C') && (allele[i] != 'G') && (allele[i] != 'T') && (allele[i] != 'a') && (allele[i] != 'c') && (allele[i] != 'g') && (allele[i] != 't')) return false;
-  }
-  return true;
-}
- 
 inline std::string
 _replaceIUPAC(std::string const& alleles) {
   std::vector<char> out(alleles.size());

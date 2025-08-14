@@ -67,56 +67,6 @@ namespace torali
   }
 
 
-  inline double
-  getPercentIdentity(bam1_t const* rec, char const* seq) {
-    // Sequence
-    std::string sequence;
-    sequence.resize(rec->core.l_qseq);
-    const uint8_t* seqptr = bam_get_seq(rec);
-    for (int i = 0; i < rec->core.l_qseq; ++i) sequence[i] = "=ACMGRSVTWYHKDBN"[bam_seqi(seqptr, i)];
-
-    // Reference slice
-    std::string refslice = boost::to_upper_copy(std::string(seq + rec->core.pos, seq + lastAlignedPosition(rec)));
-	      
-    // Percent identity
-    uint32_t rp = 0; // reference pointer
-    uint32_t sp = 0; // sequence pointer
-    const uint32_t* cigar = bam_get_cigar(rec);
-    int32_t matchCount = 0;
-    int32_t mismatchCount = 0;
-    for (std::size_t i = 0; i < rec->core.n_cigar; ++i) {
-      if ((bam_cigar_op(cigar[i]) == BAM_CMATCH) || (bam_cigar_op(cigar[i]) == BAM_CEQUAL) || (bam_cigar_op(cigar[i]) == BAM_CDIFF)) {
-	// match or mismatch
-	for(std::size_t k = 0; k<bam_cigar_oplen(cigar[i]);++k) {
-	  if (sequence[sp] == refslice[rp]) ++matchCount;
-	  else ++mismatchCount;
-	  ++sp;
-	  ++rp;
-	}
-      } else if (bam_cigar_op(cigar[i]) == BAM_CDEL) {
-	mismatchCount += bam_cigar_oplen(cigar[i]);
-	rp += bam_cigar_oplen(cigar[i]);
-      } else if (bam_cigar_op(cigar[i]) == BAM_CINS) {
-	mismatchCount += bam_cigar_oplen(cigar[i]);
-	sp += bam_cigar_oplen(cigar[i]);
-      } else if (bam_cigar_op(cigar[i]) == BAM_CSOFT_CLIP) {
-	sp += bam_cigar_oplen(cigar[i]);
-      } else if(bam_cigar_op(cigar[i]) == BAM_CHARD_CLIP) {
-      } else if (bam_cigar_op(cigar[i]) == BAM_CREF_SKIP) {
-	mismatchCount += bam_cigar_oplen(cigar[i]);
-	rp += bam_cigar_oplen(cigar[i]);
-      } else {
-	std::cerr << "Unknown Cigar options" << std::endl;
-	return 1;
-      }
-    }
-    double percid = 0;
-    if (matchCount + mismatchCount > 0) percid = (double) matchCount / (double) (matchCount + mismatchCount);
-    return percid;
-  }
-
-
-  
   template<typename TConfig, typename TGCBound>
   inline void
   gcBias(TConfig const& c, std::vector< std::vector<ScanWindow> > const& scanCounts, LibraryInfo const& li, std::vector<GcBias>& gcbias, TGCBound& gcbound) {

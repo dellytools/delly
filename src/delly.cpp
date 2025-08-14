@@ -45,10 +45,6 @@ displayUsage() {
   std::cerr << "    cnv          discover and genotype copy-number variants" << std::endl;
   std::cerr << "    classify     classify somatic or germline copy-number variants" << std::endl;
   std::cerr << std::endl;
-  //std::cerr << "Deprecated:" << std::endl;
-  //std::cerr << "    dpe          double paired-end signatures" << std::endl;
-  //std::cerr << "    chimera      ONT chimera flagging" << std::endl;
-  //std::cerr << std::endl;
 }
 
 int main(int argc, char **argv) {

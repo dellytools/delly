@@ -18,17 +18,10 @@ namespace torali
     TScoreValue ge;
     TScoreValue inf;
 
-    DnaScore() {
-      match = 5;
-      mismatch = -4;
-      go = -10;
-      ge = -1;
-      inf = 1000000;
-    }
+    DnaScore() : match(5), mismatch(-4), go(-10), ge(-1), inf(1000000) {}
 
-    DnaScore(TScoreValue m, TScoreValue mm, TScoreValue gapopen, TScoreValue gapextension) : match(m), mismatch(mm), go(gapopen), ge(gapextension) {
-      inf = 1000000;
-    }
+    DnaScore(TScoreValue m, TScoreValue mm, TScoreValue gapopen, TScoreValue gapextension) : match(m), mismatch(mm), go(gapopen), ge(gapextension), inf(1000000) {}
+    
   };
 
   

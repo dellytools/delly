@@ -176,68 +176,6 @@ namespace torali
 
   template<typename TConfig, typename TGcBias, typename TCoverage>
   inline void
-  breakpointRefinement2(TConfig const& c, std::pair<uint32_t, uint32_t> const& gcbound, std::vector<uint16_t> const& gcContent, std::vector<uint16_t> const& uniqContent, TGcBias const& gcbias, TCoverage const& cov, bam_hdr_t const* hdr, int32_t const refIndex, std::vector<CNV>& cnvs) {
-
-    int32_t maxbpshift = 10000;
-	
-    // Breakpoint refinement
-    for(uint32_t n = 1; n < cnvs.size(); ++n) {
-      int32_t prehalf = (cnvs[n-1].start + cnvs[n-1].end) / 2;
-      prehalf = std::max(cnvs[n-1].end - maxbpshift, prehalf);
-      int32_t suchalf = (cnvs[n].start + cnvs[n].end) / 2;
-      suchalf = std::min(cnvs[n].start + maxbpshift, suchalf);
-      double precovsum = 0;
-      double preexpcov = 0;
-      double succovsum = 0;
-      double sucexpcov = 0;
-      int32_t pos = cnvs[n-1].start;
-      std::vector<int32_t> validpos;
-      while((pos < cnvs[n].end) && (pos < (int32_t) hdr->target_len[refIndex])) {
-	if ((gcContent[pos] > gcbound.first) && (gcContent[pos] < gcbound.second) && (uniqContent[pos] >= c.fragmentUnique * c.meanisize)) {
-	  if (pos < prehalf) {
-	    precovsum += cov[pos];
-	    preexpcov += gcbias[gcContent[pos]].coverage;
-	  } else {
-	    if (pos <= suchalf) validpos.push_back(pos);
-	    succovsum += cov[pos];
-	    sucexpcov += gcbias[gcContent[pos]].coverage;
-	  }
-	}
-	++pos;
-      }
-      // Shift Bp
-      std::vector<double> diffcn(validpos.size(), 0);
-      for(uint32_t idx = 0; idx < validpos.size(); ++idx) {
-	if ((preexpcov > 0) && (sucexpcov > 0)) {
-	  double precn = c.ploidy * precovsum / preexpcov;
-	  double succn = c.ploidy * succovsum / sucexpcov;
-	  diffcn[idx] = std::abs(precn - succn);
-	  //if (validpos[idx] == cnvs[n-1].end) std::cerr << "-->";
-	  //std::cerr << validpos[idx] << ',' << precn << ',' << succn << ',' << diffcn[idx] << std::endl;
-	}
-	// Add to pre, remove from suc
-	precovsum += cov[validpos[idx]];
-	preexpcov += gcbias[gcContent[validpos[idx]]].coverage;
-	succovsum -= cov[validpos[idx]];
-	sucexpcov -= gcbias[gcContent[validpos[idx]]].coverage;
-      }
-      // Find best
-      int32_t bestIdx = -1;
-      for(uint32_t idx = 0; idx < validpos.size(); ++idx) {
-	if ((bestIdx == -1) || (diffcn[idx] > diffcn[bestIdx])) bestIdx = idx;
-      }
-      if (bestIdx != -1) {
-	// Update breakpoint
-	cnvs[n-1].end = validpos[bestIdx];
-	cnvs[n].start = validpos[bestIdx];
-      }
-    }
-    //for(uint32_t n = 0; n < cnvs.size(); ++n) std::cerr << hdr->target_name[cnvs[n].chr] << '\t' << cnvs[n].start << '\t' << cnvs[n].end << "\tRefinement" << std::endl;
-  }
-  
-
-  template<typename TConfig, typename TGcBias, typename TCoverage>
-  inline void
   genotypeCNVs(TConfig const& c, std::pair<uint32_t, uint32_t> const& gcbound, std::vector<uint16_t> const& gcContent, std::vector<uint16_t> const& uniqContent, TGcBias const& gcbias, TCoverage const& cov, bam_hdr_t const* hdr, int32_t const refIndex, std::vector<CNV>& cnvs) {
     for(uint32_t n = 0; n < cnvs.size(); ++n) {
       if (cnvs[n].chr != refIndex) continue;
