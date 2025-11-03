@@ -156,29 +156,40 @@ namespace torali
       }
 
       // Process all SVs on this chromosome
-      for(uint32_t svid = 0; svid < seqStore.size(); ++svid) {
-	if (_translocation(svs[svid].svt)) continue;
-	if (svs[svid].chr != refIndex) continue;
+      {
+	ThreadPool pool(std::max<std::size_t>(1, c.maxThreads));
+	std::vector<std::future<void>> futures;
+	for(uint32_t svid = 0; svid < seqStore.size(); ++svid) {
+	  if (_translocation(svs[svid].svt)) continue;
+	  if (svs[svid].chr != refIndex) continue;
 
-	// MSA
-	bool msaSuccess = false;
-	if (seqStore[svid].size() > 1) {
-	  msa(c, seqStore[svid], svs[svid].consensus);
-	  if (alignConsensus(c, hdr, seq, NULL, svs[svid])) msaSuccess = true;
+	  // MSA
+	  if (seqStore[svid].size() <= 1) {
+	    svs[svid].consensus = "";
+	    svs[svid].srSupport = 0;
+	    svs[svid].srAlignQuality = 0;
+	    continue;
+	  }
+	  // Parallelize MSA
+	  futures.push_back(pool.enqueue([&, svid]() {  
+	    msa(c, seqStore[svid], svs[svid].consensus);
+	    if (!alignConsensus(c, hdr, seq, NULL, svs[svid])) {
+	      svs[svid].consensus = "";
+	      svs[svid].srSupport = 0;
+	      svs[svid].srAlignQuality = 0;
+	    } else {
+	      // SR support and qualities
+	      std::sort(qualStore[svid].begin(), qualStore[svid].end());
+	      svs[svid].mapq = 0;
+	      for(uint32_t i = 0; i < qualStore[svid].size(); ++i) svs[svid].mapq += qualStore[svid][i];
+	      svs[svid].srSupport = seqStore[svid].size();
+	      svs[svid].srMapQuality = qualStore[svid][qualStore[svid].size()/2];
+	    }
+	  }));
 	}
-	if (!msaSuccess) {
-	  svs[svid].consensus = "";
-	  svs[svid].srSupport = 0;
-	  svs[svid].srAlignQuality = 0;
-	} else {
-	  // SR support and qualities
-	  std::sort(qualStore[svid].begin(), qualStore[svid].end());
-	  svs[svid].mapq = 0;
-	  for(uint32_t i = 0; i < qualStore[svid].size(); ++i) svs[svid].mapq += qualStore[svid][i];
-	  svs[svid].srSupport = seqStore[svid].size();
-	  svs[svid].srMapQuality = qualStore[svid][qualStore[svid].size()/2];
-	}
+	for(auto &f : futures) f.get();
       }
+
       // Clean-up
       if (seq != NULL) free(seq);
     }
@@ -190,41 +201,51 @@ namespace torali
       for(int32_t refIndex = refIndex2 + 1; refIndex < hdr->n_targets; ++refIndex) {
 	if (validRegions[refIndex].empty()) continue;
 	char* seq = NULL;
-
+	
 	// Iterate SVs
+	ThreadPool pool(std::max<std::size_t>(1, c.maxThreads));
+	std::vector<std::future<void>> futures;
 	for(uint32_t svid = 0; svid < traStore.size(); ++svid) {
 	  if (!_translocation(svs[svid].svt)) continue;
 	  if ((svs[svid].chr != refIndex) || (svs[svid].chr2 != refIndex2)) continue;
-
-	  bool msaSuccess = false;
-	  if (traStore[svid].size() > 1) {
-	    // Lazy loading of references
-	    if (seq == NULL) {
-	      int32_t seqlen = -1;
-	      std::string tname(hdr->target_name[refIndex]);
-	      seq = faidx_fetch_seq(fai, tname.c_str(), 0, hdr->target_len[refIndex], &seqlen);
-	    }
-	    if (sndSeq == NULL) {
-	      int32_t seqlen = -1;
-	      std::string tname(hdr->target_name[refIndex2]);
-	      sndSeq = faidx_fetch_seq(fai, tname.c_str(), 0, hdr->target_len[refIndex2], &seqlen);
-	    }
-	    msa(c, traStore[svid], svs[svid].consensus);
-	    if (alignConsensus(c, hdr, seq, sndSeq, svs[svid])) msaSuccess = true;
-	  }
-	  if (!msaSuccess) {
+	  
+	  if (traStore[svid].size() <= 1) {
 	    svs[svid].consensus = "";
 	    svs[svid].srSupport = 0;
 	    svs[svid].srAlignQuality = 0;
-	  } else {
-	    // SR support and qualities
-	    std::sort(traQualStore[svid].begin(), traQualStore[svid].end());
-	    svs[svid].mapq = 0;
-	    for(uint32_t i = 0; i < traQualStore[svid].size(); ++i) svs[svid].mapq += traQualStore[svid][i];
-	    svs[svid].srSupport = traStore[svid].size();
-	    svs[svid].srMapQuality = traQualStore[svid][traQualStore[svid].size()/2];
+	    continue;
 	  }
+	  
+	  // Lazy loading of references
+	  if (seq == NULL) {
+	    int32_t seqlen = -1;
+	    std::string tname(hdr->target_name[refIndex]);
+	    seq = faidx_fetch_seq(fai, tname.c_str(), 0, hdr->target_len[refIndex], &seqlen);
+	  }
+	  if (sndSeq == NULL) {
+	    int32_t seqlen = -1;
+	    std::string tname(hdr->target_name[refIndex2]);
+	    sndSeq = faidx_fetch_seq(fai, tname.c_str(), 0, hdr->target_len[refIndex2], &seqlen);
+	  }
+	  
+	  // Multi-threading
+	  futures.push_back(pool.enqueue([&, svid, refIndex, refIndex2]() {
+	    msa(c, traStore[svid], svs[svid].consensus);
+	    if (!alignConsensus(c, hdr, seq, sndSeq, svs[svid])) {
+	      svs[svid].consensus = "";
+	      svs[svid].srSupport = 0;
+	      svs[svid].srAlignQuality = 0;
+	    } else {
+	      // SR support and qualities
+	      std::sort(traQualStore[svid].begin(), traQualStore[svid].end());
+	      svs[svid].mapq = 0;
+	      for(uint32_t i = 0; i < traQualStore[svid].size(); ++i) svs[svid].mapq += traQualStore[svid][i];
+	      svs[svid].srSupport = traStore[svid].size();
+	      svs[svid].srMapQuality = traQualStore[svid][traQualStore[svid].size()/2];
+	    }
+	  }));
 	}
+	for(auto &f : futures) f.get();
 	if (seq != NULL) free(seq);
       }
       if (sndSeq != NULL) free(sndSeq);
@@ -258,169 +279,182 @@ namespace torali
     }
     bam_hdr_t* hdr = sam_hdr_read(samfile[0]);
 
-    // Split-read records
+    // Split-read and BAM alignment records
     typedef std::vector<SRBamRecord> TSRBamRecord;
     typedef std::vector<TSRBamRecord> TSvtSRBamRecord;
-    TSvtSRBamRecord srBR(2 * DELLY_SVT_TRANS, TSRBamRecord());
-
-    // Create bam alignment record vector
     typedef std::vector<BamAlignRecord> TBamRecord;
     typedef std::vector<TBamRecord> TSvtBamRecord;
-    TSvtBamRecord bamRecord(2 * DELLY_SVT_TRANS, TBamRecord());
      
     // Parse genome, process chromosome by chromosome
     boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
     std::cerr << '[' << boost::posix_time::to_simple_string(now) << "] " << "Paired-end and split-read scanning" << std::endl;
 
-    // Multi-threading
-    ThreadPool pool(std::max<std::size_t>(1, c.maxThreads));
-    
     // Iterate all samples
+    ThreadPool pool(std::max<std::size_t>(1, c.maxThreads));
+    std::vector<TSvtSRBamRecord> perFileSrBR(c.files.size(), TSvtSRBamRecord(2 * DELLY_SVT_TRANS));
+    std::vector<TSvtBamRecord> perFileBamRecord(c.files.size(), TSvtBamRecord(2 * DELLY_SVT_TRANS));
+    std::vector<std::future<void>> futures;
     for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
-      // Inter-chromosomal mate map and alignment length
-      typedef std::pair<uint8_t, int32_t> TQualLen;
-      typedef boost::unordered_map<std::size_t, TQualLen> TMateMap;
-      std::vector<TMateMap> matetra(c.files.size());
+      futures.push_back(pool.enqueue([&, file_c]() {
+	// Inter-chromosomal mate map and alignment length
+	typedef std::pair<uint8_t, int32_t> TQualLen;
+	typedef boost::unordered_map<std::size_t, TQualLen> TMateMap;
+	std::vector<TMateMap> matetra(c.files.size());
 
-      // Split-read junctions
-      typedef std::vector<Junction> TJunctionVector;
-      typedef std::map<std::size_t, TJunctionVector> TReadBp;
-      TReadBp readBp;
-      
-      // Iterate all chromosomes for that sample
-      for(int32_t refIndex=0; refIndex < (int32_t) hdr->n_targets; ++refIndex) {
-
-	// Any data?
-	if (validRegions[refIndex].empty()) continue;
-	bool nodata = true;
-	std::string suffix("cram");
-	std::string str(c.files[file_c].string());
-	if ((str.size() >= suffix.size()) && (str.compare(str.size() - suffix.size(), suffix.size(), suffix) == 0)) nodata = false;
-	uint64_t mapped = 0;
-	uint64_t unmapped = 0;
-	hts_idx_get_stat(idx[file_c], refIndex, &mapped, &unmapped);
-	if (mapped) nodata = false;
-	if (nodata) continue;
-
-	// Intra-chromosomal mate map and alignment length
-	TMateMap mateMap;
-
-	// Read alignments
-	for(typename TChrIntervals::const_iterator vRIt = validRegions[refIndex].begin(); vRIt != validRegions[refIndex].end(); ++vRIt) {
-	  hts_itr_t* iter = sam_itr_queryi(idx[file_c], refIndex, vRIt->lower(), vRIt->upper());
-	  bam1_t* rec = bam_init1();
-	  int32_t lastAlignedPos = 0;
-	  std::set<std::size_t> lastAlignedPosReads;
-	  while (sam_itr_next(samfile[file_c], iter, rec) >= 0) {
-	    if (rec->core.flag & (BAM_FQCFAIL | BAM_FDUP | BAM_FUNMAP)) continue;
-	    if ((rec->core.qual < c.minMapQual) || (rec->core.tid<0)) continue;
-
-	    std::size_t seed = hash_sr(rec);
-	    // SV detection using single-end read
-	    uint32_t rp = rec->core.pos; // reference pointer
-	    uint32_t sp = 0; // sequence pointer
-
-	    // Parse the CIGAR
-	    const uint32_t* cigar = bam_get_cigar(rec);
-	    for (std::size_t i = 0; i < rec->core.n_cigar; ++i) {
-	      if ((bam_cigar_op(cigar[i]) == BAM_CMATCH) || (bam_cigar_op(cigar[i]) == BAM_CEQUAL) || (bam_cigar_op(cigar[i]) == BAM_CDIFF)) {
-		sp += bam_cigar_oplen(cigar[i]);
-		rp += bam_cigar_oplen(cigar[i]);
-	      } else if (bam_cigar_op(cigar[i]) == BAM_CDEL) {
-		if (bam_cigar_oplen(cigar[i]) > c.minRefSep) _insertJunction(readBp, seed, rec, rp, sp, false);
-		rp += bam_cigar_oplen(cigar[i]);
-		if (bam_cigar_oplen(cigar[i]) > c.minRefSep) _insertJunction(readBp, seed, rec, rp, sp, true);
-	      } else if (bam_cigar_op(cigar[i]) == BAM_CINS) {
-		if (bam_cigar_oplen(cigar[i]) > c.minRefSep) _insertJunction(readBp, seed, rec, rp, sp, false);
-		sp += bam_cigar_oplen(cigar[i]);
-		if (bam_cigar_oplen(cigar[i]) > c.minRefSep) _insertJunction(readBp, seed, rec, rp, sp, true);
-	      } else if ((bam_cigar_op(cigar[i]) == BAM_CSOFT_CLIP) || (bam_cigar_op(cigar[i]) == BAM_CHARD_CLIP)) {
-		int32_t finalsp = sp;
-		bool scleft = false;
-		if (sp == 0) {
-		  finalsp += bam_cigar_oplen(cigar[i]); // Leading soft-clip / hard-clip
-		  scleft = true;
-		}
-		sp += bam_cigar_oplen(cigar[i]);
-		if (bam_cigar_oplen(cigar[i]) > c.minClip) _insertJunction(readBp, seed, rec, rp, finalsp, scleft);
-	      } else if (bam_cigar_op(cigar[i]) == BAM_CREF_SKIP) {
-		rp += bam_cigar_oplen(cigar[i]);
-	      } else {
-		std::cerr << "Warning: Unknown Cigar operation!" << std::endl;
-	      }
-	    }
-	    
-	    // Paired-end clustering
-	    if (rec->core.flag & BAM_FPAIRED) {
-	      // Single-end library
-	      if (sampleLib[file_c].median == 0) continue; // Single-end library
-
-	      // Secondary/supplementary alignments, mate unmapped or blacklisted chr
-	      if (rec->core.flag & (BAM_FSECONDARY | BAM_FSUPPLEMENTARY)) continue;
-	      if ((rec->core.mtid<0) || (rec->core.flag & BAM_FMUNMAP)) continue;
-	      if (validRegions[rec->core.mtid].empty()) continue;
-	      if ((_translocation(rec)) && (rec->core.qual < c.minTraQual)) continue;
-
-	      // SV type	      
-	      int32_t svt = _isizeMappingPos(rec, sampleLib[file_c].maxISizeCutoff);
-	      if (svt == -1) continue;
-	      if ((!c.svtset.empty()) && (c.svtset.find(svt) == c.svtset.end())) continue;
-
-	      // Check library-specific insert size for deletions
-	      if ((svt == 2) && (sampleLib[file_c].maxISizeCutoff > std::abs(rec->core.isize))) continue;
+	// Split-read junctions
+	typedef std::vector<Junction> TJunctionVector;
+	typedef std::map<std::size_t, TJunctionVector> TReadBp;
+	TReadBp readBp;
+	
+	// Iterate all chromosomes for that sample
+	for(int32_t refIndex=0; refIndex < (int32_t) hdr->n_targets; ++refIndex) {
+	  
+	  // Any data?
+	  if (validRegions[refIndex].empty()) continue;
+	  bool nodata = true;
+	  std::string suffix("cram");
+	  std::string str(c.files[file_c].string());
+	  if ((str.size() >= suffix.size()) && (str.compare(str.size() - suffix.size(), suffix.size(), suffix) == 0)) nodata = false;
+	  uint64_t mapped = 0;
+	  uint64_t unmapped = 0;
+	  hts_idx_get_stat(idx[file_c], refIndex, &mapped, &unmapped);
+	  if (mapped) nodata = false;
+	  if (nodata) continue;
+	  
+	  // Intra-chromosomal mate map and alignment length
+	  TMateMap mateMap;
+	  
+	  // Read alignments
+	  for(typename TChrIntervals::const_iterator vRIt = validRegions[refIndex].begin(); vRIt != validRegions[refIndex].end(); ++vRIt) {
+	    hts_itr_t* iter = sam_itr_queryi(idx[file_c], refIndex, vRIt->lower(), vRIt->upper());
+	    bam1_t* rec = bam_init1();
+	    int32_t lastAlignedPos = 0;
+	    std::set<std::size_t> lastAlignedPosReads;
+	    while (sam_itr_next(samfile[file_c], iter, rec) >= 0) {
+	      if (rec->core.flag & (BAM_FQCFAIL | BAM_FDUP | BAM_FUNMAP)) continue;
+	      if ((rec->core.qual < c.minMapQual) || (rec->core.tid<0)) continue;
 	      
-	      // Clean-up the read store for identical alignment positions
-	      if (rec->core.pos > lastAlignedPos) {
-		lastAlignedPosReads.clear();
-		lastAlignedPos = rec->core.pos;
-	      }
+	      std::size_t seed = hash_sr(rec);
+	      // SV detection using single-end read
+	      uint32_t rp = rec->core.pos; // reference pointer
+	      uint32_t sp = 0; // sequence pointer
 	      
-	      // Get or store the mapping quality for the partner
-	      if (_firstPairObs(rec, lastAlignedPosReads)) {
-		// First read
-		lastAlignedPosReads.insert(seed);
-		std::size_t hv = hash_pair(rec);
-		if (_translocation(svt)) matetra[file_c][hv]= std::make_pair((uint8_t) rec->core.qual, alignmentLength(rec));
-		else mateMap[hv]= std::make_pair((uint8_t) rec->core.qual, alignmentLength(rec));
-	      } else {
-		// Second read
-		std::size_t hv = hash_pair_mate(rec);
-		int32_t alenmate = 0;
-		uint8_t pairQuality = 0;
-	        if (_translocation(svt)) {
-		  // Inter-chromosomal
-		  if ((matetra[file_c].find(hv) == matetra[file_c].end()) || (!matetra[file_c][hv].first)) continue; // Mate discarded
-		  TQualLen p = matetra[file_c][hv];
-		  pairQuality = std::min((uint8_t) p.first, (uint8_t) rec->core.qual);
-		  alenmate = p.second;
-		  matetra[file_c][hv].first = 0;
+	      // Parse the CIGAR
+	      const uint32_t* cigar = bam_get_cigar(rec);
+	      for (std::size_t i = 0; i < rec->core.n_cigar; ++i) {
+		if ((bam_cigar_op(cigar[i]) == BAM_CMATCH) || (bam_cigar_op(cigar[i]) == BAM_CEQUAL) || (bam_cigar_op(cigar[i]) == BAM_CDIFF)) {
+		  sp += bam_cigar_oplen(cigar[i]);
+		  rp += bam_cigar_oplen(cigar[i]);
+		} else if (bam_cigar_op(cigar[i]) == BAM_CDEL) {
+		  if (bam_cigar_oplen(cigar[i]) > c.minRefSep) _insertJunction(readBp, seed, rec, rp, sp, false);
+		  rp += bam_cigar_oplen(cigar[i]);
+		  if (bam_cigar_oplen(cigar[i]) > c.minRefSep) _insertJunction(readBp, seed, rec, rp, sp, true);
+		} else if (bam_cigar_op(cigar[i]) == BAM_CINS) {
+		  if (bam_cigar_oplen(cigar[i]) > c.minRefSep) _insertJunction(readBp, seed, rec, rp, sp, false);
+		  sp += bam_cigar_oplen(cigar[i]);
+		  if (bam_cigar_oplen(cigar[i]) > c.minRefSep) _insertJunction(readBp, seed, rec, rp, sp, true);
+		} else if ((bam_cigar_op(cigar[i]) == BAM_CSOFT_CLIP) || (bam_cigar_op(cigar[i]) == BAM_CHARD_CLIP)) {
+		  int32_t finalsp = sp;
+		  bool scleft = false;
+		  if (sp == 0) {
+		    finalsp += bam_cigar_oplen(cigar[i]); // Leading soft-clip / hard-clip
+		    scleft = true;
+		  }
+		  sp += bam_cigar_oplen(cigar[i]);
+		  if (bam_cigar_oplen(cigar[i]) > c.minClip) _insertJunction(readBp, seed, rec, rp, finalsp, scleft);
+		} else if (bam_cigar_op(cigar[i]) == BAM_CREF_SKIP) {
+		  rp += bam_cigar_oplen(cigar[i]);
 		} else {
-		  // Intra-chromosomal
-		  if ((mateMap.find(hv) == mateMap.end()) || (!mateMap[hv].first)) continue; // Mate discarded
-		  TQualLen p = mateMap[hv];
-		  pairQuality = std::min((uint8_t) p.first, (uint8_t) rec->core.qual);
-		  alenmate = p.second;
-		  mateMap[hv].first = 0;
+		  std::cerr << "Warning: Unknown Cigar operation!" << std::endl;
 		}
-		bamRecord[svt].push_back(BamAlignRecord(rec, pairQuality, alignmentLength(rec), alenmate, sampleLib[file_c].median, sampleLib[file_c].mad, sampleLib[file_c].maxNormalISize));
-		++sampleLib[file_c].abnormal_pairs;
+	      }
+	      
+	      // Paired-end clustering
+	      if (rec->core.flag & BAM_FPAIRED) {
+		// Single-end library
+		if (sampleLib[file_c].median == 0) continue; // Single-end library
+		
+		// Secondary/supplementary alignments, mate unmapped or blacklisted chr
+		if (rec->core.flag & (BAM_FSECONDARY | BAM_FSUPPLEMENTARY)) continue;
+		if ((rec->core.mtid<0) || (rec->core.flag & BAM_FMUNMAP)) continue;
+		if (validRegions[rec->core.mtid].empty()) continue;
+		if ((_translocation(rec)) && (rec->core.qual < c.minTraQual)) continue;
+		
+		// SV type	      
+		int32_t svt = _isizeMappingPos(rec, sampleLib[file_c].maxISizeCutoff);
+		if (svt == -1) continue;
+		if ((!c.svtset.empty()) && (c.svtset.find(svt) == c.svtset.end())) continue;
+
+		// Check library-specific insert size for deletions
+		if ((svt == 2) && (sampleLib[file_c].maxISizeCutoff > std::abs(rec->core.isize))) continue;
+		
+		// Clean-up the read store for identical alignment positions
+		if (rec->core.pos > lastAlignedPos) {
+		  lastAlignedPosReads.clear();
+		  lastAlignedPos = rec->core.pos;
+		}
+		
+		// Get or store the mapping quality for the partner
+		if (_firstPairObs(rec, lastAlignedPosReads)) {
+		  // First read
+		  lastAlignedPosReads.insert(seed);
+		  std::size_t hv = hash_pair(rec);
+		  if (_translocation(svt)) matetra[file_c][hv]= std::make_pair((uint8_t) rec->core.qual, alignmentLength(rec));
+		  else mateMap[hv]= std::make_pair((uint8_t) rec->core.qual, alignmentLength(rec));
+		} else {
+		  // Second read
+		  std::size_t hv = hash_pair_mate(rec);
+		  int32_t alenmate = 0;
+		  uint8_t pairQuality = 0;
+		  if (_translocation(svt)) {
+		    // Inter-chromosomal
+		    if ((matetra[file_c].find(hv) == matetra[file_c].end()) || (!matetra[file_c][hv].first)) continue; // Mate discarded
+		    TQualLen p = matetra[file_c][hv];
+		    pairQuality = std::min((uint8_t) p.first, (uint8_t) rec->core.qual);
+		    alenmate = p.second;
+		    matetra[file_c][hv].first = 0;
+		  } else {
+		    // Intra-chromosomal
+		    if ((mateMap.find(hv) == mateMap.end()) || (!mateMap[hv].first)) continue; // Mate discarded
+		    TQualLen p = mateMap[hv];
+		    pairQuality = std::min((uint8_t) p.first, (uint8_t) rec->core.qual);
+		    alenmate = p.second;
+		    mateMap[hv].first = 0;
+		  }
+		  perFileBamRecord[file_c][svt].push_back(BamAlignRecord(rec, pairQuality, alignmentLength(rec), alenmate, sampleLib[file_c].median, sampleLib[file_c].mad, sampleLib[file_c].maxNormalISize));
+		  ++sampleLib[file_c].abnormal_pairs;
+		}
 	      }
 	    }
+	    bam_destroy1(rec);
+	    hts_itr_destroy(iter);
 	  }
-	  bam_destroy1(rec);
-	  hts_itr_destroy(iter);
+	}
+	
+	// Process all junctions for this BAM file
+	for(typename TReadBp::iterator it = readBp.begin(); it != readBp.end(); ++it) std::sort(it->second.begin(), it->second.end());
+	
+	// Collect split-read SVs
+	if ((c.svtset.empty()) || (c.svtset.find(2) != c.svtset.end())) selectDeletions(c, readBp, perFileSrBR[file_c]);
+	if ((c.svtset.empty()) || (c.svtset.find(3) != c.svtset.end())) selectDuplications(c, readBp, perFileSrBR[file_c]);
+	if ((c.svtset.empty()) || (c.svtset.find(0) != c.svtset.end()) || (c.svtset.find(1) != c.svtset.end())) selectInversions(c, readBp, perFileSrBR[file_c]);
+	if ((c.svtset.empty()) || (c.svtset.find(4) != c.svtset.end())) selectInsertions(c, readBp, perFileSrBR[file_c]);
+	if ((c.svtset.empty()) || (c.svtset.find(DELLY_SVT_TRANS) != c.svtset.end()) || (c.svtset.find(DELLY_SVT_TRANS + 1) != c.svtset.end()) || (c.svtset.find(DELLY_SVT_TRANS + 2) != c.svtset.end()) || (c.svtset.find(DELLY_SVT_TRANS + 3) != c.svtset.end())) selectTranslocations(c, readBp, perFileSrBR[file_c]);
+      }));
+    }
+    // Wait and merge
+    for(auto &f : futures) f.get();
+    TSvtSRBamRecord srBR(2 * DELLY_SVT_TRANS, TSRBamRecord());
+    TSvtBamRecord bamRecord(2 * DELLY_SVT_TRANS, TBamRecord());
+    for(uint32_t file_c = 0; file_c < c.files.size(); ++file_c) {
+      for(uint32_t svt = 0; svt < perFileBamRecord[file_c].size(); ++svt) {
+	if (!perFileBamRecord[file_c][svt].empty()) {
+	  bamRecord[svt].insert(bamRecord[svt].end(), std::make_move_iterator(perFileBamRecord[file_c][svt].begin()), std::make_move_iterator(perFileBamRecord[file_c][svt].end()));
+	}
+	if (!perFileSrBR[file_c][svt].empty()) {
+	  srBR[svt].insert(srBR[svt].end(), std::make_move_iterator(perFileSrBR[file_c][svt].begin()), std::make_move_iterator(perFileSrBR[file_c][svt].end()));
 	}
       }
-
-      // Process all junctions for this BAM file
-      for(typename TReadBp::iterator it = readBp.begin(); it != readBp.end(); ++it) std::sort(it->second.begin(), it->second.end());
-	
-      // Collect split-read SVs
-      if ((c.svtset.empty()) || (c.svtset.find(2) != c.svtset.end())) selectDeletions(c, readBp, srBR);
-      if ((c.svtset.empty()) || (c.svtset.find(3) != c.svtset.end())) selectDuplications(c, readBp, srBR);
-      if ((c.svtset.empty()) || (c.svtset.find(0) != c.svtset.end()) || (c.svtset.find(1) != c.svtset.end())) selectInversions(c, readBp, srBR);
-      if ((c.svtset.empty()) || (c.svtset.find(4) != c.svtset.end())) selectInsertions(c, readBp, srBR);
-      if ((c.svtset.empty()) || (c.svtset.find(DELLY_SVT_TRANS) != c.svtset.end()) || (c.svtset.find(DELLY_SVT_TRANS + 1) != c.svtset.end()) || (c.svtset.find(DELLY_SVT_TRANS + 2) != c.svtset.end()) || (c.svtset.find(DELLY_SVT_TRANS + 3) != c.svtset.end())) selectTranslocations(c, readBp, srBR);
     }
 
     // Debug abnormal paired-ends and split-reads
@@ -429,8 +463,6 @@ namespace torali
     // Cluster split-read records
     now = boost::posix_time::second_clock::local_time();
     std::cerr << '[' << boost::posix_time::to_simple_string(now) << "] " << "Split-read clustering" << std::endl;
-    std::vector<std::vector<StructuralVariantRecord>> srBySvt(srBR.size());
-    std::vector<std::future<void>> cluster_futures;
     for(uint32_t svt = 0; svt < srBR.size(); ++svt) {
       if ((!c.svtset.empty()) && (c.svtset.find(svt) == c.svtset.end())) continue;
       if (srBR[svt].empty()) continue;
@@ -439,16 +471,7 @@ namespace torali
       std::sort(srBR[svt].begin(), srBR[svt].end());
 
       // Cluster
-      cluster_futures.push_back(pool.enqueue([&, svt]() {
-	cluster(c, srBR[svt], srBySvt[svt], svt);
-      }));
-    }
-    // Wait and merge
-    for(auto &f : cluster_futures) f.get();
-    for(auto &vec : srBySvt) {
-      if (!vec.empty()) {
-	srSVs.insert(srSVs.end(), std::make_move_iterator(vec.begin()), std::make_move_iterator(vec.end()));
-      }
+      cluster(c, srBR[svt], srSVs, svt);
     }
 
     // Cluster paired-end records
@@ -457,8 +480,6 @@ namespace torali
 
     // Maximum variability in insert size
     int32_t varisize = getVariability(c, sampleLib);
-    std::vector<std::vector<StructuralVariantRecord>> peBySvt(srBR.size());
-    std::vector<std::future<void>> pe_cluster_futures;
     for(int32_t svt = 0; svt < (int32_t) bamRecord.size(); ++svt) {
       if ((!c.svtset.empty()) && (c.svtset.find(svt) == c.svtset.end())) continue;
       if (bamRecord[svt].empty()) continue;
@@ -467,18 +488,9 @@ namespace torali
       std::sort(bamRecord[svt].begin(), bamRecord[svt].end());
 
       // Cluster
-      pe_cluster_futures.push_back(pool.enqueue([&, svt]() {
-	cluster(c, bamRecord[svt], peBySvt[svt], varisize, svt);
-      }));
+      cluster(c, bamRecord[svt], svs, varisize, svt);
     }
-    // Wait and merge
-    for(auto &f : pe_cluster_futures) f.get();
-    for(auto &vec : peBySvt) {
-      if (!vec.empty()) {
-	svs.insert(svs.end(), std::make_move_iterator(vec.begin()), std::make_move_iterator(vec.end()));
-      }
-    }
-
+    
     // Track split-reads
     for(uint32_t svt = 0; svt < srBR.size(); ++svt) {
       for(uint32_t i = 0; i < srBR[svt].size(); ++i) {
