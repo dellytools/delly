@@ -78,6 +78,7 @@ namespace torali
     std::cerr << '[' << boost::posix_time::to_simple_string(now) << "] " << "Split-read assembly" << std::endl;
 
     faidx_t* fai = fai_load(c.genome.string().c_str());
+    ThreadPool pool(c.maxThreads);
     for(int32_t refIndex = 0; refIndex < hdr->n_targets; ++refIndex) {
       if (validRegions[refIndex].empty()) continue;
       if (srStore[refIndex].empty()) continue;
@@ -139,12 +140,12 @@ namespace torali
 		// At most n split-reads
 		if (seqStore[svid].size() < maxReadPerSV) {
 		  bool insertSuccess = false;
-		  if (_translocation(svs[svid].svt)) insertSuccess = traStore[svid].insert(sequence).second;
-		  else insertSuccess = seqStore[svid].insert(sequence).second;
-		  // Store qualities
-		  if (insertSuccess) {
-		    if (_translocation(svs[svid].svt)) traQualStore[svid].push_back(rec->core.qual);
-		    else qualStore[svid].push_back(rec->core.qual);
+		  if (_translocation(svs[svid].svt)) {
+		    insertSuccess = traStore[svid].insert(std::move(sequence)).second;
+		    if (insertSuccess) traQualStore[svid].push_back(rec->core.qual);
+		  } else {
+		    insertSuccess = seqStore[svid].insert(std::move(sequence)).second;
+		    if (insertSuccess) qualStore[svid].push_back(rec->core.qual);
 		  }
 		}
 	      }
@@ -156,39 +157,37 @@ namespace torali
       }
 
       // Process all SVs on this chromosome
-      {
-	ThreadPool pool(std::max<std::size_t>(1, c.maxThreads));
-	std::vector<std::future<void>> futures;
-	for(uint32_t svid = 0; svid < seqStore.size(); ++svid) {
-	  if (_translocation(svs[svid].svt)) continue;
-	  if (svs[svid].chr != refIndex) continue;
-
-	  // MSA
-	  if (seqStore[svid].size() <= 1) {
+      std::vector<std::future<void>> futures;
+      futures.reserve(svs.size());
+      for(uint32_t svid = 0; svid < seqStore.size(); ++svid) {
+	if (_translocation(svs[svid].svt)) continue;
+	if (svs[svid].chr != refIndex) continue;
+	
+	// MSA
+	if (seqStore[svid].size() <= 1) {
+	  svs[svid].consensus = "";
+	  svs[svid].srSupport = 0;
+	  svs[svid].srAlignQuality = 0;
+	  continue;
+	}
+	// Parallelize MSA
+	futures.push_back(pool.enqueue([&, svid]() {  
+	  msa(c, seqStore[svid], svs[svid].consensus);
+	  if (!alignConsensus(c, hdr, seq, NULL, svs[svid])) {
 	    svs[svid].consensus = "";
 	    svs[svid].srSupport = 0;
 	    svs[svid].srAlignQuality = 0;
-	    continue;
+	  } else {
+	    // SR support and qualities
+	    std::sort(qualStore[svid].begin(), qualStore[svid].end());
+	    svs[svid].mapq = 0;
+	    for(uint32_t i = 0; i < qualStore[svid].size(); ++i) svs[svid].mapq += qualStore[svid][i];
+	    svs[svid].srSupport = seqStore[svid].size();
+	    svs[svid].srMapQuality = qualStore[svid][qualStore[svid].size()/2];
 	  }
-	  // Parallelize MSA
-	  futures.push_back(pool.enqueue([&, svid]() {  
-	    msa(c, seqStore[svid], svs[svid].consensus);
-	    if (!alignConsensus(c, hdr, seq, NULL, svs[svid])) {
-	      svs[svid].consensus = "";
-	      svs[svid].srSupport = 0;
-	      svs[svid].srAlignQuality = 0;
-	    } else {
-	      // SR support and qualities
-	      std::sort(qualStore[svid].begin(), qualStore[svid].end());
-	      svs[svid].mapq = 0;
-	      for(uint32_t i = 0; i < qualStore[svid].size(); ++i) svs[svid].mapq += qualStore[svid][i];
-	      svs[svid].srSupport = seqStore[svid].size();
-	      svs[svid].srMapQuality = qualStore[svid][qualStore[svid].size()/2];
-	    }
-	  }));
-	}
-	for(auto &f : futures) f.get();
+	}));
       }
+      for(auto &f : futures) f.get();
 
       // Clean-up
       if (seq != NULL) free(seq);
@@ -203,7 +202,6 @@ namespace torali
 	char* seq = NULL;
 	
 	// Iterate SVs
-	ThreadPool pool(std::max<std::size_t>(1, c.maxThreads));
 	std::vector<std::future<void>> futures;
 	for(uint32_t svid = 0; svid < traStore.size(); ++svid) {
 	  if (!_translocation(svs[svid].svt)) continue;
@@ -229,7 +227,7 @@ namespace torali
 	  }
 	  
 	  // Multi-threading
-	  futures.push_back(pool.enqueue([&, svid, refIndex, refIndex2]() {
+	  futures.push_back(pool.enqueue([&, svid, seq, sndSeq]() {
 	    msa(c, traStore[svid], svs[svid].consensus);
 	    if (!alignConsensus(c, hdr, seq, sndSeq, svs[svid])) {
 	      svs[svid].consensus = "";
@@ -290,7 +288,7 @@ namespace torali
     std::cerr << '[' << boost::posix_time::to_simple_string(now) << "] " << "Paired-end and split-read scanning" << std::endl;
 
     // Iterate all samples
-    ThreadPool pool(std::max<std::size_t>(1, c.maxThreads));
+    ThreadPool pool(c.maxThreads);
     std::vector<TSvtSRBamRecord> perFileSrBR(c.files.size(), TSvtSRBamRecord(2 * DELLY_SVT_TRANS));
     std::vector<TSvtBamRecord> perFileBamRecord(c.files.size(), TSvtBamRecord(2 * DELLY_SVT_TRANS));
     std::vector<std::future<void>> futures;

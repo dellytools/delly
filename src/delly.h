@@ -261,6 +261,9 @@ namespace torali
       std::cerr << "Please specify a valid SV type, i.e., -t INV or -t DEL,INV without spaces." << std::endl;
       return 1;
     }
+
+    // Check threads
+    c.maxThreads = std::min<std::size_t>(std::max<std::size_t>(1, c.maxThreads), std::thread::hardware_concurrency() ? std::thread::hardware_concurrency() : 1);
     
     // Dump PE and SR support?
     if (vm.count("dump")) c.hasDumpFile = true;
