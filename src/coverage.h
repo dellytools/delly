@@ -313,7 +313,6 @@ namespace torali {
       dumpOut << "#svid\tbam\tqname\tchr\tpos\tmatechr\tmatepos\tmapq\ttype" << std::endl;
     }
 
-#pragma omp parallel for default(shared)
     for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
       // Pair qualities and features
       typedef boost::unordered_map<std::size_t, uint8_t> TQualities;
@@ -478,10 +477,7 @@ namespace torali {
 			for (int i = 0; i < rec->core.l_qseq; ++i) quality[i] = qualptr[i];
 			uint32_t rq = _getAlignmentQual(alignRef, quality);
 			if (rq >= c.minGenoQual) {
-#pragma omp critical
-			  {
-			    countMap[file_c][itBp->id].ref.push_back((uint8_t) std::min(rq, (uint32_t) rec->core.qual));
-			  }
+			  countMap[file_c][itBp->id].ref.push_back((uint8_t) std::min(rq, (uint32_t) rec->core.qual));
 			}
 		      }
 		    } else {
@@ -491,17 +487,14 @@ namespace torali {
 		      for (int i = 0; i < rec->core.l_qseq; ++i) quality[i] = qualptr[i];
 		      uint32_t aq = _getAlignmentQual(alignAlt, quality);
 		      if (aq >= c.minGenoQual) {
-#pragma omp critical
-			{
-			  if (c.hasDumpFile) {
-			    std::string svid(_addID(itBp->svt));
-			    std::string padNumber = boost::lexical_cast<std::string>(itBp->id);
-			    padNumber.insert(padNumber.begin(), 8 - padNumber.length(), '0');
-			    svid += padNumber;
-			    dumpOut << svid << "\t" << c.files[file_c].string() << "\t" << bam_get_qname(rec) << "\t" << hdr[file_c]->target_name[rec->core.tid] << "\t" << rec->core.pos << "\t" << hdr[file_c]->target_name[rec->core.mtid] << "\t" << rec->core.mpos << "\t" << (int32_t) rec->core.qual << "\tSR" << std::endl;
-			  }
-			  countMap[file_c][itBp->id].alt.push_back((uint8_t) std::min(aq, (uint32_t) rec->core.qual));
+			if (c.hasDumpFile) {
+			  std::string svid(_addID(itBp->svt));
+			  std::string padNumber = boost::lexical_cast<std::string>(itBp->id);
+			  padNumber.insert(padNumber.begin(), 8 - padNumber.length(), '0');
+			  svid += padNumber;
+			  dumpOut << svid << "\t" << c.files[file_c].string() << "\t" << bam_get_qname(rec) << "\t" << hdr[file_c]->target_name[rec->core.tid] << "\t" << rec->core.pos << "\t" << hdr[file_c]->target_name[rec->core.mtid] << "\t" << rec->core.mpos << "\t" << (int32_t) rec->core.qual << "\tSR" << std::endl;
 			}
+			countMap[file_c][itBp->id].alt.push_back((uint8_t) std::min(aq, (uint32_t) rec->core.qual));
 		      }
 		    }
 		  }
@@ -586,10 +579,7 @@ namespace torali {
 		for(; ((itSpan != spanPoint.end()) && (st + spanlen >= itSpan->bppos)); ++itSpan) {
 		  // Account for reference bias
 		  if (++refAlignedSpanCount[file_c][itSpan->id] % 2) {
-#pragma omp critical
-		    {
-		      spanMap[file_c][itSpan->id].ref.push_back(pairQuality);
-		    }
+		    spanMap[file_c][itSpan->id].ref.push_back(pairQuality);
 		  }
 		}
 	      }
@@ -623,17 +613,14 @@ namespace torali {
 		    // Make sure, mate is correct
 		    if (rec->core.mtid == itSpan->chr2) {
 		      if (std::abs((int32_t) rec->core.mpos - itSpan->otherBppos) < sampleLib[file_c].maxNormalISize) {
-#pragma omp critical
-			{
-			  if (c.hasDumpFile) {
-			    std::string svid(_addID(itSpan->svt));
-			    std::string padNumber = boost::lexical_cast<std::string>(itSpan->id);
-			    padNumber.insert(padNumber.begin(), 8 - padNumber.length(), '0');
-			    svid += padNumber;
-			    dumpOut << svid << "\t" << c.files[file_c].string() << "\t" << bam_get_qname(rec) << "\t" << hdr[file_c]->target_name[rec->core.tid] << "\t" << rec->core.pos << "\t" << hdr[file_c]->target_name[rec->core.mtid] << "\t" << rec->core.mpos << "\t" << (int32_t) rec->core.qual << "\tPE" << std::endl;
-			  }
-			  spanMap[file_c][itSpan->id].alt.push_back(pairQuality);
+			if (c.hasDumpFile) {
+			  std::string svid(_addID(itSpan->svt));
+			  std::string padNumber = boost::lexical_cast<std::string>(itSpan->id);
+			  padNumber.insert(padNumber.begin(), 8 - padNumber.length(), '0');
+			  svid += padNumber;
+			  dumpOut << svid << "\t" << c.files[file_c].string() << "\t" << bam_get_qname(rec) << "\t" << hdr[file_c]->target_name[rec->core.tid] << "\t" << rec->core.pos << "\t" << hdr[file_c]->target_name[rec->core.mtid] << "\t" << rec->core.mpos << "\t" << (int32_t) rec->core.qual << "\tPE" << std::endl;
 			}
+			spanMap[file_c][itSpan->id].alt.push_back(pairQuality);
 		      }
 		    }
 		  }

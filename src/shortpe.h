@@ -271,8 +271,11 @@ namespace torali
     // Parse genome, process chromosome by chromosome
     boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
     std::cerr << '[' << boost::posix_time::to_simple_string(now) << "] " << "Paired-end and split-read scanning" << std::endl;
+
+    // Multi-threading
+    ThreadPool pool(std::max<std::size_t>(1, c.maxThreads));
+    
     // Iterate all samples
-#pragma omp parallel for default(shared)
     for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
       // Inter-chromosomal mate map and alignment length
       typedef std::pair<uint8_t, int32_t> TQualLen;
@@ -399,11 +402,7 @@ namespace torali
 		  alenmate = p.second;
 		  mateMap[hv].first = 0;
 		}
-
-#pragma omp critical
-		{
-		  bamRecord[svt].push_back(BamAlignRecord(rec, pairQuality, alignmentLength(rec), alenmate, sampleLib[file_c].median, sampleLib[file_c].mad, sampleLib[file_c].maxNormalISize));
-		}
+		bamRecord[svt].push_back(BamAlignRecord(rec, pairQuality, alignmentLength(rec), alenmate, sampleLib[file_c].median, sampleLib[file_c].mad, sampleLib[file_c].maxNormalISize));
 		++sampleLib[file_c].abnormal_pairs;
 	      }
 	    }
@@ -417,14 +416,11 @@ namespace torali
       for(typename TReadBp::iterator it = readBp.begin(); it != readBp.end(); ++it) std::sort(it->second.begin(), it->second.end());
 	
       // Collect split-read SVs
-#pragma omp critical
-      {
-	if ((c.svtset.empty()) || (c.svtset.find(2) != c.svtset.end())) selectDeletions(c, readBp, srBR);
-	if ((c.svtset.empty()) || (c.svtset.find(3) != c.svtset.end())) selectDuplications(c, readBp, srBR);
-	if ((c.svtset.empty()) || (c.svtset.find(0) != c.svtset.end()) || (c.svtset.find(1) != c.svtset.end())) selectInversions(c, readBp, srBR);
-	if ((c.svtset.empty()) || (c.svtset.find(4) != c.svtset.end())) selectInsertions(c, readBp, srBR);
-	if ((c.svtset.empty()) || (c.svtset.find(DELLY_SVT_TRANS) != c.svtset.end()) || (c.svtset.find(DELLY_SVT_TRANS + 1) != c.svtset.end()) || (c.svtset.find(DELLY_SVT_TRANS + 2) != c.svtset.end()) || (c.svtset.find(DELLY_SVT_TRANS + 3) != c.svtset.end())) selectTranslocations(c, readBp, srBR);
-      }
+      if ((c.svtset.empty()) || (c.svtset.find(2) != c.svtset.end())) selectDeletions(c, readBp, srBR);
+      if ((c.svtset.empty()) || (c.svtset.find(3) != c.svtset.end())) selectDuplications(c, readBp, srBR);
+      if ((c.svtset.empty()) || (c.svtset.find(0) != c.svtset.end()) || (c.svtset.find(1) != c.svtset.end())) selectInversions(c, readBp, srBR);
+      if ((c.svtset.empty()) || (c.svtset.find(4) != c.svtset.end())) selectInsertions(c, readBp, srBR);
+      if ((c.svtset.empty()) || (c.svtset.find(DELLY_SVT_TRANS) != c.svtset.end()) || (c.svtset.find(DELLY_SVT_TRANS + 1) != c.svtset.end()) || (c.svtset.find(DELLY_SVT_TRANS + 2) != c.svtset.end()) || (c.svtset.find(DELLY_SVT_TRANS + 3) != c.svtset.end())) selectTranslocations(c, readBp, srBR);
     }
 
     // Debug abnormal paired-ends and split-reads
@@ -433,6 +429,8 @@ namespace torali
     // Cluster split-read records
     now = boost::posix_time::second_clock::local_time();
     std::cerr << '[' << boost::posix_time::to_simple_string(now) << "] " << "Split-read clustering" << std::endl;
+    std::vector<std::vector<StructuralVariantRecord>> srBySvt(srBR.size());
+    std::vector<std::future<void>> cluster_futures;
     for(uint32_t svt = 0; svt < srBR.size(); ++svt) {
       if ((!c.svtset.empty()) && (c.svtset.find(svt) == c.svtset.end())) continue;
       if (srBR[svt].empty()) continue;
@@ -441,10 +439,16 @@ namespace torali
       std::sort(srBR[svt].begin(), srBR[svt].end());
 
       // Cluster
-      cluster(c, srBR[svt], srSVs, svt);
-
-      // Debug SR SVs
-      //outputStructuralVariants(c, srSVs, srBR, svt, false); // Short reads
+      cluster_futures.push_back(pool.enqueue([&, svt]() {
+	cluster(c, srBR[svt], srBySvt[svt], svt);
+      }));
+    }
+    // Wait and merge
+    for(auto &f : cluster_futures) f.get();
+    for(auto &vec : srBySvt) {
+      if (!vec.empty()) {
+	srSVs.insert(srSVs.end(), std::make_move_iterator(vec.begin()), std::make_move_iterator(vec.end()));
+      }
     }
 
     // Cluster paired-end records
@@ -452,7 +456,9 @@ namespace torali
     std::cerr << '[' << boost::posix_time::to_simple_string(now) << "] " << "Paired-end clustering" << std::endl;
 
     // Maximum variability in insert size
-    int32_t varisize = getVariability(c, sampleLib);      
+    int32_t varisize = getVariability(c, sampleLib);
+    std::vector<std::vector<StructuralVariantRecord>> peBySvt(srBR.size());
+    std::vector<std::future<void>> pe_cluster_futures;
     for(int32_t svt = 0; svt < (int32_t) bamRecord.size(); ++svt) {
       if ((!c.svtset.empty()) && (c.svtset.find(svt) == c.svtset.end())) continue;
       if (bamRecord[svt].empty()) continue;
@@ -461,7 +467,16 @@ namespace torali
       std::sort(bamRecord[svt].begin(), bamRecord[svt].end());
 
       // Cluster
-      cluster(c, bamRecord[svt], svs, varisize, svt);
+      pe_cluster_futures.push_back(pool.enqueue([&, svt]() {
+	cluster(c, bamRecord[svt], peBySvt[svt], varisize, svt);
+      }));
+    }
+    // Wait and merge
+    for(auto &f : pe_cluster_futures) f.get();
+    for(auto &vec : peBySvt) {
+      if (!vec.empty()) {
+	svs.insert(svs.end(), std::make_move_iterator(vec.begin()), std::make_move_iterator(vec.end()));
+      }
     }
 
     // Track split-reads

@@ -156,15 +156,14 @@ namespace torali
 	if ((itSV->chr == refIndex) && (itSV->alleles.empty())) itSV->alleles = _addAlleles(boost::to_upper_copy(std::string(seq + itSV->svStart - 1, seq + itSV->svStart)), std::string(hdr[0]->target_name[itSV->chr2]), *itSV, itSV->svt);
       }
       
-#pragma omp parallel for default(shared)      
       for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
-
+	
 	// Coverage track
 	typedef uint16_t TMaxCoverage;
 	uint32_t maxCoverage = std::numeric_limits<TMaxCoverage>::max();
 	typedef std::vector<TMaxCoverage> TBpCoverage;
 	TBpCoverage covBases(hdr[file_c]->target_len[refIndex], 0);
-
+	
 	// Parse BAM
 	hts_itr_t* iter = sam_itr_queryi(idx[file_c], refIndex, 0, hdr[file_c]->target_len[refIndex]);
 	bam1_t* rec = bam_init1();
@@ -288,10 +287,7 @@ namespace torali
 		  //for (int i = 0; i < rec->core.l_qseq; ++i) quality[i] = qualptr[i];
 		  uint32_t rq = scoreRef * 35;
 		  if (rq >= c.minGenoQual) {
-#pragma omp critical
-		    {
-		      jctMap[file_c][svid].ref.push_back((uint8_t) std::min(rq, (uint32_t) rec->core.qual));
-		    }
+		    jctMap[file_c][svid].ref.push_back((uint8_t) std::min(rq, (uint32_t) rec->core.qual));
 		  }
 		}
 	      } else {
@@ -301,17 +297,14 @@ namespace torali
 		//for (int i = 0; i < rec->core.l_qseq; ++i) quality[i] = qualptr[i];
 		uint32_t aq = scoreAlt * 35;
 		if (aq >= c.minGenoQual) {
-#pragma omp critical
-		  {
-		    if (c.hasDumpFile) {
-		      std::string svidStr(_addID(svs[svid].svt));
-		      std::string padNumber = boost::lexical_cast<std::string>(svid);
-		      padNumber.insert(padNumber.begin(), 8 - padNumber.length(), '0');
-		      svidStr += padNumber;
-		      dumpOut << svidStr << "\t" << c.files[file_c].string() << "\t" << bam_get_qname(rec) << "\t" << hdr[file_c]->target_name[rec->core.tid] << "\t" << rec->core.pos << "\t" << (int32_t) rec->core.qual << "\tSR" << std::endl;
-		    }
-		    jctMap[file_c][svid].alt.push_back((uint8_t) std::min(aq, (uint32_t) rec->core.qual));
+		  if (c.hasDumpFile) {
+		    std::string svidStr(_addID(svs[svid].svt));
+		    std::string padNumber = boost::lexical_cast<std::string>(svid);
+		    padNumber.insert(padNumber.begin(), 8 - padNumber.length(), '0');
+		    svidStr += padNumber;
+		    dumpOut << svidStr << "\t" << c.files[file_c].string() << "\t" << bam_get_qname(rec) << "\t" << hdr[file_c]->target_name[rec->core.tid] << "\t" << rec->core.pos << "\t" << (int32_t) rec->core.qual << "\tSR" << std::endl;
 		  }
+		  jctMap[file_c][svid].alt.push_back((uint8_t) std::min(aq, (uint32_t) rec->core.qual));
 		}
 	      }
 	    }

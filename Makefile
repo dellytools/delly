@@ -14,14 +14,7 @@ bindir ?= $(exec_prefix)/bin
 # Flags
 CXX ?= g++
 CXXFLAGS += -std=c++17 -isystem ${EBROOTHTSLIB} -pedantic -W -Wall -Wno-unknown-pragmas -D__STDC_LIMIT_MACROS -fno-strict-aliasing -fpermissive
-LDFLAGS += -L${EBROOTHTSLIB} -lboost_iostreams -lboost_filesystem -lboost_system -lboost_program_options -lboost_date_time
-
-# Flags for parallel computation
-ifeq (${PARALLEL}, 1)
-	CXXFLAGS += -fopenmp -DOPENMP
-else
-	CXXFLAGS += -DNOPENMP
-endif
+LDFLAGS += -L${EBROOTHTSLIB} -lboost_iostreams -lboost_filesystem -lboost_program_options -lboost_date_time
 
 # Flags for static compile
 ifeq (${STATIC}, 1)

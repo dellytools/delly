@@ -25,6 +25,7 @@
 #include <htslib/vcf.h>
 #include <htslib/sam.h>
 
+#include "threadpool.h"
 #include "version.h"
 #include "util.h"
 #include "bolog.h"
@@ -61,6 +62,7 @@ namespace torali
     uint32_t minClip;
     uint32_t maxGenoReadCount;
     uint32_t minCliqueSize;
+    uint32_t maxThreads;
     float flankQuality;
     bool hasExcludeFile;
     bool hasVcfFile;
@@ -204,6 +206,7 @@ namespace torali
       ("genome,g", boost::program_options::value<boost::filesystem::path>(&c.genome), "genome fasta file")
       ("exclude,x", boost::program_options::value<boost::filesystem::path>(&c.exclude), "file with regions to exclude")
       ("outfile,o", boost::program_options::value<boost::filesystem::path>(&c.outfile), "BCF output file")
+      ("threads,h", boost::program_options::value<uint32_t>(&c.maxThreads)->default_value(8), "number of threads")
       ;
     
     boost::program_options::options_description disc("Discovery options");
@@ -258,9 +261,6 @@ namespace torali
       std::cerr << "Please specify a valid SV type, i.e., -t INV or -t DEL,INV without spaces." << std::endl;
       return 1;
     }
-    //typedef std::set<int32_t> TSvSetTmp;
-    //for(typename TSvSetTmp::iterator itst = c.svtset.begin(); itst!=c.svtset.end(); ++itst) std::cerr << *itst << std::endl;
-    //std::cerr << c.svtset.size() << std::endl;
     
     // Dump PE and SR support?
     if (vm.count("dump")) c.hasDumpFile = true;
