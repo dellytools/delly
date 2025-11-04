@@ -448,13 +448,16 @@ namespace torali {
 		  int32_t scoreA = needle(consProbe, sequence, alignAlt, semiglobal, simple);
 		  int32_t scoreAltThreshold = (int32_t) (c.flankQuality * consProbe.size() * simple.match + (1.0 - c.flankQuality) * consProbe.size() * simple.mismatch);
 		  double scoreAlt = (double) scoreA / (double) scoreAltThreshold;
+		  //Using edlib and score threshold of >0.7 below
+		  //double scoreAlt = ((1.0 - c.flankQuality) * (double) consProbe.size()) / (double) (_editDistanceHW(consProbe, sequence) + 1);
 		  
 		  // Compute alignment to reference haplotype
 		  TAlign alignRef;
 		  int32_t scoreR = needle(refProbe, sequence, alignRef, semiglobal, simple);
 		  int32_t scoreRefThreshold = (int32_t) (c.flankQuality * refProbe.size() * simple.match + (1.0 - c.flankQuality) * refProbe.size() * simple.mismatch);
 		  double scoreRef = (double) scoreR / (double) scoreRefThreshold;
-		  
+		  //Using edlib and score threshold of >0.7 below
+		  //double scoreRef = ((1.0 - c.flankQuality) * (double) refProbe.size()) / (double) (_editDistanceHW(refProbe, sequence) + 1);
 		  // Any confident alignment?
 		  if ((scoreRef > 1) || (scoreAlt > 1)) {
 		    // Debug alignment to REF and ALT
@@ -476,6 +479,7 @@ namespace torali {
 			const uint8_t* qualptr = bam_get_qual(rec);
 			for (int i = 0; i < rec->core.l_qseq; ++i) quality[i] = qualptr[i];
 			uint32_t rq = _getAlignmentQual(alignRef, quality);
+			//uint32_t rq = scoreRef * 35;
 			if (rq >= c.minGenoQual) {
 			  countMap[file_c][itBp->id].ref.push_back((uint8_t) std::min(rq, (uint32_t) rec->core.qual));
 			}
@@ -486,6 +490,7 @@ namespace torali {
 		      const uint8_t* qualptr = bam_get_qual(rec);
 		      for (int i = 0; i < rec->core.l_qseq; ++i) quality[i] = qualptr[i];
 		      uint32_t aq = _getAlignmentQual(alignAlt, quality);
+		      //uint32_t aq = scoreAlt * 35;
 		      if (aq >= c.minGenoQual) {
 			if (c.hasDumpFile) {
 			  std::string svid(_addID(itBp->svt));

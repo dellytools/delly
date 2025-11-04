@@ -178,6 +178,13 @@ namespace torali
     std::cerr << std::endl;
   }
 
+  inline int32_t
+  _editDistanceHW(std::string const& query, std::string const& target) {
+    EdlibAlignResult align = edlibAlign(query.c_str(), query.size(), target.c_str(), target.size(), edlibNewAlignConfig(-1, EDLIB_MODE_HW, EDLIB_TASK_DISTANCE, NULL, 0));
+    int32_t ed = align.editDistance;
+    edlibFreeAlignResult(align);
+    return ed;
+  }
   
   template<typename TConfig>
   inline void

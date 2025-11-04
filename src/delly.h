@@ -63,6 +63,7 @@ namespace torali
     uint32_t maxGenoReadCount;
     uint32_t minCliqueSize;
     uint32_t maxThreads;
+    uint32_t maxReadPerSV;
     float flankQuality;
     bool hasExcludeFile;
     bool hasVcfFile;
@@ -218,6 +219,7 @@ namespace torali
       ("min-clique-size,z", boost::program_options::value<uint32_t>(&c.minCliqueSize)->default_value(2), "min. PE/SR clique size")
       ("minrefsep,m", boost::program_options::value<uint32_t>(&c.minRefSep)->default_value(25), "min. reference separation")
       ("maxreadsep,n", boost::program_options::value<uint32_t>(&c.maxReadSep)->default_value(40), "max. read separation")
+      ("max-reads,p", boost::program_options::value<uint32_t>(&c.maxReadPerSV)->default_value(20), "max. reads for consensus computation")
       ;
     
     boost::program_options::options_description geno("Genotyping options");

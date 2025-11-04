@@ -26,7 +26,7 @@ namespace torali
     edlibFreeAlignResult(align);
     return ed;
   }
-
+  
   inline int32_t
   _readStart(bam1_t* rec) {
     uint32_t rp = rec->core.pos;

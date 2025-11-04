@@ -51,6 +51,7 @@ namespace torali
   {
     typedef typename TValidRegion::value_type TChrIntervals;
     typedef typename TSRStore::value_type TPosReadSV;
+    std::size_t batchSize = 512;
 
     // Open file handles
     typedef std::vector<samFile*> TSamFile;
@@ -68,7 +69,6 @@ namespace torali
     typedef std::set<std::string> TSequences;
     typedef std::vector<TSequences> TSVSequences;
     TSVSequences traStore(svs.size(), TSequences());
-    uint32_t maxReadPerSV = 20;
     typedef std::vector<uint8_t> TQualities;
     typedef std::vector<TQualities> TQualVectors;
     TQualVectors traQualStore(svs.size(), TQualities());
@@ -138,7 +138,7 @@ namespace torali
 		_adjustOrientation(sequence, bpPoint, svs[svid].svt);
 		
 		// At most n split-reads
-		if (seqStore[svid].size() < maxReadPerSV) {
+		if (seqStore[svid].size() < c.maxReadPerSV) {
 		  bool insertSuccess = false;
 		  if (_translocation(svs[svid].svt)) {
 		    insertSuccess = traStore[svid].insert(std::move(sequence)).second;
@@ -155,10 +155,9 @@ namespace torali
           hts_itr_destroy(iter);
 	}
       }
-
+    
       // Process all SVs on this chromosome
-      std::vector<std::future<void>> futures;
-      futures.reserve(svs.size());
+      std::vector<uint32_t> svidsToProcess;
       for(uint32_t svid = 0; svid < seqStore.size(); ++svid) {
 	if (_translocation(svs[svid].svt)) continue;
 	if (svs[svid].chr != refIndex) continue;
@@ -170,20 +169,30 @@ namespace torali
 	  svs[svid].srAlignQuality = 0;
 	  continue;
 	}
-	// Parallelize MSA
-	futures.push_back(pool.enqueue([&, svid]() {  
-	  msa(c, seqStore[svid], svs[svid].consensus);
-	  if (!alignConsensus(c, hdr, seq, NULL, svs[svid])) {
-	    svs[svid].consensus = "";
-	    svs[svid].srSupport = 0;
-	    svs[svid].srAlignQuality = 0;
-	  } else {
-	    // SR support and qualities
-	    std::sort(qualStore[svid].begin(), qualStore[svid].end());
-	    svs[svid].mapq = 0;
-	    for(uint32_t i = 0; i < qualStore[svid].size(); ++i) svs[svid].mapq += qualStore[svid][i];
+	svidsToProcess.push_back(svid);
+      }
+
+      // Process in batches
+      std::vector<std::future<void>> futures;
+      futures.reserve(svs.size());
+      for(uint32_t bStart = 0; bStart < svidsToProcess.size(); bStart += batchSize) {
+	uint32_t bEnd = std::min(bStart + batchSize, svidsToProcess.size());
+	futures.push_back(pool.enqueue([&, bStart, bEnd]() {
+	  for(uint32_t ki = bStart; ki < bEnd; ++ki) {
+	    uint32_t svid = svidsToProcess[ki];
+	    msa(c, seqStore[svid], svs[svid].consensus);
+	    if (!alignConsensus(c, hdr, seq, NULL, svs[svid])) {
+	      svs[svid].consensus = "";
+	      svs[svid].srSupport = 0;
+	      svs[svid].srAlignQuality = 0;
+	    } else {
+	      // SR support and qualities
+	      std::sort(qualStore[svid].begin(), qualStore[svid].end());
+	      svs[svid].mapq = 0;
+	      for(uint32_t i = 0; i < qualStore[svid].size(); ++i) svs[svid].mapq += qualStore[svid][i];
 	    svs[svid].srSupport = seqStore[svid].size();
 	    svs[svid].srMapQuality = qualStore[svid][qualStore[svid].size()/2];
+	    }
 	  }
 	}));
       }
@@ -203,6 +212,7 @@ namespace torali
 	
 	// Iterate SVs
 	std::vector<std::future<void>> futures;
+	std::vector<uint32_t> traToProcess;
 	for(uint32_t svid = 0; svid < traStore.size(); ++svid) {
 	  if (!_translocation(svs[svid].svt)) continue;
 	  if ((svs[svid].chr != refIndex) || (svs[svid].chr2 != refIndex2)) continue;
@@ -213,7 +223,10 @@ namespace torali
 	    svs[svid].srAlignQuality = 0;
 	    continue;
 	  }
-	  
+	  traToProcess.push_back(svid);
+	}
+
+	if (!traToProcess.empty()) {
 	  // Lazy loading of references
 	  if (seq == NULL) {
 	    int32_t seqlen = -1;
@@ -225,21 +238,26 @@ namespace torali
 	    std::string tname(hdr->target_name[refIndex2]);
 	    sndSeq = faidx_fetch_seq(fai, tname.c_str(), 0, hdr->target_len[refIndex2], &seqlen);
 	  }
-	  
-	  // Multi-threading
-	  futures.push_back(pool.enqueue([&, svid, seq, sndSeq]() {
-	    msa(c, traStore[svid], svs[svid].consensus);
-	    if (!alignConsensus(c, hdr, seq, sndSeq, svs[svid])) {
-	      svs[svid].consensus = "";
-	      svs[svid].srSupport = 0;
-	      svs[svid].srAlignQuality = 0;
-	    } else {
-	      // SR support and qualities
-	      std::sort(traQualStore[svid].begin(), traQualStore[svid].end());
-	      svs[svid].mapq = 0;
-	      for(uint32_t i = 0; i < traQualStore[svid].size(); ++i) svs[svid].mapq += traQualStore[svid][i];
-	      svs[svid].srSupport = traStore[svid].size();
-	      svs[svid].srMapQuality = traQualStore[svid][traQualStore[svid].size()/2];
+	}
+	// MSA
+	for(uint32_t bStart = 0; bStart < traToProcess.size(); bStart += batchSize) {
+	  uint32_t bEnd = std::min(bStart + batchSize, traToProcess.size());
+	  futures.push_back(pool.enqueue([&, bStart, bEnd, seq, sndSeq]() {
+	    for(uint32_t ki = bStart; ki < bEnd; ++ki) {
+	      uint32_t svid = traToProcess[ki];
+	      msa(c, traStore[svid], svs[svid].consensus);
+	      if (!alignConsensus(c, hdr, seq, sndSeq, svs[svid])) {
+		svs[svid].consensus = "";
+		svs[svid].srSupport = 0;
+		svs[svid].srAlignQuality = 0;
+	      } else {
+		// SR support and qualities
+		std::sort(traQualStore[svid].begin(), traQualStore[svid].end());
+		svs[svid].mapq = 0;
+		for(uint32_t i = 0; i < traQualStore[svid].size(); ++i) svs[svid].mapq += traQualStore[svid][i];
+		svs[svid].srSupport = traStore[svid].size();
+		svs[svid].srMapQuality = traQualStore[svid][traQualStore[svid].size()/2];
+	      }
 	    }
 	  }));
 	}
