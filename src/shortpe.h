@@ -51,7 +51,7 @@ namespace torali
   {
     typedef typename TValidRegion::value_type TChrIntervals;
     typedef typename TSRStore::value_type TPosReadSV;
-    std::size_t batchSize = 64;
+    std::size_t batchSize = std::max(32, 512 / c.maxThreads);
 
     // Open file handles
     typedef std::vector<samFile*> TSamFile;
