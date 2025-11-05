@@ -51,7 +51,7 @@ namespace torali
   {
     typedef typename TValidRegion::value_type TChrIntervals;
     typedef typename TSRStore::value_type TPosReadSV;
-    std::size_t batchSize = std::max(32, 512 / c.maxThreads);
+    uint32_t batchSize = std::max((uint32_t) 32, (uint32_t) (512 / c.maxThreads));
 
     // Open file handles
     typedef std::vector<samFile*> TSamFile;
@@ -176,7 +176,7 @@ namespace torali
       std::vector<std::future<void>> futures;
       futures.reserve(svs.size());
       for(uint32_t bStart = 0; bStart < svidsToProcess.size(); bStart += batchSize) {
-	uint32_t bEnd = std::min(bStart + batchSize, svidsToProcess.size());
+	uint32_t bEnd = std::min(bStart + batchSize, (uint32_t) svidsToProcess.size());
 	futures.push_back(pool.enqueue([&, bStart, bEnd]() {
 	  for(uint32_t ki = bStart; ki < bEnd; ++ki) {
 	    uint32_t svid = svidsToProcess[ki];
@@ -241,7 +241,7 @@ namespace torali
 	}
 	// MSA
 	for(uint32_t bStart = 0; bStart < traToProcess.size(); bStart += batchSize) {
-	  uint32_t bEnd = std::min(bStart + batchSize, traToProcess.size());
+	  uint32_t bEnd = std::min(bStart + batchSize, (uint32_t) traToProcess.size());
 	  futures.push_back(pool.enqueue([&, bStart, bEnd, seq, sndSeq]() {
 	    for(uint32_t ki = bStart; ki < bEnd; ++ki) {
 	      uint32_t svid = traToProcess[ki];
