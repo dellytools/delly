@@ -66,23 +66,15 @@ namespace torali {
     std::vector<uint8_t> alt;
   };
 
-  template<typename TAlign, typename TQualities>
-  inline uint32_t
-  _getAlignmentQual(TAlign const& align, TQualities const& qual) {
-    typedef typename TAlign::index TAIndex;
-    uint32_t baseQualSum = 0;
-    uint32_t seqPtr = 0;
-    uint32_t alignedBases = 0;
-    for(TAIndex j = 0; j < (TAIndex) align.shape()[1]; ++j) {
-      if (align[1][j] != '-') {
-	if (align[0][j] != '-') {
-	  ++alignedBases;
-	  baseQualSum += qual[seqPtr];
-	}
-	++seqPtr;
-      }
-    }
-    return (baseQualSum / alignedBases);
+
+  template<typename TConfig>
+  inline double
+  _editDistanceHW(TConfig const& c, std::string const& query, std::string const& target) {
+    double score = 0;
+    EdlibAlignResult align = edlibAlign(query.c_str(), query.size(), target.c_str(), target.size(), edlibNewAlignConfig(2 * c.flankQuality * query.size(), EDLIB_MODE_HW, EDLIB_TASK_DISTANCE, NULL, 0));
+    if (align.editDistance != -1) score = ((1.0 - c.flankQuality) * (double) query.size()) / (double) (align.editDistance + 1);
+    edlibFreeAlignResult(align);
+    return score;
   }
 
   template<typename TPos>
@@ -239,7 +231,6 @@ namespace torali {
   {
     typedef typename TSpanMap::value_type::value_type TSpanPair;
     typedef typename TCountMap::value_type::value_type TCountPair;
-    typedef std::vector<uint8_t> TQuality;
   
     // Open file handles
     typedef std::vector<samFile*> TSamFile;
@@ -316,14 +307,14 @@ namespace torali {
     for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
       // Pair qualities and features
       typedef boost::unordered_map<std::size_t, uint8_t> TQualities;
-      TQualities qualities;
       TQualities qualitiestra;
       typedef boost::unordered_map<std::size_t, bool> TClip;
-      TClip clip;
       TClip cliptra;
       
       // Iterate chromosomes
       for(int32_t refIndex=0; refIndex < (int32_t) hdr[file_c]->n_targets; ++refIndex) {
+	TQualities qualities;
+	TClip clip;
       
 	// Any SV breakpoints on this chromosome?
 	if (!svOnChr[refIndex]) continue;
@@ -430,8 +421,8 @@ namespace torali {
 		if ((countMap[file_c][itBp->id].ref.size() + countMap[file_c][itBp->id].alt.size()) >= c.maxGenoReadCount) continue;
 		// Read spans breakpoint?
 		if ((hasSoftClip) || ((!hasClip) && (rec->core.pos + c.minimumFlankSize + itBp->homLeft <= itBp->bppos) &&  (rec->core.pos + rec->core.l_qseq >= itBp->bppos + c.minimumFlankSize + itBp->homRight))) {
-		  std::string consProbe = consProbeArr[itBp->bpPoint][itBp->id];
-		  std::string refProbe = refProbeArr[itBp->bpPoint][itBp->id];
+		  auto& consProbe = consProbeArr[itBp->bpPoint][itBp->id];
+		  auto& refProbe = refProbeArr[itBp->bpPoint][itBp->id];
 		  
 		  // Get sequence
 		  std::string sequence;
@@ -441,65 +432,36 @@ namespace torali {
 		  _adjustOrientation(sequence, itBp->bpPoint, itBp->svt);
 		
 		  // Compute alignment to alternative haplotype
-		  typedef boost::multi_array<char, 2> TAlign;
-		  TAlign alignAlt;
-		  DnaScore<int> simple(5, -4, -4, -4);
-		  AlignConfig<true, false> semiglobal;
-		  int32_t scoreA = needle(consProbe, sequence, alignAlt, semiglobal, simple);
-		  int32_t scoreAltThreshold = (int32_t) (c.flankQuality * consProbe.size() * simple.match + (1.0 - c.flankQuality) * consProbe.size() * simple.mismatch);
-		  double scoreAlt = (double) scoreA / (double) scoreAltThreshold;
-		  //Using edlib and score threshold of >0.7 below
-		  //double scoreAlt = ((1.0 - c.flankQuality) * (double) consProbe.size()) / (double) (_editDistanceHW(consProbe, sequence) + 1);
-		  
-		  // Compute alignment to reference haplotype
-		  TAlign alignRef;
-		  int32_t scoreR = needle(refProbe, sequence, alignRef, semiglobal, simple);
-		  int32_t scoreRefThreshold = (int32_t) (c.flankQuality * refProbe.size() * simple.match + (1.0 - c.flankQuality) * refProbe.size() * simple.mismatch);
-		  double scoreRef = (double) scoreR / (double) scoreRefThreshold;
-		  //Using edlib and score threshold of >0.7 below
-		  //double scoreRef = ((1.0 - c.flankQuality) * (double) refProbe.size()) / (double) (_editDistanceHW(refProbe, sequence) + 1);
-		  // Any confident alignment?
-		  if ((scoreRef > 1) || (scoreAlt > 1)) {
-		    // Debug alignment to REF and ALT
-		    //std::cerr << "Alt:\t" << scoreAlt << "\tRef:\t" << scoreRef << std::endl;
-		    //for(TAIndex i = 0; i< (TAIndex) alignAlt.shape()[0]; ++i) {
-		    //for(TAIndex j = 0; j< (TAIndex) alignAlt.shape()[1]; ++j) std::cerr << alignAlt[i][j];
-		    //std::cerr << std::endl;
-		    //}
-		    //for(TAIndex i = 0; i< (TAIndex) alignRef.shape()[0]; ++i) {
-		    //for(TAIndex j = 0; j< (TAIndex) alignRef.shape()[1]; ++j) std::cerr << alignRef[i][j];
-		    //std::cerr << std::endl;
-		    //}
-		    
-		    if (scoreRef > scoreAlt) {
-		      // Account for reference bias
-		      if (++refAlignedReadCount[file_c][itBp->id] % 2) {
-			TQuality quality;
-			quality.resize(rec->core.l_qseq);
-			const uint8_t* qualptr = bam_get_qual(rec);
-			for (int i = 0; i < rec->core.l_qseq; ++i) quality[i] = qualptr[i];
-			uint32_t rq = _getAlignmentQual(alignRef, quality);
-			//uint32_t rq = scoreRef * 35;
-			if (rq >= c.minGenoQual) {
-			  countMap[file_c][itBp->id].ref.push_back((uint8_t) std::min(rq, (uint32_t) rec->core.qual));
+		  if (c.hasDumpFile) {
+		    double scoreAlt = _editDistanceHW(c, consProbe, sequence);
+		    double scoreRef = _editDistanceHW(c, refProbe, sequence);
+		    if ((scoreRef > 0.7) || (scoreAlt > 0.7)) {
+		      if (scoreRef > scoreAlt) {
+			// Account for reference bias
+			if (++refAlignedReadCount[file_c][itBp->id] % 2) {
+			  countMap[file_c][itBp->id].ref.push_back((uint8_t) std::min(255, std::min((int) (scoreRef * 35), (int) rec->core.qual)));
 			}
+		      } else {
+			countMap[file_c][itBp->id].alt.push_back((uint8_t) std::min(255, std::min((int) (scoreAlt * 35), (int) rec->core.qual)));
+
+			std::string svid(_addID(itBp->svt));
+			std::string padNumber = boost::lexical_cast<std::string>(itBp->id);
+			padNumber.insert(padNumber.begin(), 8 - padNumber.length(), '0');
+			svid += padNumber;
+			dumpOut << svid << "\t" << c.files[file_c].string() << "\t" << bam_get_qname(rec) << "\t" << hdr[file_c]->target_name[rec->core.tid] << "\t" << rec->core.pos << "\t" << hdr[file_c]->target_name[rec->core.mtid] << "\t" << rec->core.mpos << "\t" << (int32_t) rec->core.qual << "\tSR" << std::endl;
 		      }
-		    } else {
-		      TQuality quality;
-		      quality.resize(rec->core.l_qseq);
-		      const uint8_t* qualptr = bam_get_qual(rec);
-		      for (int i = 0; i < rec->core.l_qseq; ++i) quality[i] = qualptr[i];
-		      uint32_t aq = _getAlignmentQual(alignAlt, quality);
-		      //uint32_t aq = scoreAlt * 35;
-		      if (aq >= c.minGenoQual) {
-			if (c.hasDumpFile) {
-			  std::string svid(_addID(itBp->svt));
-			  std::string padNumber = boost::lexical_cast<std::string>(itBp->id);
-			  padNumber.insert(padNumber.begin(), 8 - padNumber.length(), '0');
-			  svid += padNumber;
-			  dumpOut << svid << "\t" << c.files[file_c].string() << "\t" << bam_get_qname(rec) << "\t" << hdr[file_c]->target_name[rec->core.tid] << "\t" << rec->core.pos << "\t" << hdr[file_c]->target_name[rec->core.mtid] << "\t" << rec->core.mpos << "\t" << (int32_t) rec->core.qual << "\tSR" << std::endl;
+		    }
+		  } else {
+		    double scoreAlt = _editDistanceHW(c, consProbe, sequence);
+		    double scoreRef = _editDistanceHW(c, refProbe, sequence);
+		    if ((scoreRef > 0.7) || (scoreAlt > 0.7)) {
+		      if (scoreRef > scoreAlt) {
+			// Account for reference bias
+			if (++refAlignedReadCount[file_c][itBp->id] % 2) {
+			  countMap[file_c][itBp->id].ref.push_back((uint8_t) std::min(255, std::min((int) (scoreRef * 35), (int) rec->core.qual)));
 			}
-			countMap[file_c][itBp->id].alt.push_back((uint8_t) std::min(aq, (uint32_t) rec->core.qual));
+		      } else {
+			countMap[file_c][itBp->id].alt.push_back((uint8_t) std::min(255, std::min((int) (scoreAlt * 35), (int) rec->core.qual)));
 		      }
 		    }
 		  }
