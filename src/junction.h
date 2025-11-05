@@ -270,7 +270,7 @@ namespace torali
   inline void
   bridgeInsertions(TReadBp const& readBp, std::vector<std::vector<SRBamRecord> >& br) {
     // Insertion map
-    std::set<std::size_t> readIds;
+    std::unordered_set<std::size_t> readIds;
     typedef std::pair<uint32_t, uint32_t> TRefCoord;
     typedef std::map<TRefCoord, int32_t> TPosInsMap;
     TPosInsMap pins;
@@ -466,7 +466,7 @@ namespace torali
   _findSRBreakpoints(TConfig const& c, TValidRegions const& validRegions, TSvtSRBamRecord& srBR, std::set<size_t>& validSR) {
     // Breakpoints
     typedef std::vector<Junction> TJunctionVector;
-    typedef std::map<std::size_t, TJunctionVector> TReadBp;
+    typedef boost::unordered_map<std::size_t, TJunctionVector> TReadBp;
     TReadBp readBp;
     findJunctions(c, validRegions, readBp, validSR);
     fetchSVs(c, readBp, srBR);
@@ -623,7 +623,7 @@ namespace torali
     std::cerr << "qname\tid\tchr1\tpos1\tchr2\tpos2\tsvtype\tct\tqual\tseqpos\tinslen" << std::endl;
 
     // Hash reads
-    typedef std::map<std::size_t, std::string> THashMap;
+    typedef boost::unordered_map<std::size_t, std::string> THashMap;
     THashMap hm;
     typedef std::vector<samFile*> TSamFile;
     typedef std::vector<hts_idx_t*> TIndex;
@@ -679,7 +679,7 @@ namespace torali
     std::cerr << "chr1\tpos1\tchr2\tpos2\tsvtype\tct\tinslen\tpeSupport\tsrSupport" << std::endl;
     
     // Hash reads
-    typedef std::map<std::size_t, std::string> THashMap;
+    typedef boost::unordered_map<std::size_t, std::string> THashMap;
     THashMap hm;
     typedef std::vector<samFile*> TSamFile;
     typedef std::vector<hts_idx_t*> TIndex;

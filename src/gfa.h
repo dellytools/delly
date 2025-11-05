@@ -47,7 +47,7 @@ namespace torali
   };
 
   struct Graph {
-    typedef std::map<std::string, uint32_t> TSegmentIdMap;
+    typedef boost::unordered_map<std::string, uint32_t> TSegmentIdMap;
     
     std::vector<uint32_t> offset;
     std::vector<Link> links;

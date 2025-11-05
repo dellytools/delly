@@ -145,7 +145,7 @@ namespace torali {
   _findAsmBreakpoints(TConfig const& c, TSvtSRBamRecord& srBR) {
     // Breakpoints
     typedef std::vector<Junction> TJunctionVector;
-    typedef std::map<std::size_t, TJunctionVector> TReadBp;
+    typedef boost::unordered_map<std::size_t, TJunctionVector> TReadBp;
     TReadBp readBp;
     findAsmJunctions(c, readBp);
     fetchSVs(c, readBp, srBR);

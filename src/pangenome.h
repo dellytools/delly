@@ -224,7 +224,7 @@ namespace torali {
   _findGraphSRBreakpoints(TConfig const& c, Graph const& g, TSvtSRBamRecord& srBR, std::set<std::size_t>& validSR) {
     // Breakpoints
     typedef std::vector<Junction> TJunctionVector;
-    typedef std::map<std::size_t, TJunctionVector> TReadBp;
+    typedef boost::unordered_map<std::size_t, TJunctionVector> TReadBp;
     TReadBp readBp;
     findGraphJunctions(c, g, readBp, validSR);
     fetchSVs(c, readBp, srBR);
@@ -239,7 +239,7 @@ namespace torali {
     for(typename Graph::TSegmentIdMap::const_iterator it = g.smap.begin(); it != g.smap.end(); ++it) idSegment[it->second] = it->first;
 
     // Hash reads
-    typedef std::map<std::size_t, std::string> THashMap;
+    typedef boost::unordered_map<std::size_t, std::string> THashMap;
     THashMap hm;
     for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
 
