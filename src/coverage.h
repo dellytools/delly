@@ -17,7 +17,9 @@
 #include <functional>
 #include <condition_variable>
 #include <unordered_map>
+#include <unordered_set>
 #include <memory>
+#include <atomic>
 
 #include <htslib/sam.h>
 
@@ -335,16 +337,13 @@ namespace torali {
     // Thread pool for alignments
     ThreadPool pool(c.maxThreads);
     for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
-      // Pair qualities and features
-      typedef boost::unordered_map<std::size_t, uint8_t> TQualities;
-      TQualities qualitiestra;
-      typedef boost::unordered_map<std::size_t, bool> TClip;
-      TClip cliptra;
+      // Pair clip and qualities
+      typedef boost::unordered_map<std::size_t, std::pair<bool, uint8_t>> TClipQual;
+      TClipQual cliptra;
       
       // Iterate chromosomes
       for(int32_t refIndex=0; refIndex < (int32_t) hdr[file_c]->n_targets; ++refIndex) {
-	TQualities qualities;
-	TClip clip;
+	TClipQual clip;
       
 	// Any SV breakpoints on this chromosome?
 	if (!svOnChr[refIndex]) continue;
@@ -398,23 +397,23 @@ namespace torali {
 	hts_itr_t* iter = sam_itr_queryi(idx[file_c], refIndex, 0, hdr[file_c]->target_len[refIndex]);
 	bam1_t* rec = bam_init1();
 	int32_t lastAlignedPos = 0;
-	std::set<std::size_t> lastAlignedPosReads;
+	std::unordered_set<std::size_t> lastAlignedPosReads;
 
 	// Job processing for multi-threading
 	std::vector<AlignJob> jobBuf;
 	jobBuf.reserve(batchSize);
 	auto process_batch = [&](std::vector<AlignJob> &jobs) {
 	  if (jobs.empty()) return;
-	  const size_t J = jobs.size();
+	  const std::size_t J = jobs.size();
 	  std::vector<AlignResult> results(J, AlignResult());
+	  std::atomic<std::size_t> next(0);
 	  std::vector<std::future<void>> futures;
 	  futures.reserve(c.maxThreads);
 	  for (unsigned int t = 0; t < c.maxThreads; ++t) {
-	    size_t start = (J * t) / c.maxThreads;
-	    size_t end = (J * (t + 1)) / c.maxThreads;
-	    if (start >= end) continue;
-	    futures.emplace_back(pool.enqueue([start, end, &jobs, &results, &c]() {
-	      for (size_t i = start; i < end; ++i) {
+	    futures.push_back(pool.enqueue([&]() {
+	      for(;;) {
+		std::size_t i = next.fetch_add(1, std::memory_order_relaxed);
+		if (i >= J) break;
 		AlignJob &job = jobs[i];
 		double scoreAlt = _editDistanceHW(c, job.consProbe, job.sequence);
 		double scoreRef = _editDistanceHW(c, job.refProbe, job.sequence);
@@ -434,7 +433,7 @@ namespace torali {
 	  }
 	  for (auto &f : futures) f.get();
 	  // Merge results
-	  for (size_t i = 0; i < J; ++i) {
+	  for(std::size_t i = 0; i < J; ++i) {
 	    AlignResult &ar = results[i];
 	    if (ar.type == 'N') continue;
 	    if ((countMap[ar.fileIndex][ar.svId].ref.size() + countMap[ar.fileIndex][ar.svId].alt.size()) >= c.maxGenoReadCount) continue;
@@ -555,30 +554,25 @@ namespace torali {
 	    // First read
 	    lastAlignedPosReads.insert(hash_string(bam_get_qname(rec)));
 	    std::size_t hv = hash_pair(rec);
-	    if (rec->core.tid == rec->core.mtid) {
-	      qualities[hv] = rec->core.qual;
-	      clip[hv] = hasSoftClip;
-	    } else {
-	      qualitiestra[hv] = rec->core.qual;
-	      cliptra[hv] = hasSoftClip;
-	    }
+	    if (rec->core.tid == rec->core.mtid) clip[hv] = std::make_pair(hasSoftClip, rec->core.qual);
+	    else cliptra[hv] = std::make_pair(hasSoftClip, rec->core.qual);
 	  } else {
 	    // Second read
 	    std::size_t hv = hash_pair_mate(rec);
 	    uint8_t pairQuality = 0;
 	    bool pairClip = false;
 	    if (rec->core.tid == rec->core.mtid) {
-	      if (qualities.find(hv) == qualities.end()) continue; // Mate discarded
-	      pairQuality = std::min((uint8_t) qualities[hv], (uint8_t) rec->core.qual);
-	      if ((clip[hv]) || (hasSoftClip)) pairClip = true;
-	      qualities[hv] = 0;
-	      clip[hv] = false;
+	      auto itCM = clip.find(hv); 
+	      if (itCM == clip.end()) continue; // Mate discarded
+	      pairQuality = std::min((uint8_t) itCM->second.second, (uint8_t) rec->core.qual);
+	      if ((itCM->second.first) || (hasSoftClip)) pairClip = true;
+	      clip.erase(itCM);
 	    } else {
-	      if (qualitiestra.find(hv) == qualitiestra.end()) continue; // Mate discarded
-	      pairQuality = std::min((uint8_t) qualitiestra[hv], (uint8_t) rec->core.qual);
-	      if ((cliptra[hv]) || (hasSoftClip)) pairClip = true;
-	      qualitiestra[hv] = 0;
-	      cliptra[hv] = false;
+	      auto itCM = cliptra.find(hv); 
+	      if (itCM == cliptra.end()) continue; // Mate discarded
+	      pairQuality = std::min((uint8_t) itCM->second.second, (uint8_t) rec->core.qual);
+	      if ((itCM->second.first) || (hasSoftClip)) pairClip = true;
+	      cliptra.erase(itCM);
 	    }
 
 	    // Pair quality
@@ -677,7 +671,6 @@ namespace torali {
 	// Clean-up
 	bam_destroy1(rec);
 	hts_itr_destroy(iter);
-	qualities.clear();
 	clip.clear();
 	
 	// Assign fragment and base counts to SVs

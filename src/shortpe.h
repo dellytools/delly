@@ -51,7 +51,6 @@ namespace torali
   {
     typedef typename TValidRegion::value_type TChrIntervals;
     typedef typename TSRStore::value_type TPosReadSV;
-    uint32_t batchSize = std::max((uint32_t) 32, (uint32_t) (512 / c.maxThreads));
 
     // Open file handles
     typedef std::vector<samFile*> TSamFile;
@@ -66,7 +65,7 @@ namespace torali
     bam_hdr_t* hdr = sam_hdr_read(samfile[0]);
 
     // Reads per SV
-    typedef std::set<std::string> TSequences;
+    typedef std::unordered_set<std::string> TSequences;
     typedef std::vector<TSequences> TSVSequences;
     TSVSequences traStore(svs.size(), TSequences());
     typedef std::vector<uint8_t> TQualities;
@@ -173,25 +172,28 @@ namespace torali
       }
 
       // Process in batches
+      std::atomic<uint32_t> next(0);
       std::vector<std::future<void>> futures;
-      futures.reserve(svs.size());
-      for(uint32_t bStart = 0; bStart < svidsToProcess.size(); bStart += batchSize) {
-	uint32_t bEnd = std::min(bStart + batchSize, (uint32_t) svidsToProcess.size());
-	futures.push_back(pool.enqueue([&, bStart, bEnd]() {
-	  for(uint32_t ki = bStart; ki < bEnd; ++ki) {
-	    uint32_t svid = svidsToProcess[ki];
+      futures.reserve(c.maxThreads);
+      for(uint32_t t = 0; t < c.maxThreads; ++t) {
+	futures.push_back(pool.enqueue([&]() {
+	  for(;;) {
+	    uint32_t idx = next.fetch_add(1, std::memory_order_relaxed);
+	    if (idx >= svidsToProcess.size()) break;
+	    uint32_t svid = svidsToProcess[idx];
+	    
 	    msa(c, seqStore[svid], svs[svid].consensus);
 	    if (!alignConsensus(c, hdr, seq, NULL, svs[svid])) {
 	      svs[svid].consensus = "";
 	      svs[svid].srSupport = 0;
 	      svs[svid].srAlignQuality = 0;
 	    } else {
-	      // SR support and qualities
-	      std::sort(qualStore[svid].begin(), qualStore[svid].end());
+	      auto& qv = qualStore[svid];
 	      svs[svid].mapq = 0;
-	      for(uint32_t i = 0; i < qualStore[svid].size(); ++i) svs[svid].mapq += qualStore[svid][i];
+	      for(uint8_t q : qv) svs[svid].mapq += q;
+	      if (!qv.empty()) svs[svid].srMapQuality = medianVector(qv);
+	      else svs[svid].srMapQuality = 0;
 	      svs[svid].srSupport = seqStore[svid].size();
-	      svs[svid].srMapQuality = qualStore[svid][qualStore[svid].size()/2];
 	    }
 	  }
 	}));
@@ -211,7 +213,6 @@ namespace torali
 	char* seq = NULL;
 	
 	// Iterate SVs
-	std::vector<std::future<void>> futures;
 	std::vector<uint32_t> traToProcess;
 	for(uint32_t svid = 0; svid < traStore.size(); ++svid) {
 	  if (!_translocation(svs[svid].svt)) continue;
@@ -238,30 +239,34 @@ namespace torali
 	    std::string tname(hdr->target_name[refIndex2]);
 	    sndSeq = faidx_fetch_seq(fai, tname.c_str(), 0, hdr->target_len[refIndex2], &seqlen);
 	  }
-	}
-	// MSA
-	for(uint32_t bStart = 0; bStart < traToProcess.size(); bStart += batchSize) {
-	  uint32_t bEnd = std::min(bStart + batchSize, (uint32_t) traToProcess.size());
-	  futures.push_back(pool.enqueue([&, bStart, bEnd, seq, sndSeq]() {
-	    for(uint32_t ki = bStart; ki < bEnd; ++ki) {
-	      uint32_t svid = traToProcess[ki];
-	      msa(c, traStore[svid], svs[svid].consensus);
-	      if (!alignConsensus(c, hdr, seq, sndSeq, svs[svid])) {
-		svs[svid].consensus = "";
-		svs[svid].srSupport = 0;
-		svs[svid].srAlignQuality = 0;
-	      } else {
-		// SR support and qualities
-		std::sort(traQualStore[svid].begin(), traQualStore[svid].end());
-		svs[svid].mapq = 0;
-		for(uint32_t i = 0; i < traQualStore[svid].size(); ++i) svs[svid].mapq += traQualStore[svid][i];
-		svs[svid].srSupport = traStore[svid].size();
-		svs[svid].srMapQuality = traQualStore[svid][traQualStore[svid].size()/2];
+
+	  std::atomic<uint32_t> nextTra(0);
+	  std::vector<std::future<void>> futures;
+	  futures.reserve(c.maxThreads);
+	  for(uint32_t t = 0; t < c.maxThreads; ++t) {
+	    futures.push_back(pool.enqueue([&, seq, sndSeq]() {
+	      for(;;) {
+		uint32_t idx = nextTra.fetch_add(1, std::memory_order_relaxed);
+		if (idx >= traToProcess.size()) break;
+		uint32_t svid = traToProcess[idx];
+		msa(c, traStore[svid], svs[svid].consensus);
+		if (!alignConsensus(c, hdr, seq, sndSeq, svs[svid])) {
+		  svs[svid].consensus = "";
+		  svs[svid].srSupport = 0;
+		  svs[svid].srAlignQuality = 0;
+		} else {
+		  auto& qv = traQualStore[svid];
+		  svs[svid].mapq = 0;
+		  for(uint8_t q : qv) svs[svid].mapq += q;
+		  if (!qv.empty()) svs[svid].srMapQuality = medianVector(qv);
+		  else svs[svid].srMapQuality = 0;
+		  svs[svid].srSupport = traStore[svid].size();
+		}
 	      }
-	    }
-	  }));
+	    }));
+	  }
+	  for(auto &f : futures) f.get();
 	}
-	for(auto &f : futures) f.get();
 	if (seq != NULL) free(seq);
       }
       if (sndSeq != NULL) free(sndSeq);
@@ -315,11 +320,11 @@ namespace torali
 	// Inter-chromosomal mate map and alignment length
 	typedef std::pair<uint8_t, int32_t> TQualLen;
 	typedef boost::unordered_map<std::size_t, TQualLen> TMateMap;
-	std::vector<TMateMap> matetra(c.files.size());
+	TMateMap matetra;
 
 	// Split-read junctions
 	typedef std::vector<Junction> TJunctionVector;
-	typedef std::map<std::size_t, TJunctionVector> TReadBp;
+	typedef boost::unordered_map<std::size_t, TJunctionVector> TReadBp;
 	TReadBp readBp;
 	
 	// Iterate all chromosomes for that sample
@@ -345,7 +350,7 @@ namespace torali
 	    hts_itr_t* iter = sam_itr_queryi(idx[file_c], refIndex, vRIt->lower(), vRIt->upper());
 	    bam1_t* rec = bam_init1();
 	    int32_t lastAlignedPos = 0;
-	    std::set<std::size_t> lastAlignedPosReads;
+	    std::unordered_set<std::size_t> lastAlignedPosReads;
 	    while (sam_itr_next(samfile[file_c], iter, rec) >= 0) {
 	      if (rec->core.flag & (BAM_FQCFAIL | BAM_FDUP | BAM_FUNMAP)) continue;
 	      if ((rec->core.qual < c.minMapQual) || (rec->core.tid<0)) continue;
@@ -380,8 +385,6 @@ namespace torali
 		  if (bam_cigar_oplen(cigar[i]) > c.minClip) _insertJunction(readBp, seed, rec, rp, finalsp, scleft);
 		} else if (bam_cigar_op(cigar[i]) == BAM_CREF_SKIP) {
 		  rp += bam_cigar_oplen(cigar[i]);
-		} else {
-		  std::cerr << "Warning: Unknown Cigar operation!" << std::endl;
 		}
 	      }
 	      
@@ -415,7 +418,7 @@ namespace torali
 		  // First read
 		  lastAlignedPosReads.insert(seed);
 		  std::size_t hv = hash_pair(rec);
-		  if (_translocation(svt)) matetra[file_c][hv]= std::make_pair((uint8_t) rec->core.qual, alignmentLength(rec));
+		  if (_translocation(svt)) matetra[hv]= std::make_pair((uint8_t) rec->core.qual, alignmentLength(rec));
 		  else mateMap[hv]= std::make_pair((uint8_t) rec->core.qual, alignmentLength(rec));
 		} else {
 		  // Second read
@@ -424,18 +427,18 @@ namespace torali
 		  uint8_t pairQuality = 0;
 		  if (_translocation(svt)) {
 		    // Inter-chromosomal
-		    if ((matetra[file_c].find(hv) == matetra[file_c].end()) || (!matetra[file_c][hv].first)) continue; // Mate discarded
-		    TQualLen p = matetra[file_c][hv];
-		    pairQuality = std::min((uint8_t) p.first, (uint8_t) rec->core.qual);
-		    alenmate = p.second;
-		    matetra[file_c][hv].first = 0;
+		    auto itMM = matetra.find(hv);
+		    if ((itMM == matetra.end()) || (!(itMM->second.first))) continue; // Mate discarded
+		    pairQuality = std::min((uint8_t) itMM->second.first, (uint8_t) rec->core.qual);
+		    alenmate = itMM->second.second;
+		    matetra.erase(itMM);
 		  } else {
 		    // Intra-chromosomal
-		    if ((mateMap.find(hv) == mateMap.end()) || (!mateMap[hv].first)) continue; // Mate discarded
-		    TQualLen p = mateMap[hv];
-		    pairQuality = std::min((uint8_t) p.first, (uint8_t) rec->core.qual);
-		    alenmate = p.second;
-		    mateMap[hv].first = 0;
+		    auto itMM = mateMap.find(hv);
+		    if ((itMM == mateMap.end()) || (!(itMM->second.first))) continue; // Mate discarded
+		    pairQuality = std::min((uint8_t) itMM->second.first, (uint8_t) rec->core.qual);
+		    alenmate = itMM->second.second;
+		    mateMap.erase(itMM);
 		  }
 		  perFileBamRecord[file_c][svt].push_back(BamAlignRecord(rec, pairQuality, alignmentLength(rec), alenmate, sampleLib[file_c].median, sampleLib[file_c].mad, sampleLib[file_c].maxNormalISize));
 		  ++sampleLib[file_c].abnormal_pairs;
@@ -532,7 +535,7 @@ namespace torali
 
   inline void
   mergeSort(std::vector<StructuralVariantRecord>& pe, std::vector<StructuralVariantRecord>& sr) {
-    typedef typename std::vector<StructuralVariantRecord> TVariants;
+    typedef std::vector<StructuralVariantRecord> TVariants;
     // Sort PE records for look-up
     sort(pe.begin(), pe.end());
 
@@ -548,7 +551,7 @@ namespace torali
 	// Precise duplicates
 	int32_t searchWindow = 500;
 	bool svExists = false;
-	typename TVariants::iterator itOther = std::lower_bound(pe.begin(), pe.end(), StructuralVariantRecord(sr[i].chr, std::max(0, sr[i].svStart - searchWindow), sr[i].svEnd));
+	TVariants::iterator itOther = std::lower_bound(pe.begin(), pe.end(), StructuralVariantRecord(sr[i].chr, std::max(0, sr[i].svStart - searchWindow), sr[i].svEnd));
 	for(; ((itOther != pe.end()) && (std::abs(itOther->svStart - sr[i].svStart) < searchWindow)); ++itOther) {
 	  if ((itOther->svt != svt) || (itOther->precise)) continue; 
 	  if ((sr[i].chr != itOther->chr) || (sr[i].chr2 != itOther->chr2)) continue;  // Mismatching chr

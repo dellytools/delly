@@ -71,6 +71,13 @@ namespace torali
     ReadCount(int32_t l, int32_t m, int32_t r) : leftRC(l), rc(m), rightRC(r) {}
   };
 
+  template<typename TValue>
+  inline TValue
+  medianVector(std::vector<TValue>& v) {
+    std::size_t n = v.size() / 2;
+    std::nth_element(v.begin(), v.begin() + n, v.end());
+    return v[n];
+  }
 
   inline uint32_t
   infixStart(EdlibAlignResult const& cigar) {
@@ -461,11 +468,12 @@ namespace torali
   }
 
   inline std::size_t hash_sr(bam1_t* rec) {
-    boost::hash<std::string> string_hash;
-    std::string qname = bam_get_qname(rec);
-    std::size_t seed = hash_string(qname.c_str());
-    boost::hash_combine(seed, string_hash(qname));
-    if ((rec->core.flag & BAM_FREAD1) && (seed > 0))  --seed;
+    const char* q = bam_get_qname(rec);
+    std::size_t seed = hash_string(q);
+    std::string_view qn(q);
+    std::size_t prehash = boost::hash_range(qn.begin(), qn.end());
+    boost::hash_combine(seed, prehash);
+    if ((rec->core.flag & BAM_FREAD1) && (seed > 0)) --seed;
     return seed;
   }
 
@@ -738,10 +746,12 @@ namespace torali
       typedef std::vector<uint32_t> TSizeVector;
       TSizeVector vecISize;
       TSizeVector readSize;
+      readSize.reserve(minNumAlignments);
+      vecISize.reserve(minNumAlignments);
 
       // Collect insert sizes
       bool libCharacterized = false;
-      for(uint32_t refIndex=0; refIndex < (uint32_t) hdr[0]->n_targets; ++refIndex) {
+      for(uint32_t refIndex=0; refIndex < (uint32_t) hdr[file_c]->n_targets; ++refIndex) {
 	if (validRegions[refIndex].empty()) continue;
 	for(typename TChrIntervals::const_iterator vRIt = validRegions[refIndex].begin(); ((vRIt != validRegions[refIndex].end()) && (!libCharacterized)); ++vRIt) {
 	  hts_itr_t* iter = sam_itr_queryi(idx[file_c], refIndex, vRIt->lower(), vRIt->upper());
