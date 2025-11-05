@@ -259,8 +259,7 @@ namespace torali {
   {
     typedef typename TSpanMap::value_type::value_type TSpanPair;
     typedef typename TCountMap::value_type::value_type TCountPair;
-    //uint32_t batchSize = 4096;
-    uint32_t batchSize = 32768;
+    uint32_t batchSize = 32768 * c.maxThreads;
 
     // Open file handles
     typedef std::vector<samFile*> TSamFile;
