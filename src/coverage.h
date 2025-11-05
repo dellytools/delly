@@ -10,6 +10,15 @@
 #include <boost/iostreams/filter/zlib.hpp>
 #include <boost/iostreams/filter/gzip.hpp>
 
+#include <thread>
+#include <mutex>
+#include <future>
+#include <queue>
+#include <functional>
+#include <condition_variable>
+#include <unordered_map>
+#include <memory>
+
 #include <htslib/sam.h>
 
 #include "tags.h"
@@ -48,7 +57,7 @@ namespace torali {
     
     BpRegion() : regionStart(0), regionEnd(0), bppos(0), homLeft(0), homRight(0), svt(0), id(0), bpPoint(0) {}
     explicit BpRegion(int32_t bp) : regionStart(0), regionEnd(0), bppos(bp), homLeft(0), homRight(0), svt(0), id(0), bpPoint(0) {}
-  BpRegion(int32_t rs, int32_t re, int32_t bpos, int32_t hl, int32_t hr, int32_t s, uint32_t identifier, uint8_t bpp) : regionStart(rs), regionEnd(re), bppos(bpos), homLeft(hl), homRight(hr), svt(s), id(identifier), bpPoint(bpp) {}
+    BpRegion(int32_t rs, int32_t re, int32_t bpos, int32_t hl, int32_t hr, int32_t s, uint32_t identifier, uint8_t bpp) : regionStart(rs), regionEnd(re), bppos(bpos), homLeft(hl), homRight(hr), svt(s), id(identifier), bpPoint(bpp) {}
 
     bool operator<(const BpRegion& s2) const {
       return (bppos < s2.bppos);
@@ -66,6 +75,25 @@ namespace torali {
     std::vector<uint8_t> alt;
   };
 
+  struct AlignJob {
+    std::string consProbe;
+    std::string refProbe;
+    std::string sequence;
+    uint32_t fileIndex;
+    uint32_t svId;
+    uint8_t qual;
+
+    AlignJob(std::string const& cons, std::string const& ref, std::string const& seq, uint32_t const f, uint32_t const s, uint8_t const q) : consProbe(cons), refProbe(ref), sequence(seq), fileIndex(f), svId(s), qual(q) {}
+  };
+
+  struct AlignResult {
+    uint32_t fileIndex;
+    uint32_t svId;
+    char type; // 'R' ref, 'A' alt, 'N' none
+    uint8_t qual;
+
+    AlignResult() : fileIndex(0), svId(0), type('N'), qual(0) {}
+  };
 
   template<typename TConfig>
   inline double
@@ -231,7 +259,9 @@ namespace torali {
   {
     typedef typename TSpanMap::value_type::value_type TSpanPair;
     typedef typename TCountMap::value_type::value_type TCountPair;
-  
+    //uint32_t batchSize = 4096;
+    uint32_t batchSize = 32768;
+
     // Open file handles
     typedef std::vector<samFile*> TSamFile;
     typedef std::vector<hts_idx_t*> TIndex;
@@ -286,7 +316,6 @@ namespace torali {
     boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
     std::cerr << '[' << boost::posix_time::to_simple_string(now) << "] " << "SV annotation" << std::endl;
 
-    
     typedef std::vector<uint32_t> TRefAlignCount;
     typedef std::vector<TRefAlignCount> TFileRefAlignCount;
     TFileRefAlignCount refAlignedReadCount(c.files.size(), TRefAlignCount());
@@ -295,7 +324,7 @@ namespace torali {
       refAlignedReadCount[file_c].resize(svs.size(), 0);
       refAlignedSpanCount[file_c].resize(svs.size(), 0);
     }
-    
+
     // Dump file
     boost::iostreams::filtering_ostream dumpOut;
     if (c.hasDumpFile) {
@@ -304,6 +333,8 @@ namespace torali {
       dumpOut << "#svid\tbam\tqname\tchr\tpos\tmatechr\tmatepos\tmapq\ttype" << std::endl;
     }
 
+    // Thread pool for alignments
+    ThreadPool pool(c.maxThreads);
     for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
       // Pair qualities and features
       typedef boost::unordered_map<std::size_t, uint8_t> TQualities;
@@ -369,6 +400,54 @@ namespace torali {
 	bam1_t* rec = bam_init1();
 	int32_t lastAlignedPos = 0;
 	std::set<std::size_t> lastAlignedPosReads;
+
+	// Job processing for multi-threading
+	std::vector<AlignJob> jobBuf;
+	jobBuf.reserve(batchSize);
+	auto process_batch = [&](std::vector<AlignJob> &jobs) {
+	  if (jobs.empty()) return;
+	  const size_t J = jobs.size();
+	  std::vector<AlignResult> results(J, AlignResult());
+	  std::vector<std::future<void>> futures;
+	  futures.reserve(c.maxThreads);
+	  for (unsigned int t = 0; t < c.maxThreads; ++t) {
+	    size_t start = (J * t) / c.maxThreads;
+	    size_t end = (J * (t + 1)) / c.maxThreads;
+	    if (start >= end) continue;
+	    futures.emplace_back(pool.enqueue([start, end, &jobs, &results, &c]() {
+	      for (size_t i = start; i < end; ++i) {
+		AlignJob &job = jobs[i];
+		double scoreAlt = _editDistanceHW(c, job.consProbe, job.sequence);
+		double scoreRef = _editDistanceHW(c, job.refProbe, job.sequence);
+		if ((scoreRef > 0.7) || (scoreAlt > 0.7)) {
+		  results[i].svId = job.svId;
+		  results[i].fileIndex = job.fileIndex;
+		  if (scoreRef > scoreAlt) {
+		    results[i].type = 'R';
+		    results[i].qual = (uint8_t) std::min(255, std::min((int) (scoreRef * 35), (int) job.qual));
+		  } else {
+		    results[i].type = 'A';
+		    results[i].qual = (uint8_t) std::min(255, std::min((int) (scoreAlt * 35), (int) job.qual));
+		  }
+		}
+	      }
+	    }));
+	  }
+	  for (auto &f : futures) f.get();
+	  // Merge results
+	  for (size_t i = 0; i < J; ++i) {
+	    AlignResult &ar = results[i];
+	    if (ar.type == 'N') continue;
+	    if ((countMap[ar.fileIndex][ar.svId].ref.size() + countMap[ar.fileIndex][ar.svId].alt.size()) >= c.maxGenoReadCount) continue;
+	    if (ar.type == 'A') countMap[ar.fileIndex][ar.svId].alt.push_back(ar.qual);
+	    else if (ar.type == 'R') {
+	      if (++refAlignedReadCount[ar.fileIndex][ar.svId] % 2) {
+		countMap[ar.fileIndex][ar.svId].ref.push_back(ar.qual);
+	      }
+	    }
+	  }
+	};
+
 	while (sam_itr_next(samfile[file_c], iter, rec) >= 0) {
 	  if (rec->core.flag & (BAM_FSECONDARY | BAM_FQCFAIL | BAM_FDUP | BAM_FSUPPLEMENTARY | BAM_FUNMAP | BAM_FMUNMAP)) continue;
 	  if (rec->core.qual < c.minGenoQual) continue;
@@ -421,8 +500,8 @@ namespace torali {
 		if ((countMap[file_c][itBp->id].ref.size() + countMap[file_c][itBp->id].alt.size()) >= c.maxGenoReadCount) continue;
 		// Read spans breakpoint?
 		if ((hasSoftClip) || ((!hasClip) && (rec->core.pos + c.minimumFlankSize + itBp->homLeft <= itBp->bppos) &&  (rec->core.pos + rec->core.l_qseq >= itBp->bppos + c.minimumFlankSize + itBp->homRight))) {
-		  auto& consProbe = consProbeArr[itBp->bpPoint][itBp->id];
-		  auto& refProbe = refProbeArr[itBp->bpPoint][itBp->id];
+		  std::string consProbe = consProbeArr[itBp->bpPoint][itBp->id];
+		  std::string refProbe = refProbeArr[itBp->bpPoint][itBp->id];
 		  
 		  // Get sequence
 		  std::string sequence;
@@ -430,8 +509,8 @@ namespace torali {
 		  const uint8_t* seqptr = bam_get_seq(rec);
 		  for (int i = 0; i < rec->core.l_qseq; ++i) sequence[i] = "=ACMGRSVTWYHKDBN"[bam_seqi(seqptr, i)];
 		  _adjustOrientation(sequence, itBp->bpPoint, itBp->svt);
-		
-		  // Compute alignment to alternative haplotype
+
+		  // No multi-threading
 		  if (c.hasDumpFile) {
 		    double scoreAlt = _editDistanceHW(c, consProbe, sequence);
 		    double scoreRef = _editDistanceHW(c, refProbe, sequence);
@@ -452,17 +531,11 @@ namespace torali {
 		      }
 		    }
 		  } else {
-		    double scoreAlt = _editDistanceHW(c, consProbe, sequence);
-		    double scoreRef = _editDistanceHW(c, refProbe, sequence);
-		    if ((scoreRef > 0.7) || (scoreAlt > 0.7)) {
-		      if (scoreRef > scoreAlt) {
-			// Account for reference bias
-			if (++refAlignedReadCount[file_c][itBp->id] % 2) {
-			  countMap[file_c][itBp->id].ref.push_back((uint8_t) std::min(255, std::min((int) (scoreRef * 35), (int) rec->core.qual)));
-			}
-		      } else {
-			countMap[file_c][itBp->id].alt.push_back((uint8_t) std::min(255, std::min((int) (scoreAlt * 35), (int) rec->core.qual)));
-		      }
+		    // Multi-threading
+		    jobBuf.push_back(AlignJob(consProbe, refProbe, sequence, file_c, itBp->id, rec->core.qual));
+		    if (jobBuf.size() >= batchSize) {
+		      process_batch(jobBuf);
+		      jobBuf.clear();
 		    }
 		  }
 		}
@@ -596,6 +669,12 @@ namespace torali {
 	    }
 	  }
 	}
+	// After finishing reading this interval, flush any remaining jobs
+	if (!jobBuf.empty()) {
+	  process_batch(jobBuf);
+	  jobBuf.clear();
+	}
+
 	// Clean-up
 	bam_destroy1(rec);
 	hts_itr_destroy(iter);

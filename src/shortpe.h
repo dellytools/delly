@@ -190,8 +190,8 @@ namespace torali
 	      std::sort(qualStore[svid].begin(), qualStore[svid].end());
 	      svs[svid].mapq = 0;
 	      for(uint32_t i = 0; i < qualStore[svid].size(); ++i) svs[svid].mapq += qualStore[svid][i];
-	    svs[svid].srSupport = seqStore[svid].size();
-	    svs[svid].srMapQuality = qualStore[svid][qualStore[svid].size()/2];
+	      svs[svid].srSupport = seqStore[svid].size();
+	      svs[svid].srMapQuality = qualStore[svid][qualStore[svid].size()/2];
 	    }
 	  }
 	}));
