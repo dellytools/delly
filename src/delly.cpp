@@ -6,10 +6,6 @@
 #define BOOST_DISABLE_ASSERTS
 #define BOOST_UUID_RANDOM_PROVIDER_FORCE_POSIX
 
-#ifdef OPENMP
-#include <omp.h>
-#endif
-
 #ifdef PROFILE
 #include "gperftools/profiler.h"
 #endif

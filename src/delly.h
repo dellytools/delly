@@ -207,7 +207,7 @@ namespace torali
       ("genome,g", boost::program_options::value<boost::filesystem::path>(&c.genome), "genome fasta file")
       ("exclude,x", boost::program_options::value<boost::filesystem::path>(&c.exclude), "file with regions to exclude")
       ("outfile,o", boost::program_options::value<boost::filesystem::path>(&c.outfile), "BCF output file")
-      ("threads,h", boost::program_options::value<uint32_t>(&c.maxThreads)->default_value(8), "number of threads")
+      ("threads,h", boost::program_options::value<uint32_t>(&c.maxThreads)->default_value(4), "number of threads")
       ;
     
     boost::program_options::options_description disc("Discovery options");
