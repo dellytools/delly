@@ -27,19 +27,6 @@ Delly is available as a [statically linked binary](https://github.com/dellytools
 There is a Delly discussion group [delly-users](http://groups.google.com/d/forum/delly-users) for usage and installation questions.
 
 
-# Delly multi-threading mode
-
-Delly supports parallel computing using the OpenMP API (www.openmp.org).
-
-`make PARALLEL=1 src/delly`
-
-You can set the number of threads using the environment variable OMP_NUM_THREADS.
-
-`export OMP_NUM_THREADS=2`
-
-Delly primarily parallelizes on the sample level. Hence, OMP_NUM_THREADS should be always smaller or equal to the number of input samples. 
-
-
 # Running Delly
 
 Delly needs a sorted, indexed and duplicate marked bam file for every input sample.
