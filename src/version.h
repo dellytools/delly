@@ -5,7 +5,7 @@ namespace torali
 {
 
 
-  std::string dellyVersionNumber = "1.7.1";
+  std::string dellyVersionNumber = "1.7.2";
 
   inline 
     void printTitle(std::string const& title) 
