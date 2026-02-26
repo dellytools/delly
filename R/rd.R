@@ -37,6 +37,7 @@ if (length(args)>1) {
  cnaData = CNA(x$logratio, maploc=x$pos, chrom=x$chr, sampleid="Sample", presorted=T)
  cnaSegments = segment(smooth.CNA(cnaData), undo.splits="sdundo", undo.SD=sdUNDO)
  seg = data.frame(segments.summary(cnaSegments))
+ write.table(seg, file="segmentation.tsv", sep="\t", quote=FALSE, row.names=FALSE)
  colnames(seg) = c("ID", "chr", "start", "end", "num.mark", "seg.mean", "seg.sd", "seg.median", "seg.mad")
  seg$cn = 2^seg$seg.median * baseCN
  seg$chr = factor(seg$chr, levels=chrs)

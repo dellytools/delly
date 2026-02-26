@@ -1,5 +1,5 @@
 # Build image
-BootStrap: library
+BootStrap: docker
 From: ubuntu:22.04
 Stage: build
 
@@ -16,7 +16,7 @@ Stage: build
 
 
 # Final image
-BootStrap: library
+BootStrap: docker
 From: alpine:latest
 Stage: final
 

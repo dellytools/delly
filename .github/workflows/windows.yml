@@ -1,0 +1,78 @@
+name: Windows CI
+
+on:
+  release:
+    types: [published]
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: 'recursive'
+
+    - name: Setup MSYS2
+      uses: msys2/setup-msys2@v2
+      with:
+        msystem: MINGW64
+        update: true
+        install: >-
+          mingw-w64-x86_64-toolchain
+          mingw-w64-x86_64-boost
+          mingw-w64-x86_64-xz
+          mingw-w64-x86_64-curl
+          mingw-w64-x86_64-zlib
+          mingw-w64-x86_64-bzip2
+          autoconf
+          automake
+          libtool
+          pkg-config
+          mingw-w64-x86_64-cmake
+          mingw-w64-x86_64-libdeflate
+          mingw-w64-x86_64-libtre
+          mingw-w64-x86_64-libsystre
+          mingw-w64-x86_64-gettext
+          make
+          git
+
+    - name: Build delly
+      shell: msys2 {0}
+      run: |
+        set -euo pipefail
+        sed -i 's/^CXXFLAGS += /CXXFLAGS += -DWIN32_LEAN_AND_MEAN -D_WIN32_WINNT=0x0601 -Wno-use-after-free /' Makefile
+        sed -i 's/-lboost_iostreams/-lboost_iostreams-mt/g' Makefile
+        sed -i 's/-lboost_filesystem/-lboost_filesystem-mt/g' Makefile
+        sed -i 's/-lboost_program_options/-lboost_program_options-mt/g' Makefile
+        sed -i 's/-lboost_date_time/-lboost_date_time-mt/g' Makefile
+        sed -i 's/-ldeflate/-ldeflate -lws2_32 -lregex -ltre -lintl -liconv -lbcrypt/g' Makefile
+        make STATIC=1 CXX=g++
+
+    - name: Rename executable logic
+      shell: bash
+      run: |
+        VERSION="${{ github.event.release.tag_name }}"
+        if [ -z "$VERSION" ]; then
+          VERSION="snapshot"
+        fi
+        OUTPUT_NAME="delly-${VERSION}-windows-amd64.exe"
+        mv src/delly.exe "$OUTPUT_NAME"
+        echo "OUTPUT_NAME=$OUTPUT_NAME" >> "$GITHUB_ENV"
+
+    - name: Verify executable exists
+      shell: bash
+      run: |
+        test -f "$OUTPUT_NAME"
+
+    - name: Upload portable executable to release
+      if: github.event_name == 'release'
+      uses: softprops/action-gh-release@v1
+      with:
+        files: ${{ env.OUTPUT_NAME }}
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

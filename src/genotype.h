@@ -127,7 +127,7 @@ namespace torali
     boost::iostreams::filtering_ostream dumpOut;
     if (c.hasDumpFile) {
       dumpOut.push(boost::iostreams::gzip_compressor());
-      dumpOut.push(boost::iostreams::file_sink(c.dumpfile.string().c_str(), std::ios_base::out | std::ios_base::binary));
+      dumpOut.push(boost::iostreams::file_sink(c.dumpfile.string(), std::ios_base::out | std::ios_base::binary));
       dumpOut << "#svid\tbam\tqname\tchr\tpos\tmapq\ttype" << std::endl;
     }
 

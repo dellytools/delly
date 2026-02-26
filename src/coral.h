@@ -100,7 +100,7 @@ namespace torali
     boost::iostreams::filtering_ostream dataOut;
     if (!c.covfile.empty()) {
       dataOut.push(boost::iostreams::gzip_compressor());
-      dataOut.push(boost::iostreams::file_sink(c.covfile.c_str(), std::ios_base::out | std::ios_base::binary));
+      dataOut.push(boost::iostreams::file_sink(c.covfile.string(), std::ios_base::out | std::ios_base::binary));
       dataOut << "chr\tstart\tend\t" << c.sampleName << "_mappable\t" << c.sampleName << "_logR\t" << c.sampleName << "_CN" << std::endl;
     }
 
@@ -792,7 +792,7 @@ namespace torali
 	// Open stats file
 	boost::iostreams::filtering_ostream statsOut;
 	statsOut.push(boost::iostreams::gzip_compressor());
-	statsOut.push(boost::iostreams::file_sink(c.statsFile.string().c_str(), std::ios_base::out | std::ios_base::binary));
+	statsOut.push(boost::iostreams::file_sink(c.statsFile.string(), std::ios_base::out | std::ios_base::binary));
 	
 	// Library Info
 	statsOut << "LP\t" << li.rs << ',' << li.median << ',' << li.mad << ',' << li.minNormalISize << ',' << li.maxNormalISize << std::endl;
