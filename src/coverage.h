@@ -75,6 +75,13 @@ namespace torali {
   struct JunctionCount {
     std::vector<uint8_t> ref;
     std::vector<uint8_t> alt;
+    std::vector<uint8_t> hp1ref;
+    std::vector<uint8_t> hp1alt;
+    std::vector<uint8_t> hp2ref;
+    std::vector<uint8_t> hp2alt;
+    int32_t ps;  // -1 unphased
+
+    JunctionCount() : ps(-1) {}
   };
 
   struct AlignJob {

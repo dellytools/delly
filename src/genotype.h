@@ -206,6 +206,15 @@ namespace torali
 	  }
 
 	  // Genotype SVs
+	  // Read HP (haplotype) and PS (phase set) tags once per read
+	  uint8_t hp = 0;
+	  int32_t ps = -1;
+	  {
+	    uint8_t* hpTag = bam_aux_get(rec, "HP");
+	    if (hpTag) hp = (uint8_t) bam_aux2i(hpTag);
+	    uint8_t* psTag = bam_aux_get(rec, "PS");
+	    if (psTag) ps = bam_aux2i(psTag);
+	  }
 	  std::string sequence;
 	  for(typename TSVSet::const_iterator it = process.begin(); it != process.end(); ++it) {
 	    int32_t svid = *it;
@@ -237,7 +246,7 @@ namespace torali
 	      // Breakpoint should be in the middle so flanking sequences do not bias edit distance
 	      int32_t offset = std::min(std::min(rStartOffset, cStartOffset), std::min(rEndOffset, cEndOffset));
 	      if (offset < c.minimumFlankSize) continue;
-	      if (2 * offset < c.minConsWindow) continue;
+	      if (!_translocation(svs[svid].svt) && (2 * offset < c.minConsWindow)) continue;
 
 	      // Load sequence
 	      if (sequence.empty()) {
@@ -277,26 +286,22 @@ namespace torali
 	    //std::cerr << bam_get_qname(rec) << "," << (int) (rec->core.flag & BAM_FREVERSE) << "," << hdr[file_c]->target_name[refIndex] << ":" << svs[svid].svStart << "-" << svs[svid].svEnd << "(" << svs[svid].svt << ")" << scoreAlt << ',' << scoreRef << std::endl;
 
 	    // Any confident alignment?
-	    if ((scoreRef > 0.8) || (scoreAlt > 0.8)) {
+	    if ((scoreRef > 0.6) || (scoreAlt > 0.6)) {
 	      if (scoreRef > scoreAlt) {
 		// Account for reference bias
 		if (++refAlignedReadCount[file_c][svid] % 2) {
-		  //TQuality quality;
-		  //quality.resize(rec->core.l_qseq);
-		  //uint8_t* qualptr = bam_get_qual(rec);
-		  //for (int i = 0; i < rec->core.l_qseq; ++i) quality[i] = qualptr[i];
 		  uint32_t rq = scoreRef * 35;
 		  if (rq >= c.minGenoQual) {
-		    jctMap[file_c][svid].ref.push_back((uint8_t) std::min(rq, (uint32_t) rec->core.qual));
+		    uint8_t qual = (uint8_t) std::min(rq, (uint32_t) rec->core.qual);
+		    jctMap[file_c][svid].ref.push_back(qual);
+		    if (hp == 1) jctMap[file_c][svid].hp1ref.push_back(qual);
+		    else if (hp == 2) jctMap[file_c][svid].hp2ref.push_back(qual);
 		  }
 		}
 	      } else {
-		//TQuality quality;
-		//quality.resize(rec->core.l_qseq);
-		//uint8_t* qualptr = bam_get_qual(rec);
-		//for (int i = 0; i < rec->core.l_qseq; ++i) quality[i] = qualptr[i];
 		uint32_t aq = scoreAlt * 35;
 		if (aq >= c.minGenoQual) {
+		  uint8_t qual = (uint8_t) std::min(aq, (uint32_t) rec->core.qual);
 		  if (c.hasDumpFile) {
 		    std::string svidStr(_addID(svs[svid].svt));
 		    std::string padNumber = boost::lexical_cast<std::string>(svid);
@@ -304,7 +309,10 @@ namespace torali
 		    svidStr += padNumber;
 		    dumpOut << svidStr << "\t" << c.files[file_c].string() << "\t" << bam_get_qname(rec) << "\t" << hdr[file_c]->target_name[rec->core.tid] << "\t" << rec->core.pos << "\t" << (int32_t) rec->core.qual << "\tSR" << std::endl;
 		  }
-		  jctMap[file_c][svid].alt.push_back((uint8_t) std::min(aq, (uint32_t) rec->core.qual));
+		  jctMap[file_c][svid].alt.push_back(qual);
+		  if (hp == 1) jctMap[file_c][svid].hp1alt.push_back(qual);
+		  else if (hp == 2) jctMap[file_c][svid].hp2alt.push_back(qual);
+		  if ((hp > 0) && (ps >= 0) && (jctMap[file_c][svid].ps < 0)) jctMap[file_c][svid].ps = ps;
 		}
 	      }
 	    }

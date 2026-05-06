@@ -46,6 +46,14 @@ namespace torali
       if (jcvec[i].rstart != -1) return jcvec[i].rstart;
     }
     return -1;
+  }
+
+  inline int32_t
+  _selectPrimaryChr(std::vector<Junction> const& jcvec) {
+    for(uint32_t i = 0; i < jcvec.size(); ++i) {
+      if (jcvec[i].rstart != -1) return jcvec[i].refidx;
+    }
+    return -1;
   }  
   
   // Deletion junctions
@@ -221,6 +229,7 @@ namespace torali
     for(typename TReadBp::const_iterator it = readBp.begin(); it != readBp.end(); ++it) {
       if (it->second.size() > 1) {
 	int32_t rst = _selectReadStart(it->second);
+	int32_t primaryChr = _selectPrimaryChr(it->second);
 	for(uint32_t i = 0; i < it->second.size(); ++i) {
 	  for(uint32_t j = i+1; j < it->second.size(); ++j) {
 	    if ((uint32_t) (it->second[j].seqpos - it->second[i].seqpos) > c.maxReadSep) break;
@@ -237,23 +246,27 @@ namespace torali
 	      if (it->second[chr1ev].forward == it->second[chr2ev].forward) {
 		// Same direction, opposing soft-clips
 		if (it->second[chr1ev].scleft != it->second[chr2ev].scleft) {
+		  SRBamRecord rec(it->second[chr2ev].refidx, it->second[chr2ev].refpos, it->second[chr1ev].refidx, it->second[chr1ev].refpos, rst, std::min(it->second[j].seqpos, it->second[i].seqpos), qval, std::abs(it->second[j].seqpos - it->second[i].seqpos), it->first);
+		  rec.primaryChr = primaryChr;
 		  if (it->second[chr1ev].scleft) {
 		    // 3to5
-		    br[DELLY_SVT_TRANS + 2].push_back(SRBamRecord(it->second[chr2ev].refidx, it->second[chr2ev].refpos, it->second[chr1ev].refidx, it->second[chr1ev].refpos, rst, std::min(it->second[j].seqpos, it->second[i].seqpos), qval, std::abs(it->second[j].seqpos - it->second[i].seqpos), it->first));
+		    br[DELLY_SVT_TRANS + 2].push_back(rec);
 		  } else {
 		    // 5to3
-		    br[DELLY_SVT_TRANS + 3].push_back(SRBamRecord(it->second[chr2ev].refidx, it->second[chr2ev].refpos, it->second[chr1ev].refidx, it->second[chr1ev].refpos, rst, std::min(it->second[j].seqpos, it->second[i].seqpos), qval, std::abs(it->second[j].seqpos - it->second[i].seqpos), it->first));
+		    br[DELLY_SVT_TRANS + 3].push_back(rec);
 		  }
 		}
 	      } else {
 		// Opposing direction, same soft-clips
 		if (it->second[chr1ev].scleft == it->second[chr2ev].scleft) {
+		  SRBamRecord rec(it->second[chr2ev].refidx, it->second[chr2ev].refpos, it->second[chr1ev].refidx, it->second[chr1ev].refpos, rst, std::min(it->second[j].seqpos, it->second[i].seqpos), qval, std::abs(it->second[j].seqpos - it->second[i].seqpos), it->first);
+		  rec.primaryChr = primaryChr;
 		  if (it->second[chr1ev].scleft) {
 		    // 5to5
-		    br[DELLY_SVT_TRANS + 1].push_back(SRBamRecord(it->second[chr2ev].refidx, it->second[chr2ev].refpos, it->second[chr1ev].refidx, it->second[chr1ev].refpos, rst, std::min(it->second[j].seqpos, it->second[i].seqpos), qval, std::abs(it->second[j].seqpos - it->second[i].seqpos), it->first));
+		    br[DELLY_SVT_TRANS + 1].push_back(rec);
 		  } else {
 		    // 3to3
-		    br[DELLY_SVT_TRANS + 0].push_back(SRBamRecord(it->second[chr2ev].refidx, it->second[chr2ev].refpos, it->second[chr1ev].refidx, it->second[chr1ev].refpos, rst, std::min(it->second[j].seqpos, it->second[i].seqpos), qval, std::abs(it->second[j].seqpos - it->second[i].seqpos), it->first));
+		    br[DELLY_SVT_TRANS + 0].push_back(rec);
 		  }
 		}
 	      }
@@ -597,16 +610,10 @@ namespace torali
       for(uint32_t i = 0; i < srBR[svt].size(); ++i) {
 	// Read assigned?
 	if ((srBR[svt][i].svid != -1) && (srBR[svt][i].rstart != -1)) {
-	  if (srBR[svt][i].rstart < (int32_t) hdr->target_len[srBR[svt][i].chr]) {
-	    if (srStore[srBR[svt][i].chr].find(std::make_pair(srBR[svt][i].rstart, srBR[svt][i].id)) == srStore[srBR[svt][i].chr].end()) srStore[srBR[svt][i].chr].insert(std::make_pair(std::make_pair(srBR[svt][i].rstart, srBR[svt][i].id), std::vector<SeqSlice>()));
-	    srStore[srBR[svt][i].chr][std::make_pair(srBR[svt][i].rstart, srBR[svt][i].id)].push_back(SeqSlice(srBR[svt][i].svid, srBR[svt][i].sstart, srBR[svt][i].inslen, srBR[svt][i].qual));
-	  }
-	  if (srBR[svt][i].chr != srBR[svt][i].chr2) {
-	    // Unclear which chr was primary alignment so insert both if and only if rstart < reference length
-	    if (srBR[svt][i].rstart < (int32_t) hdr->target_len[srBR[svt][i].chr2]) {
-	      if (srStore[srBR[svt][i].chr2].find(std::make_pair(srBR[svt][i].rstart, srBR[svt][i].id)) == srStore[srBR[svt][i].chr2].end()) srStore[srBR[svt][i].chr2].insert(std::make_pair(std::make_pair(srBR[svt][i].rstart, srBR[svt][i].id), std::vector<SeqSlice>()));
-	      srStore[srBR[svt][i].chr2][std::make_pair(srBR[svt][i].rstart, srBR[svt][i].id)].push_back(SeqSlice(srBR[svt][i].svid, srBR[svt][i].sstart, srBR[svt][i].inslen, srBR[svt][i].qual));
-	    }
+	  int32_t insertChr = (srBR[svt][i].primaryChr != -1) ? srBR[svt][i].primaryChr : srBR[svt][i].chr;
+	  if (srBR[svt][i].rstart < (int32_t) hdr->target_len[insertChr]) {
+	    if (srStore[insertChr].find(std::make_pair(srBR[svt][i].rstart, srBR[svt][i].id)) == srStore[insertChr].end()) srStore[insertChr].insert(std::make_pair(std::make_pair(srBR[svt][i].rstart, srBR[svt][i].id), std::vector<SeqSlice>()));
+	    srStore[insertChr][std::make_pair(srBR[svt][i].rstart, srBR[svt][i].id)].push_back(SeqSlice(srBR[svt][i].svid, srBR[svt][i].sstart, srBR[svt][i].inslen, srBR[svt][i].qual));
 	  }
 	}
       }

@@ -365,6 +365,21 @@ namespace torali
   }
   
     
+  // Select the best-spanning reads
+  template<typename TSequences, typename TScores>
+  inline void
+  selectBestReads(TSequences& seqs, TScores& scores, int32_t maxReads) {
+    if ((int32_t)seqs.size() <= maxReads) return;
+    std::vector<uint32_t> idx(seqs.size());
+    std::iota(idx.begin(), idx.end(), 0);
+    std::sort(idx.begin(), idx.end(), [&](uint32_t a, uint32_t b) { return scores[a] > scores[b]; });
+    TSequences sel;
+    sel.reserve(maxReads);
+    for (int32_t k = 0; k < maxReads; ++k) sel.push_back(std::move(seqs[idx[k]]));
+    seqs = std::move(sel);
+    scores.clear();
+  }
+
   template<typename TConfig, typename TSplitReadSet>
   inline int
   msaEdlib(TConfig const& c, TSplitReadSet& sps, std::string& cs) {
@@ -395,20 +410,11 @@ namespace torali
     // Align to best sequence
     std::vector<std::pair<int32_t, int32_t> > qscores;
     qscores.push_back(std::make_pair(0, bestIdx));
-    std::string revc = sps[bestIdx];
-    reverseComplement(revc);
     for(uint32_t j = 0; j < sps.size(); ++j) {
-      if (j != bestIdx) {
-	EdlibAlignResult align = edlibAlign(revc.c_str(), revc.size(), sps[j].c_str(), sps[j].size(), edlibNewAlignConfig(-1, EDLIB_MODE_NW, EDLIB_TASK_DISTANCE, NULL, 0));
-	if (align.editDistance < edit[bestIdx * sps.size() + j]) {
-	  reverseComplement(sps[j]);
-	  qscores.push_back(std::make_pair(align.editDistance, j));
-	} else qscores.push_back(std::make_pair(edit[bestIdx * sps.size() + j], j));
-	edlibFreeAlignResult(align);
-      }
+      if (j != bestIdx) qscores.push_back(std::make_pair(edit[bestIdx * sps.size() + j], j));
     }
     std::sort(qscores.begin(), qscores.end());
-    
+
     // Drop poorest 20% and order by centroid
     std::vector<uint32_t> selectedIdx;
     uint32_t lastIdx = (uint32_t) (0.8 * qscores.size());
@@ -588,35 +594,8 @@ namespace torali
     // Align to best sequence
     std::vector<std::pair<int32_t, int32_t> > qscores;
     qscores.push_back(std::make_pair(0, bestIdx));
-    std::string revc = sps[bestIdx];
-    reverseComplement(revc);
-    uint32_t lenI = revc.size();
-    fillKmerTable(revc, kmerHitI);
     for(uint32_t j = 0; j < sps.size(); ++j) {
-      if (j != bestIdx) {
-	uint32_t lenJ = sps[j].size();
-	fillKmerTable(sps[j], kmerHitJ);
-	int32_t bestDiag = bestDiagonal(kmerHitI, kmerHitJ, lenI, lenJ);
-	std::string seqI;
-	std::string seqJ;
-	if (bestDiag >= 0) {
-	  uint32_t seqlen = std::min(lenI - bestDiag, lenJ);
-	  seqI = revc.substr(bestDiag, seqlen);
-	  seqJ = sps[j].substr(0, seqlen);
-	} else {
-	  uint32_t seqlen = std::min(lenJ + bestDiag, lenI);
-	  seqI = revc.substr(0, seqlen);
-	  seqJ = sps[j].substr(-1 * bestDiag, seqlen);
-	}
-	// Compute edit distance
-	EdlibAlignResult align = edlibAlign(seqI.c_str(), seqI.size(), seqJ.c_str(), seqJ.size(), edlibNewAlignConfig(-1, EDLIB_MODE_NW, EDLIB_TASK_DISTANCE, NULL, 0));
-	int32_t score = (align.editDistance * 1000) / std::max(seqI.size(), seqJ.size());	
-	if (score < edit[bestIdx * sps.size() + j]) {
-	  reverseComplement(sps[j]);
-	  qscores.push_back(std::make_pair(score, j));
-	} else qscores.push_back(std::make_pair(edit[bestIdx * sps.size() + j], j));
-	edlibFreeAlignResult(align);
-      }
+      if (j != bestIdx) qscores.push_back(std::make_pair(edit[bestIdx * sps.size() + j], j));
     }
     std::sort(qscores.begin(), qscores.end());
 
@@ -757,10 +736,14 @@ namespace torali
     assemble(TConfig const& c, TValidRegion const& validRegions, std::vector<StructuralVariantRecord>& svs, TSRStore& srStore) {
     typedef typename TSRStore::value_type TPosReadSV;
     
-    // Sequence store
+    // Sequence store and per-read balance scores
     typedef std::vector<std::string> TSequences;
     typedef std::vector<TSequences> TSVSequences;
     TSVSequences seqStore(svs.size(), TSequences());
+    typedef std::vector<int32_t> TScores;
+    typedef std::vector<TScores> TSVScores;
+    TSVScores scoreStore(svs.size(), TScores());
+    const int32_t maxCandidates = c.maxReadPerSV * 4;
 
     // SV consensus done
     std::vector<bool> svcons(svs.size(), false);
@@ -819,31 +802,39 @@ namespace torali
 	    for(uint32_t ri = 0; ri < srStore[refIndex][std::make_pair(rec->core.pos, seed)].size(); ++ri) {
 	      SeqSlice seqsl = srStore[refIndex][std::make_pair(rec->core.pos, seed)][ri];
 	      int32_t svid = seqsl.svid;
-	      if ((!svcons[svid]) && (seqStore[svid].size() < c.maxReadPerSV)) {
+	      if ((!svcons[svid]) && ((int32_t)seqStore[svid].size() < maxCandidates)) {
 		// Extract subsequence (otherwise MSA takes forever)
 		int32_t window = c.minConsWindow; // MSA should be larger
 		// Add breakpoint uncertainty
 		window += std::max(svs[svid].ciposhigh - svs[svid].ciposlow, svs[svid].ciendhigh - svs[svid].ciendlow);
 		window += seqsl.inslen;
-		int32_t sPos = seqsl.sstart - window;
-		int32_t ePos = seqsl.sstart + window;
-		if (rec->core.flag & BAM_FREVERSE) {
-		  sPos = (readlen - seqsl.sstart) - window;
-		  ePos = (readlen - seqsl.sstart) + window;
-		}
+		int32_t origCenter = (rec->core.flag & BAM_FREVERSE) ? (readlen - seqsl.sstart) : seqsl.sstart;
+		int32_t sPos = origCenter - window;
+		int32_t ePos = origCenter + window;
 		if (sPos < 0) sPos = 0;
 		if (ePos > (int32_t) readlen) ePos = readlen;
-		//std::cerr << bam_get_qname(rec) << ',' << sPos << ',' << ePos << ":" << window << "\t" << sequence.substr(sPos, (ePos - sPos)) << std::endl;
-		// Min. seq length and max insertion size, 10kbp?
 		if ((ePos - sPos) > window) {
-		  seqStore[svid].push_back(sequence.substr(sPos, (ePos - sPos)));
+		  int32_t anchorLen = origCenter - sPos;  // reference-side coverage
+		  int32_t svSideLen = ePos - origCenter;  // SV-side coverage
+		  std::string subseq = sequence.substr(sPos, (ePos - sPos));
+		  if (_translocation(svs[svid].svt)) {
+		    uint8_t ct = _getSpanOrientation(svs[svid].svt);
+		    if (ct == 0 && refIndex == svs[svid].chr2) reverseComplement(subseq);
+		    else if (ct == 1 && refIndex == svs[svid].chr) reverseComplement(subseq);
+		  } else if (svs[svid].svt == 0) {
+		    if (rec->core.pos > (svs[svid].svStart + svs[svid].svEnd) / 2) reverseComplement(subseq);
+		  } else if (svs[svid].svt == 1) {
+		    if (rec->core.flag & BAM_FREVERSE) reverseComplement(subseq);
+		  }
+		  seqStore[svid].push_back(std::move(subseq));
+		  scoreStore[svid].push_back(std::min(anchorLen, svSideLen));
 
 		  // Enough split-reads?
 		  if ((!_translocation(svs[svid].svt)) && (svs[svid].chr == refIndex)) {
-		    if ((seqStore[svid].size() == c.maxReadPerSV) || ((int32_t) seqStore[svid].size() == svs[svid].srSupport)) {
+		    if (((int32_t)seqStore[svid].size() == maxCandidates) || ((int32_t) seqStore[svid].size() == svs[svid].srSupport)) {
 		      bool msaSuccess = false;
 		      if (seqStore[svid].size() > 1) {
-			//std::cerr << svs[svid].svStart << ',' << svs[svid].svEnd << ',' << svs[svid].svt << ',' << svid << " SV" << std::endl;
+			selectBestReads(seqStore[svid], scoreStore[svid], c.maxReadPerSV);
 			if (svs[svid].svt != 4) {
 			  msaEdlib(c, seqStore[svid], svs[svid].consensus);
 			  // Take care of small inversions
@@ -876,6 +867,7 @@ namespace torali
 			svs[svid].srAlignQuality = 0;
 		      }
 		      seqStore[svid].clear();
+		      scoreStore[svid].clear();
 		      svcons[svid] = true;
 		    }
 		  }
@@ -909,7 +901,7 @@ namespace torali
 	      }
 	      if (computeMSA) {
 		bool msaSuccess = false;
-		//std::cerr << svs[svid].svStart << ',' << svs[svid].svEnd << ',' << svs[svid].svt << ',' << svid << " SV" << std::endl;
+		selectBestReads(seqStore[svid], scoreStore[svid], c.maxReadPerSV);
 		if (svs[svid].svt != 4) {
 		  msaEdlib(c, seqStore[svid], svs[svid].consensus);
 		  // Take care of small inversions
@@ -941,6 +933,7 @@ namespace torali
 		  svs[svid].srAlignQuality = 0;
 		}
 		seqStore[svid].clear();
+		scoreStore[svid].clear();
 		svcons[svid] = true;
 	      }
 	    }

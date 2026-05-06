@@ -239,11 +239,9 @@ vcfParse(TConfig const& c, bam_hdr_t* hd, std::vector<TStructuralVariantRecord>&
 
       // SV end assignment
       svRec.chr2 = tid;
-      svRec.svEnd = rec->pos + 2;
+      svRec.svEnd = rec->pos + 1;
       if (svRec.svt < DELLY_SVT_TRANS) {
-	// Intra-chromosomal SV
 	if (bcf_get_info_int32(hdr, rec, "END", &svend, &nsvend) > 0) svRec.svEnd = *svend;
-	svRec.svEnd += 1;
       } else {
 	// Inter-chromosomal SV
 	if (bcf_get_info_string(hdr, rec, "CHR2", &chr2, &nchr2) > 0) {
@@ -353,7 +351,7 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
   bcf_hdr_append(hdr, "##INFO=<ID=CONSBP,Number=1,Type=Integer,Description=\"Consensus SV breakpoint position\">");
   bcf_hdr_append(hdr, "##INFO=<ID=CE,Number=1,Type=Float,Description=\"Consensus sequence entropy\">");
   bcf_hdr_append(hdr, "##INFO=<ID=CT,Number=1,Type=String,Description=\"Paired-end signature induced connection type\">");
-  bcf_hdr_append(hdr, "##INFO=<ID=SVLEN,Number=1,Type=Integer,Description=\"Insertion length for SVTYPE=INS.\">");
+  bcf_hdr_append(hdr, "##INFO=<ID=SVLEN,Number=1,Type=Integer,Description=\"SV length; negative for DEL, positive for DUP/INV/INS.\">");
   bcf_hdr_append(hdr, "##INFO=<ID=IMPRECISE,Number=0,Type=Flag,Description=\"Imprecise structural variation\">");
   bcf_hdr_append(hdr, "##INFO=<ID=PRECISE,Number=0,Type=Flag,Description=\"Precise structural variation\">");
   bcf_hdr_append(hdr, "##INFO=<ID=SVTYPE,Number=1,Type=String,Description=\"Type of structural variant\">");
@@ -372,6 +370,8 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
   bcf_hdr_append(hdr, "##FORMAT=<ID=DV,Number=1,Type=Integer,Description=\"# high-quality variant pairs\">");
   bcf_hdr_append(hdr, "##FORMAT=<ID=RR,Number=1,Type=Integer,Description=\"# high-quality reference junction reads\">");
   bcf_hdr_append(hdr, "##FORMAT=<ID=RV,Number=1,Type=Integer,Description=\"# high-quality variant junction reads\">");
+  bcf_hdr_append(hdr, "##FORMAT=<ID=HP,Number=4,Type=Integer,Description=\"Haplotype-specific junction read counts (HP1_ref,HP1_alt,HP2_ref,HP2_alt)\">");
+  bcf_hdr_append(hdr, "##FORMAT=<ID=PS,Number=1,Type=Integer,Description=\"Phase set identifier from HP-tagged alignments\">");
 
   // Add reference
   std::string refloc("##reference=");
@@ -400,6 +400,8 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
     int32_t *rrcount = (int*) malloc(bcf_hdr_nsamples(hdr) * sizeof(int));
     int32_t *rvcount = (int*) malloc(bcf_hdr_nsamples(hdr) * sizeof(int));
     int32_t *gqval = (int*) malloc(bcf_hdr_nsamples(hdr) * sizeof(int));
+    int32_t *hpcount = (int*) malloc(bcf_hdr_nsamples(hdr) * 4 * sizeof(int));
+    int32_t *psarr = (int*) malloc(bcf_hdr_nsamples(hdr) * sizeof(int));
     std::vector<std::string> ftarr;
     ftarr.resize(bcf_hdr_nsamples(hdr));
     
@@ -432,9 +434,8 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
       int32_t svStartPos = svIter->svStart - 1;
       if (svStartPos < 1) svStartPos = 1;
       int32_t svEndPos = svIter->svEnd;
-      if (svIter->chr == svIter->chr2) --svEndPos; // To match VCF spec
       if (svEndPos < 1) svEndPos = 1;
-      if (svEndPos >= (int32_t) bamhd->target_len[svIter->chr2]) svEndPos = bamhd->target_len[svIter->chr2] - 1;
+      if (svEndPos > (int32_t) bamhd->target_len[svIter->chr2]) svEndPos = bamhd->target_len[svIter->chr2];
       rec->pos = svStartPos;
       std::string id(_addID(svIter->svt));
       std::string padNumber = boost::lexical_cast<std::string>(svIter->id);
@@ -457,7 +458,7 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
 	tmpi = svEndPos;
 	bcf_update_info_int32(hdr, rec, "END", &tmpi, 1);
       } else {
-	tmpi = svStartPos + 2;
+	tmpi = svStartPos + 1;
 	bcf_update_info_int32(hdr, rec, "END", &tmpi, 1);
 	bcf_update_info_string(hdr,rec, "CHR2", bamhd->target_name[svIter->chr2]);
 	tmpi = svEndPos;
@@ -465,6 +466,12 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
       }
       if (svIter->svt == 4) {
 	tmpi = svIter->insLen;
+	bcf_update_info_int32(hdr, rec, "SVLEN", &tmpi, 1);
+      } else if (svIter->svt == 2) {
+	tmpi = svIter->svStart - svIter->svEnd;
+	bcf_update_info_int32(hdr, rec, "SVLEN", &tmpi, 1);
+      } else if ((svIter->svt == 3) || (svIter->svt == 0) || (svIter->svt == 1)) {
+	tmpi = svIter->svEnd - svIter->svStart;
 	bcf_update_info_int32(hdr, rec, "SVLEN", &tmpi, 1);
       }
       tmpi = svIter->peSupport;
@@ -516,10 +523,32 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
 	dvcount[file_c] = spanCountMap[file_c][svIter->id].alt.size();
 	rrcount[file_c] = jctCountMap[file_c][svIter->id].ref.size();
 	rvcount[file_c] = jctCountMap[file_c][svIter->id].alt.size();
+	// HP-stratified junction counts
+	hpcount[file_c * 4 + 0] = jctCountMap[file_c][svIter->id].hp1ref.size();
+	hpcount[file_c * 4 + 1] = jctCountMap[file_c][svIter->id].hp1alt.size();
+	hpcount[file_c * 4 + 2] = jctCountMap[file_c][svIter->id].hp2ref.size();
+	hpcount[file_c * 4 + 3] = jctCountMap[file_c][svIter->id].hp2alt.size();
+	psarr[file_c] = jctCountMap[file_c][svIter->id].ps;
 	
 	// Compute GLs
 	if (svIter->precise) _computeGLs(bl, jctCountMap[file_c][svIter->id].ref, jctCountMap[file_c][svIter->id].alt, gls, gqval, gts, file_c);
 	else _computeGLs(bl, spanCountMap[file_c][svIter->id].ref, spanCountMap[file_c][svIter->id].alt, gls, gqval, gts, file_c);
+
+	// Phase het genotypes
+	if (psarr[file_c] != -1) {
+	  int32_t hp1a = hpcount[file_c * 4 + 1];
+	  int32_t hp2a = hpcount[file_c * 4 + 3];
+	  bool isHet = (gts[file_c * 2] == bcf_gt_unphased(0) && gts[file_c * 2 + 1] == bcf_gt_unphased(1));
+	  if (isHet && (hp1a + hp2a) > 0 && hp1a != hp2a) {
+	    if (hp1a > hp2a) {
+	      gts[file_c * 2] = bcf_gt_phased(1);
+	      gts[file_c * 2 + 1] = bcf_gt_phased(0);
+	    } else {
+	      gts[file_c * 2] = bcf_gt_phased(0);
+	      gts[file_c * 2 + 1] = bcf_gt_phased(1);
+	    }
+	  }
+	}
 	
 	// Compute RCs
 	rcl[file_c] = readCountMap[file_c][svIter->id].leftRC;
@@ -551,6 +580,8 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
       bcf_update_format_int32(hdr, rec, "DV", dvcount, bcf_hdr_nsamples(hdr));
       bcf_update_format_int32(hdr, rec, "RR", rrcount, bcf_hdr_nsamples(hdr));
       bcf_update_format_int32(hdr, rec, "RV", rvcount, bcf_hdr_nsamples(hdr));
+      bcf_update_format_int32(hdr, rec, "HP", hpcount, bcf_hdr_nsamples(hdr) * 4);
+      bcf_update_format_int32(hdr, rec, "PS", psarr, bcf_hdr_nsamples(hdr));
       bcf_write1(fp, hdr, rec);
       bcf_clear1(rec);
     }
@@ -568,6 +599,8 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
     free(rrcount);
     free(rvcount);
     free(gqval);
+    free(hpcount);
+    free(psarr);
   }
 
   // Close BAM file

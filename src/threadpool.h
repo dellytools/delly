@@ -15,13 +15,15 @@ namespace torali {
   struct ThreadPool {
     bool stop;
     std::atomic<size_t> active;
+    std::size_t maxQueueSize;
     std::vector<std::thread> workers;
     std::queue<std::function<void()>> tasks;
     std::mutex queue_mutex;
     std::condition_variable condition;
     std::condition_variable condition_finished;
+    std::condition_variable condition_producer;
 
-    ThreadPool(size_t numThreads) : stop(false), active(0) {
+    ThreadPool(size_t numThreads, std::size_t maxQ = 0) : stop(false), active(0), maxQueueSize(maxQ ? maxQ : numThreads * 4) {
       for (size_t i = 0; i < numThreads; ++i) {
 	workers.emplace_back([this]() {
 	  for (;;) {
@@ -33,6 +35,7 @@ namespace torali {
 	      task = std::move(tasks.front());
 	      tasks.pop();
 	      ++active;
+	      condition_producer.notify_one();
 	    }
 	    task();
 	    {
@@ -51,6 +54,7 @@ namespace torali {
       std::future<void> res = task->get_future();
       {
 	std::unique_lock<std::mutex> lock(queue_mutex);
+	condition_producer.wait(lock, [this]() { return stop || tasks.size() < maxQueueSize; });
 	tasks.emplace([task]() { (*task)(); });
       }
       condition.notify_one();
