@@ -88,23 +88,34 @@ namespace torali {
 	}
       }
     } else if (sv.svEnd > sv.svStart) {
-      // Other intra-chromosomal SVs
-      const int32_t maxH = 50;
-      int32_t limit = std::min({maxH, (sv.svEnd - sv.svStart) / 2, sv.svStart, chrLen - sv.svEnd});
-      if (limit > 0) {
-	int32_t edits = 0;
-	for (int32_t h = 1; h <= limit; ++h) {
-	  if (toupper((unsigned char)seq[sv.svStart - h]) != toupper((unsigned char)seq[sv.svEnd - h])) {
-	    if (++edits > maxEdits) break;
-	  }
-	  sv.anno.homLen = h;
+      // DEL/DUP/INV: length-dependent breakpoint homology.
+      const int32_t maxH_del = 10000;
+      const double minIdentity = 0.90;
+      const double stopIdentity = 0.75;
+      const int32_t earlyStopGap = 100;
+
+      // Backward scan
+      int32_t halfSvLen = (sv.svEnd - sv.svStart) / 2;
+      int32_t bwdLimit = std::min({maxH_del, halfSvLen, sv.svStart});
+      if (bwdLimit > 0) {
+	int32_t edits = 0, lastGoodH = 0;
+	for (int32_t h = 1; h <= bwdLimit; ++h) {
+	  if (toupper((unsigned char)seq[sv.svStart - h]) != toupper((unsigned char)seq[sv.svEnd - h])) ++edits;
+	  double id = 1.0 - (double)edits / h;
+	  if (id >= minIdentity) { sv.anno.homLen = h; lastGoodH = h; }
+	  else if (h - lastGoodH > earlyStopGap && id < stopIdentity) break;
 	}
-	edits = 0;
-	for (int32_t h = 1; h <= limit; ++h) {
-	  if (toupper((unsigned char)seq[sv.svStart + h]) != toupper((unsigned char)seq[sv.svEnd + h])) {
-	    if (++edits > maxEdits) break;
-	  }
-	  if (h > sv.anno.homLen) sv.anno.homLen = h;
+      }
+
+      // Forward scan
+      int32_t fwdLimit = std::max(0, std::min({maxH_del, halfSvLen, chrLen - sv.svEnd - 1}));
+      if (fwdLimit > 0) {
+	int32_t edits = 0, lastGoodH = 0;
+	for (int32_t h = 1; h <= fwdLimit; ++h) {
+	  if (toupper((unsigned char)seq[sv.svStart + h]) != toupper((unsigned char)seq[sv.svEnd + h])) ++edits;
+	  double id = 1.0 - (double)edits / h;
+	  if (id >= minIdentity) { if (h > sv.anno.homLen) sv.anno.homLen = h; lastGoodH = h; }
+	  else if (h - lastGoodH > earlyStopGap && id < stopIdentity) break;
 	}
       }
     }
