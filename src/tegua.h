@@ -30,6 +30,7 @@
 #include "cluster.h"
 #include "assemble.h"
 #include "modvcf.h"
+#include "svanno.h"
 
 namespace torali {
 

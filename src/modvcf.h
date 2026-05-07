@@ -358,6 +358,11 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
   bcf_hdr_append(hdr, "##INFO=<ID=SVMETHOD,Number=1,Type=String,Description=\"Type of approach used to detect SV\">");
   bcf_hdr_append(hdr, "##INFO=<ID=INSLEN,Number=1,Type=Integer,Description=\"Predicted length of the insertion\">");
   bcf_hdr_append(hdr, "##INFO=<ID=HOMLEN,Number=1,Type=Integer,Description=\"Predicted microhomology length using a max. edit distance of 2\">");
+  bcf_hdr_append(hdr, "##INFO=<ID=BPHOMLEN,Number=1,Type=Integer,Description=\"Breakpoint homology length from reference sequence comparison, allowing up to 2 mismatches\">");
+  bcf_hdr_append(hdr, "##INFO=<ID=SUBTYPE,Number=1,Type=String,Description=\"SV subtype: INS:ME:ALU, INS:ME:LINE1, INS:ME:SVA, INS:NUMT, INS:TR, or DEL:TR\">");
+  bcf_hdr_append(hdr, "##INFO=<ID=INSSTRAND,Number=1,Type=String,Description=\"Insertion strand for MEIs\">");
+  bcf_hdr_append(hdr, "##INFO=<ID=TRPERIOD,Number=1,Type=Integer,Description=\"Tandem repeat period in bp\">");
+  bcf_hdr_append(hdr, "##INFO=<ID=TRCOPIES,Number=1,Type=Float,Description=\"Tandem repeat copy number\">");
   bcf_hdr_append(hdr, "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">");
   bcf_hdr_append(hdr, "##FORMAT=<ID=GL,Number=G,Type=Float,Description=\"Log10-scaled genotype likelihoods for RR,RA,AA genotypes\">");
   bcf_hdr_append(hdr, "##FORMAT=<ID=GQ,Number=1,Type=Integer,Description=\"Genotype Quality\">");
@@ -507,7 +512,29 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
 	  bcf_update_info_int32(hdr, rec, "CONSBP", &tmpi, 1);
 	}
       }
-      
+
+      // SVAnno fields: reference-based breakpoint homology and MEI/NUMT annotation
+      if (!_translocation(svIter->svt)) {
+	if (svIter->anno.homLen > 0) {
+	  tmpi = svIter->anno.homLen;
+	  bcf_update_info_int32(hdr, rec, "BPHOMLEN", &tmpi, 1);
+	}
+	if (svIter->anno.seqType > 0 && svIter->anno.seqType < 5) {
+	  static const char* seqTypeStr[] = {"", "INS:ME:ALU", "INS:ME:LINE1", "INS:ME:SVA", "INS:NUMT"};
+	  bcf_update_info_string(hdr, rec, "SUBTYPE", seqTypeStr[svIter->anno.seqType]);
+	  static const char* strandTypeStr[] = {"+", "-"};
+	  if (svIter->anno.isRC) bcf_update_info_string(hdr, rec, "INSSTRAND", strandTypeStr[1]);
+	  else bcf_update_info_string(hdr, rec, "INSSTRAND", strandTypeStr[0]);
+	} else if (svIter->anno.seqType == 5) {
+	  std::string subtypeStr = (svIter->svt == 4) ? "INS:TR" : "DEL:TR";
+	  bcf_update_info_string(hdr, rec, "SUBTYPE", subtypeStr.c_str());
+	  tmpi = svIter->anno.trPeriod;
+	  bcf_update_info_int32(hdr, rec, "TRPERIOD", &tmpi, 1);
+	  float tmpf = svIter->anno.trCopies;
+	  bcf_update_info_float(hdr, rec, "TRCOPIES", &tmpf, 1);
+	}
+      }
+
       // Add genotype columns
       for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
 	// Counters

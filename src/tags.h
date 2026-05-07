@@ -79,6 +79,16 @@ namespace torali {
     }
   };
 
+  struct SVAnno {
+    bool isRC;
+    int32_t seqType; // 0: No assignment, 1: ALU, 2: Line1, 3: SVA, 4: NUMT, 5: Tandem Repeat
+    int32_t homLen;  // Breakpoint homology / TSD length
+    int32_t trPeriod; // Tandem repeat period in bp
+    float trCopies;   // Tandem repeat copy number
+    
+    SVAnno() : isRC(false), seqType(0), homLen(0), trPeriod(0), trCopies(0.0f) {}
+  };
+  
   // Structural variant record
   struct StructuralVariantRecord {
     int32_t chr;
@@ -103,7 +113,7 @@ namespace torali {
     bool precise;
     std::string alleles;
     std::string consensus;
-
+    SVAnno anno;
     
     StructuralVariantRecord() : chr(0), svStart(0), chr2(0), svEnd(0), ciposlow(0), ciposhigh(0), ciendlow(0), ciendhigh(0), srSupport(0), srMapQuality(0), mapq(0), insLen(0), svt(-1), id(0), homLen(0), peSupport(0), peMapQuality(0), consBp(0), srAlignQuality(0), precise(false) {}
 
