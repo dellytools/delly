@@ -532,7 +532,7 @@ namespace torali
     
     boost::program_options::options_description hidden("Hidden options");
     hidden.add_options()
-      ("input-file", boost::program_options::value<boost::filesystem::path>(&c.bamFile), "input bam file")
+      ("input-file", boost::program_options::value<boost::filesystem::path>(&c.bamFile), "input BAM/CRAM file")
       ("fragment", boost::program_options::value<float>(&c.fragmentUnique)->default_value(0.97), "min. fragment uniqueness [0,1]")
       ("statsfile,s", boost::program_options::value<boost::filesystem::path>(&c.statsFile), "gzipped stats output file (optional)")
       ;
@@ -554,7 +554,7 @@ namespace torali
     // Check command line arguments
     if ((vm.count("help")) || (!vm.count("input-file")) || (!vm.count("genome")) || (!vm.count("mappability"))) {
       std::cerr << std::endl;
-      std::cerr << "Usage: delly " << argv[0] << " [OPTIONS] -g <genome.fa> -m <genome.map> <aligned.bam>" << std::endl;
+      std::cerr << "Usage: delly " << argv[0] << " [OPTIONS] -g <genome.fa> -m <genome.map> <aligned.bam|aligned.cram>" << std::endl;
       std::cerr << visible_options << "\n";
       return 1;
     }
