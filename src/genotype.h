@@ -13,6 +13,7 @@
 #include <htslib/sam.h>
 
 #include "util.h"
+#include "methyl.h"
 
 namespace torali
 {
@@ -89,9 +90,9 @@ namespace torali
     return -1;
   }
 
-  template<typename TConfig, typename TJunctionMap, typename TReadCountMap>
+  template<typename TConfig, typename TJunctionMap, typename TReadCountMap, typename TMethylMap>
   inline void
-  genotypeLR(TConfig& c, std::vector<StructuralVariantRecord>& svs, TJunctionMap& jctMap, TReadCountMap& covMap) {
+  genotypeLR(TConfig& c, std::vector<StructuralVariantRecord>& svs, TJunctionMap& jctMap, TReadCountMap& covMap, TMethylMap& methylMap) {
     typedef std::vector<StructuralVariantRecord> TSVs;
     if (svs.empty()) return;
 
@@ -122,6 +123,12 @@ namespace torali
       readSV[file_c].resize(svs.size(), 0);
       refAlignedReadCount[file_c].resize(svs.size(), 0);
     }
+
+    // Methylation
+    typedef std::vector<MethylAccum> TSVMethylAccum;
+    typedef std::vector<TSVMethylAccum> TFileMethylAccum;
+    TFileMethylAccum methylAccum(c.files.size());
+    for (unsigned int file_c = 0; file_c < c.files.size(); ++file_c) methylAccum[file_c].resize(svs.size());
 
     // Dump file
     boost::iostreams::filtering_ostream dumpOut;
@@ -221,6 +228,9 @@ namespace torali
 	    if (psTag) ps = bam_aux2i(psTag);
 	  }
 	  std::string sequence;
+	  std::vector<int8_t> methCall;
+	  bool methCallBuilt = false;
+	  bool hasMethyl = false;
 	  for(typename TSVSet::const_iterator it = process.begin(); it != process.end(); ++it) {
 	    int32_t svid = *it;
 	    if ((jctMap[file_c][svid].ref.size() + jctMap[file_c][svid].alt.size()) >= c.maxGenoReadCount) continue;
@@ -293,10 +303,16 @@ namespace torali
 	    // Any confident alignment?
 	    if ((scoreRef > 0.6) || (scoreAlt > 0.6)) {
 	      if (scoreRef > scoreAlt) {
-		// Account for reference bias
-		if (++refAlignedReadCount[file_c][svid] % 2) {
-		  uint32_t rq = scoreRef * 35;
-		  if (rq >= c.minGenoQual) {
+		uint32_t rq = scoreRef * 35;
+		if (rq >= c.minGenoQual) {
+		  // Methylation for REF-supporting read
+		  if (!methCallBuilt) {
+		    methCallBuilt = true;
+		    hasMethyl = buildMethylCalls(rec, METHYL_PROB_THRESHOLD, methCall);
+		  }
+		  if (hasMethyl) accumulateMethyl(rec, methCall, svs[svid], refIndex, (int32_t)hdr[file_c]->target_len[refIndex], false, candidates, methylAccum[file_c][svid]);
+		  // Account for reference bias
+		  if (++refAlignedReadCount[file_c][svid] % 2) {
 		    uint8_t qual = (uint8_t) std::min(rq, (uint32_t) rec->core.qual);
 		    jctMap[file_c][svid].ref.push_back(qual);
 		    if (hp == 1) jctMap[file_c][svid].hp1ref.push_back(qual);
@@ -304,8 +320,16 @@ namespace torali
 		  }
 		}
 	      } else {
+		// Record ALT support
 		uint32_t aq = scoreAlt * 35;
 		if (aq >= c.minGenoQual) {
+		  // Parse methylation for ALT-supporting read
+		  if (!methCallBuilt) {
+		    methCallBuilt = true;
+		    hasMethyl = buildMethylCalls(rec, METHYL_PROB_THRESHOLD, methCall);
+		  }
+		  if (hasMethyl) accumulateMethyl(rec, methCall, svs[svid], refIndex, (int32_t)hdr[file_c]->target_len[refIndex], true, candidates, methylAccum[file_c][svid]);
+		  // Record ALT support
 		  uint8_t qual = (uint8_t) std::min(aq, (uint32_t) rec->core.qual);
 		  if (c.hasDumpFile) {
 		    std::string svidStr(_addID(svs[svid].svt));
@@ -367,6 +391,13 @@ namespace torali
       // Clean-up chromosome sequence
       if (seq != NULL) free(seq);
     }
+    // Finalize methylation fractions from accumulated read counts
+    for (unsigned int fc = 0; fc < c.files.size(); ++fc) {
+      for (uint32_t i = 0; i < svs.size(); ++i) {
+        finalizeMethylInfo(methylAccum[fc][i], methylMap[fc][i]);
+      }
+    }
+
     // Clean-up
     fai_destroy(fai);
     for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {

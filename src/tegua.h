@@ -31,6 +31,7 @@
 #include "assemble.h"
 #include "modvcf.h"
 #include "svanno.h"
+#include "methyl.h"
 
 namespace torali {
 
@@ -40,6 +41,7 @@ namespace torali {
     bool hasExcludeFile;
     bool hasVcfFile;
     bool hasAltFile;
+    uint16_t methylProb;
     uint16_t minMapQual;
     uint16_t minGenoQual;
     uint32_t minClip;
@@ -53,8 +55,11 @@ namespace torali {
     int32_t nchr;
     int32_t minimumFlankSize;
     int32_t indelsize;
+    int32_t methylWindow;
     float indelExtension;
     float flankQuality;
+    float meiMinFrac;
+    float trMinFrac;
     std::set<int32_t> svtset;
     DnaScore<int> aliscore;
     boost::filesystem::path dumpfile;
@@ -162,18 +167,24 @@ namespace torali {
    typedef std::vector<TSVReadCount> TSampleSVReadCount;
    TSampleSVReadCount rcMap(c.files.size());
 
+   // Annotate methylation information (if available)
+   typedef std::vector<MethylInfo> TSVMethylInfo;
+   typedef std::vector<TSVMethylInfo> TSampleMethylInfo;
+   TSampleMethylInfo methylMap(c.files.size());
+
    // Initialize count maps
    for(uint32_t file_c = 0; file_c < c.files.size(); ++file_c) {
      jctMap[file_c].resize(svs.size(), JunctionCount());
      spanMap[file_c].resize(svs.size(), SpanningCount());
      rcMap[file_c].resize(svs.size());
+     methylMap[file_c].resize(svs.size(), MethylInfo());
    }
 
    // SV Genotyping
-   genotypeLR(c, svs, jctMap, rcMap);
+   genotypeLR(c, svs, jctMap, rcMap, methylMap);
    
    // VCF Output
-   vcfOutput(c, svs, jctMap, rcMap, spanMap);
+   vcfOutput(c, svs, jctMap, rcMap, spanMap, methylMap);
 
 #ifdef PROFILE
    ProfilerStop();
@@ -220,6 +231,14 @@ namespace torali {
      ("flank-size,f", boost::program_options::value<int32_t>(&c.minimumFlankSize)->default_value(100), "min. flank size")
      ("flank-quality,a", boost::program_options::value<float>(&c.flankQuality)->default_value(0.9), "min. flank quality")
      ("indel-size,i", boost::program_options::value<int32_t>(&c.indelsize)->default_value(10000), "use exact alleles for InDels <10kbp")
+     ("mei-minfrac,k", boost::program_options::value<float>(&c.meiMinFrac)->default_value(0.8), "min. fraction of ALT aligned to MEI sequence [0-1]")
+     ("tr-minfrac,r", boost::program_options::value<float>(&c.trMinFrac)->default_value(0.85), "min. tandem repeat fraction [0-1]")
+     ;
+
+   boost::program_options::options_description methyl("Methylation options");
+   methyl.add_options()
+     ("methyl-window,j", boost::program_options::value<int32_t>(&c.methylWindow)->default_value(2000), "methylation window for MA and MR fields")
+     ("methyl-prob,e", boost::program_options::value<uint16_t>(&c.methylProb)->default_value(128), "Min. ML probability to call methylation [1, 256]")
      ;
    
    boost::program_options::options_description geno("Genotyping options");
@@ -233,8 +252,8 @@ namespace torali {
    boost::program_options::options_description hidden("Hidden options");
    hidden.add_options()
      ("input-file", boost::program_options::value< std::vector<boost::filesystem::path> >(&c.files), "input file")
-     ("pruning,j", boost::program_options::value<uint32_t>(&c.graphPruning)->default_value(1000), "graph pruning cutoff")
-     ("extension,e", boost::program_options::value<float>(&c.indelExtension)->default_value(0.5), "enforce indel extension")
+     ("pruning", boost::program_options::value<uint32_t>(&c.graphPruning)->default_value(1000), "graph pruning cutoff")
+     ("extension", boost::program_options::value<float>(&c.indelExtension)->default_value(0.5), "enforce indel extension")
      ("scoring,s", boost::program_options::value<std::string>(&scoring)->default_value("3,-2,-3,-1"), "alignment scoring")
      ;
    
@@ -242,9 +261,9 @@ namespace torali {
    pos_args.add("input-file", -1);
    
    boost::program_options::options_description cmdline_options;
-   cmdline_options.add(generic).add(disc).add(cons).add(geno).add(hidden);
+   cmdline_options.add(generic).add(disc).add(cons).add(methyl).add(geno).add(hidden);
    boost::program_options::options_description visible_options;
-   visible_options.add(generic).add(disc).add(cons).add(geno);
+   visible_options.add(generic).add(disc).add(cons).add(methyl).add(geno);
    boost::program_options::variables_map vm;
    boost::program_options::store(boost::program_options::command_line_parser(argc, argv).options(cmdline_options).positional(pos_args).run(), vm);
    boost::program_options::notify(vm);

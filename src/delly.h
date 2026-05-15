@@ -65,6 +65,8 @@ namespace torali
     uint32_t maxThreads;
     uint32_t maxReadPerSV;
     float flankQuality;
+    float meiMinFrac;
+    float trMinFrac;
     bool hasExcludeFile;
     bool hasVcfFile;
     bool hasDumpFile;
@@ -391,6 +393,8 @@ namespace torali
     // Run main program
     c.aliscore = DnaScore<int>(5, -4, -10, -1);
     c.flankQuality = 0.95;
+    c.meiMinFrac = 0.8;
+    c.trMinFrac = 0.85;
     c.minimumFlankSize = 13;
     c.indelsize = 1000;
     return dellyRun(c);

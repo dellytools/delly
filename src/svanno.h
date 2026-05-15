@@ -37,9 +37,9 @@ namespace torali {
   };
 
 
-  // Tandem repeat detection using autocorrelation
+  // Tandem repeat detection using autocorrelation.
   inline std::pair<int32_t, float>
-  detectTandemRepeat(const std::string& seq, int32_t maxPeriod = 100, float minFraction = 0.7f) {
+  detectTandemRepeat(const std::string& seq, int32_t maxPeriod = 100, float minFraction = 0.85f) {
     int32_t n = (int32_t) seq.size();
     if (n < 10) return {0, 0.0f};
     int32_t pmax = std::min(maxPeriod, n / 2);
@@ -122,11 +122,15 @@ namespace torali {
 
     if (!insSeq.empty()) {
       // MEI / NUMT alignment
-      double bestId = 0.6;
+      double bestId = c.meiMinFrac;
       int32_t bestType = 0;
       double bestFwdId = 0.0;
       double bestRevId = 0.0;
+
+      // undefined, Alu, L1, SVA, NUMT
+      static const int32_t meiMinInsLen[] = {0, 100, 150, 400, 50};
       for (int32_t seqtype = 1; seqtype <= 4; ++seqtype) {
+	if ((int32_t)insSeq.size() < meiMinInsLen[seqtype]) continue;
 	std::string meiTemplate;
 	if (seqtype == 1) meiTemplate = MEI::alu;
 	else if (seqtype == 2) meiTemplate = MEI::line1;
@@ -157,9 +161,11 @@ namespace torali {
 	if ((resRev.status == EDLIB_STATUS_OK) && (resRev.editDistance >= 0)) revId = 1.0 - (double) resRev.editDistance / revQL;
 	edlibFreeAlignResult(resRev);
 
-	// Find best alignment
-	if (std::max(fwdId, revId) > bestId) {
-	  bestId = std::max(fwdId, revId);
+	// Find best alignment.
+	double coverage = longIns ? ((double)fwdQL / fwdTL) : 1.0;
+	double effectiveScore = std::min(std::max(fwdId, revId), coverage);
+	if (effectiveScore > bestId) {
+	  bestId = effectiveScore;
 	  bestType = seqtype;
 	  bestFwdId = fwdId;
 	  bestRevId = revId;
@@ -170,7 +176,7 @@ namespace torali {
 	sv.anno.isRC = (bestRevId > bestFwdId);
       } else if ((int32_t) insSeq.size() >= 30) {
 	// TR classification
-	auto [period, copies] = detectTandemRepeat(insSeq);
+	auto [period, copies] = detectTandemRepeat(insSeq, 100, c.trMinFrac);
 	if (period > 0) {
 	  sv.anno.seqType = 5;
 	  sv.anno.trPeriod = period;
@@ -182,7 +188,7 @@ namespace torali {
       int32_t delLen = sv.svEnd - sv.svStart;
       if ((delLen >= 10) && (delLen <= 1000)) {
 	std::string delSeq = boost::to_upper_copy(std::string(seq + sv.svStart, seq + sv.svEnd));
-	auto [period, copies] = detectTandemRepeat(delSeq);
+	auto [period, copies] = detectTandemRepeat(delSeq, 100, c.trMinFrac);
 	if (period > 0) {
 	  sv.anno.seqType = 5;
 	  sv.anno.trPeriod = period;

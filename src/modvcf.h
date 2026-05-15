@@ -5,7 +5,7 @@
 #include <htslib/vcf.h>
 
 #include "bolog.h"
-
+#include "methyl.h"
 
 
 namespace torali
@@ -137,7 +137,15 @@ struct cstyle_str {
     return s.c_str();
   }
 };
- 
+
+  inline float
+  mf2bcf(float const v) {
+    float r;
+    if (v < 0.0f) bcf_float_set_missing(r);
+    else r = v;
+    return r;
+  }
+
 // Parse Delly vcf file
 template<typename TConfig, typename TStructuralVariantRecord>
 inline void
@@ -307,9 +315,9 @@ vcfParse(TConfig const& c, bam_hdr_t* hd, std::vector<TStructuralVariantRecord>&
 }
 
 
-template<typename TConfig, typename TStructuralVariantRecord, typename TJunctionCountMap, typename TReadCountMap, typename TCountMap>
+template<typename TConfig, typename TStructuralVariantRecord, typename TJunctionCountMap, typename TReadCountMap, typename TCountMap, typename TMethylMap>
 inline void
-vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJunctionCountMap const& jctCountMap, TReadCountMap const& readCountMap, TCountMap const& spanCountMap)
+vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJunctionCountMap const& jctCountMap, TReadCountMap const& readCountMap, TCountMap const& spanCountMap, TMethylMap const& methylMap)
 {
   // BoLog class
   BoLog<double> bl;
@@ -376,6 +384,8 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
   bcf_hdr_append(hdr, "##FORMAT=<ID=RV,Number=1,Type=Integer,Description=\"# high-quality variant junction reads\">");
   bcf_hdr_append(hdr, "##FORMAT=<ID=HP,Number=4,Type=Integer,Description=\"Haplotype-specific junction read counts (HP1_ref,HP1_alt,HP2_ref,HP2_alt)\">");
   bcf_hdr_append(hdr, "##FORMAT=<ID=PS,Number=1,Type=Integer,Description=\"Phase set identifier from HP-tagged alignments\">");
+  bcf_hdr_append(hdr, "##FORMAT=<ID=MR,Number=4,Type=Float,Description=\"Methylation for REF [SV start left/right, SV end left/right]\">");
+  bcf_hdr_append(hdr, "##FORMAT=<ID=MA,Number=4,Type=Float,Description=\"Methylation for ALT [SV start left/right, SV end left/right]\">");
 
   // Add reference
   std::string refloc("##reference=");
@@ -406,6 +416,8 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
     int32_t *gqval = (int*) malloc(bcf_hdr_nsamples(hdr) * sizeof(int));
     int32_t *hpcount = (int*) malloc(bcf_hdr_nsamples(hdr) * 4 * sizeof(int));
     int32_t *psarr = (int*) malloc(bcf_hdr_nsamples(hdr) * sizeof(int));
+    float *ma = (float*) malloc(bcf_hdr_nsamples(hdr) * 4 * sizeof(float));
+    float *mr = (float*) malloc(bcf_hdr_nsamples(hdr) * 4 * sizeof(float));
     std::vector<std::string> ftarr;
     ftarr.resize(bcf_hdr_nsamples(hdr));
     
@@ -557,6 +569,24 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
 	hpcount[file_c * 4 + 3] = jctCountMap[file_c][svIter->id].hp2alt.size();
 	psarr[file_c] = jctCountMap[file_c][svIter->id].ps;
 	
+	// Methylation
+	if ((!methylMap.empty()) && (file_c < methylMap.size()) && (svIter->id < (int32_t)methylMap[file_c].size())) {
+	  const MethylInfo& mi = methylMap[file_c][svIter->id];
+	  ma[file_c*4+0] = mf2bcf(mi.altSvStartL);
+	  ma[file_c*4+1] = mf2bcf(mi.altSvStartR);
+	  ma[file_c*4+2] = mf2bcf(mi.altSvRightL);
+	  ma[file_c*4+3] = mf2bcf(mi.altSvRightR);
+	  mr[file_c*4+0] = mf2bcf(mi.refSvStartL);
+	  mr[file_c*4+1] = mf2bcf(mi.refSvStartR);
+	  mr[file_c*4+2] = mf2bcf(mi.refSvRightL);
+	  mr[file_c*4+3] = mf2bcf(mi.refSvRightR);
+	} else {
+	  for (int k = 0; k < 4; ++k) {
+	    bcf_float_set_missing(ma[file_c*4+k]);
+	    bcf_float_set_missing(mr[file_c*4+k]);
+	  }
+	}
+
 	// Compute GLs
 	if (svIter->precise) _computeGLs(bl, jctCountMap[file_c][svIter->id].ref, jctCountMap[file_c][svIter->id].alt, gls, gqval, gts, file_c);
 	else _computeGLs(bl, spanCountMap[file_c][svIter->id].ref, spanCountMap[file_c][svIter->id].alt, gls, gqval, gts, file_c);
@@ -609,6 +639,8 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
       bcf_update_format_int32(hdr, rec, "RV", rvcount, bcf_hdr_nsamples(hdr));
       bcf_update_format_int32(hdr, rec, "HP", hpcount, bcf_hdr_nsamples(hdr) * 4);
       bcf_update_format_int32(hdr, rec, "PS", psarr, bcf_hdr_nsamples(hdr));
+      bcf_update_format_float(hdr, rec, "MR", mr, bcf_hdr_nsamples(hdr) * 4);
+      bcf_update_format_float(hdr, rec, "MA", ma, bcf_hdr_nsamples(hdr) * 4);	    
       bcf_write1(fp, hdr, rec);
       bcf_clear1(rec);
     }
@@ -628,6 +660,8 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
     free(gqval);
     free(hpcount);
     free(psarr);
+    free(ma);
+    free(mr);
   }
 
   // Close BAM file
@@ -642,6 +676,14 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
   if (c.outfile.string() != "-") bcf_index_build(c.outfile.string().c_str(), 14);
 }
 
+  template<typename TConfig, typename TStructuralVariantRecord, typename TJunctionCountMap, typename TReadCountMap, typename TCountMap>
+  inline void
+  vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJunctionCountMap const& jctCountMap, TReadCountMap const& readCountMap, TCountMap const& spanCountMap) {
+    typedef std::vector<MethylInfo> TSVMethylInfo;
+    typedef std::vector<TSVMethylInfo> TSampleMethylInfo;
+    TSampleMethylInfo methylMap;
+    vcfOutput(c, svs, jctCountMap, readCountMap, spanCountMap, methylMap);
+  }
 
 }
 
