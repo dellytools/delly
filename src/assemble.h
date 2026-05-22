@@ -855,7 +855,7 @@ namespace torali
 			  std::string prefix = boost::to_upper_copy(std::string(seq + std::max(svs[svid].svStart - (int32_t) c.minConsWindow, 0), seq + svs[svid].svStart));
 			  std::string suffix = boost::to_upper_copy(std::string(seq + svs[svid].svStart, seq + std::min(seqlen, svs[svid].svStart + c.minConsWindow)));
 			  msaWfa(c, seqStore[svid], svs[svid].consensus, prefix, suffix);
-			  if ((int32_t) svs[svid].consensus.size() < svs[svid].insLen + 4 * c.minConsWindow) {
+			  if (!svs[svid].consensus.empty()) {
 			    if (alignConsensus(c, hdr, seq, NULL, svs[svid], false)) msaSuccess = true;
 			  }
 			}
