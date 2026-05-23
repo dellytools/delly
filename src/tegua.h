@@ -124,22 +124,26 @@ namespace torali {
      sort(svc.begin(), svc.end());
       
      // Remove duplicates
-     StructuralVariantRecord lastSV;
+     std::map<int32_t, StructuralVariantRecord> lastSVperType;
      for(typename TVariants::iterator svIter = svc.begin(); svIter != svc.end(); ++svIter) {
        if ((svIter->srSupport == 0) && (svIter->peSupport == 0)) continue;
        // Duplicate?
        if (!svs.empty()) {
-	 if ((lastSV.chr == svIter->chr) && (lastSV.chr2 == svIter->chr2) && (lastSV.svt == svIter->svt) && (std::abs(svIter->svStart - lastSV.svStart) < c.minRefSep) && (std::abs(svIter->svEnd - lastSV.svEnd) < c.minRefSep)) {
-	   // Check length
-	   int32_t len1 = (svIter->svt == 4) ? svIter->insLen : (svIter->svEnd - svIter->svStart);
-	   int32_t len2 = (lastSV.svt == 4) ? lastSV.insLen : (lastSV.svEnd - lastSV.svStart);
-	   int32_t lengthvar = std::min(0.1 * len1, 0.1 * len2);
-	   int32_t lengthdiff = std::abs(len1 - len2);
-	   if (lengthvar < 15) lengthvar = 15;
-	   if (lengthdiff < lengthvar) continue;
-	 }
+	  typename std::map<int32_t, StructuralVariantRecord>::const_iterator ltIt = lastSVperType.find(svIter->svt);
+	  if (ltIt != lastSVperType.end()) {
+	    StructuralVariantRecord const& lastSV = ltIt->second;
+	    if ((lastSV.chr == svIter->chr) && (lastSV.chr2 == svIter->chr2) && (std::abs(svIter->svStart - lastSV.svStart) < c.minRefSep) && (std::abs(svIter->svEnd - lastSV.svEnd) < c.minRefSep)) {
+	      // Check length
+	      int32_t len1 = (svIter->svt == 4) ? svIter->insLen : (svIter->svEnd - svIter->svStart);
+	      int32_t len2 = (lastSV.svt == 4) ? lastSV.insLen : (lastSV.svEnd - lastSV.svStart);
+	      int32_t lengthvar = std::min(0.1 * len1, 0.1 * len2);
+	      int32_t lengthdiff = std::abs(len1 - len2);
+	      if (lengthvar < 15) lengthvar = 15;
+	      if (lengthdiff < lengthvar) continue;
+	    }
+	  }
        }
-       lastSV = *svIter;
+       lastSVperType[svIter->svt] = *svIter;
        svs.push_back(*svIter);
      }
 
