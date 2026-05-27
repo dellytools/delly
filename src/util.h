@@ -423,21 +423,18 @@ namespace torali
     }
   }
 
-  inline uint32_t sequenceLength(bam1_t const* rec) {
-    const uint32_t* cigar = bam_get_cigar(rec);
-    uint32_t slen = 0;
-    for (uint32_t i = 0; i < rec->core.n_cigar; ++i)
-      if ((bam_cigar_op(cigar[i]) == BAM_CMATCH) || (bam_cigar_op(cigar[i]) == BAM_CEQUAL) || (bam_cigar_op(cigar[i]) == BAM_CDIFF) || (bam_cigar_op(cigar[i]) == BAM_CINS) || (bam_cigar_op(cigar[i]) == BAM_CSOFT_CLIP) || (bam_cigar_op(cigar[i]) == BAM_CHARD_CLIP)) slen += bam_cigar_oplen(cigar[i]);
-    return slen;
-  }
-
   inline int32_t
   readLength(bam1_t const* rec) {
-    //int32_t slen = rec->core.l_qseq;  # Incorrect for seq. with hard-clips
-    return sequenceLength(rec);
+    const uint32_t* cigar = bam_get_cigar(rec);
+    int32_t totalHardClip = 0;
+    for (std::size_t ci = 0; ci < rec->core.n_cigar; ++ci)
+      if (bam_cigar_op(cigar[ci]) == BAM_CHARD_CLIP)
+	totalHardClip += bam_cigar_oplen(cigar[ci]);
+    return (int32_t) rec->core.l_qseq + totalHardClip;
   }
-    
-  inline uint32_t alignmentLength(bam1_t const* rec) {
+
+  inline uint32_t
+  alignmentLength(bam1_t const* rec) {
     const uint32_t* cigar = bam_get_cigar(rec);
     uint32_t alen = 0;
     for (uint32_t i = 0; i < rec->core.n_cigar; ++i)
