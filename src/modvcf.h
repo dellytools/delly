@@ -366,14 +366,14 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
   bcf_hdr_append(hdr, "##INFO=<ID=SVMETHOD,Number=1,Type=String,Description=\"Type of approach used to detect SV\">");
   bcf_hdr_append(hdr, "##INFO=<ID=INSLEN,Number=1,Type=Integer,Description=\"Predicted length of the insertion\">");
   bcf_hdr_append(hdr, "##INFO=<ID=HOMLEN,Number=1,Type=Integer,Description=\"Breakpoint homology length\">");
-  bcf_hdr_append(hdr, "##INFO=<ID=SUBTYPE,Number=1,Type=String,Description=\"SV subtype: INS:ME:ALU, INS:ME:LINE1, INS:ME:SVA, INS:NUMT, INS:TR, or DEL:TR\">");
+  bcf_hdr_append(hdr, "##INFO=<ID=SUBTYPE,Number=1,Type=String,Description=\"SV subtype: INS:ME:ALU, INS:ME:LINE1, INS:ME:SVA, INS:NUMT, INS:LTR, INS:HERVK, INS:TR, or DEL:TR\">");
   bcf_hdr_append(hdr, "##INFO=<ID=INSSTRAND,Number=1,Type=String,Description=\"Insertion strand for MEIs\">");
   bcf_hdr_append(hdr, "##INFO=<ID=TRPERIOD,Number=1,Type=Integer,Description=\"Tandem repeat period in bp\">");
   bcf_hdr_append(hdr, "##INFO=<ID=TRCOPIES,Number=1,Type=Float,Description=\"Tandem repeat copy number\">");
   bcf_hdr_append(hdr, "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">");
-  bcf_hdr_append(hdr, "##FORMAT=<ID=GL,Number=G,Type=Float,Description=\"Log10-scaled genotype likelihoods for RR,RA,AA genotypes\">");
-  bcf_hdr_append(hdr, "##FORMAT=<ID=GQ,Number=1,Type=Integer,Description=\"Genotype Quality\">");
+  //bcf_hdr_append(hdr, "##FORMAT=<ID=GL,Number=G,Type=Float,Description=\"Log10-scaled genotype likelihoods for RR,RA,AA genotypes\">");
   bcf_hdr_append(hdr, "##FORMAT=<ID=PL,Number=G,Type=Integer,Description=\"Phred-scaled genotype likelihoods for RR,RA,AA genotypes\">");
+  bcf_hdr_append(hdr, "##FORMAT=<ID=GQ,Number=1,Type=Integer,Description=\"Genotype Quality\">");
   bcf_hdr_append(hdr, "##FORMAT=<ID=FT,Number=1,Type=String,Description=\"Per-sample genotype filter\">");
   bcf_hdr_append(hdr, "##FORMAT=<ID=RC,Number=1,Type=Integer,Description=\"Raw high-quality read counts or base counts for the SV\">");
   bcf_hdr_append(hdr, "##FORMAT=<ID=RCL,Number=1,Type=Integer,Description=\"Raw high-quality read counts or base counts for the left control region\">");
@@ -533,13 +533,13 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
 	  tmpi = svIter->anno.homLen;
 	  bcf_update_info_int32(hdr, rec, "HOMLEN", &tmpi, 1);
 	}
-	if (svIter->anno.seqType > 0 && svIter->anno.seqType < 5) {
-	  static const char* seqTypeStr[] = {"", "INS:ME:ALU", "INS:ME:LINE1", "INS:ME:SVA", "INS:NUMT"};
+	if (svIter->anno.seqType > 0 && svIter->anno.seqType < 7) {
+	  static const char* seqTypeStr[] = {"", "INS:ME:ALU", "INS:ME:LINE1", "INS:ME:SVA", "INS:NUMT", "INS:LTR", "INS:HERVK"};
 	  bcf_update_info_string(hdr, rec, "SUBTYPE", seqTypeStr[svIter->anno.seqType]);
 	  static const char* strandTypeStr[] = {"+", "-"};
 	  if (svIter->anno.isRC) bcf_update_info_string(hdr, rec, "INSSTRAND", strandTypeStr[1]);
 	  else bcf_update_info_string(hdr, rec, "INSSTRAND", strandTypeStr[0]);
-	} else if (svIter->anno.seqType == 5) {
+	} else if (svIter->anno.seqType == 7) {
 	  std::string subtypeStr = (svIter->svt == 4) ? "INS:TR" : "DEL:TR";
 	  bcf_update_info_string(hdr, rec, "SUBTYPE", subtypeStr.c_str());
 	  tmpi = svIter->anno.trPeriod;
@@ -640,7 +640,7 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
       rec->qual = qvalout;
       
       bcf_update_genotypes(hdr, rec, gts, bcf_hdr_nsamples(hdr) * 2);
-      bcf_update_format_float(hdr, rec, "GL",  gls, bcf_hdr_nsamples(hdr) * 3);
+      //bcf_update_format_float(hdr, rec, "GL",  gls, bcf_hdr_nsamples(hdr) * 3);
       bcf_update_format_int32(hdr, rec, "GQ", gqval, bcf_hdr_nsamples(hdr));
       bcf_update_format_int32(hdr, rec, "PL", plvals, bcf_hdr_nsamples(hdr) * 3);
       std::vector<const char*> strp(bcf_hdr_nsamples(hdr));

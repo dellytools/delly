@@ -81,7 +81,7 @@ namespace torali {
 
   struct SVAnno {
     bool isRC;
-    int32_t seqType; // 0: No assignment, 1: ALU, 2: Line1, 3: SVA, 4: NUMT, 5: Tandem Repeat
+    int32_t seqType; // 0: No assignment, 1: ALU, 2: Line1, 3: SVA, 4: NUMT, 5: LTR, 6: HERVK, 7: Tandem Repeat
     int32_t homLen;  // Breakpoint homology / TSD length
     int32_t trPeriod; // Tandem repeat period in bp
     float trCopies;   // Tandem repeat copy number
