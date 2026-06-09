@@ -114,14 +114,8 @@ namespace torali
     typedef std::vector<uint32_t> TSVReadCount;
     typedef std::vector<TSVReadCount> TSVFileReadCount;
     TSVFileReadCount readSV(c.files.size());
-    
-    // Ref aligned reads
-    typedef std::vector<uint32_t> TRefAlignCount;
-    typedef std::vector<TRefAlignCount> TFileRefAlignCount;
-    TFileRefAlignCount refAlignedReadCount(c.files.size(), TRefAlignCount());
     for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
       readSV[file_c].resize(svs.size(), 0);
-      refAlignedReadCount[file_c].resize(svs.size(), 0);
     }
 
     // Methylation
@@ -311,13 +305,10 @@ namespace torali
 		    hasMethyl = buildMethylCalls(rec, METHYL_PROB_THRESHOLD, methCall);
 		  }
 		  if (hasMethyl) accumulateMethyl(rec, methCall, svs[svid], refIndex, (int32_t)hdr[file_c]->target_len[refIndex], false, candidates, methylAccum[file_c][svid]);
-		  // Account for reference bias
-		  if (++refAlignedReadCount[file_c][svid] % 2) {
-		    uint8_t qual = (uint8_t) std::min(rq, (uint32_t) rec->core.qual);
-		    jctMap[file_c][svid].ref.push_back(qual);
-		    if (hp == 1) jctMap[file_c][svid].hp1ref.push_back(qual);
-		    else if (hp == 2) jctMap[file_c][svid].hp2ref.push_back(qual);
-		  }
+		  uint8_t qual = (uint8_t) std::min(rq, (uint32_t) rec->core.qual);
+		  jctMap[file_c][svid].ref.push_back(qual);
+		  if (hp == 1) jctMap[file_c][svid].hp1ref.push_back(qual);
+		  else if (hp == 2) jctMap[file_c][svid].hp2ref.push_back(qual);
 		}
 	      } else {
 		// Record ALT support

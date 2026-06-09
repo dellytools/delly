@@ -373,6 +373,7 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
   bcf_hdr_append(hdr, "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">");
   bcf_hdr_append(hdr, "##FORMAT=<ID=GL,Number=G,Type=Float,Description=\"Log10-scaled genotype likelihoods for RR,RA,AA genotypes\">");
   bcf_hdr_append(hdr, "##FORMAT=<ID=GQ,Number=1,Type=Integer,Description=\"Genotype Quality\">");
+  bcf_hdr_append(hdr, "##FORMAT=<ID=PL,Number=G,Type=Integer,Description=\"Phred-scaled genotype likelihoods for RR,RA,AA genotypes\">");
   bcf_hdr_append(hdr, "##FORMAT=<ID=FT,Number=1,Type=String,Description=\"Per-sample genotype filter\">");
   bcf_hdr_append(hdr, "##FORMAT=<ID=RC,Number=1,Type=Integer,Description=\"Raw high-quality read counts or base counts for the SV\">");
   bcf_hdr_append(hdr, "##FORMAT=<ID=RCL,Number=1,Type=Integer,Description=\"Raw high-quality read counts or base counts for the left control region\">");
@@ -418,6 +419,7 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
     int32_t *psarr = (int*) malloc(bcf_hdr_nsamples(hdr) * sizeof(int));
     float *ma = (float*) malloc(bcf_hdr_nsamples(hdr) * 4 * sizeof(float));
     float *mr = (float*) malloc(bcf_hdr_nsamples(hdr) * 4 * sizeof(float));
+    int32_t *plvals = (int32_t*) malloc(bcf_hdr_nsamples(hdr) * 3 * sizeof(int32_t));
     std::vector<std::string> ftarr;
     ftarr.resize(bcf_hdr_nsamples(hdr));
     
@@ -591,6 +593,20 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
 	if (svIter->precise) _computeGLs(bl, jctCountMap[file_c][svIter->id].ref, jctCountMap[file_c][svIter->id].alt, gls, gqval, gts, file_c);
 	else _computeGLs(bl, spanCountMap[file_c][svIter->id].ref, spanCountMap[file_c][svIter->id].alt, gls, gqval, gts, file_c);
 
+	// Compute PLs
+	if (gts[file_c * 2] == bcf_gt_missing) {
+	  for (int32_t k = 0; k < 3; ++k) {
+	    float *gl_ptr = gls + file_c * 3 + k;
+	    bcf_float_set_missing(*gl_ptr);
+	    plvals[file_c * 3 + k] = bcf_int32_missing;
+	  }
+	} else {
+	  for (int32_t k = 0; k < 3; ++k) {
+	    float gl_val = gls[file_c * 3 + k];
+	    plvals[file_c * 3 + k] = (int32_t) std::max(0.0f, std::round(-10.0f * gl_val));
+	  }
+	}
+
 	// Phase het genotypes
 	if (psarr[file_c] != -1) {
 	  int32_t hp1a = hpcount[file_c * 4 + 1];
@@ -626,6 +642,7 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
       bcf_update_genotypes(hdr, rec, gts, bcf_hdr_nsamples(hdr) * 2);
       bcf_update_format_float(hdr, rec, "GL",  gls, bcf_hdr_nsamples(hdr) * 3);
       bcf_update_format_int32(hdr, rec, "GQ", gqval, bcf_hdr_nsamples(hdr));
+      bcf_update_format_int32(hdr, rec, "PL", plvals, bcf_hdr_nsamples(hdr) * 3);
       std::vector<const char*> strp(bcf_hdr_nsamples(hdr));
       std::transform(ftarr.begin(), ftarr.end(), strp.begin(), cstyle_str());
       bcf_update_format_string(hdr, rec, "FT", &strp[0], bcf_hdr_nsamples(hdr));
@@ -649,6 +666,7 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
     // Clean-up
     free(gts);
     free(gls);
+    free(plvals);
     free(rcl);
     free(rc);
     free(rcr);

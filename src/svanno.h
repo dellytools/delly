@@ -128,7 +128,7 @@ namespace torali {
       double bestRevId = 0.0;
 
       // undefined, Alu, L1, SVA, NUMT
-      static const int32_t meiMinInsLen[] = {0, 100, 150, 400, 50};
+      static const int32_t meiMinInsLen[] = {0, 100, 150, 1000, 100};
       for (int32_t seqtype = 1; seqtype <= 4; ++seqtype) {
 	if ((int32_t)insSeq.size() < meiMinInsLen[seqtype]) continue;
 	std::string meiTemplate;
@@ -186,7 +186,7 @@ namespace torali {
     } else if (sv.svt == 2) {
       // DEL: TR classification
       int32_t delLen = sv.svEnd - sv.svStart;
-      if ((delLen >= 10) && (delLen <= 1000)) {
+      if ((delLen >= 10) && (delLen <= 50000)) {
 	std::string delSeq = boost::to_upper_copy(std::string(seq + sv.svStart, seq + sv.svEnd));
 	auto [period, copies] = detectTandemRepeat(delSeq, 100, c.trMinFrac);
 	if (period > 0) {
