@@ -487,8 +487,14 @@ namespace torali
 	StructuralVariantRecord svRec;
 	svRec.chr = clusterRefID;
 	svRec.chr2 = clusterMateRefID;
-	svRec.svStart = (uint32_t) svStart + 1;
-	svRec.svEnd = (uint32_t) svEnd + 1;
+	if (svt < DELLY_SVT_TRANS) {
+	  svRec.svStart = (uint32_t) svStart;
+	  svRec.svEnd = (uint32_t) svEnd;
+	} else {
+	  // BND positions
+	  svRec.svStart = (uint32_t) svStart + 1;
+	  svRec.svEnd = (uint32_t) svEnd + 1;
+	}
 	svRec.peSupport = clique.size();
 	int32_t ci_wiggle = std::max(abs(wiggle), 50);
 	svRec.ciposlow = -ci_wiggle;

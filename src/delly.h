@@ -328,8 +328,7 @@ namespace torali
       for(int32_t refIndex=0; refIndex < hdr->n_targets; ++refIndex) {
 	std::string tname(hdr->target_name[refIndex]);
 	if (!faidx_has_seq(fai, tname.c_str())) {
-	  std::cerr << "BAM file chromosome " << hdr->target_name[refIndex] << " is NOT present in your reference file " << c.genome.string() << std::endl;
-	  return 1;
+	  std::cerr << "Warning: BAM file chromosome " << hdr->target_name[refIndex] << " is NOT present in your reference file " << c.genome.string() << " and will be skipped." << std::endl;
 	}
       }
       fai_destroy(fai);

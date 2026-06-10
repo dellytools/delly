@@ -102,8 +102,10 @@ inline std::string
 _replaceIUPAC(std::string const& alleles) {
   std::vector<char> out(alleles.size());
   int32_t inTag = 0;
+  bool inRef = true;  // REF allele
   for(uint32_t i = 0; i<alleles.size(); ++i) {
-    if ((inTag) || (alleles[i] == 'A') || (alleles[i] == 'C') || (alleles[i] == 'G') || (alleles[i] == 'T') || (alleles[i] == 'N') || (alleles[i] == 'a') || (alleles[i] == 'c') || (alleles[i] == 'g') || (alleles[i] == 't') || (alleles[i] == 'n') || (alleles[i] == '<') || (alleles[i] == '>') || (alleles[i] == ']') || (alleles[i] == '[') || (alleles[i] == ',')) {
+    if (alleles[i] == ',') { inRef = false; }
+    if ((inRef) || (inTag) || (alleles[i] == 'A') || (alleles[i] == 'C') || (alleles[i] == 'G') || (alleles[i] == 'T') || (alleles[i] == 'N') || (alleles[i] == 'a') || (alleles[i] == 'c') || (alleles[i] == 'g') || (alleles[i] == 't') || (alleles[i] == 'n') || (alleles[i] == '<') || (alleles[i] == '>') || (alleles[i] == ']') || (alleles[i] == '[') || (alleles[i] == ',')) {
       out[i] = alleles[i];
       if (alleles[i] == '<') inTag = 1;
       else if (alleles[i] == ']') inTag = 2;
@@ -112,7 +114,7 @@ _replaceIUPAC(std::string const& alleles) {
       else if ((alleles[i] == ']') && (inTag == 2)) inTag = 0;
       else if ((alleles[i] == '[') && (inTag == 3)) inTag = 0;
     } else {
-      // Replace IUPAC
+      // Replace IUPAC in ALT only
       if ((alleles[i] == 'U') || (alleles[i] == 'u')) out[i] = 'T';
       else if ((alleles[i] == 'R') || (alleles[i] == 'r')) out[i] = 'A';
       else if ((alleles[i] == 'Y') || (alleles[i] == 'y')) out[i] = 'C';
@@ -472,8 +474,18 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
       dellyVersion += dellyVersionNumber;
       bcf_update_info_string(hdr,rec, "SVMETHOD", dellyVersion.c_str());
       if (svIter->svt < DELLY_SVT_TRANS) {
-	if (svEndPos <= svStartPos) svEndPos = svStartPos + 1;
-	tmpi = svEndPos;
+	size_t commaPos = alleles.find(',');
+	bool isSymbolic = (commaPos == std::string::npos);
+	if (!isSymbolic) {
+	  std::string alt = alleles.substr(commaPos + 1);
+	  isSymbolic = ((!alt.empty()) && ((alt[0] == '<') || (alt.find('[') != std::string::npos) || (alt.find(']') != std::string::npos)));
+	}
+	if (!isSymbolic) {
+	  tmpi = svStartPos + (int32_t)commaPos;  // svStartPos + len(REF)
+	} else {
+	  if (svEndPos < svStartPos + 1) svEndPos = svStartPos + 1;
+	  tmpi = svEndPos;
+	}
 	bcf_update_info_int32(hdr, rec, "END", &tmpi, 1);
       } else {
 	tmpi = svStartPos + 1;
