@@ -29,15 +29,15 @@ There is a Delly discussion group [delly-users](http://groups.google.com/d/forum
 
 # Running Delly
 
-Delly needs a sorted, indexed and duplicate marked bam file for every input sample.
-An indexed reference genome is required to identify split-reads.
+Delly needs a sorted, indexed and duplicate marked BAM or CRAM file for every input sample.
+An indexed reference genome is required to identify split-reads and to decode CRAM files (the `-g` flag serves both purposes).
 Common workflows for germline and somatic SV calling are outlined below.
 
-`delly call -g hg38.fa input.bam > delly.vcf`
+`delly call -g ref.fa <input.bam|input.cram> > delly.vcf`
 
 You can also specify an output file in [BCF](http://samtools.github.io/bcftools/) format.
 
-`delly call -o delly.bcf -g hg38.fa input.bam`
+`delly call -o delly.bcf -g ref.fa <input.bam|input.cram>`
 
 `bcftools view delly.bcf > delly.vcf`
 
@@ -252,8 +252,9 @@ You should exclude telomere and centromere regions and also all unplaced contigs
 * Are non-unique alignments, multi-mappings and/or multiple split-read alignments allowed?  
 Delly expects two alignment records in the bam file for every paired-end, one for the first and one for the second read. Multiple split-read alignment records of a given read are allowed if and only if one of them is a primary alignment whereas all others are marked as secondary or supplementary. This is the default for bwa, minimap2 and many other aligners.
 
-* What pre-processing of bam files is required?    
-Bam files need to be sorted, indexed and ideally duplicate marked.
+* What pre-processing of BAM/CRAM files is required?
+BAM/CRAM files both need to be sorted, indexed and ideally duplicate marked.
+For CRAM files, the reference genome required for decoding is already supplied via the mandatory `-g` flag.
 
 * Usage/discussion mailing list?         
 There is a delly discussion group [delly-users](http://groups.google.com/d/forum/delly-users).

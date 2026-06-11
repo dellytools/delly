@@ -255,7 +255,7 @@ namespace torali
     // Check command line arguments
     if ((vm.count("help")) || (!vm.count("input-file")) || (!vm.count("genome"))) { 
       std::cerr << std::endl;
-      std::cerr << "Usage: delly " << argv[0] << " [OPTIONS] -g <ref.fa> <sample1.sort.bam> <sample2.sort.bam> ..." << std::endl;
+      std::cerr << "Usage: delly " << argv[0] << " [OPTIONS] -g <ref.fa> <sample1.sort.bam|sample1.sort.cram> <sample2.sort.bam|sample2.sort.cram> ..." << std::endl;
       std::cerr << visible_options << "\n";
       return 0;
     }
