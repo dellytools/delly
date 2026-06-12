@@ -302,9 +302,9 @@ namespace torali
 		  // Methylation for REF-supporting read
 		  if (!methCallBuilt) {
 		    methCallBuilt = true;
-		    hasMethyl = buildMethylCalls(rec, METHYL_PROB_THRESHOLD, methCall);
+		    hasMethyl = buildMethylCalls(rec, (uint8_t)c.methylProb, methCall);
 		  }
-		  if (hasMethyl) accumulateMethyl(rec, methCall, svs[svid], refIndex, (int32_t)hdr[file_c]->target_len[refIndex], false, candidates, methylAccum[file_c][svid]);
+		  if (hasMethyl) accumulateMethyl(c, rec, methCall, svs[svid], refIndex, (int32_t)hdr[file_c]->target_len[refIndex], false, candidates, methylAccum[file_c][svid], sequence);
 		  uint8_t qual = (uint8_t) std::min(rq, (uint32_t) rec->core.qual);
 		  jctMap[file_c][svid].ref.push_back(qual);
 		  if (hp == 1) jctMap[file_c][svid].hp1ref.push_back(qual);
@@ -317,9 +317,9 @@ namespace torali
 		  // Parse methylation for ALT-supporting read
 		  if (!methCallBuilt) {
 		    methCallBuilt = true;
-		    hasMethyl = buildMethylCalls(rec, METHYL_PROB_THRESHOLD, methCall);
+		    hasMethyl = buildMethylCalls(rec, (uint8_t)c.methylProb, methCall);
 		  }
-		  if (hasMethyl) accumulateMethyl(rec, methCall, svs[svid], refIndex, (int32_t)hdr[file_c]->target_len[refIndex], true, candidates, methylAccum[file_c][svid]);
+		  if (hasMethyl) accumulateMethyl(c, rec, methCall, svs[svid], refIndex, (int32_t)hdr[file_c]->target_len[refIndex], true, candidates, methylAccum[file_c][svid], sequence);
 		  // Record ALT support
 		  uint8_t qual = (uint8_t) std::min(aq, (uint32_t) rec->core.qual);
 		  if (c.hasDumpFile) {

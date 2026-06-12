@@ -51,6 +51,7 @@ namespace torali {
     uint32_t minCliqueSize;
     uint32_t maxReadPerSV;
     uint32_t maxGenoReadCount;
+    uint32_t minCpgDepth;
     int32_t minConsWindow;
     int32_t nchr;
     int32_t minimumFlankSize;
@@ -245,6 +246,7 @@ namespace torali {
    methyl.add_options()
      ("methyl-window,j", boost::program_options::value<int32_t>(&c.methylWindow)->default_value(2000), "methylation window for MA and MR fields")
      ("methyl-prob,e", boost::program_options::value<uint16_t>(&c.methylProb)->default_value(128), "Min. ML probability to call methylation [1, 256]")
+     ("min-cpg-depth", boost::program_options::value<uint32_t>(&c.minCpgDepth)->default_value(5), "min. avg. CpG read depth per window to emit MA/MR values")
      ;
    
    boost::program_options::options_description geno("Genotyping options");

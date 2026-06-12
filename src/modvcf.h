@@ -140,12 +140,16 @@ struct cstyle_str {
   }
 };
 
-  inline float
-  mf2bcf(float const v) {
-    float r;
-    if (v < 0.0f) bcf_float_set_missing(r);
-    else r = v;
-    return r;
+  // Type-trait helper: returns c.minCpgDepth if the config has it, else 0
+  template<typename T, typename = void>
+  struct _HasMinCpgDepth : std::false_type {};
+  template<typename T>
+  struct _HasMinCpgDepth<T, std::void_t<decltype(std::declval<T>().minCpgDepth)>> : std::true_type {};
+
+  template<typename T>
+  inline uint32_t _getMinCpgDepth(const T& c) {
+    if constexpr (_HasMinCpgDepth<T>::value) return c.minCpgDepth;
+    else return 0;
   }
 
 // Parse Delly vcf file
@@ -387,8 +391,10 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
   bcf_hdr_append(hdr, "##FORMAT=<ID=RV,Number=1,Type=Integer,Description=\"# high-quality variant junction reads\">");
   bcf_hdr_append(hdr, "##FORMAT=<ID=HP,Number=4,Type=Integer,Description=\"Haplotype-specific junction read counts (HP1_ref,HP1_alt,HP2_ref,HP2_alt)\">");
   bcf_hdr_append(hdr, "##FORMAT=<ID=PS,Number=1,Type=Integer,Description=\"Phase set identifier from HP-tagged alignments\">");
-  bcf_hdr_append(hdr, "##FORMAT=<ID=MR,Number=4,Type=Float,Description=\"Methylation for REF [SV start left/right, SV end left/right]\">");
-  bcf_hdr_append(hdr, "##FORMAT=<ID=MA,Number=4,Type=Float,Description=\"Methylation for ALT [SV start left/right, SV end left/right]\">");
+  bcf_hdr_append(hdr, "##FORMAT=<ID=MR,Number=4,Type=Integer,Description=\"Methylation % for REF allele [SV start left/right, SV end left/right]\">");
+  bcf_hdr_append(hdr, "##FORMAT=<ID=MA,Number=4,Type=Integer,Description=\"Methylation % for ALT allele [SV start left/right, SV end left/right]\">");
+  bcf_hdr_append(hdr, "##FORMAT=<ID=MNC,Number=4,Type=Integer,Description=\"Unique CpG sites observed per window [SV start left/right, SV end left/right]\">");
+  bcf_hdr_append(hdr, "##FORMAT=<ID=MDV,Number=4,Type=Integer,Description=\"Avg. read depth per CpG site per window [SV start left/right, SV end left/right]\">"); 
 
   // Add reference
   std::string refloc("##reference=");
@@ -419,8 +425,10 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
     int32_t *gqval = (int*) malloc(bcf_hdr_nsamples(hdr) * sizeof(int));
     int32_t *hpcount = (int*) malloc(bcf_hdr_nsamples(hdr) * 4 * sizeof(int));
     int32_t *psarr = (int*) malloc(bcf_hdr_nsamples(hdr) * sizeof(int));
-    float *ma = (float*) malloc(bcf_hdr_nsamples(hdr) * 4 * sizeof(float));
-    float *mr = (float*) malloc(bcf_hdr_nsamples(hdr) * 4 * sizeof(float));
+    int32_t *ma = (int32_t*) malloc(bcf_hdr_nsamples(hdr) * 4 * sizeof(int32_t));
+    int32_t *mr = (int32_t*) malloc(bcf_hdr_nsamples(hdr) * 4 * sizeof(int32_t));
+    int32_t *mnc = (int32_t*) malloc(bcf_hdr_nsamples(hdr) * 4 * sizeof(int32_t));
+    int32_t *mdv = (int32_t*) malloc(bcf_hdr_nsamples(hdr) * 4 * sizeof(int32_t));
     int32_t *plvals = (int32_t*) malloc(bcf_hdr_nsamples(hdr) * 3 * sizeof(int32_t));
     std::vector<std::string> ftarr;
     ftarr.resize(bcf_hdr_nsamples(hdr));
@@ -586,18 +594,45 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
 	// Methylation
 	if ((!methylMap.empty()) && (file_c < methylMap.size()) && (svIter->id < (int32_t)methylMap[file_c].size())) {
 	  const MethylInfo& mi = methylMap[file_c][svIter->id];
-	  ma[file_c*4+0] = mf2bcf(mi.altSvStartL);
-	  ma[file_c*4+1] = mf2bcf(mi.altSvStartR);
-	  ma[file_c*4+2] = mf2bcf(mi.altSvRightL);
-	  ma[file_c*4+3] = mf2bcf(mi.altSvRightR);
-	  mr[file_c*4+0] = mf2bcf(mi.refSvStartL);
-	  mr[file_c*4+1] = mf2bcf(mi.refSvStartR);
-	  mr[file_c*4+2] = mf2bcf(mi.refSvRightL);
-	  mr[file_c*4+3] = mf2bcf(mi.refSvRightR);
+	  bool isIns = (svIter->svt == 4);
+	  bool isDel = (svIter->svt == 2);
+
+	  // Percent methylation
+	  auto mout = [&](int32_t pct, int32_t depth) -> int32_t {
+	    if ((pct < 0) || (depth < 0) || ((uint32_t)depth < _getMinCpgDepth(c))) return bcf_int32_missing;
+	    return pct;
+	  };
+	  auto ncout = [](int32_t v) -> int32_t {
+	    return (v < 0) ? bcf_int32_missing : v;
+	  };
+
+	  // MNC and MDV (combined REF+ALT)
+	  mnc[file_c*4+0] = ncout(mi.mncStartL);
+	  mnc[file_c*4+1] = ncout(mi.mncStartR);
+	  mnc[file_c*4+2] = ncout(mi.mncRightL);
+	  mnc[file_c*4+3] = ncout(mi.mncRightR);
+	  mdv[file_c*4+0] = ncout(mi.mdpStartL);
+	  mdv[file_c*4+1] = ncout(mi.mdpStartR);
+	  mdv[file_c*4+2] = ncout(mi.mdpRightL);
+	  mdv[file_c*4+3] = ncout(mi.mdpRightR);
+
+	  // MA: ALT allele
+	  ma[file_c*4+0] = mout(mi.altSvStartL, mi.mdpStartL);
+	  ma[file_c*4+1] = isDel ? bcf_int32_missing : mout(mi.altSvStartR, mi.mdpStartR);
+	  ma[file_c*4+2] = isDel ? bcf_int32_missing : mout(mi.altSvRightL, mi.mdpRightL);
+	  ma[file_c*4+3] = mout(mi.altSvRightR, mi.mdpRightR);
+
+	  // MR: REF allele
+	  mr[file_c*4+0] = mout(mi.refSvStartL, mi.mdpStartL);
+	  mr[file_c*4+1] = isIns ? bcf_int32_missing : mout(mi.refSvStartR, mi.mdpStartR);
+	  mr[file_c*4+2] = isIns ? bcf_int32_missing : mout(mi.refSvRightL, mi.mdpRightL);
+	  mr[file_c*4+3] = mout(mi.refSvRightR, mi.mdpRightR);
 	} else {
 	  for (int k = 0; k < 4; ++k) {
-	    bcf_float_set_missing(ma[file_c*4+k]);
-	    bcf_float_set_missing(mr[file_c*4+k]);
+	    ma[file_c*4+k] = bcf_int32_missing;
+	    mr[file_c*4+k] = bcf_int32_missing;
+	    mnc[file_c*4+k] = bcf_int32_missing;
+	    mdv[file_c*4+k] = bcf_int32_missing;
 	  }
 	}
 
@@ -668,8 +703,10 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
       bcf_update_format_int32(hdr, rec, "RV", rvcount, bcf_hdr_nsamples(hdr));
       bcf_update_format_int32(hdr, rec, "HP", hpcount, bcf_hdr_nsamples(hdr) * 4);
       bcf_update_format_int32(hdr, rec, "PS", psarr, bcf_hdr_nsamples(hdr));
-      bcf_update_format_float(hdr, rec, "MR", mr, bcf_hdr_nsamples(hdr) * 4);
-      bcf_update_format_float(hdr, rec, "MA", ma, bcf_hdr_nsamples(hdr) * 4);	    
+      bcf_update_format_int32(hdr, rec, "MR", mr, bcf_hdr_nsamples(hdr) * 4);
+      bcf_update_format_int32(hdr, rec, "MA", ma, bcf_hdr_nsamples(hdr) * 4);
+      bcf_update_format_int32(hdr, rec, "MNC", mnc, bcf_hdr_nsamples(hdr) * 4);
+      bcf_update_format_int32(hdr, rec, "MDV", mdv, bcf_hdr_nsamples(hdr) * 4);
       bcf_write1(fp, hdr, rec);
       bcf_clear1(rec);
     }
@@ -692,6 +729,8 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
     free(psarr);
     free(ma);
     free(mr);
+    free(mnc);
+    free(mdv);
   }
 
   // Close BAM file
