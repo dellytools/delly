@@ -256,6 +256,15 @@ vcfParse(TConfig const& c, bam_hdr_t* hd, std::vector<TStructuralVariantRecord>&
       svRec.svEnd = rec->pos + 1;
       if (svRec.svt < DELLY_SVT_TRANS) {
 	if (bcf_get_info_int32(hdr, rec, "END", &svend, &nsvend) > 0) svRec.svEnd = *svend;
+	if (!svRec.alleles.empty()) {
+	  size_t commaPos = svRec.alleles.find(',');
+	  bool isSymbolic = (commaPos == std::string::npos);
+	  if (!isSymbolic) {
+	    std::string alt = svRec.alleles.substr(commaPos + 1);
+	    isSymbolic = (!alt.empty()) && ((alt[0] == '<') || (alt.find('[') != std::string::npos) || (alt.find(']') != std::string::npos));
+	  }
+	  if (!isSymbolic) svRec.svEnd = svRec.svStart + (int32_t) commaPos;
+	}
       } else {
 	// Inter-chromosomal SV
 	if (bcf_get_info_string(hdr, rec, "CHR2", &chr2, &nchr2) > 0) {
