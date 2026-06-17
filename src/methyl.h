@@ -72,11 +72,10 @@ namespace torali {
     uint32_t refRightL_t;
     uint32_t refRightR_m;
     uint32_t refRightR_t;
-    // Unique CpG positions observed across all reads (alt+ref combined)
-    std::unordered_set<int32_t> cpgStartL;
-    std::unordered_set<int32_t> cpgStartR;
-    std::unordered_set<int32_t> cpgRightL;
-    std::unordered_set<int32_t> cpgRightR;
+    std::unordered_map<int32_t, uint32_t> cpgStartL;
+    std::unordered_map<int32_t, uint32_t> cpgStartR;
+    std::unordered_map<int32_t, uint32_t> cpgRightL;
+    std::unordered_map<int32_t, uint32_t> cpgRightR;
 
     MethylAccum() : altStartL_m(0), altStartL_t(0), altStartR_m(0), altStartR_t(0), altRightL_m(0), altRightL_t(0), altRightR_m(0), altRightR_t(0), refStartL_m(0), refStartL_t(0), refStartR_m(0), refStartR_t(0), refRightL_m(0), refRightL_t(0), refRightR_m(0), refRightR_t(0) {}
   };
@@ -217,10 +216,10 @@ namespace torali {
 
   // Collect methylation counts
   inline void
-  collectMethylFromWindows(bam1_t* rec, std::vector<int8_t> const& methCall, std::vector<std::pair<int32_t,int32_t>> const& wins, std::vector<uint32_t>& methCounts, std::vector<uint32_t>& totCounts, std::vector<std::unordered_set<int32_t>>& cpgPos) {
+  collectMethylFromWindows(bam1_t* rec, std::vector<int8_t> const& methCall, std::vector<std::pair<int32_t,int32_t>> const& wins, std::vector<uint32_t>& methCounts, std::vector<uint32_t>& totCounts, std::vector<std::unordered_map<int32_t,uint32_t>>& cpgPos) {
     methCounts.assign(wins.size(), 0);
     totCounts.assign(wins.size(), 0);
-    cpgPos.assign(wins.size(), std::unordered_set<int32_t>());
+    cpgPos.assign(wins.size(), std::unordered_map<int32_t,uint32_t>());
     if ((wins.empty()) || (methCall.empty())) return;
 
     bool readRev = (rec->core.flag & BAM_FREVERSE);
@@ -246,7 +245,7 @@ namespace torali {
             if ((rp >= wins[wi].first) && (rp < wins[wi].second)) {
               ++totCounts[wi];
               if (call == 1) ++methCounts[wi];
-              cpgPos[wi].insert(rp);
+              ++cpgPos[wi][rp];
             }
           }
         }
@@ -262,7 +261,7 @@ namespace torali {
   // Collect methylation from the insertion sequence using edlib alignment.
   template<typename TConfig>
   inline void
-  collectMethylFromInsertionEdlib(TConfig const& c, bam1_t* rec, std::string const& readSeq, std::vector<int8_t> const& methCall, int32_t svStart, std::string const& consensus, int32_t consBp, int32_t insLen, uint32_t& methStartR, uint32_t& totStartR, std::unordered_set<int32_t>& cpgStartR, uint32_t& methRightL, uint32_t& totRightL, std::unordered_set<int32_t>& cpgRightL) {
+  collectMethylFromInsertionEdlib(TConfig const& c, bam1_t* rec, std::string const& readSeq, std::vector<int8_t> const& methCall, int32_t svStart, std::string const& consensus, int32_t consBp, int32_t insLen, uint32_t& methStartR, uint32_t& totStartR, std::unordered_map<int32_t,uint32_t>& cpgStartR, uint32_t& methRightL, uint32_t& totRightL, std::unordered_map<int32_t,uint32_t>& cpgRightL) {
     int32_t l = (int32_t)readSeq.size();
     if ((l == 0) || (insLen <= 0)) return;
     if ((consBp < 0) || ((consBp + insLen) > (int32_t)consensus.size())) return;
@@ -353,7 +352,7 @@ namespace torali {
       int32_t winEnd = (window == 0) ? wlen : insLen;
       uint32_t& meth_r = (window == 0) ? methStartR : methRightL;
       uint32_t& tot_r = (window == 0) ? totStartR : totRightL;
-      std::unordered_set<int32_t>& cpg_r = (window == 0) ? cpgStartR : cpgRightL;
+      std::unordered_map<int32_t,uint32_t>& cpg_r = (window == 0) ? cpgStartR : cpgRightL;
 
       for (int32_t k = winStart; k < (winEnd - 1); ++k) {
         // Identify CpG in consensus
@@ -408,16 +407,42 @@ namespace torali {
         if (call < 0) continue;
 
         // CpG key k, stable in consensus
-        cpg_r.insert(k);
+        ++cpg_r[k];
         ++tot_r;
         if (call == 1) ++meth_r;
       }
     }
   }
 
+  // Merge forward/reverse CpGs
+  inline int32_t
+  clusterAndFilterCpG(std::unordered_map<int32_t, uint32_t> const& cpgMap, uint32_t minDepth) {
+    if (cpgMap.empty()) return 0;
+    std::vector<int32_t> positions;
+    positions.reserve(cpgMap.size());
+    for (auto const& kv : cpgMap) positions.push_back(kv.first);
+    std::sort(positions.begin(), positions.end());
+
+    int32_t count = 0;
+    int32_t clusterStart = positions[0];
+    uint32_t clusterDepth = cpgMap.at(positions[0]);
+    for (std::size_t i = 1; i < positions.size(); ++i) {
+      int32_t pos = positions[i];
+      if (pos <= clusterStart + 1) {
+        clusterDepth += cpgMap.at(pos);
+      } else {
+        if (clusterDepth >= minDepth) ++count;
+        clusterStart = pos;
+        clusterDepth = cpgMap.at(pos);
+      }
+    }
+    if (clusterDepth >= minDepth) ++count;
+    return count;
+  }
+
   // Compute methylation
   inline void
-  finalizeMethylInfo(const MethylAccum& ma, MethylInfo& mi) {
+  finalizeMethylInfo(const MethylAccum& ma, MethylInfo& mi, uint32_t minCpgDepth) {
     auto pct = [](uint32_t m, uint32_t t) -> int32_t {
       return (t > 0) ? (int32_t)std::round(100.0f * (float)m / (float)t) : -1;
     };
@@ -433,10 +458,10 @@ namespace torali {
     mi.refSvStartR = pct(ma.refStartR_m, ma.refStartR_t);
     mi.refSvRightL = pct(ma.refRightL_m, ma.refRightL_t);
     mi.refSvRightR = pct(ma.refRightR_m, ma.refRightR_t);
-    mi.mncStartL = (int32_t)ma.cpgStartL.size();
-    mi.mncStartR = (int32_t)ma.cpgStartR.size();
-    mi.mncRightL = (int32_t)ma.cpgRightL.size();
-    mi.mncRightR = (int32_t)ma.cpgRightR.size();
+    mi.mncStartL = clusterAndFilterCpG(ma.cpgStartL, minCpgDepth);
+    mi.mncStartR = clusterAndFilterCpG(ma.cpgStartR, minCpgDepth);
+    mi.mncRightL = clusterAndFilterCpG(ma.cpgRightL, minCpgDepth);
+    mi.mncRightR = clusterAndFilterCpG(ma.cpgRightR, minCpgDepth);
     mi.mdpStartL = mdp(ma.altStartL_t, ma.refStartL_t, mi.mncStartL);
     mi.mdpStartR = mdp(ma.altStartR_t, ma.refStartR_t, mi.mncStartR);
     mi.mdpRightL = mdp(ma.altRightL_t, ma.refRightL_t, mi.mncRightL);
@@ -513,24 +538,24 @@ namespace torali {
     // Collect
     if (!wins.empty()) {
       std::vector<uint32_t> methCounts, totCounts;
-      std::vector<std::unordered_set<int32_t>> cpgPos;
+      std::vector<std::unordered_map<int32_t,uint32_t>> cpgPos;
       collectMethylFromWindows(rec, methCall, wins, methCounts, totCounts, cpgPos);
       for (std::size_t i = 0; i < field.size(); ++i) {
         uint32_t m = methCounts[i];
 	uint32_t t = totCounts[i];
         if (isAlt) {
           switch (field[i]) {
-            case 0: accum.altStartL_m += m; accum.altStartL_t += t; accum.cpgStartL.insert(cpgPos[i].begin(), cpgPos[i].end()); break;
-            case 1: accum.altStartR_m += m; accum.altStartR_t += t; accum.cpgStartR.insert(cpgPos[i].begin(), cpgPos[i].end()); break;
-            case 2: accum.altRightL_m += m; accum.altRightL_t += t; accum.cpgRightL.insert(cpgPos[i].begin(), cpgPos[i].end()); break;
-            case 3: accum.altRightR_m += m; accum.altRightR_t += t; accum.cpgRightR.insert(cpgPos[i].begin(), cpgPos[i].end()); break;
+            case 0: accum.altStartL_m += m; accum.altStartL_t += t; for (auto const& kv : cpgPos[i]) accum.cpgStartL[kv.first] += kv.second; break;
+            case 1: accum.altStartR_m += m; accum.altStartR_t += t; for (auto const& kv : cpgPos[i]) accum.cpgStartR[kv.first] += kv.second; break;
+            case 2: accum.altRightL_m += m; accum.altRightL_t += t; for (auto const& kv : cpgPos[i]) accum.cpgRightL[kv.first] += kv.second; break;
+            case 3: accum.altRightR_m += m; accum.altRightR_t += t; for (auto const& kv : cpgPos[i]) accum.cpgRightR[kv.first] += kv.second; break;
           }
         } else {
           switch (field[i]) {
-            case 0: accum.refStartL_m += m; accum.refStartL_t += t; accum.cpgStartL.insert(cpgPos[i].begin(), cpgPos[i].end()); break;
-            case 1: accum.refStartR_m += m; accum.refStartR_t += t; accum.cpgStartR.insert(cpgPos[i].begin(), cpgPos[i].end()); break;
-            case 2: accum.refRightL_m += m; accum.refRightL_t += t; accum.cpgRightL.insert(cpgPos[i].begin(), cpgPos[i].end()); break;
-            case 3: accum.refRightR_m += m; accum.refRightR_t += t; accum.cpgRightR.insert(cpgPos[i].begin(), cpgPos[i].end()); break;
+            case 0: accum.refStartL_m += m; accum.refStartL_t += t; for (auto const& kv : cpgPos[i]) accum.cpgStartL[kv.first] += kv.second; break;
+            case 1: accum.refStartR_m += m; accum.refStartR_t += t; for (auto const& kv : cpgPos[i]) accum.cpgStartR[kv.first] += kv.second; break;
+            case 2: accum.refRightL_m += m; accum.refRightL_t += t; for (auto const& kv : cpgPos[i]) accum.cpgRightL[kv.first] += kv.second; break;
+            case 3: accum.refRightR_m += m; accum.refRightR_t += t; for (auto const& kv : cpgPos[i]) accum.cpgRightR[kv.first] += kv.second; break;
           }
         }
       }

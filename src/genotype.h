@@ -385,7 +385,7 @@ namespace torali
     // Finalize methylation fractions from accumulated read counts
     for (unsigned int fc = 0; fc < c.files.size(); ++fc) {
       for (uint32_t i = 0; i < svs.size(); ++i) {
-        finalizeMethylInfo(methylAccum[fc][i], methylMap[fc][i]);
+        finalizeMethylInfo(methylAccum[fc][i], methylMap[fc][i], c.minCpgDepth);
       }
     }
 
