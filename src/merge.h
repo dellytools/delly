@@ -65,6 +65,8 @@ namespace torali
     float trFrac;
     float trSeqId;
     float normFrac;
+    float juncSeqId;
+    int32_t seqCutoff;
     int32_t recurrentSamples;
     boost::filesystem::path outfile;
     boost::filesystem::path genome;
@@ -210,13 +212,13 @@ namespace torali
 
   // Sequence identity
   inline double
-  _bestSeqIdentity(std::string const& a, std::string const& b, int32_t const posOff, double const minId) {
+  _bestSeqIdentity(std::string const& a, std::string const& b, int32_t const posOff, double const minId, int32_t const seqCutoff) {
     if ((a.empty()) || (b.empty())) return -1.0;
     double best = _seqIdentity(a, b, minId);
     // Found hit?
     if ((minId > 0.0) && (best >= minId)) return best;
-    // Rotations are only meaningful (and cheap) for short sequences.
-    if ((a.size() < 2000) && (b.size() < 2000)) {
+    // Exact REF/ALT up to seqCutoff
+    if (((int32_t) a.size() < seqCutoff) && ((int32_t) b.size() < seqCutoff)) {
       int32_t f = posOff % (int32_t) b.size();
       if (f > 0) {
 	std::string rot = b.substr(b.size() - f) + b.substr(0, b.size() - f);
@@ -234,8 +236,14 @@ namespace torali
     // Translocations (BND)
     if (_translocation(a.svt)) {
       if (a.mtid != b.mtid) return false;
-      if (std::abs(a.svStart - b.svStart) > (int32_t) c.bpoffset) return false;
-      if (std::abs(a.pos2 - b.pos2) > (int32_t) c.bpoffset) return false;
+      int32_t win = std::max((int32_t) c.bpoffset, std::max(a.homlen, b.homlen));
+      if (std::abs(a.svStart - b.svStart) > win) return false;
+      if (std::abs(a.pos2 - b.pos2) > win) return false;
+      // Junction-consensus check
+      if ((!a.seq.empty()) && (!b.seq.empty()) && ((int32_t) std::max(a.seq.size(), b.seq.size()) < c.seqCutoff)) {
+	double sid = _seqIdentity(a.seq, b.seq, c.juncSeqId);
+	if ((sid >= 0) && (sid < c.juncSeqId)) return false;
+      }
       return true;
     }
 
@@ -246,6 +254,7 @@ namespace torali
     double maxS = (double) std::max(a.size, b.size);
     double sizeRatio = (maxS > 0) ? (minS / maxS) : 1.0;
     int8_t st = a.subtype ? a.subtype : b.subtype;
+    if ((a.subtype) && (b.subtype) && (a.subtype != b.subtype)) st = std::min(a.subtype, b.subtype);
 
     // Merge according to SV subtype
     if ((st >= 1) && (st <= 6)) {
@@ -254,8 +263,8 @@ namespace torali
       int32_t win = std::max(c.meiOffset, maxHom + 10);
       if (posOff > win) return false;
       if (sizeRatio < c.meiSizeRatio) return false;
-      if ((!a.seq.empty()) && (!b.seq.empty())) {
-	double sid = _bestSeqIdentity(a.seq, b.seq, posOff, c.meiSeqId);
+      if ((!a.seq.empty()) && (!b.seq.empty()) && (maxS < c.seqCutoff)) {
+	double sid = _bestSeqIdentity(a.seq, b.seq, posOff, c.meiSeqId, c.seqCutoff);
 	if ((sid >= 0) && (sid < c.meiSeqId)) return false;
       }
       return true;
@@ -265,8 +274,8 @@ namespace torali
       if (a.trperiod > 0) win = std::max(win, 2 * a.trperiod);
       if (b.trperiod > 0) win = std::max(win, 2 * b.trperiod);
       if (posOff > win) return false;
-      if ((!a.seq.empty()) && (!b.seq.empty()) && (maxS < 2000)) {
-	double sid = _bestSeqIdentity(a.seq, b.seq, posOff, c.trSeqId);
+      if ((!a.seq.empty()) && (!b.seq.empty()) && (maxS < c.seqCutoff)) {
+	double sid = _bestSeqIdentity(a.seq, b.seq, posOff, c.trSeqId, c.seqCutoff);
 	if ((sid >= 0) && (sid < c.trSeqId)) return false;
       }
       return true;
@@ -278,6 +287,11 @@ namespace torali
       if (posOff > win) return false;
       if (recOverlap(a.svStart, a.svEnd, b.svStart, b.svEnd) < c.recoverlap) return false;
       if ((a.svt == 4) && (sizeRatio < 0.7)) return false;
+      // Junction-consensus check
+      if (((a.svt == 0) || (a.svt == 3)) && (!a.seq.empty()) && (!b.seq.empty()) && ((int32_t) std::max(a.seq.size(), b.seq.size()) < c.seqCutoff)) {
+	double sid = _seqIdentity(a.seq, b.seq, c.juncSeqId);
+	if ((sid >= 0) && (sid < c.juncSeqId)) return false;
+      }
       return true;
     }
   }
@@ -526,7 +540,7 @@ namespace torali
 	  std::string refAllele(rec->d.allele[0]);
 	  if (recsvt == 4) {
 	    if ((!altAllele.empty()) && (altAllele[0] != '<')) {
-	      if (altAllele.size() > 1) seq = boost::to_upper_copy(altAllele.substr(1));
+	      if ((altAllele.size() > 1) && (realSize <= c.seqCutoff)) seq = boost::to_upper_copy(altAllele.substr(1));
 	    } else if (precise) {
 	      // Symbolic insertion: use consensus
 	      int32_t consBpVal = -1;
@@ -536,8 +550,15 @@ namespace torali
 		if ((consBpVal >= 0) && (realSize > 0) && (consBpVal + realSize <= (int32_t) consStr.size())) seq = consStr.substr(consBpVal, realSize);
 	      }
 	    }
-	  } else if ((recsvt == 2) && (realSize <= 1000)) {
+	  } else if ((recsvt == 2) && (realSize <= c.seqCutoff)) {
+	    // Deletion: deleted reference bases (delly emits exact REF up to seqCutoff)
 	    if (refAllele.size() > 1) seq = boost::to_upper_copy(refAllele.substr(1));
+	  } else if ((recsvt == 0) || (recsvt == 3) || (_translocation(recsvt))) {
+	    // INV/DUP/BND: breakpoint-junction consensus for adjacency corroboration
+	    if (bcf_get_info_string(hdr, rec, "CONSENSUS", &cons, &ncons) > 0) {
+	      std::string consStr = boost::to_upper_copy(std::string(cons));
+	      if ((int32_t) consStr.size() <= c.seqCutoff) seq = consStr;
+	    }
 	  }
 	}
 
@@ -1543,6 +1564,8 @@ namespace torali
       ("tr-frac", boost::program_options::value<float>(&c.trFrac)->default_value(0.25), "breakpoint offset as fraction of TR size")
       ("tr-seqid", boost::program_options::value<float>(&c.trSeqId)->default_value(0.7), "min. seq. identity for TRs")
       ("norm-frac", boost::program_options::value<float>(&c.normFrac)->default_value(0.5), "SV size normalized breakpoint offset fraction")
+      ("junc-seqid", boost::program_options::value<float>(&c.juncSeqId)->default_value(0.7), "min. consensus identity")
+      ("seq-cutoff", boost::program_options::value<int32_t>(&c.seqCutoff)->default_value(10000), "max. seq. length for identity checks")
       ;
     
     // Define hidden options
