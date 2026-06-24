@@ -28,11 +28,13 @@ displayUsage() {
   std::cerr << std::endl;
   std::cerr << "Short-read SV calling:" << std::endl;
   std::cerr << "    call         discover and genotype structural variants" << std::endl;
-  std::cerr << "    merge        merge structural variants across VCF/BCF files and within a single VCF/BCF file" << std::endl;
-  std::cerr << "    filter       filter somatic or germline structural variants" << std::endl;
   std::cerr << std::endl;
   std::cerr << "Long-read SV calling:" << std::endl;
   std::cerr << "    lr           long-read SV discovery" << std::endl;
+  std::cerr << std::endl;
+  std::cerr << "Helper commands:" << std::endl;
+  std::cerr << "    merge        merge structural variants" << std::endl;
+  std::cerr << "    filter       filter somatic or germline structural variants" << std::endl;
   std::cerr << std::endl;
   //std::cerr << "Assembly-based SV calling (work-in-progress):" << std::endl;
   //std::cerr << "    asm          assembly SV site discovery" << std::endl;
