@@ -241,6 +241,10 @@ namespace torali
 	    // Genotype breakpoints
 	    std::vector<double> scoreR(candidates.size());
 	    std::vector<double> scoreA(candidates.size());
+	    // Edit-distance for REF and ALT
+	    int32_t refedsum = 0;
+	    int32_t altedsum = 0;
+	    int32_t nInform = 0;
 	    for(uint32_t i = 0; i < candidates.size(); ++i) {
 	      int32_t pos = candidates[i];
 	      int32_t spBp = _findSeqBp(rec, pos);	      
@@ -281,60 +285,54 @@ namespace torali
 	      
 	      scoreA[i] = (1.0 - c.flankQuality) * alt.size();
 	      scoreR[i] = (1.0 - c.flankQuality) * ref.size();
-	      scoreA[i] = scoreA[i] / (double) altScore;
-	      scoreR[i] = scoreR[i] / (double) refScore;
-	    }
-
-	    // Pick better alignment
-	    double scoreRef = scoreR[0];
-	    double scoreAlt = scoreA[0];
-	    if (candidates.size() == 2) {
-	      scoreAlt = std::max(scoreA[0], scoreA[1]);
-	      scoreRef = std::max(scoreR[0], scoreR[1]);
-	    }
-	    //std::cerr << bam_get_qname(rec) << "," << (int) (rec->core.flag & BAM_FREVERSE) << "," << hdr[file_c]->target_name[refIndex] << ":" << svs[svid].svStart << "-" << svs[svid].svEnd << "(" << svs[svid].svt << ")" << scoreAlt << ',' << scoreRef << std::endl;
-
-	    // Any confident alignment?
-	    if ((scoreRef > 0.6) || (scoreAlt > 0.6)) {
-	      if (scoreRef > scoreAlt) {
-		uint32_t rq = scoreRef * 35;
-		if (rq >= c.minGenoQual) {
-		  // Methylation for REF-supporting read
-		  if (!methCallBuilt) {
-		    methCallBuilt = true;
-		    hasMethyl = buildMethylCalls(rec, (uint8_t)c.methylProb, methCall);
-		  }
-		  if (hasMethyl) accumulateMethyl(c, rec, methCall, svs[svid], refIndex, (int32_t)hdr[file_c]->target_len[refIndex], false, candidates, methylAccum[file_c][svid], sequence);
-		  uint8_t qual = (uint8_t) std::min(rq, (uint32_t) rec->core.qual);
-		  jctMap[file_c][svid].ref.push_back(qual);
-		  if (hp == 1) jctMap[file_c][svid].hp1ref.push_back(qual);
-		  else if (hp == 2) jctMap[file_c][svid].hp2ref.push_back(qual);
-		}
-	      } else {
-		// Record ALT support
-		uint32_t aq = scoreAlt * 35;
-		if (aq >= c.minGenoQual) {
-		  // Parse methylation for ALT-supporting read
-		  if (!methCallBuilt) {
-		    methCallBuilt = true;
-		    hasMethyl = buildMethylCalls(rec, (uint8_t)c.methylProb, methCall);
-		  }
-		  if (hasMethyl) accumulateMethyl(c, rec, methCall, svs[svid], refIndex, (int32_t)hdr[file_c]->target_len[refIndex], true, candidates, methylAccum[file_c][svid], sequence);
-		  // Record ALT support
-		  uint8_t qual = (uint8_t) std::min(aq, (uint32_t) rec->core.qual);
-		  if (c.hasDumpFile) {
-		    std::string svidStr(_addID(svs[svid].svt));
-		    std::string padNumber = boost::lexical_cast<std::string>(svid);
-		    padNumber.insert(padNumber.begin(), 8 - padNumber.length(), '0');
-		    svidStr += padNumber;
-		    dumpOut << svidStr << "\t" << c.files[file_c].string() << "\t" << bam_get_qname(rec) << "\t" << hdr[file_c]->target_name[rec->core.tid] << "\t" << rec->core.pos << "\t" << (int32_t) rec->core.qual << "\tSR" << std::endl;
-		  }
-		  jctMap[file_c][svid].alt.push_back(qual);
-		  if (hp == 1) jctMap[file_c][svid].hp1alt.push_back(qual);
-		  else if (hp == 2) jctMap[file_c][svid].hp2alt.push_back(qual);
-		  if ((hp > 0) && (ps >= 0) && (jctMap[file_c][svid].ps < 0)) jctMap[file_c][svid].ps = ps;
-		}
+	      scoreA[i] = scoreA[i] / (double) (altScore + 1);
+	      scoreR[i] = scoreR[i] / (double) (refScore + 1);
+	      // Only breakpoints where the read matches at least one allele are informative
+	      if ((scoreR[i] > 0.6) || (scoreA[i] > 0.6)) {
+		refedsum += refScore;
+		altedsum += altScore;
+		++nInform;
 	      }
+	    }
+
+	    // Use edit distance instead of mapq
+	    if (nInform == 0) continue;
+	    int32_t delta = refedsum - altedsum;
+	    int32_t adelta = (delta < 0) ? -delta : delta;
+	    double w = std::log10((double) c.flankQuality / (double) (1.0 - c.flankQuality));
+	    double ex = (double) adelta * w;
+	    if (ex > 4.0) ex = 4.0;
+	    uint32_t mq = (uint32_t) (10.0 * std::log10(1.0 + std::pow(10.0, ex)));
+	    if (mq > (uint32_t) c.genoCap) mq = (uint32_t) c.genoCap;
+	    uint8_t qual = (uint8_t) mq;
+	    if (delta <= 0) {
+	      // REF-supporting read
+	      if (!methCallBuilt) {
+		methCallBuilt = true;
+		hasMethyl = buildMethylCalls(rec, (uint8_t)c.methylProb, methCall);
+	      }
+	      if (hasMethyl) accumulateMethyl(c, rec, methCall, svs[svid], refIndex, (int32_t)hdr[file_c]->target_len[refIndex], false, candidates, methylAccum[file_c][svid], sequence);
+	      jctMap[file_c][svid].ref.push_back(qual);
+	      if (hp == 1) jctMap[file_c][svid].hp1ref.push_back(qual);
+	      else if (hp == 2) jctMap[file_c][svid].hp2ref.push_back(qual);
+	    } else {
+	      // ALT-supporting read
+	      if (!methCallBuilt) {
+		methCallBuilt = true;
+		hasMethyl = buildMethylCalls(rec, (uint8_t)c.methylProb, methCall);
+	      }
+	      if (hasMethyl) accumulateMethyl(c, rec, methCall, svs[svid], refIndex, (int32_t)hdr[file_c]->target_len[refIndex], true, candidates, methylAccum[file_c][svid], sequence);
+	      if (c.hasDumpFile) {
+		std::string svidStr(_addID(svs[svid].svt));
+		std::string padNumber = boost::lexical_cast<std::string>(svid);
+		padNumber.insert(padNumber.begin(), 8 - padNumber.length(), '0');
+		svidStr += padNumber;
+		dumpOut << svidStr << "\t" << c.files[file_c].string() << "\t" << bam_get_qname(rec) << "\t" << hdr[file_c]->target_name[rec->core.tid] << "\t" << rec->core.pos << "\t" << (int32_t) rec->core.qual << "\tSR" << std::endl;
+	      }
+	      jctMap[file_c][svid].alt.push_back(qual);
+	      if (hp == 1) jctMap[file_c][svid].hp1alt.push_back(qual);
+	      else if (hp == 2) jctMap[file_c][svid].hp2alt.push_back(qual);
+	      if ((hp > 0) && (ps >= 0) && (jctMap[file_c][svid].ps < 0)) jctMap[file_c][svid].ps = ps;
 	    }
 	  }
 	}

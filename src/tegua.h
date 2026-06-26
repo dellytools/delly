@@ -41,9 +41,11 @@ namespace torali {
     bool hasExcludeFile;
     bool hasVcfFile;
     bool hasAltFile;
+    bool noAfPrior;
     uint16_t methylProb;
     uint16_t minMapQual;
     uint16_t minGenoQual;
+    int32_t genoCap;
     uint32_t minClip;
     uint32_t minRefSep;
     uint32_t maxReadSep;
@@ -154,7 +156,12 @@ namespace torali {
      // Re-number SVs
      uint32_t cliqueCount = 0;
      for(typename TVariants::iterator svIt = svs.begin(); svIt != svs.end(); ++svIt, ++cliqueCount) svIt->id = cliqueCount;
-   } else vcfParse(c, hdr, svs);
+   } else {
+     vcfParse(c, hdr, svs);
+     if (c.noAfPrior) {
+       for(typename TVariants::iterator itSV = svs.begin(); itSV != svs.end(); ++itSV) itSV->af = -1;
+     }
+   }
    // Clean-up
    bam_hdr_destroy(hdr);
    sam_close(samfile);
@@ -255,6 +262,7 @@ namespace torali {
      ("geno-qual,u", boost::program_options::value<uint16_t>(&c.minGenoQual)->default_value(5), "min. mapping quality for genotyping")
      ("max-geno-count,b", boost::program_options::value<uint32_t>(&c.maxGenoReadCount)->default_value(250), "max. reads aligned for SR genotyping")
      ("dump,d", boost::program_options::value<boost::filesystem::path>(&c.dumpfile), "gzipped output file for SV-reads")
+     ("no-af-prior", boost::program_options::bool_switch(&c.noAfPrior), "disable AF genotype prior")
      ;
 
    boost::program_options::options_description hidden("Hidden options");
@@ -263,6 +271,7 @@ namespace torali {
      ("pruning", boost::program_options::value<uint32_t>(&c.graphPruning)->default_value(1000), "graph pruning cutoff")
      ("extension", boost::program_options::value<float>(&c.indelExtension)->default_value(0.5), "enforce indel extension")
      ("scoring,s", boost::program_options::value<std::string>(&scoring)->default_value("3,-2,-3,-1"), "alignment scoring")
+     ("read-cap", boost::program_options::value<int32_t>(&c.genoCap)->default_value(25), "max. per-read genotype quality")
      ;
    
    boost::program_options::positional_options_description pos_args;
