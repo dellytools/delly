@@ -298,19 +298,6 @@ vcfParse(TConfig const& c, bam_hdr_t* hd, std::vector<TStructuralVariantRecord>&
       else svRec.srMapQuality = 0;
       if (bcf_get_info_float(hdr, rec, "SRQ", &srq, &nsrq) > 0) svRec.srAlignQuality = (double) *srq;
       else svRec.srAlignQuality = 0;
-      svRec.af = -1;
-      if (bcf_get_info_float(hdr, rec, "AF", &srq, &nsrq) > 0) svRec.af = *srq;
-      else {
-	int32_t acv = 0;
-	int32_t anv = 0;
-	if (bcf_get_info_int32(hdr, rec, "AC", &mapq, &nmapq) > 0) {
-	  acv = *mapq;
-	  if (bcf_get_info_int32(hdr, rec, "AN", &mapq, &nmapq) > 0) {
-	    anv = *mapq;
-	    if (anv > 0) svRec.af = (float) acv / (float) anv;
-	  }
-	}
-      }
       svs.push_back(svRec);
     } else {
       std::cerr << "Error: Delly genotyping requires local SV assembly (INFO/CONSENSUS) and breakpoint (INFO/CONSBP) introduced in delly v1.1.7!" << std::endl;
@@ -658,8 +645,8 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
 	}
 
 	// Compute GLs
-	if (svIter->precise) _computeGLs(bl, jctCountMap[file_c][svIter->id].ref, jctCountMap[file_c][svIter->id].alt, gls, gqval, gts, file_c, svIter->af);
-	else _computeGLs(bl, spanCountMap[file_c][svIter->id].ref, spanCountMap[file_c][svIter->id].alt, gls, gqval, gts, file_c, svIter->af);
+	if (svIter->precise) _computeGLs(bl, jctCountMap[file_c][svIter->id].ref, jctCountMap[file_c][svIter->id].alt, gls, gqval, gts, file_c);
+	else _computeGLs(bl, spanCountMap[file_c][svIter->id].ref, spanCountMap[file_c][svIter->id].alt, gls, gqval, gts, file_c);
 
 	// Compute PLs
 	if (gts[file_c * 2] == bcf_gt_missing) {

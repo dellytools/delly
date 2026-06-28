@@ -22,7 +22,7 @@ struct BoLog {
 
  template<typename TBoLog, typename TMapqVector>
  inline void
- _computeGLs(TBoLog const& bl, TMapqVector const& mapqRef, TMapqVector const& mapqAlt, float* gls, int32_t* gqval, int32_t* gts, int const file_c, double const af) {
+ _computeGLs(TBoLog const& bl, TMapqVector const& mapqRef, TMapqVector const& mapqAlt, float* gls, int32_t* gqval, int32_t* gts, int const file_c) {
    typedef typename TBoLog::value_type FLP;
    FLP gl[3];
 
@@ -40,15 +40,6 @@ struct BoLog {
      gl[2] += std::log10(bl.phred2prob[*mapqAltIt]);
    }
    gl[1] += -FLP(peDepth) * std::log10(FLP(2));
-   // AF prior
-   if (af >= 0) {
-     FLP p = (FLP) af;
-     if (p < (FLP) 1e-4) p = (FLP) 1e-4;
-     if (p > (FLP) (1.0 - 1e-4)) p = (FLP) (1.0 - 1e-4);
-     gl[0] += FLP(2) * std::log10(p);
-     gl[1] += std::log10(FLP(2) * p * (FLP(1) - p));
-     gl[2] += FLP(2) * std::log10(FLP(1) - p);
-   }
    unsigned int glBest=0;
    FLP glBestVal=gl[glBest];
    for(unsigned int geno=1; geno<=2; ++geno) {

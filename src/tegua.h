@@ -41,7 +41,6 @@ namespace torali {
     bool hasExcludeFile;
     bool hasVcfFile;
     bool hasAltFile;
-    bool noAfPrior;
     uint16_t methylProb;
     uint16_t minMapQual;
     uint16_t minGenoQual;
@@ -158,9 +157,6 @@ namespace torali {
      for(typename TVariants::iterator svIt = svs.begin(); svIt != svs.end(); ++svIt, ++cliqueCount) svIt->id = cliqueCount;
    } else {
      vcfParse(c, hdr, svs);
-     if (c.noAfPrior) {
-       for(typename TVariants::iterator itSV = svs.begin(); itSV != svs.end(); ++itSV) itSV->af = -1;
-     }
    }
    // Clean-up
    bam_hdr_destroy(hdr);
@@ -262,7 +258,6 @@ namespace torali {
      ("geno-qual,u", boost::program_options::value<uint16_t>(&c.minGenoQual)->default_value(5), "min. mapping quality for genotyping")
      ("max-geno-count,b", boost::program_options::value<uint32_t>(&c.maxGenoReadCount)->default_value(250), "max. reads aligned for SR genotyping")
      ("dump,d", boost::program_options::value<boost::filesystem::path>(&c.dumpfile), "gzipped output file for SV-reads")
-     ("no-af-prior", boost::program_options::bool_switch(&c.noAfPrior), "disable AF genotype prior")
      ;
 
    boost::program_options::options_description hidden("Hidden options");
