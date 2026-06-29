@@ -46,7 +46,7 @@ For PacBio sequencing data:
 `delly lr -y pb -o delly.bcf -g hg38.fa input.bam`
 
 
-# Somatic SV calling for short- (subcommand: call) and long-reads (subcommand: lr)
+## Somatic SV calling for short- (subcommand: call) and long-reads (subcommand: lr)
 
 * At least one tumor sample and a matched control sample are required for SV discovery
 
@@ -62,7 +62,7 @@ For PacBio sequencing data:
 
 
 
-# Germline SV calling for short- (subcommand: call) and long-reads (subcommand: lr)
+## Germline SV calling for short- (subcommand: call) and long-reads (subcommand: lr)
 
 * SV discovery is done by sample for high-coverage genomes
 
@@ -88,7 +88,7 @@ For PacBio sequencing data:
 
 
 
-# Examples
+## Examples
 
 Some small examples are included for short-read, long-read and copy-number variant calling.
 
@@ -106,7 +106,7 @@ More in-depth tutorials for SV calling are available here:
 
 
 
-# Alternate alignments for genome graphs
+## Alternate alignments for genome graphs
 
 Instead of providing only one input alignment, delly supports now multiple alternate alignments on different linear reference genomes using [minimap2](https://github.com/lh3/minimap2) or pan-genome graphs using [minigraph](https://github.com/lh3/minigraph).
 
@@ -135,7 +135,7 @@ Please note that for inter-chromosomal translocations, delly uses `INFO/CHR2` fo
 `python scripts/delly2bnd.py -v delly.bcf -r hg38.fa -o delly.bnd.bcf`
 
 
-# Read-depth profiles and copy-number variant calling
+## Read-depth profiles and copy-number variant calling
 
 You can generate read-depth profiles with delly. This requires a mappability map which can be downloaded here:
 
@@ -164,7 +164,7 @@ With `-s` you can output a statistics file with GC bias information.
 `Rscript R/gcbias.R gc.bias.tsv`
 
 
-# Germline CNV calling
+## Germline CNV calling
 
 Delly uses GC and mappability fragment correction to call CNVs. This requires a [mappability map](https://gear-genomics.embl.de/data/delly/).
 
@@ -195,7 +195,7 @@ Delly uses GC and mappability fragment correction to call CNVs. This requires a 
 `Rscript R/cnv.R plot.tsv`
 
 
-# Somatic copy-number alterations (SCNAs)
+## Somatic copy-number alterations (SCNAs)
 
 * For somatic copy-number alterations, delly first segments the tumor genome (`-u` is required). Depending on the coverage, tumor purity and heterogeneity you can adapt parameters `-z`, `-t` and `-x` which control the sensitivity of SCNA detection.
 
@@ -220,8 +220,8 @@ Delly uses GC and mappability fragment correction to call CNVs. This requires a 
 `Rscript R/rd.R tumor.cov.gz segmentation.bed`
 
 
-FAQ
----
+# FAQ
+
 * Visualization of SVs      
 You may want to try out [wally](https://github.com/tobiasrausch/wally) to plot candidate structural variants. The paired-end coloring is explained in [wally's README](https://github.com/tobiasrausch/wally#paired-end-view) file.
 
