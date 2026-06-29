@@ -131,9 +131,8 @@ namespace torali {
 	++cov[j];
 	fl[i][j] = true;
       }
-    }
-    
-    int covThreshold = c.minCliqueSize;
+    }    
+    int covThreshold = std::max(2, std::min((int) c.minCliqueSize, (int) align.shape()[0]));
     TAIndex j = 0;
     std::vector<char> cons(align.shape()[1], '-');
     for(typename TCoverage::const_iterator itCov = cov.begin(); itCov != cov.end(); ++itCov, ++j) {

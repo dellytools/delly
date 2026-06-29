@@ -263,7 +263,6 @@ namespace torali
 	bool refined = false;
 	double hwepvalStore = 1;
 	double ficStore = 0;
-	double rsqStore = 0;
 	if ((germline) && (!c.noRefine) && (rec->n_allele == 2) && (bcf_get_format_int32(hdr, rec, "PL", &pl, &npl) > 0)) {
 	  int32_t nsmpl = bcf_hdr_nsamples(hdr);
 	  int32_t plStride = npl / nsmpl;
@@ -298,7 +297,6 @@ namespace torali
 	      _estBiallelicHWE_LRT(glVector, hweAF, mleGTFreq, pval);
 	      hwepvalStore = pval;
 	      ficStore = Fic;
-	      rsqStore = rsq;
 
 	      // Posterior GQ (only GQ and missingness change)
 	      bool gqIsInt = (_getFormatType(hdr, "GQ") == BCF_HT_INT);

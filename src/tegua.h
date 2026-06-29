@@ -63,7 +63,6 @@ namespace torali {
     float meiMinFrac;
     float trMinFrac;
     std::set<int32_t> svtset;
-    DnaScore<int> aliscore;
     boost::filesystem::path dumpfile;
     boost::filesystem::path outfile;
     boost::filesystem::path vcffile;
@@ -212,7 +211,6 @@ namespace torali {
    
    // Parameter
    std::string svtype;
-   std::string scoring;
    std::string mode;
    boost::program_options::options_description generic("Generic options");
    generic.add_options()
@@ -265,7 +263,6 @@ namespace torali {
      ("input-file", boost::program_options::value< std::vector<boost::filesystem::path> >(&c.files), "input file")
      ("pruning", boost::program_options::value<uint32_t>(&c.graphPruning)->default_value(1000), "graph pruning cutoff")
      ("extension", boost::program_options::value<float>(&c.indelExtension)->default_value(0.5), "enforce indel extension")
-     ("scoring,s", boost::program_options::value<std::string>(&scoring)->default_value("3,-2,-3,-1"), "alignment scoring")
      ("read-cap", boost::program_options::value<int32_t>(&c.genoCap)->default_value(25), "max. per-read genotype quality")
      ;
    
@@ -288,9 +285,6 @@ namespace torali {
      return 0;
    }
 
-   // Set alignment score
-   _alignmentScore(c, scoring);
-   
    // SV types to compute?
    if (!_svTypesToCompute(c, svtype)) {
      std::cerr << "Please specify a valid SV type, i.e., -t INV or -t DEL,INV without spaces." << std::endl;

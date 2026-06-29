@@ -268,7 +268,7 @@ namespace torali
 	  int32_t newCiPosHigh = std::max(br[v].pos, ciposhigh);
 	  int32_t newCiEndLow = std::min(br[v].pos2, ciendlow);
 	  int32_t newCiEndHigh = std::max(br[v].pos2, ciendhigh);
-	  if (((newCiPosHigh - newCiPosLow) < (int32_t) wiggle) && ((newCiEndHigh - newCiEndLow) < (int32_t) wiggle)) cliqueGrow = true;
+	  if (((newCiPosHigh - newCiPosLow) < (int32_t) wiggle) && ((newCiEndHigh - newCiEndLow) < (int32_t) wiggle) && ((!_translocation(svt)) || (br[v].chr2 == chr2))) cliqueGrow = true;
 	  if (cliqueGrow) {
 	    // Accept new vertex
 	    clique.insert(v);
@@ -325,26 +325,26 @@ namespace torali
   inline void
   cluster(TConfig const& c, std::vector<SRBamRecord>& br, std::vector<StructuralVariantRecord>& sv, int32_t const svt) {
     uint32_t count = 0;
+    // Components
+    typedef std::vector<uint32_t> TComponent;
+    TComponent comp(br.size(), 0);
+    // Edge lists for each component
+    typedef uint32_t TWeightType;
+    typedef uint32_t TVertex;
+    typedef EdgeRecord<TWeightType, TVertex> TEdgeRecord;
+    typedef std::vector<TEdgeRecord> TEdgeList;
+    typedef std::map<uint32_t, TEdgeList> TCompEdgeList;
     for(int32_t refIdx = 0; refIdx < c.nchr; ++refIdx) {
-      
-      // Components
-      typedef std::vector<uint32_t> TComponent;
-      TComponent comp;
-      comp.resize(br.size(), 0);
+      // Find chromosome range
+      uint32_t brLo = std::lower_bound(br.begin(), br.end(), refIdx, [](SRBamRecord const& r, int32_t const v){ return r.chr < v; }) - br.begin();
+      uint32_t brHi = std::upper_bound(br.begin(), br.end(), refIdx, [](int32_t const v, SRBamRecord const& r){ return v < r.chr; }) - br.begin();
+      if (brLo >= brHi) continue;
       uint32_t numComp = 0;
-
-      // Edge lists for each component
-      typedef uint32_t TWeightType;
-      typedef uint32_t TVertex;
-      typedef EdgeRecord<TWeightType, TVertex> TEdgeRecord;
-      typedef std::vector<TEdgeRecord> TEdgeList;
-      typedef std::map<uint32_t, TEdgeList> TCompEdgeList;
       TCompEdgeList compEdge;
 
-	
-      std::size_t lastConnectedNode = 0;
-      std::size_t lastConnectedNodeStart = 0;
-      for(uint32_t i = 0; i<br.size(); ++i) {
+      std::size_t lastConnectedNode = brLo;
+      std::size_t lastConnectedNodeStart = brLo;
+      for(uint32_t i = brLo; i<brHi; ++i) {
 	if (br[i].chr == refIdx) {
 	  ++count;
 	  // Safe to clean the graph?
@@ -368,10 +368,11 @@ namespace torali
 	    if (varisize < svvar) varisize = svvar;
 	    if (varisize > 1000) varisize = 1000;
 	  }
-	  for(uint32_t j = i + 1; j<br.size(); ++j) {
+	  for(uint32_t j = i + 1; j<brHi; ++j) {
 	    if (br[j].chr == refIdx) {
 	      if ( (uint32_t) (br[j].pos - br[i].pos) > varisize) break;
 	      if ((svt == 4) && (std::abs(br[j].inslen - br[i].inslen) > varisize)) continue;
+	      if ((_translocation(svt)) && (br[j].chr2 != br[i].chr2)) continue;
 	      if ( (uint32_t) std::abs(br[j].pos2 - br[i].pos2) < varisize) {
 		// Update last connected node
 		if (j > lastConnectedNode) lastConnectedNode = j;
@@ -435,6 +436,8 @@ namespace torali
 	_searchCliques(c, compEdge, br, sv, svt);
 	compEdge.clear();
       }
+      // Reset the component labels
+      for(uint32_t k = brLo; k < brHi; ++k) comp[k] = 0;
     }
   }
 
