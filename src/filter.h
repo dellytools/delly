@@ -65,11 +65,8 @@ namespace torali
     float ratiogeno;
     float altaf;
     float controlcont;
-    float gq;
     float genogq;
     float hwe;
-    float exhet;
-    float minrsq;
     float rsize;
     float rcorr;
     float rddel;
@@ -359,8 +356,6 @@ namespace torali
 	std::vector<float> rcAlt;
 	std::vector<float> rRefVar;
 	std::vector<float> rAltVar;
-	std::vector<float> gqRef;
-	std::vector<float> gqAlt;
 	uint32_t nCount = 0;
 	uint32_t tCount = 0;
 	uint32_t controlpass = 0;
@@ -378,8 +373,6 @@ namespace torali
 	      ++nCount;
 	      if (gt_type == 0) {
 		rcraw.push_back(rc[i]);
-		if (_getFormatType(hdr, "GQ") == BCF_HT_INT) gqRef.push_back(gq[i]);
-		else if (_getFormatType(hdr, "GQ") == BCF_HT_REAL) gqRef.push_back(gqf[i]);
 		if ((rcl != NULL) && (rcr != NULL) && (rcl[i] + rcr[i] != 0)) rcControl.push_back((float) rc[i] / ((float) (rcl[i] + rcr[i])));
 		else rcControl.push_back(rc[i]);
 		float rVar = 0;
@@ -388,8 +381,6 @@ namespace torali
 		rRefVar.push_back(rVar);
 		if (rVar <= c.controlcont) ++controlpass;
 	      } else if ((germline) && (gt_type >= 1)) {
-		if (_getFormatType(hdr, "GQ") == BCF_HT_INT) gqAlt.push_back(gq[i]);
-		else if (_getFormatType(hdr, "GQ") == BCF_HT_REAL) gqAlt.push_back(gqf[i]);
 		if ((rcl != NULL) && (rcr != NULL) && (rcl[i] + rcr[i] != 0)) rcAlt.push_back((float) rc[i] / ((float) (rcl[i] + rcr[i])));
 		else rcAlt.push_back(rc[i]);
 		float rVar = 0;
@@ -441,22 +432,14 @@ namespace torali
 	  if (!rcAlt.empty()) getMedian(rcAlt.begin(), rcAlt.end(), rcaltmed);
 	  float rdRatio = 1;
 	  if (rccontrolmed != 0) rdRatio = rcaltmed/rccontrolmed;
-	  float gqaltmed = 0;
-	  if (!gqAlt.empty()) getMedian(gqAlt.begin(), gqAlt.end(), gqaltmed);
-	  float gqrefmed = 0;
-	  if (!gqRef.empty()) getMedian(gqRef.begin(), gqRef.end(), gqrefmed);
 	  float af = (float) ac[1] / (float) (ac[0] + ac[1]);
-	
-	  //std::cerr << bcf_hdr_id2name(hdr, rec->rid) << '\t' << (rec->pos + 1) << '\t' << *svend << '\t' << rec->d.id << '\t' << svlen << '\t' << ac[1] << '\t' << af << '\t' << genotypeRatio << '\t' << std::string(svt) << '\t' << precise << '\t' << rrefvarpercentile << '\t' << raltvarmed << '\t' << gqrefmed << '\t' << gqaltmed << '\t' << rdRatio << std::endl;
-	  
+
 	  bool failgerm = false;
-	  if (!((af>0) && (gqaltmed >= c.gq) && (gqrefmed >= c.gq) && (raltvarmed >= c.altaf) && (genotypeRatio >= c.ratiogeno))) failgerm = true;
+	  if (!((af>0) && (raltvarmed >= c.altaf) && (genotypeRatio >= c.ratiogeno))) failgerm = true;
 	  if ((std::string(svt)=="DEL") && (rdRatio > c.rddel)) failgerm = true;
 	  if ((std::string(svt)=="DUP") && (rdRatio < c.rddup)) failgerm = true;
 	  if ((std::string(svt)!="DEL") && (std::string(svt)!="DUP") && (rrefvarpercentile > 0)) failgerm = true;
 	  if ((refined) && (c.hwe > 0) && (ficStore < 0) && (hwepvalStore < c.hwe)) failgerm = true;
-	  if ((refined) && (c.exhet > 0) && (ficStore < -c.exhet)) failgerm = true;
-	  if ((refined) && (c.minrsq > 0) && (rsqStore < c.minrsq)) failgerm = true;
 	  if (!failgerm) {
 	    _remove_info_tag(hdr_out, rec, "RDRATIO");
 	    bcf_update_info_float(hdr_out, rec, "RDRATIO", &rdRatio, 1);
@@ -599,13 +582,10 @@ namespace torali
     // Define germline options
     boost::program_options::options_description germline("Germline options");
     germline.add_options()
-      ("gq,q", boost::program_options::value<float>(&c.gq)->default_value(15), "min. median GQ for carriers and non-carriers")
       ("rddel,e", boost::program_options::value<float>(&c.rddel)->default_value(0.8), "max. read-depth ratio of carrier vs. non-carrier for a deletion")
       ("rddup,u", boost::program_options::value<float>(&c.rddup)->default_value(1.2), "min. read-depth ratio of carrier vs. non-carrier for a duplication")
-      ("genogq,j", boost::program_options::value<float>(&c.genogq)->default_value(15), "set genotypes below this posterior GQ to missing")
+      ("genogq,j", boost::program_options::value<float>(&c.genogq)->default_value(10), "set genotypes below this posterior GQ to missing")
       ("hwe,w", boost::program_options::value<float>(&c.hwe)->default_value(0.000001), "min. HWE p-value for excess-heterozygosity (one-sided; set 0 to disable)")
-      ("exhet", boost::program_options::value<float>(&c.exhet)->default_value(0), "max. excess heterozygosity (fail if FIC < -exhet; 0 disables)")
-      ("minrsq", boost::program_options::value<float>(&c.minrsq)->default_value(0), "min. imputation R-squared RSQ (0 disables)")
       ("no-refine", boost::program_options::bool_switch(&c.noRefine), "disable population refinement")
       ("no-collapse", boost::program_options::bool_switch(&c.noCollapse), "disable redundant-SV collapse")
       ("rdist", boost::program_options::value<int32_t>(&c.rdist)->default_value(250), "max. breakpoint distance for redundant SVs")
