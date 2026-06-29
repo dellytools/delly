@@ -12,40 +12,85 @@
 [![GitHub license](https://img.shields.io/badge/License-BSD%203--Clause-blue.svg)](https://github.com/dellytools/delly/blob/main/LICENSE)
 [![GitHub Releases](https://img.shields.io/github/release/dellytools/delly.svg)](https://github.com/dellytools/delly/releases)
 
-Delly is an integrated structural variant (SV) prediction method that can discover, genotype and visualize deletions, tandem duplications, inversions and translocations at single-nucleotide resolution in short-read and long-read massively parallel sequencing data. It uses paired-ends, split-reads and read-depth to sensitively and accurately delineate genomic rearrangements throughout the genome.
+Delly is an integrated structural variant (SV) prediction method that can discover, genotype and visualize deletions, insertions, tandem duplications, inversions and translocations at single-nucleotide resolution in short-read and long-read whole-genome sequencing data. It uses paired-ends, split-reads and read-depth to discover and genotype SVs in the genome.
 
 # Installing Delly
 
-Delly is available as a [statically linked binary](https://github.com/dellytools/delly/releases/), a [singularity container (SIF file)](https://github.com/dellytools/delly/releases/), a [docker container](https://hub.docker.com/r/dellytools/delly/) or via [Bioconda](https://anaconda.org/bioconda/delly). You can also build Delly from source using a recursive clone and make. 
+Delly is available as a [pre-compiled binary](https://github.com/dellytools/delly/releases/), a [singularity container (SIF file)](https://github.com/dellytools/delly/releases/), a [docker container](https://hub.docker.com/r/dellytools/delly/) or via [Bioconda](https://anaconda.org/bioconda/delly). You can also build Delly from source: 
 
-`git clone --recursive https://github.com/dellytools/delly.git`
-
-`cd delly/`
-
-`make all`
-
-There is a Delly discussion group [delly-users](http://groups.google.com/d/forum/delly-users) for usage and installation questions.
-
+`git clone --recursive https://github.com/dellytools/delly.git && cd delly/ && make all`
 
 # Running Delly
 
-Delly needs a sorted, indexed and duplicate marked BAM or CRAM file for every input sample.
-An indexed reference genome is required to identify split-reads and to decode CRAM files.
-Common workflows for germline and somatic SV calling are outlined below.
+Delly needs a sorted, indexed and duplicate marked BAM or CRAM file for every input sample. An indexed reference genome is required to identify split-reads and to decode CRAM files.
+
+## Short-read SV discovery
 
 `delly call -g ref.fa input.bam > delly.vcf`
 
-You can also specify an output file in [BCF](http://samtools.github.io/bcftools/) format.
+You can also redirect the output to a [BCF](http://samtools.github.io/bcftools/) file.
 
 `delly call -o delly.bcf -g ref.fa input.bam`
 
 `bcftools view delly.bcf > delly.vcf`
 
 
-Example
--------
+## Long-read SV discovery
 
-A small example is included for short-read, long-read and copy-number variant calling.
+For Oxford Nanopore sequencing data:
+
+`delly lr -y ont -o delly.bcf -g hg38.fa input.bam`
+
+For PacBio sequencing data:
+
+`delly lr -y pb -o delly.bcf -g hg38.fa input.bam`
+
+
+# Somatic SV calling for short- (subcommand: call) and long-reads (subcommand: lr)
+
+* At least one tumor sample and a matched control sample are required for SV discovery
+
+`delly [call|lr] -o t1.bcf -g hg38.fa tumor1.bam control1.bam`
+
+* Somatic filtering requires a tab-delimited sample description file where the first column is the sample id (as in the VCF/BCF file) and the second column is either tumor or control.
+
+`delly filter -f somatic -o t1.somatic.bcf -s samples.tsv t1.bcf`
+
+* You can also use a larger panel of normal for somatic SV filtering
+
+`delly [call|lr] -o t1.bcf -g hg38.fa tumor1.bam control1.bam ... controlN.bam`
+
+
+
+# Germline SV calling for short- (subcommand: call) and long-reads (subcommand: lr)
+
+* SV discovery is done by sample for high-coverage genomes
+
+`delly [call|lr] -g hg38.fa -o s1.bcf sample1.bam`
+
+* Merge SV sites into an SV site list 
+
+`delly merge -o sites.bcf s1.bcf s2.bcf ... sN.bcf`
+
+* Genotype this merged SV site list across all samples in parallel
+
+`delly [call|lr] -g hg38.fa -v sites.bcf -o s1.geno.bcf s1.bam`
+
+`delly [call|lr] -g hg38.fa -v sites.bcf -o sN.geno.bcf sN.bam`
+
+* Merge all genotyped samples to get a single VCF/BCF using bcftools. This can be done in chunks if necessary.
+
+`bcftools merge -m id -O b -o merged.bcf s1.geno.bcf s2.geno.bcf ... sN.geno.bcf`
+
+* Apply the germline SV filter
+
+`delly filter -f germline -o germline.bcf merged.bcf`
+
+
+
+# Examples
+
+Some small examples are included for short-read, long-read and copy-number variant calling.
 
 `delly call -g example/ref.fa -o sr.bcf example/sr.bam`
 
@@ -60,65 +105,8 @@ More in-depth tutorials for SV calling are available here:
 * Long-read SV calling: [https://github.com/tobiasrausch/sv](https://github.com/tobiasrausch/sv)
 
 
-Somatic SV calling
-------------------
 
-* At least one tumor sample and a matched control sample are required for SV discovery
-
-`delly call -x hg38.excl -o t1.bcf -g hg38.fa tumor1.bam control1.bam`
-
-* Somatic pre-filtering requires a tab-delimited sample description file where the first column is the sample id (as in the VCF/BCF file) and the second column is either tumor or control.
-
-`delly filter -f somatic -o t1.pre.bcf -s samples.tsv t1.bcf`
-
-* Genotype pre-filtered somatic sites across a larger panel of control samples to efficiently filter false postives and germline SVs. For performance reasons, this can be run in parallel for each sample of the control panel and you may want to combine multiple pre-filtered somatic site lists from multiple tumor samples.
-
-`delly call -g hg38.fa -v t1.pre.bcf -o geno.bcf -x hg38.excl tumor1.bam control1.bam ... controlN.bam`
-
-* Post-filter for somatic SVs using all control samples.
-
-`delly filter -f somatic -o t1.somatic.bcf -s samples.tsv geno.bcf`
-
-
-
-Germline SV calling
--------------------
-
-* SV calling is done by sample for high-coverage genomes or in small batches for low-coverage genomes
-
-`delly call -g hg38.fa -o s1.bcf -x hg38.excl sample1.bam`
-
-* Merge SV sites into a unified site list 
-
-`delly merge -o sites.bcf s1.bcf s2.bcf ... sN.bcf`
-
-* Genotype this merged SV site list across all samples. This can be run in parallel for each sample.
-
-`delly call -g hg38.fa -v sites.bcf -o s1.geno.bcf -x hg38.excl s1.bam`
-
-`delly call -g hg38.fa -v sites.bcf -o sN.geno.bcf -x hg38.excl sN.bam`
-
-* Merge all genotyped samples to get a single VCF/BCF using bcftools merge
-
-`bcftools merge -m id -O b -o merged.bcf s1.geno.bcf s2.geno.bcf ... sN.geno.bcf`
-
-* Apply the germline SV filter which requires at least 20 unrelated samples
-
-`delly filter -f germline -o germline.bcf merged.bcf`
-
-
-Delly for long reads from PacBio or ONT
----------------------------------------
-
-Delly also supports long-reads for SV discovery.
-
-`delly lr -y ont -o delly.bcf -g hg38.fa input.bam`
-
-`delly lr -y pb -o delly.bcf -g hg38.fa input.bam`
-
-
-Alternate alignments for genome graphs
---------------------------------------
+# Alternate alignments for genome graphs
 
 Instead of providing only one input alignment, delly supports now multiple alternate alignments on different linear reference genomes using [minimap2](https://github.com/lh3/minimap2) or pan-genome graphs using [minigraph](https://github.com/lh3/minigraph).
 
@@ -138,17 +126,16 @@ sample.gaf.gz   pangenome.gfa.gz
 
 `delly lr -y pb -o delly.bcf -g hg38.fa -l align.config sample.hg38.bam`
 
-Structural variants are still reported with respect to GRCh38 coordinates but the output will only contain SVs that are not present in any of the alternate alignments. For pangenome graphs you may want to try the [augmented graph](https://ftp.1000genomes.ebi.ac.uk/vol1/ftp/data_collections/1KG_ONT_VIENNA/release/v1.0/augmented_graph/) from this [study](https://www.biorxiv.org/content/10.1101/2024.04.18.590093v1). Please note that this graph contains only SVs greater 50bp so you need to filter the above delly output to match the size range using [bcftools](https://github.com/samtools/bcftools).
+Structural variants are still reported with respect to GRCh38 coordinates but the output will only contain SVs that are not present in any of the alternate alignments. Please note that many pangenome graphs contain only SVs greater 50bp so you need to filter the above delly output to match the size range.
 
-`bcftools view -i '(QUAL>=300) && ( ((SVTYPE=="INS") && (INFO/SVLEN>50)) || (SVTYPE="BND") || ((INFO/END - POS)>50) )' delly.bcf`
+`bcftools view -i '(QUAL>=300) && ( ((SVTYPE=="INS") && (INFO/SVLEN>50)) || (SVTYPE=="BND") || ((INFO/END - POS)>50) )' delly.bcf`
 
 Please note that for inter-chromosomal translocations, delly uses `INFO/CHR2` for the second chromosome. You can convert an inter-chromosomal translocation to the two-record breakend format using:
 
 `python scripts/delly2bnd.py -v delly.bcf -r hg38.fa -o delly.bnd.bcf`
 
 
-Read-depth profiles and copy-number variant calling
----------------------------------------------------
+# Read-depth profiles and copy-number variant calling
 
 You can generate read-depth profiles with delly. This requires a mappability map which can be downloaded here:
 
@@ -177,8 +164,7 @@ With `-s` you can output a statistics file with GC bias information.
 `Rscript R/gcbias.R gc.bias.tsv`
 
 
-Germline CNV calling
---------------------
+# Germline CNV calling
 
 Delly uses GC and mappability fragment correction to call CNVs. This requires a [mappability map](https://gear-genomics.embl.de/data/delly/).
 
@@ -209,8 +195,7 @@ Delly uses GC and mappability fragment correction to call CNVs. This requires a 
 `Rscript R/cnv.R plot.tsv`
 
 
-Somatic copy-number alterations (SCNAs)
----------------------------------------
+# Somatic copy-number alterations (SCNAs)
 
 * For somatic copy-number alterations, delly first segments the tumor genome (`-u` is required). Depending on the coverage, tumor purity and heterogeneity you can adapt parameters `-z`, `-t` and `-x` which control the sensitivity of SCNA detection.
 
@@ -240,26 +225,17 @@ FAQ
 * Visualization of SVs      
 You may want to try out [wally](https://github.com/tobiasrausch/wally) to plot candidate structural variants. The paired-end coloring is explained in [wally's README](https://github.com/tobiasrausch/wally#paired-end-view) file.
 
-* What is the smallest SV size Delly can call?  
-For short-reads, this depends on the sharpness of the insert size distribution. For an insert size of 200-300bp with a 20-30bp standard deviation, Delly starts to call reliable SVs >=300bp. Delly also supports calling of small InDels using soft-clipped reads only, the smallest SV size called is 15bp. For long-reads, delly calls SVs >=30bp.
-
 * Can Delly be used on a non-diploid genome?  
-Yes and no. The SV site discovery works for any ploidy. However, Delly's genotyping model assumes diploidy (hom. reference, het. and hom. alternative). The CNV calling allows to set the baseline ploidy on the command-line.
+The SV site discovery works for any ploidy. However, Delly's genotyping model assumes a ploidy of 2. The CNV calling allows to set the baseline ploidy on the command-line.
 
 * Delly is running too slowly what can I do?    
-You should exclude telomere and centromere regions and also all unplaced contigs (`-x` command-line option). In addition, you can filter input reads more stringently using -q 20 and -s 15. Lastly, `-z` can be set to 5 for high-coverage data.
-
-* Are non-unique alignments, multi-mappings and/or multiple split-read alignments allowed?  
-Delly expects two alignment records in the bam file for every paired-end, one for the first and one for the second read. Multiple split-read alignment records of a given read are allowed if and only if one of them is a primary alignment whereas all others are marked as secondary or supplementary. This is the default for bwa, minimap2 and many other aligners.
+For short-reads, you should exclude telomere and centromere regions and also all unplaced contigs (`-x` command-line option). In addition, you can filter input reads more stringently using -q 20 and -s 15. Lastly, `-z` can be set to 5 for high-coverage data.
 
 * What pre-processing of BAM/CRAM files is required?
 BAM/CRAM files need to be sorted, indexed and ideally duplicate marked.
 
 * Usage/discussion mailing list?         
 There is a delly discussion group [delly-users](http://groups.google.com/d/forum/delly-users).
-
-* Docker/Singularity support?            
-There is a delly [docker container](https://hub.docker.com/r/dellytools/delly/) and [singularity container (*.sif file)](https://github.com/dellytools/delly/releases) available.
 
 * How can I compute a mappability map?               
 A basic mappability map can be built using [dicey](https://github.com/gear-genomics/dicey), [samtools](https://github.com/samtools/samtools) and [bwa](https://github.com/lh3/bwa) with the below commands (as an example for the sacCer3 reference):
@@ -272,22 +248,17 @@ dicey mappability2 srt.bam
 gunzip map.fa.gz && bgzip map.fa && samtools faidx map.fa.gz 
 ```
 
-* Bioconda support?              
-Delly is available via [bioconda](http://bioconda.github.io/recipes/delly/README.html).
-
-
-Citation
---------
+# Citation
 
 Tobias Rausch, Thomas Zichner, Andreas Schlattl, Adrian M. Stuetz, Vladimir Benes, Jan O. Korbel.      
 DELLY: structural variant discovery by integrated paired-end and split-read analysis.     
 Bioinformatics. 2012 Sep 15;28(18):i333-i339.       
 [https://doi.org/10.1093/bioinformatics/bts378](https://doi.org/10.1093/bioinformatics/bts378)
 
-License
--------
+# License
+
 Delly is distributed under the BSD 3-Clause license. Consult the accompanying [LICENSE](https://github.com/dellytools/delly/blob/main/LICENSE) file for more details.
 
-Credits
--------
-[HTSlib](https://github.com/samtools/htslib) is heavily used for all genomic alignment and variant processing. [Boost](https://www.boost.org/) for various data structures and algorithms and [Edlib](https://github.com/Martinsos/edlib) for pairwise alignments using edit distance.
+# Credits
+
+[HTSlib](https://github.com/samtools/htslib) is heavily used for all genomic alignment and variant processing. [Boost](https://www.boost.org/) for various data structures and algorithms. [Claude](https://claude.com/) for bug fixes, performance improvements and code suggestions. [arfer](https://github.com/ekg/arfer) for annotating SVs and [Edlib](https://github.com/Martinsos/edlib) for pairwise alignments.
