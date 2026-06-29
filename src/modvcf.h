@@ -194,6 +194,10 @@ vcfParse(TConfig const& c, bam_hdr_t* hd, std::vector<TStructuralVariantRecord>&
   char* cons = NULL;
   int32_t nchr2 = 0;
   char* chr2 = NULL;
+  int32_t nalleleid = 0;
+  int32_t* alleleidp = NULL;
+  int32_t nnallele = 0;
+  int32_t* nallelep = NULL;
   bool dellyVCF = false;
   while (bcf_read(ifile, hdr, rec) == 0) {
     bcf_unpack(rec, BCF_UN_INFO);
@@ -298,6 +302,10 @@ vcfParse(TConfig const& c, bam_hdr_t* hd, std::vector<TStructuralVariantRecord>&
       else svRec.srMapQuality = 0;
       if (bcf_get_info_float(hdr, rec, "SRQ", &srq, &nsrq) > 0) svRec.srAlignQuality = (double) *srq;
       else svRec.srAlignQuality = 0;
+      if (bcf_get_info_int32(hdr, rec, "ALLELEID", &alleleidp, &nalleleid) > 0) {
+	svRec.alleleid = *alleleidp;
+	if (bcf_get_info_int32(hdr, rec, "NALLELE", &nallelep, &nnallele) > 0) svRec.nallele = *nallelep;
+      }
       svs.push_back(svRec);
     } else {
       std::cerr << "Error: Delly genotyping requires local SV assembly (INFO/CONSENSUS) and breakpoint (INFO/CONSBP) introduced in delly v1.1.7!" << std::endl;
@@ -311,6 +319,8 @@ vcfParse(TConfig const& c, bam_hdr_t* hd, std::vector<TStructuralVariantRecord>&
   free(svlen);
   free(svt);
   free(method);
+  free(alleleidp);
+  free(nallelep);
   free(pe);
   free(inslen);
   free(homlen);
@@ -381,6 +391,8 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
   bcf_hdr_append(hdr, "##INFO=<ID=INSLEN,Number=1,Type=Integer,Description=\"Predicted length of the insertion\">");
   bcf_hdr_append(hdr, "##INFO=<ID=HOMLEN,Number=1,Type=Integer,Description=\"Breakpoint homology length\">");
   bcf_hdr_append(hdr, "##INFO=<ID=SUBTYPE,Number=1,Type=String,Description=\"SV subtype: INS:ME:ALU, INS:ME:LINE1, INS:ME:SVA, INS:NUMT, INS:LTR, INS:HERVK, INS:TR, or DEL:TR\">");
+  bcf_hdr_append(hdr, "##INFO=<ID=ALLELEID,Number=1,Type=Integer,Description=\"Identifier of the merged locus\">");
+  bcf_hdr_append(hdr, "##INFO=<ID=NALLELE,Number=1,Type=Integer,Description=\"Number of distinct alleles at this locus\">");
   bcf_hdr_append(hdr, "##INFO=<ID=INSSTRAND,Number=1,Type=String,Description=\"Insertion strand for MEIs\">");
   bcf_hdr_append(hdr, "##INFO=<ID=TRPERIOD,Number=1,Type=Integer,Description=\"Tandem repeat period in bp\">");
   bcf_hdr_append(hdr, "##INFO=<ID=TRCOPIES,Number=1,Type=Float,Description=\"Tandem repeat copy number\">");
@@ -533,7 +545,13 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
       cipos[1] = svIter->ciposhigh;
       bcf_update_info_int32(hdr, rec, "CIPOS", cipos, 2);
       bcf_update_info_int32(hdr, rec, "CIEND", ciend, 2);
-      
+      if (svIter->alleleid >= 0) {
+	tmpi = svIter->alleleid;
+	bcf_update_info_int32(hdr, rec, "ALLELEID", &tmpi, 1);
+	tmpi = svIter->nallele;
+	bcf_update_info_int32(hdr, rec, "NALLELE", &tmpi, 1);
+      }
+
       if (svIter->precise)  {
 	tmpi = svIter->srMapQuality;
 	bcf_update_info_int32(hdr, rec, "SRMAPQ", &tmpi, 1);
