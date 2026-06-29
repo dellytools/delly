@@ -46,7 +46,9 @@ For PacBio sequencing data:
 `delly lr -y pb -o delly.bcf -g hg38.fa input.bam`
 
 
-## Somatic SV calling for short- (subcommand: call) and long-reads (subcommand: lr)
+## Somatic SV calling
+
+Somatic SV calling is available for short- (subcommand: call) and long-reads (subcommand: lr)
 
 * At least one tumor sample and a matched control sample are required for SV discovery
 
@@ -62,7 +64,9 @@ For PacBio sequencing data:
 
 
 
-## Germline SV calling for short- (subcommand: call) and long-reads (subcommand: lr)
+## Germline SV calling
+
+Germline SV calling is available for short- (subcommand: call) and long-reads (subcommand: lr)
 
 * SV discovery is done by sample for high-coverage genomes
 
