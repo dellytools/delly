@@ -480,7 +480,7 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
       }
       rec->rid = bcf_hdr_name2id(hdr, bamhd->target_name[svIter->chr]);
       int32_t svStartPos = svIter->svStart - 1;
-      if (svStartPos < 1) svStartPos = 1;
+      if (svStartPos < 0) svStartPos = 0;
       int32_t svEndPos = svIter->svEnd;
       if (svEndPos < 1) svEndPos = 1;
       if (svEndPos > (int32_t) bamhd->target_len[svIter->chr2]) svEndPos = bamhd->target_len[svIter->chr2];
