@@ -821,7 +821,7 @@ namespace torali
     bcf_hdr_append(hdr_out, "##INFO=<ID=CONSBP,Number=1,Type=Integer,Description=\"Consensus SV breakpoint position\">");
     bcf_hdr_append(hdr_out, "##INFO=<ID=CE,Number=1,Type=Float,Description=\"Consensus sequence entropy\">");
     bcf_hdr_append(hdr_out, "##INFO=<ID=CT,Number=1,Type=String,Description=\"Paired-end signature induced connection type\">");
-    bcf_hdr_append(hdr_out, "##INFO=<ID=SVLEN,Number=1,Type=Integer,Description=\"Insertion length for SVTYPE=INS.\">");
+    bcf_hdr_append(hdr_out, "##INFO=<ID=SVLEN,Number=1,Type=Integer,Description=\"SV length; negative for DEL, positive for DUP/INV/INS.\">");
     bcf_hdr_append(hdr_out, "##INFO=<ID=IMPRECISE,Number=0,Type=Flag,Description=\"Imprecise structural variation\">");
     bcf_hdr_append(hdr_out, "##INFO=<ID=PRECISE,Number=0,Type=Flag,Description=\"Precise structural variation\">");
     bcf_hdr_append(hdr_out, "##INFO=<ID=SVTYPE,Number=1,Type=String,Description=\"Type of structural variant\">");
@@ -879,6 +879,8 @@ namespace torali
     int32_t* sr = NULL;
     int32_t ninslen = 0;
     int32_t* inslen = NULL;
+    int32_t nsvlen = 0;
+    int32_t* svlen = NULL;
     int32_t npos2 = 0;
     int32_t* pos2 = NULL;
     int32_t nconsbp = 0;
@@ -935,6 +937,7 @@ namespace torali
 	  if (bcf_get_info_int32(hdr[idx], rec[idx], "END", &svend, &nsvend) > 0) svEnd = *svend;
 	  int32_t inslenVal = 0;
 	  if (bcf_get_info_int32(hdr[idx], rec[idx], "INSLEN", &inslen, &ninslen) > 0) inslenVal = *inslen;
+	  if ((inslenVal == 0) && (bcf_get_info_int32(hdr[idx], rec[idx], "SVLEN", &svlen, &nsvlen) > 0)) inslenVal = std::abs(*svlen);
 
 	  bool precise = (bcf_get_info_flag(hdr[idx], rec[idx], "PRECISE", 0, 0) > 0);
 	  int32_t peSupport = 0; if (bcf_get_info_int32(hdr[idx], rec[idx], "PE", &pe, &npe) > 0) peSupport = *pe;
@@ -1020,7 +1023,13 @@ namespace torali
 	    bcf_update_info_string(hdr_out, rout, "CHR2", chr2Name.c_str());
 	    bcf_update_info_int32(hdr_out, rout, "POS2", &pos2val, 1);
 	  }
-	  if (svtin == 4) bcf_update_info_int32(hdr_out, rout, "SVLEN", &inslenVal, 1);
+	  if (svtin < DELLY_SVT_TRANS) {
+	    int32_t svlenOut;
+	    if (svtin == 4) svlenOut = inslenVal;
+	    else if (svtin == 2) svlenOut = svStart - svEnd;
+	    else svlenOut = svEnd - svStart;
+	    bcf_update_info_int32(hdr_out, rout, "SVLEN", &svlenOut, 1);
+	  }
 	  bcf_update_info_int32(hdr_out, rout, "PE", &peSupport, 1);
 	  int32_t tmpi = peMapQuality;
 	  bcf_update_info_int32(hdr_out, rout, "MAPQ", &tmpi, 1);
@@ -1079,6 +1088,7 @@ namespace torali
     if (sr != NULL) free(sr);
     if (homlen != NULL) free(homlen);
     if (inslen != NULL) free(inslen);
+    if (svlen != NULL) free(svlen);
     if (pos2 != NULL) free(pos2);
     if (consbp != NULL) free(consbp);
     if (mapq != NULL) free(mapq);
