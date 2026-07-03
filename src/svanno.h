@@ -178,9 +178,43 @@ namespace torali {
       if (bestType > 0) {
 	sv.anno.seqType = bestType;
 	sv.anno.isRC = (bestRevId > bestFwdId);
-      } else if ((int32_t) insSeq.size() >= 30) {
-	// TR classification
-	auto [period, copies] = detectTandemRepeat(insSeq, 100, c.trMinFrac);
+      } else if ((int32_t) insSeq.size() >= 10) {
+	// TR classification for error-prone INS
+	int32_t period = 0;
+	float copies = 0.0f;
+	auto [p1, c1] = detectTandemRepeat(insSeq, 100, c.trMinFrac);
+	if (p1 > 0) {
+	  period = p1;
+	  copies = c1;
+	} else {
+	  int32_t const flank = 200;
+	  for(int32_t side = 0; (side < 2) && (period == 0); ++side) {
+	    std::string refWin;
+	    if (side == 0) {
+	      int32_t rbeg = std::max(0, sv.svStart - flank);
+	      if (sv.svStart - rbeg < 40) continue;
+	      refWin = boost::to_upper_copy(std::string(seq + rbeg, seq + sv.svStart));
+	    } else {
+	      int32_t rend = std::min(chrLen, sv.svStart + flank);
+	      if (rend - sv.svStart < 40) continue;
+	      refWin = boost::to_upper_copy(std::string(seq + sv.svStart, seq + rend));
+	    }
+	    auto [pr, cr] = detectTandemRepeat(refWin, 100, c.trMinFrac);
+	    if ((pr <= 0) || ((int32_t) refWin.size() < pr)) continue;
+	    // Reference repeat unit
+	    std::string unit = (side == 0) ? refWin.substr(refWin.size() - pr) : refWin.substr(0, pr);
+	    std::string templ;
+	    templ.reserve((size_t) insSeq.size() + pr);
+	    while ((int32_t) templ.size() < (int32_t) insSeq.size() + pr) templ += unit;
+	    EdlibAlignResult res = edlibAlign(insSeq.c_str(), (int32_t) insSeq.size(), templ.c_str(), (int32_t) templ.size(), edlibNewAlignConfig(-1, EDLIB_MODE_HW, EDLIB_TASK_DISTANCE, NULL, 0));
+	    double id = ((res.status == EDLIB_STATUS_OK) && (res.editDistance >= 0)) ? (1.0 - (double) res.editDistance / (double) insSeq.size()) : 0.0;
+	    edlibFreeAlignResult(res);
+	    if (id >= 0.70) {
+	      period = pr;
+	      copies = (float) insSeq.size() / (float) pr;
+	    }
+	  }
+	}
 	if (period > 0) {
 	  sv.anno.seqType = 7;
 	  sv.anno.trPeriod = period;

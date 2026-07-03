@@ -68,6 +68,7 @@ namespace torali
     float juncSeqId;
     int32_t seqCutoff;
     int32_t recurrentSamples;
+    float repMinAF;
     boost::filesystem::path outfile;
     boost::filesystem::path genome;
     std::vector<boost::filesystem::path> files;
@@ -632,6 +633,18 @@ namespace torali
     return (rep.altSupport >= minSingletonSR);
   }
 
+  // Allele similarity
+  inline double
+  _alleleSim(MergeConfig const& c, MergeSV const& a, MergeSV const& b) {
+    if ((!a.seq.empty()) && (!b.seq.empty()) && ((int32_t) std::max(a.seq.size(), b.seq.size()) < c.seqCutoff)) {
+      double sid = _seqIdentity(a.seq, b.seq, 0.0);
+      if (sid >= 0.0) return sid;
+    }
+    double minS = (double) std::min(a.size, b.size);
+    double maxS = (double) std::max(a.size, b.size);
+    return (maxS > 0.0) ? (minS / maxS) : 1.0;
+  }
+
   // Pass 1b: cluster and filter SVs
   inline void
   _clusterAndSelect(MergeConfig& c, std::vector<MergeSV>& nodes, boost::unordered_map<std::string, MergeAgg>& selected) {
@@ -663,7 +676,70 @@ namespace torali
       std::vector<int32_t>& members = it->second;
       std::sort(members.begin(), members.end(), [&](int32_t a, int32_t b) { return nodes[a].size < nodes[b].size; });
       std::vector<std::vector<int32_t> > groups;
-      {
+      if ((!members.empty()) && (nodes[members[0]].svt == 2) && (members.size() <= 20000)) {
+	// keep distinct DEL alleles
+	double alleleId = 0.90;
+	std::vector<int32_t> order(members.begin(), members.end());
+	std::sort(order.begin(), order.end(), [&](int32_t x, int32_t y) { return nodes[x].score > nodes[y].score; });
+	std::vector<int32_t> lead;
+	for(size_t oi = 0; oi < order.size(); ++oi) {
+	  int32_t mi = order[oi];
+	  int32_t g = -1;
+	  for(size_t L = 0; L < lead.size(); ++L) {
+	    if (_alleleSim(c, nodes[mi], nodes[lead[L]]) >= alleleId) {
+	      g = (int32_t) L;
+	      break;
+	    }
+	  }
+	  if (g < 0) {
+	    lead.push_back(mi);
+	    groups.push_back(std::vector<int32_t>());
+	    g = (int32_t) groups.size() - 1;
+	  }
+	  groups[g].push_back(mi);
+	}
+	// Merge-in rare alleles that are similar
+	int32_t carrierFloor = (int32_t) std::ceil(c.repMinAF * (double) c.totalSamples);
+	if (carrierFloor < 1) carrierFloor = 1;
+	if ((carrierFloor > 1) && (groups.size() > 1)) {
+	  std::vector<int32_t> gcarr(groups.size());
+	  for(size_t g = 0; g < groups.size(); ++g) {
+	    std::set<int32_t> f;
+	    for(size_t k = 0; k < groups[g].size(); ++k) f.insert(nodes[groups[g][k]].fileIdx);
+	    gcarr[g] = (int32_t) f.size();
+	  }
+	  std::vector<std::vector<int32_t> > merged;
+	  std::vector<int32_t> keptG; // group indices with enough carriers
+	  for(size_t g = 0; g < groups.size(); ++g) {
+	    if (gcarr[g] >= carrierFloor) keptG.push_back((int32_t) g);
+	  }
+	  std::vector<int32_t> dest(groups.size(), -1);
+	  for(size_t g = 0; g < groups.size(); ++g) {
+	    if (gcarr[g] >= carrierFloor) continue;
+	    int32_t best = -1;
+	    double bestSim = c.recoverlap;
+	    for(size_t s = 0; s < keptG.size(); ++s) {
+	      double sim = _alleleSim(c, nodes[lead[g]], nodes[lead[keptG[s]]]);
+	      if (sim >= bestSim) {
+		bestSim = sim;
+		best = keptG[s];
+	      }
+	    }
+	    dest[g] = best; // -1 keep, otherwise merge
+	  }
+	  boost::unordered_map<int32_t, int32_t> outIdx;
+	  for(size_t g = 0; g < groups.size(); ++g) {
+	    int32_t target = (dest[g] >= 0) ? dest[g] : (int32_t) g;
+	    if (outIdx.find(target) == outIdx.end()) {
+	      outIdx[target] = (int32_t) merged.size();
+	      merged.push_back(std::vector<int32_t>());
+	    }
+	    std::vector<int32_t>& dst = merged[outIdx[target]];
+	    dst.insert(dst.end(), groups[g].begin(), groups[g].end());
+	  }
+	  groups.swap(merged);
+	}
+      } else {
 	std::vector<int32_t> cur;
 	for(size_t k = 0; k < members.size(); ++k) {
 	  if ((!cur.empty())) {
@@ -1412,10 +1488,162 @@ namespace torali
   }
 
 
+  // Group loci that req. multi-allelic genotyping
+  inline void
+  _regroupLoci(MergeConfig& c, std::vector<boost::filesystem::path> const& cts, std::vector<std::vector<int32_t> >& newAid, std::vector<std::vector<int32_t> >& newNal) {
+    struct PostAllele {
+      int32_t rid;
+      int32_t pos;
+      int32_t end;
+      int32_t svt;
+      int32_t ac;
+      int32_t trperiod;
+      bool tr;
+      int32_t f;
+      int32_t k;
+    };
+    
+    std::vector<PostAllele> als;
+    newAid.assign(cts.size(), std::vector<int32_t>());
+    newNal.assign(cts.size(), std::vector<int32_t>());
+    for(size_t f = 0; f < cts.size(); ++f) {
+      htsFile* ifile = bcf_open(cts[f].string().c_str(), "r");
+      bcf_hdr_t* hdr = bcf_hdr_read(ifile);
+      bcf1_t* rec = bcf_init();
+      int32_t nend = 0;
+      int32_t ntrp = 0;
+      int32_t nac = 0;
+      int32_t nsvt = 0;
+      int32_t nsub = 0;
+      int32_t *endp = NULL;
+      int32_t *trpp = NULL;
+      int32_t *acp = NULL;
+      char *svtc = NULL;
+      char *subc = NULL;
+      int32_t kk = 0;
+      while (bcf_read(ifile, hdr, rec) == 0) {
+	bcf_unpack(rec, BCF_UN_INFO);
+	int32_t end = rec->pos + 1;
+	if (bcf_get_info_int32(hdr, rec, "END", &endp, &nend) > 0) end = *endp;
+	int32_t svt = 5;
+	if (bcf_get_info_string(hdr, rec, "SVTYPE", &svtc, &nsvt) > 0) {
+	  std::string s(svtc);
+	  if (s == "DEL") svt = 2;
+	  else if (s == "INS") svt = 4;
+	  else if (s == "DUP") svt = 3;
+	  else if (s == "INV") svt = 0;
+	}
+	bool tr = false;
+	if (bcf_get_info_string(hdr, rec, "SUBTYPE", &subc, &nsub) > 0) {
+	  if (std::string(subc).find("TR") != std::string::npos) tr = true;
+	}
+	int32_t trperiod = 0;
+	if (bcf_get_info_int32(hdr, rec, "TRPERIOD", &trpp, &ntrp) > 0) {
+	  trperiod = *trpp;
+	  if (trperiod > 0) tr = true;
+	}
+	int32_t ac = 0;
+	if (bcf_get_info_int32(hdr, rec, "AC", &acp, &nac) > 0) ac = *acp;
+	PostAllele pa;
+	pa.rid = rec->rid;
+	pa.pos = rec->pos;
+	pa.end = end;
+	pa.svt = svt;
+	pa.ac = ac;
+	pa.trperiod = trperiod;
+	pa.tr = tr;
+	pa.f = (int32_t) f;
+	pa.k = kk;
+	als.push_back(pa);
+	newAid[f].push_back(-1);
+	newNal[f].push_back(1);
+	++kk;
+      }
+      if (endp) free(endp);
+      if (trpp) free(trpp);
+      if (acp) free(acp);
+      if (svtc) free(svtc);
+      if (subc) free(subc);
+
+      // Clean-up
+      bcf_destroy(rec);
+      bcf_hdr_destroy(hdr);
+      bcf_close(ifile);
+    }
+
+    int32_t N = (int32_t) als.size();
+    if (N == 0) return;
+    std::vector<int32_t> ord(N);
+    for(int32_t i = 0; i < N; ++i) ord[i] = i;
+    std::sort(ord.begin(), ord.end(), [&](int32_t a, int32_t b) { return (als[a].rid < als[b].rid) || ((als[a].rid == als[b].rid) && (als[a].pos < als[b].pos)); });
+
+    UnionFind uf(N);
+    double twoN = 2.0 * (double) c.totalSamples;
+    int32_t sweepCap = std::max((int32_t) c.bpoffset, 5000);
+    int32_t maxSpan = 10000; // max. STR/VNTR size
+    std::vector<int32_t> compMin(N);
+    std::vector<int32_t> compMax(N);
+    for(int32_t i = 0; i < N; ++i) {
+      compMin[i] = als[i].pos;
+      compMax[i] = als[i].pos;
+    }
+    auto tryUnite = [&](int32_t i, int32_t j) {
+      int32_t ri = uf.find(i), rj = uf.find(j);
+      if (ri == rj) return;
+      int32_t mn = std::min(compMin[ri], compMin[rj]);
+      int32_t mx = std::max(compMax[ri], compMax[rj]);
+      if (mx - mn > maxSpan) return; // keep separate
+      uf.unite(i, j);
+      int32_t r = uf.find(i);
+      compMin[r] = mn;
+      compMax[r] = mx;
+    };
+    for(int32_t oi = 0; oi < N; ++oi) {
+      int32_t i = ord[oi];
+      for(int32_t oj = oi - 1; oj >= 0; --oj) {
+	int32_t j = ord[oj];
+	if (als[j].rid != als[i].rid) break;
+	if (als[i].pos - als[j].pos > sweepCap) break;
+	bool overlap = (als[i].pos <= als[j].end) && (als[j].pos <= als[i].end);
+	if ((als[i].tr) && (als[j].tr)) {
+	  int32_t W = std::max((int32_t) c.bpoffset, 2 * std::max(als[i].trperiod, als[j].trperiod));
+	  if (((als[i].pos - als[j].pos) <= W) || (overlap)) tryUnite(i, j);
+	} else if ((als[i].tr) || (als[j].tr)) {
+	  // One side is TR, other side might have failed TR annotation
+	  int32_t nonSpan = (als[i].tr) ? (als[j].end - als[j].pos) : (als[i].end - als[i].pos);
+	  if ((overlap) && (nonSpan <= maxSpan)) tryUnite(i, j);
+	} else if (als[i].svt == als[j].svt) {
+	  // Non-TR
+	  if (overlap) {
+	    // Compount hets expected?
+	    double E = (twoN > 0.0) ? ((double) als[i].ac * (double) als[j].ac / twoN) : 0.0;
+	    if (E >= 1.0) tryUnite(i, j);
+	  }
+	}
+      }
+    }
+
+    boost::unordered_map<int32_t, int32_t> rootCount;
+    for(int32_t i = 0; i < N; ++i) rootCount[uf.find(i)] += 1;
+    boost::unordered_map<int32_t, int32_t> rootId;
+    int32_t counter = 1;
+    for(int32_t i = 0; i < N; ++i) {
+      int32_t r = uf.find(i);
+      if (rootId.find(r) == rootId.end()) rootId[r] = counter++;
+      newAid[als[i].f][als[i].k] = rootId[r];
+      newNal[als[i].f][als[i].k] = rootCount[r];
+    }
+  }
+
   inline void
   mergeBCFs(MergeConfig& c, std::vector<boost::filesystem::path> const& cts) {
     boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
     std::cerr << '[' << boost::posix_time::to_simple_string(now) << "] " << "Merging SV types" << std::endl;
+
+    // Group INS:TR and DEL:TR at the same VNTR site
+    std::vector<std::vector<int32_t> > newAid;
+    std::vector<std::vector<int32_t> > newNal;
+    _regroupLoci(c, cts, newAid, newNal);
     
     // Parse temporary input VCF files
     typedef std::vector<htsFile*> THtsFile;
@@ -1448,6 +1676,7 @@ namespace torali
     if (bcf_hdr_write(fp, hdr_out) != 0) std::cerr << "Error: Failed to write BCF header!" << std::endl;
 
     // Merge files
+    std::vector<int32_t> kcount(cts.size(), 0);   // per-file
     while (allEOF < cts.size()) {
       // Find next sorted record
       int32_t idx = -1;
@@ -1457,9 +1686,18 @@ namespace torali
 	}
       }
 
+      // Relabel locus (ALLELEID/NALLELE)
+      int32_t rk = kcount[idx]++;
+      if ((rk < (int32_t) newAid[idx].size()) && (newAid[idx][rk] > 0)) {
+	int32_t aidOut = newAid[idx][rk];
+	int32_t nalOut = newNal[idx][rk];
+	bcf_update_info_int32(hdr_out, rec[idx], "ALLELEID", &aidOut, 1);
+	bcf_update_info_int32(hdr_out, rec[idx], "NALLELE", &nalOut, 1);
+      }
+
       // Write record
       bcf_write1(fp, hdr_out, rec[idx]);
-      
+
       // Fetch next record
       if (bcf_read(ifile[idx], hdr[idx], rec[idx]) == 0) bcf_unpack(rec[idx], BCF_UN_INFO);
       else {
@@ -1567,6 +1805,7 @@ namespace torali
       ("bp-offset,b", boost::program_options::value<uint32_t>(&c.bpoffset)->default_value(1000), "default max. breakpoint offset")
       ("rec-overlap,r", boost::program_options::value<float>(&c.recoverlap)->default_value(0.8), "default min. reciprocal overlap")
       ("recurrent", boost::program_options::value<int32_t>(&c.recurrentSamples)->default_value(10), "carrier count to keep low-quality SVs")
+      ("rep-min-af", boost::program_options::value<float>(&c.repMinAF)->default_value(0.005), "min. carrier fraction to keep a redundant rare allele (0 disables)")
       ("mei-offset", boost::program_options::value<int32_t>(&c.meiOffset)->default_value(50), "max. breakpoint offset for MEIs")
       ("mei-sizeratio", boost::program_options::value<float>(&c.meiSizeRatio)->default_value(0.85), "min. size ratio for MEIs")
       ("mei-seqid", boost::program_options::value<float>(&c.meiSeqId)->default_value(0.8), "min. sequence identity for MEIs")
