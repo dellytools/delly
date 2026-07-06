@@ -27,7 +27,7 @@ displayUsage() {
   std::cerr << "Usage: delly <command> <arguments>" << std::endl;
   std::cerr << std::endl;
   std::cerr << "Short-read SV calling:" << std::endl;
-  std::cerr << "    call         discover and genotype structural variants" << std::endl;
+  std::cerr << "    sr           discover and genotype structural variants" << std::endl;
   std::cerr << std::endl;
   std::cerr << "Long-read SV calling:" << std::endl;
   std::cerr << "    lr           long-read SV discovery" << std::endl;
@@ -71,7 +71,7 @@ int main(int argc, char **argv) {
       bsd();
       return 0;
     }
-    else if ((std::string(argv[1]) == "call")) {
+    else if ((std::string(argv[1]) == "sr")) {
       return delly(argc-1,argv+1);
     }
     else if ((std::string(argv[1]) == "lr")) {

@@ -26,11 +26,11 @@ Delly needs a sorted, indexed and duplicate marked BAM or CRAM file for every in
 
 ## Short-read SV discovery
 
-`delly call -g ref.fa input.bam > delly.vcf`
+`delly sr -g ref.fa input.bam > delly.vcf`
 
 You can also redirect the output to a [BCF](http://samtools.github.io/bcftools/) file.
 
-`delly call -o delly.bcf -g ref.fa input.bam`
+`delly sr -o delly.bcf -g ref.fa input.bam`
 
 `bcftools view delly.bcf > delly.vcf`
 
@@ -48,11 +48,11 @@ For PacBio sequencing data:
 
 ## Somatic SV calling
 
-Somatic SV calling is available for short- (subcommand: call) and long-reads (subcommand: lr)
+Somatic SV calling is available for short-reads (subcommand: sr) and long-reads (subcommand: lr).
 
 * At least one tumor sample and a matched control sample are required for SV discovery
 
-`delly [call|lr] -o t1.bcf -g hg38.fa tumor1.bam control1.bam`
+`delly [sr|lr] -o t1.bcf -g hg38.fa tumor1.bam control1.bam`
 
 * Somatic filtering requires a tab-delimited sample description file where the first column is the sample id (as in the VCF/BCF file) and the second column is either tumor or control.
 
@@ -60,17 +60,17 @@ Somatic SV calling is available for short- (subcommand: call) and long-reads (su
 
 * You can also use a larger panel of normal for somatic SV filtering
 
-`delly [call|lr] -o t1.bcf -g hg38.fa tumor1.bam control1.bam ... controlN.bam`
+`delly [sr|lr] -o t1.bcf -g hg38.fa tumor1.bam control1.bam ... controlN.bam`
 
 
 
 ## Germline SV calling
 
-Germline SV calling is available for short- (subcommand: call) and long-reads (subcommand: lr)
+Germline SV calling is available for short- (subcommand: sr) and long-reads (subcommand: lr).
 
 * SV discovery is done by sample for high-coverage genomes
 
-`delly [call|lr] -g hg38.fa -o s1.bcf sample1.bam`
+`delly [sr|lr] -g hg38.fa -o s1.bcf sample1.bam`
 
 * Merge SV sites into an SV site list 
 
@@ -78,9 +78,9 @@ Germline SV calling is available for short- (subcommand: call) and long-reads (s
 
 * Genotype this merged SV site list across all samples in parallel
 
-`delly [call|lr] -g hg38.fa -v sites.bcf -o s1.geno.bcf s1.bam`
+`delly [sr|lr] -g hg38.fa -v sites.bcf -o s1.geno.bcf s1.bam`
 
-`delly [call|lr] -g hg38.fa -v sites.bcf -o sN.geno.bcf sN.bam`
+`delly [sr|lr] -g hg38.fa -v sites.bcf -o sN.geno.bcf sN.bam`
 
 * Merge all genotyped samples to get a single VCF/BCF using bcftools. This can be done in chunks if necessary.
 
@@ -96,7 +96,7 @@ Germline SV calling is available for short- (subcommand: call) and long-reads (s
 
 Some small examples are included for short-read, long-read and copy-number variant calling.
 
-`delly call -g example/ref.fa -o sr.bcf example/sr.bam`
+`delly sr -g example/ref.fa -o sr.bcf example/sr.bam`
 
 `delly lr -g example/ref.fa -o lr.bcf example/lr.bam`
 
