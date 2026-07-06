@@ -66,7 +66,7 @@ Somatic SV calling is available for short-reads (subcommand: sr) and long-reads 
 
 ## Germline SV calling
 
-Germline SV calling is available for short- (subcommand: sr) and long-reads (subcommand: lr).
+Germline SV calling is available for short-reads (subcommand: sr) and long-reads (subcommand: lr).
 
 * SV discovery is done by sample for high-coverage genomes
 
