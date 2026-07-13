@@ -32,13 +32,13 @@ displayUsage() {
   std::cerr << "Long-read SV calling:" << std::endl;
   std::cerr << "    lr           long-read SV discovery" << std::endl;
   std::cerr << std::endl;
+  std::cerr << "Assembly-based SV calling:" << std::endl;
+  std::cerr << "    asm          assembly-based SV discovery" << std::endl;
+  std::cerr << std::endl;
   std::cerr << "Helper commands:" << std::endl;
   std::cerr << "    merge        merge structural variants" << std::endl;
   std::cerr << "    filter       filter somatic or germline structural variants" << std::endl;
   std::cerr << std::endl;
-  //std::cerr << "Assembly-based SV calling (work-in-progress):" << std::endl;
-  //std::cerr << "    asm          assembly SV site discovery" << std::endl;
-  //std::cerr << std::endl;
   std::cerr << "Copy-number variant calling:" << std::endl;
   std::cerr << "    cnv          discover and genotype copy-number variants" << std::endl;
   std::cerr << "    classify     classify somatic or germline copy-number variants" << std::endl;

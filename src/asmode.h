@@ -47,16 +47,36 @@ namespace torali {
     int32_t indelsize;
     int32_t nchr;
     float flankQuality;
+    bool diploid;
+    uint32_t nsamples;
     std::set<int32_t> svtset;
     boost::filesystem::path outfile;
     std::vector<boost::filesystem::path> files;
     boost::filesystem::path genome;
     std::vector<std::string> sampleName;
+    std::vector<uint32_t> fileSample;
+    std::vector<uint8_t> fileHap;
   };
 
-  template<typename TConfig, typename TReadBp>
+  // Strip trailing haplotype
+  inline std::string
+  _stripHaplotypeSuffix(std::string s) {
+    static const std::vector<std::string> suffixes = { ".hap1", ".hap2", ".hapA", ".hapB", ".h1", ".h2", ".mat", ".pat", ".maternal", ".paternal", ".1", ".2" };
+    for(uint32_t i = 0; i < suffixes.size(); ++i) {
+      if ((s.size() > suffixes[i].size()) && (s.compare(s.size() - suffixes[i].size(), suffixes[i].size(), suffixes[i]) == 0)) {
+	s = s.substr(0, s.size() - suffixes[i].size());
+	break;
+      }
+    }
+    return s;
+  }
+
+  template<typename TConfig, typename TReadBp, typename TSvtSRBamRecord>
   inline void
-  findAsmJunctions(TConfig const& c, TReadBp& readBp) {
+  findAsmJunctions(TConfig const& c, TReadBp& readBp, boost::unordered_map<std::size_t, uint32_t>& readSample, boost::unordered_map<std::size_t, uint8_t>& readHap, TSvtSRBamRecord& srBR) {
+    bool const doDel = ((c.svtset.empty()) || (c.svtset.find(2) != c.svtset.end()));
+    bool const doIns = ((c.svtset.empty()) || (c.svtset.find(4) != c.svtset.end()));
+
     // Open file handles
     typedef std::vector<samFile*> TSamFile;
     typedef std::vector<hts_idx_t*> TIndex;
@@ -87,27 +107,43 @@ namespace torali {
 	  if (rec->core.flag & (BAM_FQCFAIL | BAM_FDUP | BAM_FUNMAP)) continue;
 	  if ((rec->core.qual < c.minMapQual) || (rec->core.tid<0)) continue;
 
+	  // Fetch sample and haplotype
 	  std::size_t seed = hash_lr(rec);
+	  boost::hash_combine(seed, c.fileSample[file_c]);
+	  readSample[seed] = c.fileSample[file_c];
+	  readHap[seed] = c.fileHap[file_c];
 	  //std::cerr << bam_get_qname(rec) << '\t' << seed << std::endl;
 	  uint32_t rp = rec->core.pos; // reference pointer
 	  uint32_t sp = 0; // sequence pointer
-	    
+	  int32_t readStart = rec->core.pos;
+	  if (rec->core.flag & (BAM_FSECONDARY | BAM_FSUPPLEMENTARY)) readStart = -1;
+	  int32_t const seqlen = readLength(rec);
+	  bool const rev = (rec->core.flag & BAM_FREVERSE);
+
 	  // Parse the CIGAR
 	  const uint32_t* cigar = bam_get_cigar(rec);
 	  for (std::size_t i = 0; i < rec->core.n_cigar; ++i) {
+	    uint32_t const oplen = bam_cigar_oplen(cigar[i]);
 	    if ((bam_cigar_op(cigar[i]) == BAM_CMATCH) || (bam_cigar_op(cigar[i]) == BAM_CEQUAL) || (bam_cigar_op(cigar[i]) == BAM_CDIFF)) {
-	      sp += bam_cigar_oplen(cigar[i]);
-	      rp += bam_cigar_oplen(cigar[i]);
+	      sp += oplen;
+	      rp += oplen;
 	    } else if (bam_cigar_op(cigar[i]) == BAM_CDEL) {
-	      if (bam_cigar_oplen(cigar[i]) > c.minRefSep) _insertJunction(readBp, seed, rec, rp, sp, false);
-	      rp += bam_cigar_oplen(cigar[i]);
-	      _insertJunction(readBp, seed, rec, rp, sp, true);
+	      // Intra-alignment deletion
+	      if ((doDel) && (oplen > c.minRefSep) && ((int32_t) sp <= seqlen)) {
+		int32_t ss = rev ? (seqlen - (int32_t) sp) : (int32_t) sp;
+		srBR[2].push_back(SRBamRecord(rec->core.tid, rp, rec->core.tid, rp + oplen, readStart, ss, rec->core.qual, 0, seed));
+	      }
+	      rp += oplen;
 	    } else if (bam_cigar_op(cigar[i]) == BAM_CINS) {
-	      if (bam_cigar_oplen(cigar[i]) > c.minRefSep) _insertJunction(readBp, seed, rec, rp, sp, false);
-	      sp += bam_cigar_oplen(cigar[i]);
-	      _insertJunction(readBp, seed, rec, rp, sp, true);
+	      // Intra-alignment insertion
+	      if ((doIns) && (oplen > c.minRefSep) && ((int32_t) (sp + oplen) <= seqlen)) {
+		int32_t ss = rev ? (seqlen - (int32_t) sp - (int32_t) oplen) : (int32_t) sp;
+		if (ss < 0) ss = 0;
+		srBR[4].push_back(SRBamRecord(rec->core.tid, rp, rec->core.tid, rp + 1, readStart, ss, rec->core.qual, oplen, seed));
+	      }
+	      sp += oplen;
 	    } else if (bam_cigar_op(cigar[i]) == BAM_CREF_SKIP) {
-	      rp += bam_cigar_oplen(cigar[i]);
+	      rp += oplen;
 	    } else if ((bam_cigar_op(cigar[i]) == BAM_CSOFT_CLIP) || (bam_cigar_op(cigar[i]) == BAM_CHARD_CLIP)) {
 	      int32_t finalsp = sp;
 	      bool scleft = false;
@@ -142,27 +178,31 @@ namespace torali {
 
   template<typename TConfig, typename TSvtSRBamRecord>
   inline void
-  _findAsmBreakpoints(TConfig const& c, TSvtSRBamRecord& srBR) {
+  _findAsmBreakpoints(TConfig const& c, TSvtSRBamRecord& srBR, boost::unordered_map<std::size_t, uint32_t>& readSample, boost::unordered_map<std::size_t, uint8_t>& readHap) {
     // Breakpoints
     typedef std::vector<Junction> TJunctionVector;
     typedef boost::unordered_map<std::size_t, TJunctionVector> TReadBp;
     TReadBp readBp;
-    findAsmJunctions(c, readBp);
+    findAsmJunctions(c, readBp, readSample, readHap, srBR);
     fetchSVs(c, readBp, srBR);
   }
 
 
-  template<typename TConfig, typename TSRStore>
+  template<typename TConfig, typename TSRStore, typename THapSupport>
   inline void
-  _findAsmStructuralVariants(TConfig const& c, std::vector<StructuralVariantRecord>& svs, TSRStore& srStore) {
+  _findAsmStructuralVariants(TConfig const& c, std::vector<StructuralVariantRecord>& svs, TSRStore& srStore, THapSupport& hapSupport) {
     // Assembly splits
     typedef std::vector<SRBamRecord> TSRBamRecord;
     typedef std::vector<TSRBamRecord> TSvtSRBamRecord;
     TSvtSRBamRecord srBR(2 * DELLY_SVT_TRANS, TSRBamRecord());
-    
+
+    // Sample and haplotype
+    boost::unordered_map<std::size_t, uint32_t> readSample;
+    boost::unordered_map<std::size_t, uint8_t> readHap;
+
     // Find SR breakpoints
-    _findAsmBreakpoints(c, srBR);
-   
+    _findAsmBreakpoints(c, srBR, readSample, readHap);
+
     // Cluster SVs
     int32_t ci = 10;
     for(uint32_t svt = 0; svt < srBR.size(); ++svt) {
@@ -184,11 +224,15 @@ namespace torali {
       }
       //outputStructuralVariants(c, svs, srBR, svt, true);
 
-      // Track split-reads
+      // Track split-reads and per-SV haplotype support
+      hapSupport.resize(svs.size(), std::vector<uint8_t>(c.nsamples, 0));
       for(uint32_t i = 0; i < srBR[svt].size(); ++i) {
 	if (srBR[svt][i].svid != -1){
 	  if (srStore.find(srBR[svt][i].id) == srStore.end()) srStore.insert(std::make_pair(srBR[svt][i].id, std::vector<SeqSlice>()));
 	  srStore[srBR[svt][i].id].push_back(SeqSlice(srBR[svt][i].svid, srBR[svt][i].sstart, srBR[svt][i].inslen, srBR[svt][i].qual));
+	  // Sample/haplotype support
+	  boost::unordered_map<std::size_t, uint32_t>::const_iterator smpIt = readSample.find(srBR[svt][i].id);
+	  if (smpIt != readSample.end()) hapSupport[srBR[svt][i].svid][smpIt->second] |= (uint8_t) (1 << readHap[srBR[svt][i].id]);
 	}
       }
     }
@@ -224,7 +268,9 @@ namespace torali {
 	  // Only primary alignments with the full sequence information
 	  if (rec->core.flag & (BAM_FQCFAIL | BAM_FDUP | BAM_FUNMAP | BAM_FSECONDARY | BAM_FSUPPLEMENTARY)) continue;
 
+	  // Seed
 	  std::size_t seed = hash_lr(rec);
+	  boost::hash_combine(seed, c.fileSample[file_c]);
 	  if (srStore.find(seed) != srStore.end()) {
 	    // Get sequence
 	    std::string sequence;
@@ -347,20 +393,24 @@ namespace torali {
    typedef std::vector<StructuralVariantRecord> TVariants;
    TVariants svs;
 
+   // Per-SV haplotype support [svid][sample]
+   std::vector<std::vector<uint8_t> > hapSupport;
+   std::vector<int32_t> oldSvid;
+
    {
      TVariants svc;
-     
+
      // Split-read store
      typedef std::vector<SeqSlice> TSeqSliceVector;
      typedef boost::unordered_map<std::size_t, TSeqSliceVector> TReadSeqSlices;
      TReadSeqSlices srStore;
 
      // Find candidate SVs
-     _findAsmStructuralVariants(c, svc, srStore);   
-     
+     _findAsmStructuralVariants(c, svc, srStore, hapSupport);
+
      // Set consensus sequence
      _setAsmConsensus(c, svc, srStore);
-   
+
      // Sort SVs
      sort(svc.begin(), svc.end());
 
@@ -370,6 +420,7 @@ namespace torali {
        if (svc[i].consensus.empty()) continue;
        svc[i].srSupport = 10;
        svc[i].mapq *= 10;
+       oldSvid.push_back(svc[i].id);
        svc[i].id = idCount++;
        svs.push_back(svc[i]);
      }
@@ -378,23 +429,46 @@ namespace torali {
    // Annotate junction reads
    typedef std::vector<JunctionCount> TSVJunctionMap;
    typedef std::vector<TSVJunctionMap> TSampleSVJunctionMap;
-   TSampleSVJunctionMap jctMap(c.files.size());
+   TSampleSVJunctionMap jctMap(c.nsamples);
 
    // Annotate spanning coverage
    typedef std::vector<SpanningCount> TSVSpanningMap;
    typedef std::vector<TSVSpanningMap> TSampleSVSpanningMap;
-   TSampleSVSpanningMap spanMap(c.files.size());
-   
+   TSampleSVSpanningMap spanMap(c.nsamples);
+
    // Annotate coverage
    typedef std::vector<ReadCount> TSVReadCount;
    typedef std::vector<TSVReadCount> TSampleSVReadCount;
-   TSampleSVReadCount rcMap(c.files.size());
+   TSampleSVReadCount rcMap(c.nsamples);
 
    // Initialize count maps
-   for(uint32_t file_c = 0; file_c < c.files.size(); ++file_c) {
+   for(uint32_t file_c = 0; file_c < c.nsamples; ++file_c) {
      jctMap[file_c].resize(svs.size(), JunctionCount());
      spanMap[file_c].resize(svs.size(), SpanningCount());
      rcMap[file_c].resize(svs.size());
+   }
+
+   // Simple present/absent genotyping
+   const uint8_t gtQual = 30;
+   for(uint32_t nid = 0; nid < svs.size(); ++nid) {
+     int32_t oid = oldSvid[nid];
+     for(uint32_t s = 0; s < c.nsamples; ++s) {
+       uint8_t bits = ((oid >= 0) && (oid < (int32_t) hapSupport.size()) && (s < hapSupport[oid].size())) ? hapSupport[oid][s] : 0;
+       int32_t nhap = ((bits & 1) ? 1 : 0) + ((bits & 2) ? 1 : 0);
+       if (nhap == 0) {
+	 // Hom. ref
+	 jctMap[s][nid].ref.push_back(gtQual);
+	 jctMap[s][nid].ref.push_back(gtQual);
+       } else if (nhap >= 2) {
+	 // Hom. alt
+	 jctMap[s][nid].alt.push_back(gtQual);
+	 jctMap[s][nid].alt.push_back(gtQual);
+       } else {
+	 // Het
+	 jctMap[s][nid].alt.push_back(gtQual);
+	 jctMap[s][nid].ref.push_back(gtQual);
+       }
+     }
    }
 
    // VCF Output
@@ -426,6 +500,7 @@ namespace torali {
      ("help,?", "show help message")
      ("svtype,t", boost::program_options::value<std::string>(&svtype)->default_value("ALL"), "SV type to compute [DEL, INS, DUP, INV, BND, ALL]")
      ("genome,g", boost::program_options::value<boost::filesystem::path>(&c.genome), "genome fasta file")
+     ("mode,y", boost::program_options::value<std::string>(&mode)->default_value("squashed"), "input mode [squashed, diploid]")
      ("outfile,o", boost::program_options::value<boost::filesystem::path>(&c.outfile), "SV output file")
      ;
    
@@ -464,7 +539,8 @@ namespace torali {
    // Check command line arguments
    if ((vm.count("help")) || (!vm.count("input-file")) || (!vm.count("genome"))) {
      std::cerr << std::endl;
-     std::cerr << "Usage: delly " << argv[0] << " [OPTIONS] -g <ref.fa> <asm1.bam> <asm2.bam> ..." << std::endl;
+     std::cerr << "Usage: delly " << argv[0] << " [OPTIONS] -y squashed -g <ref.fa> <asm1.bam> <asm2.bam> ..." << std::endl;
+     std::cerr << "       delly " << argv[0] << " [OPTIONS] -y diploid -g <ref.fa> <asm1.h1.bam> <asm1.h2.bam> <asm2.h1.bam> ..." << std::endl;
      std::cerr << visible_options << "\n";
      return 0;
    }
@@ -490,8 +566,19 @@ namespace torali {
      fai_destroy(fai);
    }
    
+   // Input mode
+   if ((mode != "squashed") && (mode != "diploid")) {
+     std::cerr << "Please specify a valid input mode (squashed or diploid)." << std::endl;
+     return 1;
+   }
+   c.diploid = (mode == "diploid");
+   if (c.diploid && (c.files.size() % 2 != 0)) {
+     std::cerr << "Diploid mode expects an even number of BAM files (hap1 hap2 per sample)." << std::endl;
+     return 1;
+   }
+
    // Check input files
-   c.sampleName.resize(c.files.size());
+   std::vector<std::string> fileSM(c.files.size());
    c.nchr = 0;
    for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
      if (!(boost::filesystem::exists(c.files[file_c]) && boost::filesystem::is_regular_file(c.files[file_c]) && boost::filesystem::file_size(c.files[file_c]))) {
@@ -531,12 +618,43 @@ namespace torali {
      fai_destroy(fai);
      std::string sampleName = "unknown";
      getSMTag(std::string(hdr->text), c.files[file_c].stem().string(), sampleName);
-     c.sampleName[file_c] = sampleName;
+     fileSM[file_c] = sampleName;
      bam_hdr_destroy(hdr);
      hts_idx_destroy(idx);
      sam_close(samfile);
    }
-   checkSampleNames(c);
+
+   // Map input files to samples/haplotypes
+   c.nsamples = (c.diploid) ? (c.files.size() / 2) : c.files.size();
+   c.fileSample.resize(c.files.size());
+   c.fileHap.resize(c.files.size());
+   c.sampleName.resize(c.nsamples);
+   for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
+     if (c.diploid) {
+       c.fileSample[file_c] = file_c / 2;
+       c.fileHap[file_c] = (uint8_t) (file_c % 2);
+     } else {
+       c.fileSample[file_c] = file_c;
+       c.fileHap[file_c] = 0;
+     }
+   }
+   for(unsigned int s = 0; s < c.nsamples; ++s) {
+     unsigned int f0 = (c.diploid) ? (2 * s) : s;
+     c.sampleName[s] = (c.diploid) ? _stripHaplotypeSuffix(fileSM[f0]) : fileSM[f0];
+   }
+   // De-duplicate sample names
+   {
+     std::set<std::string> snames;
+     uint32_t ucount = 0;
+     for(unsigned int s = 0; s < c.nsamples; ++s) {
+       while (snames.find(c.sampleName[s]) != snames.end()) {
+	 std::cerr << "Warning: Duplicate sample names: " << c.sampleName[s] << std::endl;
+	 c.sampleName[s] += "_" + boost::lexical_cast<std::string>(ucount++);
+	 std::cerr << "Warning: Changing sample name to " << c.sampleName[s] << std::endl;
+       }
+       snames.insert(c.sampleName[s]);
+     }
+   }
 
    // Check outfile
    if (!vm.count("outfile")) c.outfile = "-";

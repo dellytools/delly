@@ -426,7 +426,7 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
     bcf_hdr_append(hdr, refname.c_str());
   }
   // Add samples
-  for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) bcf_hdr_add_sample(hdr, c.sampleName[file_c].c_str());
+  for(unsigned int file_c = 0; file_c < jctCountMap.size(); ++file_c) bcf_hdr_add_sample(hdr, c.sampleName[file_c].c_str());
   bcf_hdr_add_sample(hdr, NULL);
   if (bcf_hdr_write(fp, hdr) != 0) std::cerr << "Error: Failed to write BCF header!" << std::endl;
 
@@ -463,7 +463,7 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
       // In discovery mode, skip SVs that have less than 2 reads support after genotyping
       if (!c.hasVcfFile) {
 	uint32_t totalGtSup = 0;
-	for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
+	for(unsigned int file_c = 0; file_c < jctCountMap.size(); ++file_c) {
 	  totalGtSup += spanCountMap[file_c][svIter->id].alt.size() + jctCountMap[file_c][svIter->id].alt.size();
 	}
 	if (totalGtSup < 2) continue;
@@ -596,7 +596,7 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
       }
 
       // Add genotype columns
-      for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
+      for(unsigned int file_c = 0; file_c < jctCountMap.size(); ++file_c) {
 	// Counters
 	rcl[file_c] = 0;
 	rc[file_c] = 0;
