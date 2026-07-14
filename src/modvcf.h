@@ -393,6 +393,8 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
   bcf_hdr_append(hdr, "##INFO=<ID=SUBTYPE,Number=1,Type=String,Description=\"SV subtype: INS:ME:ALU, INS:ME:LINE1, INS:ME:SVA, INS:NUMT, INS:LTR, INS:HERVK, INS:TR, or DEL:TR\">");
   bcf_hdr_append(hdr, "##INFO=<ID=ALLELEID,Number=1,Type=Integer,Description=\"Identifier of the merged locus\">");
   bcf_hdr_append(hdr, "##INFO=<ID=NALLELE,Number=1,Type=Integer,Description=\"Number of distinct alleles at this locus\">");
+  bcf_hdr_append(hdr, "##INFO=<ID=AC,Number=A,Type=Integer,Description=\"Allele count\">");
+  bcf_hdr_append(hdr, "##INFO=<ID=AN,Number=1,Type=Integer,Description=\"Total number of alleles\">");
   bcf_hdr_append(hdr, "##INFO=<ID=INSSTRAND,Number=1,Type=String,Description=\"Insertion strand for MEIs\">");
   bcf_hdr_append(hdr, "##INFO=<ID=TRPERIOD,Number=1,Type=Integer,Description=\"Tandem repeat period in bp\">");
   bcf_hdr_append(hdr, "##INFO=<ID=TRCOPIES,Number=1,Type=Float,Description=\"Tandem repeat copy number\">");
@@ -712,6 +714,18 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
       if (qvalout > 10000) qvalout = 10000;
       rec->qual = qvalout;
       
+      // Allele count
+      {
+	int32_t acCount = 0;
+	int32_t anCount = 0;
+	for(int32_t k = 0; k < bcf_hdr_nsamples(hdr) * 2; ++k) {
+	  if (bcf_gt_is_missing(gts[k])) continue;
+	  ++anCount;
+	  if (bcf_gt_allele(gts[k]) > 0) ++acCount;
+	}
+	bcf_update_info_int32(hdr, rec, "AC", &acCount, 1);
+	bcf_update_info_int32(hdr, rec, "AN", &anCount, 1);
+      }
       bcf_update_genotypes(hdr, rec, gts, bcf_hdr_nsamples(hdr) * 2);
       //bcf_update_format_float(hdr, rec, "GL",  gls, bcf_hdr_nsamples(hdr) * 3);
       bcf_update_format_int32(hdr, rec, "GQ", gqval, bcf_hdr_nsamples(hdr));

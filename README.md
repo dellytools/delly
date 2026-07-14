@@ -45,6 +45,15 @@ For PacBio sequencing data:
 
 `delly lr -y pb -o delly.bcf -g hg38.fa input.bam`
 
+## Assembly-based SV discovery
+
+For a haplotype-resolved assembly:
+
+`delly asm -y diploid -g hg38.fa> s1.h1.bam s1.h2.bam s2.h1.bam s2.h2.bam ...`
+
+For a so-called squashed assembly:
+
+`delly asm -y squashed -g hg38.fa s1.bam s2.bam ...`
 
 ## Somatic SV calling
 

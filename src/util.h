@@ -488,6 +488,11 @@ namespace torali
     boost::hash_combine(seed, string_hash(qname));
     return seed;
   }
+
+  inline char
+  _ucBase(char const ch) {
+    return (char) std::toupper((unsigned char) ch);
+  }
   
   inline void
   reverseComplement(std::string& sequence) {

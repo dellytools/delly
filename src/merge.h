@@ -107,6 +107,7 @@ namespace torali
     int32_t altSupport;
     int8_t subtype;   // 0:none 1:ALU 2:LINE1 3:SVA 4:NUMT 5:LTR 6:HERVK 7:TR
     int8_t insStrand; // -1:NA 0:+ 1:-
+    int8_t hap;       // -1 read-based merging, 0/1 haplotype origin for asm
     bool precise;
     bool fromSiteList; // chunk re-merge
     float srq;
@@ -126,6 +127,13 @@ namespace torali
     int32_t ciendHi;
     uint32_t alleleId;
     int32_t nAllele;
+  };
+
+  // One merged allele
+  struct AlleleGroup {
+    int32_t rep;
+    std::vector<int32_t> members;
+    MergeAgg agg;
   };
 
 
@@ -647,7 +655,7 @@ namespace torali
 
   // Pass 1b: cluster and filter SVs
   inline void
-  _clusterAndSelect(MergeConfig& c, std::vector<MergeSV>& nodes, boost::unordered_map<std::string, MergeAgg>& selected) {
+  _clusterAndSelect(MergeConfig& c, std::vector<MergeSV>& nodes, boost::unordered_map<std::string, MergeAgg>& selected, std::vector<AlleleGroup>* outGroups = nullptr) {
     boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
     std::cerr << '[' << boost::posix_time::to_simple_string(now) << "] " << "Clustering and merging SVs" << std::endl;
     if (nodes.empty()) return;
@@ -821,6 +829,15 @@ namespace torali
 
 	std::string key = boost::lexical_cast<std::string>(nodes[rep].fileIdx) + "\t" + nodes[rep].id;
 	selected[key] = agg;
+
+	// Store group membership (for asm)
+	if (outGroups != nullptr) {
+	  AlleleGroup ag;
+	  ag.rep = rep;
+	  ag.members = grp;
+	  ag.agg = agg;
+	  outGroups->push_back(ag);
+	}
       }
     }
   }
@@ -909,9 +926,9 @@ namespace torali
     bcf_hdr_append(hdr_out, "##INFO=<ID=TRPERIOD,Number=1,Type=Integer,Description=\"Tandem repeat period in bp\">");
     bcf_hdr_append(hdr_out, "##INFO=<ID=TRCOPIES,Number=1,Type=Float,Description=\"Tandem repeat copy number\">");
     // Population allele-frequency priors from merge
-    bcf_hdr_append(hdr_out, "##INFO=<ID=AC,Number=1,Type=Integer,Description=\"Allele count across merged samples\">");
+    bcf_hdr_append(hdr_out, "##INFO=<ID=AC,Number=A,Type=Integer,Description=\"Allele count across merged samples\">");
     bcf_hdr_append(hdr_out, "##INFO=<ID=AN,Number=1,Type=Integer,Description=\"Total allele number across merged samples\">");
-    bcf_hdr_append(hdr_out, "##INFO=<ID=AF,Number=1,Type=Float,Description=\"Allele frequency (AC/AN)\">");
+    bcf_hdr_append(hdr_out, "##INFO=<ID=AF,Number=A,Type=Float,Description=\"Allele frequency (AC/AN)\">");
     bcf_hdr_append(hdr_out, "##INFO=<ID=SUPP,Number=1,Type=Integer,Description=\"Number of carrier samples\">");
     bcf_hdr_append(hdr_out, "##INFO=<ID=ALLELEID,Number=1,Type=Integer,Description=\"Identifier of the merged locus\">");
     bcf_hdr_append(hdr_out, "##INFO=<ID=NALLELE,Number=1,Type=Integer,Description=\"Number of distinct alleles at this locus\">");
