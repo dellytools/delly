@@ -664,6 +664,7 @@ namespace torali {
     mc.outfile = finalOut;
     mergeBCFs(mc, std::vector<boost::filesystem::path>(1, tmpOut));
     boost::filesystem::remove(tmpOut);
+    boost::filesystem::remove(boost::filesystem::path(tmpOut.string() + ".csi"));
   }
 
  template<typename TConfig>
