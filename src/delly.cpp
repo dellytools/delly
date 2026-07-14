@@ -26,16 +26,12 @@ inline void
 displayUsage() {
   std::cerr << "Usage: delly <command> <arguments>" << std::endl;
   std::cerr << std::endl;
-  std::cerr << "Short-read SV calling:" << std::endl;
-  std::cerr << "    sr           discover and genotype structural variants" << std::endl;
-  std::cerr << std::endl;
-  std::cerr << "Long-read SV calling:" << std::endl;
+  std::cerr << "SV calling:" << std::endl;
+  std::cerr << "    sr           short-read SV discovery" << std::endl;
   std::cerr << "    lr           long-read SV discovery" << std::endl;
-  std::cerr << std::endl;
-  std::cerr << "Assembly-based SV calling:" << std::endl;
   std::cerr << "    asm          assembly-based SV discovery" << std::endl;
   std::cerr << std::endl;
-  std::cerr << "Helper commands:" << std::endl;
+  std::cerr << "SV merging and filtering:" << std::endl;
   std::cerr << "    merge        merge structural variants" << std::endl;
   std::cerr << "    filter       filter somatic or germline structural variants" << std::endl;
   std::cerr << std::endl;
