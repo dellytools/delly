@@ -110,7 +110,8 @@ namespace torali
 
     // Iterate chromosomes
     uint64_t totalCov = 0;
-    faidx_t* faiMap = fai_load(c.mapFile.string().c_str());
+    faidx_t* faiMap = NULL;
+    if (c.hasMapFile) faiMap = fai_load(c.mapFile.string().c_str());
     for(int32_t refIndex=0; refIndex < (int32_t) hdr->n_targets; ++refIndex) {
       if (chrNoData(c, refIndex, idx)) continue;
       // Exclude small chromosomes
@@ -118,16 +119,19 @@ namespace torali
       // Exclude sex chromosomes
       if ((std::string(hdr->target_name[refIndex]) == "chrX") || (std::string(hdr->target_name[refIndex]) == "chrY") || (std::string(hdr->target_name[refIndex]) == "X") || (std::string(hdr->target_name[refIndex]) == "Y")) continue;
 
-      // Check presence in mappability map
+      // Mappability map (optional)
       std::string tname(hdr->target_name[refIndex]);
-      int32_t seqlen = faidx_seq_len(faiMap, tname.c_str());
-      if (seqlen == -1) continue;
-      else seqlen = -1;
-      char* seq = faidx_fetch_seq(faiMap, tname.c_str(), 0, faidx_seq_len(faiMap, tname.c_str()), &seqlen);
+      char* seq = NULL;
+      if (c.hasMapFile) {
+	int32_t seqlen = faidx_seq_len(faiMap, tname.c_str());
+	if (seqlen == -1) continue;
+	else seqlen = -1;
+	seq = faidx_fetch_seq(faiMap, tname.c_str(), 0, faidx_seq_len(faiMap, tname.c_str()), &seqlen);
+      }
 
       // Get Mappability
       std::vector<uint16_t> uniqContent(hdr->target_len[refIndex], 0);
-      {
+      if (c.hasMapFile) {
 	// Mappability map
 	typedef boost::dynamic_bitset<> TBitSet;
 	TBitSet uniq(hdr->target_len[refIndex], false);
@@ -169,6 +173,14 @@ namespace torali
 	}
       }
 	
+      // Base-level coverage
+      typedef uint16_t TCount;
+      uint32_t maxCoverage = std::numeric_limits<TCount>::max();
+      std::vector<TCount> cov;
+      std::vector<TCount> covUniq;
+      if (c.basecov) cov.resize(hdr->target_len[refIndex], 0);
+      if (c.basecov && (!c.hasMapFile)) covUniq.resize(hdr->target_len[refIndex], 0);
+
       // Mate map
       typedef boost::unordered_map<std::size_t, bool> TMateMap;
       TMateMap mateMap;
@@ -182,7 +194,12 @@ namespace torali
 	if (rec->core.flag & (BAM_FSECONDARY | BAM_FQCFAIL | BAM_FDUP | BAM_FSUPPLEMENTARY | BAM_FUNMAP)) continue;
 	if ((rec->core.flag & BAM_FPAIRED) && ((rec->core.flag & BAM_FMUNMAP) || (rec->core.tid != rec->core.mtid))) continue;
 	if (rec->core.qual < c.minQual) continue;
-	if (getSVType(rec) != 2) continue;
+	if (c.basecov) {
+	  if (c.hasMapFile) addBaseCoverage(rec, cov, hdr->target_len[refIndex], maxCoverage);
+	  else addBaseCoverage(rec, cov, covUniq, c.mapqUniq, hdr->target_len[refIndex], maxCoverage);
+	  continue;
+	}
+	if ((rec->core.flag & BAM_FPAIRED) && (getSVType(rec) != 2)) continue;
 
 	int32_t midPoint = rec->core.pos + halfAlignmentLength(rec);
 	if (rec->core.flag & BAM_FPAIRED) {
@@ -222,6 +239,21 @@ namespace torali
 	  }
 	}
       }
+
+      // Aggregate base-level coverage into scan windows
+      if (c.basecov) {
+	for(uint32_t pos = 0; pos < hdr->target_len[refIndex]; ++pos) {
+	  if (cov[pos] == 0) continue;
+	  int32_t bin = _findScanWindow(c, hdr->target_len[refIndex], binMap, pos);
+	  if (bin >= 0) {
+	    scanCounts[refIndex][bin].cov += cov[pos];
+	    bool u = (c.hasMapFile) ? (uniqContent[pos] >= c.fragmentUnique * c.meanisize) : (2 * (uint32_t) covUniq[pos] >= (uint32_t) cov[pos]);
+	    if (u) scanCounts[refIndex][bin].uniqcov += cov[pos];
+	    ++totalCov;
+	  }
+	}
+      }
+
       // Clean-up
       bam_destroy1(rec);
       hts_itr_destroy(iter);
@@ -229,7 +261,7 @@ namespace torali
     }
     
     // clean-up
-    fai_destroy(faiMap);
+    if (faiMap != NULL) fai_destroy(faiMap);
     bam_hdr_destroy(hdr);
     hts_idx_destroy(idx);
     sam_close(samfile);

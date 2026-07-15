@@ -23,7 +23,9 @@ namespace torali
 {
 
   struct CountDNAConfig {
+    bool basecov;
     bool adaptive;
+    bool hasMapFile;
     bool hasStatsFile;
     bool hasBedFile;
     bool hasScanFile;
@@ -38,7 +40,10 @@ namespace torali
     uint32_t scanWindow;
     uint32_t minChrLen;
     uint32_t minCnvSize;
+    uint32_t targetReads;
+    double targetExpCov;
     uint16_t minQual;
+    uint16_t mapqUniq;
     uint16_t mad;
     float ploidy;
     float ctrlPloidy;
@@ -123,7 +128,8 @@ namespace torali
     }
     
     // Iterate chromosomes
-    faidx_t* faiMap = fai_load(c.mapFile.string().c_str());
+    faidx_t* faiMap = NULL;
+    if (c.hasMapFile) faiMap = fai_load(c.mapFile.string().c_str());
     faidx_t* faiRef = fai_load(c.genome.string().c_str());
     for(int32_t refIndex=0; refIndex < (int32_t) hdr->n_targets; ++refIndex) {
       if ((!c.hasGenoFile) && (chrNoData(c, refIndex, idx))) continue;
@@ -136,35 +142,41 @@ namespace torali
 	chrPloidy = c.ploidy - 1;
       }
       
-      // Check presence in mappability map
+      // Reference sequence
       std::string tname(hdr->target_name[refIndex]);
-      int32_t seqlen = faidx_seq_len(faiMap, tname.c_str());
-      if (seqlen == - 1) continue;
-      else seqlen = -1;
-      char* seq = faidx_fetch_seq(faiMap, tname.c_str(), 0, faidx_seq_len(faiMap, tname.c_str()), &seqlen);
-
-      // Check presence in reference
-      seqlen = faidx_seq_len(faiRef, tname.c_str());
+      int32_t seqlen = faidx_seq_len(faiRef, tname.c_str());
       if (seqlen == - 1) continue;
       else seqlen = -1;
       char* ref = faidx_fetch_seq(faiRef, tname.c_str(), 0, faidx_seq_len(faiRef, tname.c_str()), &seqlen);
+
+      // Mappability map
+      char* seq = NULL;
+      if (c.hasMapFile) {
+	seqlen = faidx_seq_len(faiMap, tname.c_str());
+	if (seqlen == - 1) {
+	  if (ref != NULL) free(ref);
+	  continue;
+	} else seqlen = -1;
+	seq = faidx_fetch_seq(faiMap, tname.c_str(), 0, faidx_seq_len(faiMap, tname.c_str()), &seqlen);
+      }
 
       // Get GC and Mappability
       std::vector<uint16_t> uniqContent(hdr->target_len[refIndex], 0);
       std::vector<uint16_t> gcContent(hdr->target_len[refIndex], 0);
       {
-	// Mappability map
-	typedef boost::dynamic_bitset<> TBitSet;
-	TBitSet uniq(hdr->target_len[refIndex], false);
-	for(uint32_t i = 0; i < hdr->target_len[refIndex]; ++i) {
-	  if (seq[i] == 'C') uniq[i] = 1;
-	}
-
 	// GC map
 	typedef boost::dynamic_bitset<> TBitSet;
 	TBitSet gcref(hdr->target_len[refIndex], false);
 	for(uint32_t i = 0; i < hdr->target_len[refIndex]; ++i) {
 	  if ((ref[i] == 'c') || (ref[i] == 'C') || (ref[i] == 'g') || (ref[i] == 'G')) gcref[i] = 1;
+	}
+
+	// Mappability map
+	TBitSet uniq(hdr->target_len[refIndex], false);
+	if (c.hasMapFile) {
+	  for(uint32_t i = 0; i < hdr->target_len[refIndex]; ++i) {
+	    if (seq[i] == 'C') uniq[i] = 1;
+	  }
 	}
 
 	// Sum across fragment
@@ -184,15 +196,17 @@ namespace torali
 	    gcsum += gcref[pos + halfwin];
 	  }
 	  gcContent[pos] = gcsum;
-	  uniqContent[pos] = usum;
+	  if (c.hasMapFile) uniqContent[pos] = usum;
 	}
       }
-      
+
       // Coverage track
       typedef uint16_t TCount;
       uint32_t maxCoverage = std::numeric_limits<TCount>::max();
       typedef std::vector<TCount> TCoverage;
       TCoverage cov(hdr->target_len[refIndex], 0);
+      TCoverage covUniq;
+      if (!c.hasMapFile) covUniq.resize(hdr->target_len[refIndex], 0);
 
       {
 	// Mate map
@@ -206,28 +220,39 @@ namespace torali
 	std::set<std::size_t> lastAlignedPosReads;
 	while (sam_itr_next(samfile, iter, rec) >= 0) {
 	  if (rec->core.flag & (BAM_FQCFAIL | BAM_FDUP | BAM_FUNMAP | BAM_FSECONDARY | BAM_FSUPPLEMENTARY)) continue;
-	  if (rec->core.qual < c.minQual) continue;	  
+	  if (rec->core.qual < c.minQual) continue;
 	  if ((rec->core.flag & BAM_FPAIRED) && ((rec->core.flag & BAM_FMUNMAP) || (rec->core.tid != rec->core.mtid))) continue;
 
+	  // Base coverage
+	  if (c.basecov) {
+	    if (c.hasMapFile) addBaseCoverage(rec, cov, hdr->target_len[refIndex], maxCoverage);
+	    else addBaseCoverage(rec, cov, covUniq, c.mapqUniq, hdr->target_len[refIndex], maxCoverage);
+	    continue;
+	  }
+
+	  // Fragment coverage
 	  int32_t midPoint = rec->core.pos + halfAlignmentLength(rec);
 	  if (rec->core.flag & BAM_FPAIRED) {
+	    std::size_t seed = hash_sr(rec);
+	    
 	    // Clean-up the read store for identical alignment positions
 	    if (rec->core.pos > lastAlignedPos) {
 	      lastAlignedPosReads.clear();
 	      lastAlignedPos = rec->core.pos;
 	    }
 	    
-	    if ((rec->core.pos < rec->core.mpos) || ((rec->core.pos == rec->core.mpos) && (lastAlignedPosReads.find(hash_string(bam_get_qname(rec))) == lastAlignedPosReads.end()))) {
+	    if (_firstPairObs(rec, lastAlignedPosReads)) {
 	      // First read
-	      lastAlignedPosReads.insert(hash_string(bam_get_qname(rec)));
+	      lastAlignedPosReads.insert(seed);
 	      std::size_t hv = hash_pair(rec);
 	      mateMap[hv] = true;
 	      continue;
 	    } else {
 	      // Second read
 	      std::size_t hv = hash_pair_mate(rec);
-	      if ((mateMap.find(hv) == mateMap.end()) || (!mateMap[hv])) continue; // Mate discarded
-	      mateMap[hv] = false;
+	      auto itMM = mateMap.find(hv);
+	      if ((itMM == mateMap.end()) || (!itMM->second)) continue; // Mate discarded
+	      mateMap.erase(itMM);
 	    }
 	    
 	    // update midpoint
@@ -240,10 +265,20 @@ namespace torali
 	}
 	// Clean-up
 	if (seq != NULL) free(seq);
-	if (ref != NULL) free(ref);
 	bam_destroy1(rec);
 	hts_itr_destroy(iter);
       }
+
+      // No mappability: unique if mostly high-MAPQ reads
+      if (!c.hasMapFile) {
+	for(uint32_t pos = 0; pos < hdr->target_len[refIndex]; ++pos) {
+	  bool u;
+	  if (cov[pos] == 0) u = ((ref[pos] != 'N') && (ref[pos] != 'n'));
+	  else u = (2 * (uint32_t) covUniq[pos] >= (uint32_t) cov[pos]);
+	  uniqContent[pos] = (u ? (uint16_t) c.meanisize : 0);
+	}
+      }
+      if (ref != NULL) free(ref);
 
       // CNV discovery
       if (!c.hasGenoFile) {
@@ -263,113 +298,33 @@ namespace torali
 
       // BED File (target intervals)
       if (c.hasBedFile) {
-	if (c.adaptive) {
-	  // Merge overlapping BED entries
-	  TChrIntervals citv;
-	  _mergeOverlappingBedEntries(bedRegions[refIndex], citv);
-
-	  // Tile merged intervals
-	  double covsum = 0;
-	  double expcov = 0;
-	  //double obsexp = 0;
-	  uint32_t winlen = 0;
-	  uint32_t start = 0;
-	  bool endOfWindow = true;
-	  typename TChrIntervals::iterator it = citv.begin();
-	  if (it != citv.end()) start = it->first;
-	  while(endOfWindow) {
-	    endOfWindow = false;
-	    for(it = citv.begin(); ((it != citv.end()) && (!endOfWindow)); ++it) {
-	      if ((it->first < it->second) && (it->second <= hdr->target_len[refIndex])) {
-		if (start >= it->second) {
-		  if (start == it->second) {
-		    // Special case
-		    typename TChrIntervals::iterator itNext = it;
-		    ++itNext;
-		    if (itNext != citv.end()) start = itNext->first;
-		  }
-		  continue;
-		}
-		for(uint32_t pos = it->first; ((pos < it->second) && (!endOfWindow)); ++pos) {
-		  if (pos < start) continue;
-		  if ((gcContent[pos] > gcbound.first) && (gcContent[pos] < gcbound.second) && (uniqContent[pos] >= c.fragmentUnique * c.meanisize)) {
-		    covsum += cov[pos];
-		    //obsexp += gcbias[gcContent[pos]].obsexp;
-		    expcov += gcbias[gcContent[pos]].coverage;
-		    ++winlen;
-		    if (winlen == c.window_size) {
-		      //obsexp /= (double) winlen;
-		      // Normalized counts: double count = ((double) covsum / obsexp ) * (double) c.window_size / (double) winlen;
-		      double cn = chrPloidy;
-		      double logR = 0;
-		      if (expcov > 0) {
-			cn = (c.expectedCN * covsum / expcov - chrCtrlPloidy * (1 - c.purity)) / c.purity;
-			logR = std::log2(covsum / expcov);
-		      }
-		      if (!c.covfile.empty()) dataOut << std::string(hdr->target_name[refIndex]) << "\t" << start << "\t" << (pos + 1) << "\t" << winlen << "\t" << logR << "\t" << cn << std::endl;
-		      // reset
-		      covsum = 0;
-		      expcov = 0;
-		      //obsexp = 0;
-		      winlen = 0;
-		      if (c.window_offset == c.window_size) {
-			// Move on
-			start = pos + 1;
-			endOfWindow = true;
-		      } else {
-			// Rewind
-			for(typename TChrIntervals::iterator sit = citv.begin(); ((sit != citv.end()) && (!endOfWindow)); ++sit) {
-			  if ((sit->first < sit->second) && (sit->second <= hdr->target_len[refIndex])) {
-			    if (start >= sit->second) continue;
-			    for(uint32_t k = sit->first; ((k < sit->second) && (!endOfWindow)); ++k) {
-			      if (k < start) continue;
-			      if ((gcContent[k] > gcbound.first) && (gcContent[k] < gcbound.second) && (uniqContent[k] >= c.fragmentUnique * c.meanisize)) {
-				++winlen;
-				if (winlen == c.window_offset) {
-				  start = k + 1;
-				  winlen = 0;
-				  endOfWindow = true;
-				}
-			      }
-			    }
-			  }
-			}
-		      }
-		    }
-		  }
-		}
+	// Fixed Window Length
+	for(typename TChrIntervals::iterator it = bedRegions[refIndex].begin(); it != bedRegions[refIndex].end(); ++it) {
+	  if ((it->first < it->second) && (it->second <= hdr->target_len[refIndex])) {
+	    double covsum = 0;
+	    double expcov = 0;
+	    //double obsexp = 0;
+	    uint32_t winlen = 0;
+	    for(uint32_t pos = it->first; pos < it->second; ++pos) {
+	      if ((gcContent[pos] > gcbound.first) && (gcContent[pos] < gcbound.second) && (uniqContent[pos] >= c.fragmentUnique * c.meanisize)) {
+		covsum += cov[pos];
+		//obsexp += gcbias[gcContent[pos]].obsexp;
+		expcov += gcbias[gcContent[pos]].coverage;
+		++winlen;
 	      }
 	    }
-	  }
-	} else {
-	  // Fixed Window Length
-	  for(typename TChrIntervals::iterator it = bedRegions[refIndex].begin(); it != bedRegions[refIndex].end(); ++it) {
-	    if ((it->first < it->second) && (it->second <= hdr->target_len[refIndex])) {
-	      double covsum = 0;
-	      double expcov = 0;
-	      //double obsexp = 0;
-	      uint32_t winlen = 0;
-	      for(uint32_t pos = it->first; pos < it->second; ++pos) {
-		if ((gcContent[pos] > gcbound.first) && (gcContent[pos] < gcbound.second) && (uniqContent[pos] >= c.fragmentUnique * c.meanisize)) {
-		  covsum += cov[pos];
-		  //obsexp += gcbias[gcContent[pos]].obsexp;
-		  expcov += gcbias[gcContent[pos]].coverage;
-		  ++winlen;
-		}
+	    if (winlen >= c.fracWindow * (it->second - it->first)) {
+	      //obsexp /= (double) winlen;
+	      // Normalized counts: double count = ((double) covsum / obsexp ) * (double) (it->second - it->first) / (double) winlen;
+	      double cn = chrPloidy;
+	      double logR = 0;
+	      if (expcov > 0) {
+		cn = (c.expectedCN * covsum / expcov - chrCtrlPloidy * (1 - c.purity)) / c.purity;
+		logR = std::log2(covsum / expcov);
 	      }
-	      if (winlen >= c.fracWindow * (it->second - it->first)) {
-		//obsexp /= (double) winlen;
-		// Normalized counts: double count = ((double) covsum / obsexp ) * (double) (it->second - it->first) / (double) winlen;
-		double cn = chrPloidy;
-		double logR = 0;
-		if (expcov > 0) {
-		  cn = (c.expectedCN * covsum / expcov - chrCtrlPloidy * (1 - c.purity)) / c.purity;
-		  logR = std::log2(covsum / expcov);
-		}
-		if (!c.covfile.empty()) dataOut << std::string(hdr->target_name[refIndex]) << "\t" << it->first << "\t" << it->second << "\t" << winlen << "\t" << logR << "\t" << cn << std::endl;
-	      } else {
-		if (!c.covfile.empty()) dataOut << std::string(hdr->target_name[refIndex]) << "\t" << it->first << "\t" << it->second << "\tNA\tNA\tNA" << std::endl;
-	      }
+	      if (!c.covfile.empty()) dataOut << std::string(hdr->target_name[refIndex]) << "\t" << it->first << "\t" << it->second << "\t" << winlen << "\t" << logR << "\t" << cn << std::endl;
+	    } else {
+	      if (!c.covfile.empty()) dataOut << std::string(hdr->target_name[refIndex]) << "\t" << it->first << "\t" << it->second << "\tNA\tNA\tNA" << std::endl;
 	    }
 	  }
 	}
@@ -378,19 +333,14 @@ namespace torali
 	if (c.adaptive) {
 	  double covsum = 0;
 	  double expcov = 0;
-	  //double obsexp = 0;
 	  uint32_t winlen = 0;
 	  uint32_t start = 0;
-	  uint32_t pos = 0;
-	  while(pos < hdr->target_len[refIndex]) {
+	  for(uint32_t pos = 0; pos < hdr->target_len[refIndex]; ++pos) {
 	    if ((gcContent[pos] > gcbound.first) && (gcContent[pos] < gcbound.second) && (uniqContent[pos] >= c.fragmentUnique * c.meanisize)) {
 	      covsum += cov[pos];
-	      //obsexp += gcbias[gcContent[pos]].obsexp;
 	      expcov += gcbias[gcContent[pos]].coverage;
 	      ++winlen;
-	      if (winlen == c.window_size) {
-		//obsexp /= (double) winlen;
-		// Normalized counts: double count = ((double) covsum / obsexp ) * (double) c.window_size / (double) winlen;
+	      if (expcov >= c.targetExpCov) {
 		double cn = chrPloidy;
 		double logR = 0;
 		if (expcov > 0) {
@@ -398,34 +348,15 @@ namespace torali
 		  logR = std::log2(covsum / expcov);
 		}
 		if (!c.covfile.empty()) dataOut << std::string(hdr->target_name[refIndex]) << "\t" << start << "\t" << (pos + 1) << "\t" << winlen << "\t" << logR << "\t" << cn << std::endl;
-		// reset
 		covsum = 0;
 		expcov = 0;
-		//obsexp = 0;
 		winlen = 0;
-		if (c.window_offset == c.window_size) {
-		  // Move on
-		  start = pos + 1;
-		} else {
-		  // Rewind
-		  for(uint32_t k = start; k < hdr->target_len[refIndex]; ++k) {
-		    if ((gcContent[k] > gcbound.first) && (gcContent[k] < gcbound.second) && (uniqContent[k] >= c.fragmentUnique * c.meanisize)) {
-		      ++winlen;
-		      if (winlen == c.window_offset) {
-			start = k + 1;
-			pos = k;
-			winlen = 0;
-			break;
-		      }
-		    }
-		  }
-		}
+		start = pos + 1;
 	      }
 	    }
-	    ++pos;
 	  }
 	} else {
-	  // Fixed windows (genomic tiling)
+	  // Fixed windows (non-overlapping)
 	  for(uint32_t start = 0; start < hdr->target_len[refIndex]; start = start + c.window_offset) {
 	    if (start + c.window_size < hdr->target_len[refIndex]) {
 	      double covsum = 0;
@@ -465,7 +396,7 @@ namespace torali
 
     // clean-up
     fai_destroy(faiRef);
-    fai_destroy(faiMap);
+    if (faiMap != NULL) fai_destroy(faiMap);
     bam_hdr_destroy(hdr);
     hts_idx_destroy(idx);
     sam_close(samfile);
@@ -488,7 +419,7 @@ namespace torali
       ("help,?", "show help message")
       ("genome,g", boost::program_options::value<boost::filesystem::path>(&c.genome), "genome file")
       ("quality,q", boost::program_options::value<uint16_t>(&c.minQual)->default_value(10), "min. mapping quality")
-      ("mappability,m", boost::program_options::value<boost::filesystem::path>(&c.mapFile), "input mappability map")
+      ("mappability,m", boost::program_options::value<boost::filesystem::path>(&c.mapFile), "input mappability map (optional)")
       ("outfile,o", boost::program_options::value<boost::filesystem::path>(&c.outfile), "BCF output file")
       ("covfile,c", boost::program_options::value<boost::filesystem::path>(&c.covfile), "gzipped coverage file")
       ;
@@ -513,28 +444,26 @@ namespace torali
     
     boost::program_options::options_description window("Read-depth windows");
     window.add_options()
-      ("window-size,i", boost::program_options::value<uint32_t>(&c.window_size)->default_value(10000), "window size")
-      ("window-offset,j", boost::program_options::value<uint32_t>(&c.window_offset)->default_value(10000), "window offset")
-      ("bed-intervals,b", boost::program_options::value<boost::filesystem::path>(&c.bedFile), "input BED file")
-      ("fraction-window,k", boost::program_options::value<float>(&c.fracWindow)->default_value(0.25), "min. callable window fraction [0,1]")
-      ("adaptive-windowing,a", "use mappable bases for adaptive window size")
+      ("window,w", boost::program_options::value<uint32_t>(&c.window_size)->default_value(0), "window size in bp (0: automatic, coverage-adaptive)")
+      ("bed-intervals,b", boost::program_options::value<boost::filesystem::path>(&c.bedFile), "input BED file (targeted intervals)")
       ;
 
-    boost::program_options::options_description gcopt("GC fragment normalization");
-    gcopt.add_options()
-      ("scan-window,w", boost::program_options::value<uint32_t>(&c.scanWindow)->default_value(10000), "scanning window size")
-      ("fraction-unique,f", boost::program_options::value<float>(&c.uniqueToTotalCovRatio)->default_value(0.8), "uniqueness filter for scan windows [0,1]")
-      ("scan-regions,r", boost::program_options::value<boost::filesystem::path>(&c.scanFile), "scanning regions in BED format")
-      ("mad-cutoff,d", boost::program_options::value<uint16_t>(&c.mad)->default_value(3), "median + 3 * mad count cutoff")
-      ("no-window-selection,n", "no scan window selection")
-      ("percentile", boost::program_options::value<float>(&c.exclgc)->default_value(0.0005), "excl. extreme GC fraction")
-      ;
-    
     boost::program_options::options_description hidden("Hidden options");
     hidden.add_options()
       ("input-file", boost::program_options::value<boost::filesystem::path>(&c.bamFile), "input BAM/CRAM file")
       ("fragment", boost::program_options::value<float>(&c.fragmentUnique)->default_value(0.97), "min. fragment uniqueness [0,1]")
-      ("statsfile,s", boost::program_options::value<boost::filesystem::path>(&c.statsFile), "gzipped stats output file (optional)")
+      ("statsfile", boost::program_options::value<boost::filesystem::path>(&c.statsFile), "gzipped stats output file (optional)")
+      ("target-reads", boost::program_options::value<uint32_t>(&c.targetReads)->default_value(150), "target reads/window for automatic window size")
+      ("mapq-uniq", boost::program_options::value<uint16_t>(&c.mapqUniq)->default_value(20), "min. MAPQ for a uniquely-placed read")
+      ("window-offset", boost::program_options::value<uint32_t>(&c.window_offset)->default_value(0), "window offset (0: window size)")
+      ("fraction-window", boost::program_options::value<float>(&c.fracWindow)->default_value(0.25), "min. callable window fraction [0,1]")
+      ("scan-window", boost::program_options::value<uint32_t>(&c.scanWindow)->default_value(10000), "GC scanning window size")
+      ("fraction-unique", boost::program_options::value<float>(&c.uniqueToTotalCovRatio)->default_value(0.8), "uniqueness filter for scan windows [0,1]")
+      ("scan-regions", boost::program_options::value<boost::filesystem::path>(&c.scanFile), "GC scanning regions in BED format")
+      ("mad-cutoff", boost::program_options::value<uint16_t>(&c.mad)->default_value(3), "median + 3 * mad count cutoff")
+      ("percentile", boost::program_options::value<float>(&c.exclgc)->default_value(0.0005), "excl. extreme GC fraction")
+      ("basecov", "force base-level read-depth counting")
+      ("no-window-selection", "no scan window selection")
       ;
 
     boost::program_options::positional_options_description pos_args;
@@ -542,9 +471,9 @@ namespace torali
 
     // Set the visibility
     boost::program_options::options_description cmdline_options;
-    cmdline_options.add(generic).add(cnv).add(cancer).add(window).add(gcopt).add(hidden);
+    cmdline_options.add(generic).add(cnv).add(cancer).add(window).add(hidden);
     boost::program_options::options_description visible_options;
-    visible_options.add(generic).add(cnv).add(cancer).add(window).add(gcopt);
+    visible_options.add(generic).add(cnv).add(cancer).add(window);
 
     // Parse command-line
     boost::program_options::variables_map vm;
@@ -552,12 +481,16 @@ namespace torali
     boost::program_options::notify(vm);
 
     // Check command line arguments
-    if ((vm.count("help")) || (!vm.count("input-file")) || (!vm.count("genome")) || (!vm.count("mappability"))) {
+    if ((vm.count("help")) || (!vm.count("input-file")) || (!vm.count("genome"))) {
       std::cerr << std::endl;
-      std::cerr << "Usage: delly " << argv[0] << " [OPTIONS] -g <genome.fa> -m <genome.map> <aligned.bam>" << std::endl;
+      std::cerr << "Usage: delly " << argv[0] << " [OPTIONS] -g <genome.fa> <aligned.bam>" << std::endl;
       std::cerr << visible_options << "\n";
       return 1;
     }
+
+    // Mappability map
+    if (vm.count("mappability")) c.hasMapFile = true;
+    else c.hasMapFile = false;
 
     // Show cmd
     boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
@@ -582,9 +515,13 @@ namespace torali
     if (vm.count("no-window-selection")) c.noScanWindowSelection = true;
     else c.noScanWindowSelection = false;
 
-    // Adaptive windowing
-    if (vm.count("adaptive-windowing")) c.adaptive = true;
-    else c.adaptive = false;
+    // Adaptive windows
+    c.adaptive = false;
+    if (c.window_size == 0) {
+      if (c.hasBedFile) c.window_size = 10000;
+      else c.adaptive = true;
+    }
+    if (c.targetReads == 0) c.targetReads = 150;
 
     // Purity
     if (c.purity > 1) c.purity = 1;
@@ -597,10 +534,8 @@ namespace torali
     if (vm.count("segmentation")) c.segmentation = true;
     else c.segmentation = false;
 
-    // Check window size
-    if (c.window_offset > c.window_size) c.window_offset = c.window_size;
-    if (c.window_size == 0) c.window_size = 1;
-    if (c.window_offset == 0) c.window_offset = 1;
+    // Window offset
+    if ((c.window_offset == 0) || (c.window_offset > c.window_size)) c.window_offset = c.window_size;
 
     // Check input VCF file (CNV genotyping)
     if (vm.count("vcffile")) {
@@ -654,6 +589,7 @@ namespace torali
     
     // Check bam file
     LibraryInfo li;
+    bool pairedLib = false;
     if (!(boost::filesystem::exists(c.bamFile) && boost::filesystem::is_regular_file(c.bamFile) && boost::filesystem::file_size(c.bamFile))) {
       std::cerr << "Alignment file is missing: " << c.bamFile.string() << std::endl;
       return 1;
@@ -693,20 +629,21 @@ namespace torali
 
       // Check matching chromosome names
       faidx_t* faiRef = fai_load(c.genome.string().c_str());
-      faidx_t* faiMap = fai_load(c.mapFile.string().c_str());
+      faidx_t* faiMap = NULL;
+      if (c.hasMapFile) faiMap = fai_load(c.mapFile.string().c_str());
       uint32_t mapFound = 0;
       uint32_t refFound = 0;
       for(int32_t refIndex=0; refIndex < hdr->n_targets; ++refIndex) {
 	std::string tname(hdr->target_name[refIndex]);
-	if (faidx_has_seq(faiMap, tname.c_str())) ++mapFound;
+	if (c.hasMapFile && faidx_has_seq(faiMap, tname.c_str())) ++mapFound;
 	if (faidx_has_seq(faiRef, tname.c_str())) ++refFound;
 	else {
 	  std::cerr << "Warning: BAM chromosome " << tname << " not present in reference genome!" << std::endl;
 	}
       }
       fai_destroy(faiRef);
-      fai_destroy(faiMap);
-      if (!mapFound) {
+      if (faiMap != NULL) fai_destroy(faiMap);
+      if (c.hasMapFile && !mapFound) {
 	std::cerr << "Mappability map chromosome naming disagrees with BAM file!" << std::endl;
 	return 1;
       }
@@ -736,6 +673,7 @@ namespace torali
       dellyConf.madNormalCutoff = c.mad;
       getLibraryParams(dellyConf, scanRegions, sampleLib);
       li = sampleLib[0];
+      pairedLib = (li.median > 0);
       if (!li.median) {
 	li.median = 250;
 	li.mad = 15;
@@ -743,11 +681,22 @@ namespace torali
 	li.maxNormalISize = 400;
       }
       c.meanisize = ((int32_t) (li.median / 2)) * 2 + 1;
-      
+
       // Clean-up
       bam_hdr_destroy(hdr);
       hts_idx_destroy(idx);
       sam_close(samfile);
+    }
+
+    // Counting model
+    c.basecov = false;
+    if (!c.hasMapFile) {
+      // No mappability map req. base-level coverage arrays
+      c.basecov = true;
+    } else {
+      // Base-level coverage
+      if (vm.count("basecov")) c.basecov = true;
+      else c.basecov = ((!pairedLib) && (li.rs >= 500));  // Single-end reads > 500bp 
     }
 
     // GC bias estimation
@@ -817,7 +766,32 @@ namespace torali
 	statsOut.pop();
       }
     }
-      
+
+    // Coverage-aware window size
+    if (c.adaptive) {
+      // Mean expected coverage at CN2 over the callable GC range
+      double covMean = 0;
+      uint64_t refCnt = 0;
+      for(uint32_t i = gcbound.first + 1; i < gcbound.second; ++i) {
+	covMean += gcbias[i].coverage * (double) gcbias[i].reference;
+	refCnt += gcbias[i].reference;
+      }
+      if (refCnt) covMean /= (double) refCnt;
+      double readLen = (li.rs > 0) ? (double) li.rs : (double) c.meanisize;
+      double molPerBp = c.basecov ? (covMean / readLen) : covMean;
+      if (molPerBp <= 0) molPerBp = 1e-9;
+      double winBp = (double) c.targetReads / molPerBp;
+      double minWin = std::max(100.0, 4.0 * readLen);
+      double maxWin = 2000000.0;
+      if (winBp < minWin) winBp = minWin;
+      if (winBp > maxWin) winBp = maxWin;
+      c.targetExpCov = covMean * winBp;
+      double effReads = molPerBp * winBp;
+      double covDepth = c.basecov ? covMean : (covMean * readLen);
+      now = boost::posix_time::second_clock::local_time();
+      std::cerr << '[' << boost::posix_time::to_simple_string(now) << "] " << "Auto window size: " << (uint32_t) winBp << " bp, " << (uint32_t) effReads << " reads/window (" << (c.basecov ? "base-level" : "fragment") << ", coverage " << (uint32_t) (covDepth + 0.5) << "x)" << std::endl;
+    }
+
     // Count reads
     if (bamCount(c, li, gcbias, gcbound)) {
       std::cerr << "Read counting error!" << std::endl;

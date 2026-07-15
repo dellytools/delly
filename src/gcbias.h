@@ -80,7 +80,8 @@ namespace torali
     boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
     std::cerr << '[' << boost::posix_time::to_simple_string(now) << "] " << "Estimate GC bias" << std::endl;
 
-    faidx_t* faiMap = fai_load(c.mapFile.string().c_str());
+    faidx_t* faiMap = NULL;
+    if (c.hasMapFile) faiMap = fai_load(c.mapFile.string().c_str());
     faidx_t* faiRef = fai_load(c.genome.string().c_str());
     for (int refIndex = 0; refIndex < hdr->n_targets; ++refIndex) {
       if (scanCounts[refIndex].empty()) continue;
@@ -95,35 +96,39 @@ namespace torali
 	}
       }
       
-      // Check presence in mappability map
+      // Reference sequence
       std::string tname(hdr->target_name[refIndex]);
-      int32_t seqlen = faidx_seq_len(faiMap, tname.c_str());
-      if (seqlen == - 1) continue;
-      else seqlen = -1;
-      char* seq = faidx_fetch_seq(faiMap, tname.c_str(), 0, faidx_seq_len(faiMap, tname.c_str()), &seqlen);
-
-      // Check presence in reference
-      seqlen = faidx_seq_len(faiRef, tname.c_str());
+      int32_t seqlen = faidx_seq_len(faiRef, tname.c_str());
       if (seqlen == - 1) continue;
       else seqlen = -1;
       char* ref = faidx_fetch_seq(faiRef, tname.c_str(), 0, faidx_seq_len(faiRef, tname.c_str()), &seqlen);
+
+      // Mappability map (optional)
+      char* seq = NULL;
+      if (c.hasMapFile) {
+	seqlen = faidx_seq_len(faiMap, tname.c_str());
+	if (seqlen == - 1) { if (ref != NULL) free(ref); continue; }
+	else seqlen = -1;
+	seq = faidx_fetch_seq(faiMap, tname.c_str(), 0, faidx_seq_len(faiMap, tname.c_str()), &seqlen);
+      }
 
       // Get GC and Mappability
       std::vector<uint16_t> uniqContent(hdr->target_len[refIndex], 0);
       std::vector<uint16_t> gcContent(hdr->target_len[refIndex], 0);
       {
-	// Mappability map
-	typedef boost::dynamic_bitset<> TBitSet;
-	TBitSet uniq(hdr->target_len[refIndex], false);
-	for(uint32_t i = 0; i < hdr->target_len[refIndex]; ++i) {
-	  if (seq[i] == 'C') uniq[i] = true;
-	}
-
 	// GC map
 	typedef boost::dynamic_bitset<> TBitSet;
 	TBitSet gcref(hdr->target_len[refIndex], false);
 	for(uint32_t i = 0; i < hdr->target_len[refIndex]; ++i) {
 	  if ((ref[i] == 'c') || (ref[i] == 'C') || (ref[i] == 'g') || (ref[i] == 'G')) gcref[i] = 1;
+	}
+
+	// Mappability map
+	TBitSet uniq(hdr->target_len[refIndex], false);
+	if (c.hasMapFile) {
+	  for(uint32_t i = 0; i < hdr->target_len[refIndex]; ++i) {
+	    if (seq[i] == 'C') uniq[i] = true;
+	  }
 	}
 
 	// Sum across fragments
@@ -143,7 +148,7 @@ namespace torali
 	    gcsum += gcref[pos + halfwin];
 	  }
 	  gcContent[pos] = gcsum;
-	  uniqContent[pos] = usum;
+	  if (c.hasMapFile) uniqContent[pos] = usum;
 	}
       }
 
@@ -152,6 +157,8 @@ namespace torali
       uint32_t maxCoverage = std::numeric_limits<TCount>::max();
       typedef std::vector<TCount> TCoverage;
       TCoverage cov(hdr->target_len[refIndex], 0);
+      TCoverage covUniq;
+      if (!c.hasMapFile) covUniq.resize(hdr->target_len[refIndex], 0);
       
       // Mate map
       typedef boost::unordered_map<std::size_t, bool> TMateMap;
@@ -166,6 +173,11 @@ namespace torali
 	if (rec->core.flag & (BAM_FSECONDARY | BAM_FQCFAIL | BAM_FDUP | BAM_FSUPPLEMENTARY | BAM_FUNMAP)) continue;
 	if ((rec->core.flag & BAM_FPAIRED) && ((rec->core.flag & BAM_FMUNMAP) || (rec->core.tid != rec->core.mtid))) continue;
 	if (rec->core.qual < c.minQual) continue;
+	if (c.basecov) {
+	  if (c.hasMapFile) addBaseCoverage(rec, cov, hdr->target_len[refIndex], maxCoverage);
+	  else addBaseCoverage(rec, cov, covUniq, c.mapqUniq, hdr->target_len[refIndex], maxCoverage);
+	  continue;
+	}
 
 	int32_t midPoint = rec->core.pos + halfAlignmentLength(rec);
 	if (rec->core.flag & BAM_FPAIRED) {
@@ -207,9 +219,10 @@ namespace torali
       if (seq != NULL) free(seq);
       if (ref != NULL) free(ref);
 
-      // Summarize GC coverage for this chromosome
+      // Summarize GC coverage
       for(uint32_t i = 0; i < hdr->target_len[refIndex]; ++i) {
-	if (uniqContent[i] >= c.fragmentUnique * c.meanisize) {
+	bool uniqPos = (c.hasMapFile) ? (uniqContent[i] >= c.fragmentUnique * c.meanisize) : ((cov[i] > 0) && (2 * (uint32_t) covUniq[i] >= (uint32_t) cov[i]));
+	if (uniqPos) {
 	  // Valid bin?
 	  int32_t bin = _findScanWindow(c, hdr->target_len[refIndex], binMap, i);
 	  if ((bin >= 0) && (scanCounts[refIndex][bin].select)) {
@@ -279,7 +292,7 @@ namespace torali
     }
     
     fai_destroy(faiRef);
-    fai_destroy(faiMap);
+    if (faiMap != NULL) fai_destroy(faiMap);
     hts_idx_destroy(idx);
     sam_close(samfile);
     bam_hdr_destroy(hdr);
