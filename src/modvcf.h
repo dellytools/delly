@@ -703,7 +703,12 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
 	rc[file_c] = readCountMap[file_c][svIter->id].rc;
 	rcr[file_c] = readCountMap[file_c][svIter->id].rightRC;
 	cnest[file_c] = -1;
-	if ((rcl[file_c] + rcr[file_c]) > 0) cnest[file_c] = boost::math::iround( 2.0 * (double) rc[file_c] / (double) (rcl[file_c] + rcr[file_c]) );
+	if ((rcl[file_c] + rcr[file_c]) > 0) {
+	  double cn = 2.0 * (double) rc[file_c] / (double) (rcl[file_c] + rcr[file_c]);
+	  if (cn < 0) cn = 0;
+	  if (cn > 100000) cn = 100000; // guard int32 overflow in iround
+	  cnest[file_c] = boost::math::iround(cn);
+	}
       
 	// Genotype filter
 	if (gqval[file_c] < 15) ftarr[file_c] = "LowQual";

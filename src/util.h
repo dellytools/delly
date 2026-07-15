@@ -67,7 +67,7 @@ namespace torali
     int32_t rc;
     int32_t rightRC;
 
-    ReadCount() {}
+    ReadCount() : leftRC(0), rc(0), rightRC(0) {}
     ReadCount(int32_t l, int32_t m, int32_t r) : leftRC(l), rc(m), rightRC(r) {}
   };
 
