@@ -22,7 +22,7 @@
 namespace torali
 {
   struct GcBias {
-    int32_t sample;
+    int64_t sample;
     int32_t reference;
     double fractionSample;
     double fractionReference;
@@ -102,6 +102,7 @@ namespace torali
       if (seqlen == - 1) continue;
       else seqlen = -1;
       char* ref = faidx_fetch_seq(faiRef, tname.c_str(), 0, faidx_seq_len(faiRef, tname.c_str()), &seqlen);
+      if (ref == NULL) continue;
 
       // Mappability map (optional)
       char* seq = NULL;
@@ -110,6 +111,7 @@ namespace torali
 	if (seqlen == - 1) { if (ref != NULL) free(ref); continue; }
 	else seqlen = -1;
 	seq = faidx_fetch_seq(faiMap, tname.c_str(), 0, faidx_seq_len(faiMap, tname.c_str()), &seqlen);
+	if (seq == NULL) { free(ref); continue; }
       }
 
       // Get GC and Mappability

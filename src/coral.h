@@ -148,6 +148,7 @@ namespace torali
       if (seqlen == - 1) continue;
       else seqlen = -1;
       char* ref = faidx_fetch_seq(faiRef, tname.c_str(), 0, faidx_seq_len(faiRef, tname.c_str()), &seqlen);
+      if (ref == NULL) continue;
 
       // Mappability map
       char* seq = NULL;
@@ -158,6 +159,7 @@ namespace torali
 	  continue;
 	} else seqlen = -1;
 	seq = faidx_fetch_seq(faiMap, tname.c_str(), 0, faidx_seq_len(faiMap, tname.c_str()), &seqlen);
+	if (seq == NULL) { free(ref); continue; }
       }
 
       // Get GC and Mappability
@@ -777,19 +779,26 @@ namespace torali
 	refCnt += gcbias[i].reference;
       }
       if (refCnt) covMean /= (double) refCnt;
-      double readLen = (li.rs > 0) ? (double) li.rs : (double) c.meanisize;
-      double molPerBp = c.basecov ? (covMean / readLen) : covMean;
-      if (molPerBp <= 0) molPerBp = 1e-9;
-      double winBp = (double) c.targetReads / molPerBp;
-      double minWin = std::max(100.0, 4.0 * readLen);
-      double maxWin = 2000000.0;
-      if (winBp < minWin) winBp = minWin;
-      if (winBp > maxWin) winBp = maxWin;
-      c.targetExpCov = covMean * winBp;
-      double effReads = molPerBp * winBp;
-      double covDepth = c.basecov ? covMean : (covMean * readLen);
-      now = boost::posix_time::second_clock::local_time();
-      std::cerr << '[' << boost::posix_time::to_simple_string(now) << "] " << "Auto window size: " << (uint32_t) winBp << " bp, " << (uint32_t) effReads << " reads/window (" << (c.basecov ? "base-level" : "fragment") << ", coverage " << (uint32_t) (covDepth + 0.5) << "x)" << std::endl;
+      if (covMean <= 0) {
+	// Fixed windows
+	c.adaptive = false;
+	c.window_size = 10000;
+	c.window_offset = c.window_size;
+      } else {
+	double readLen = (li.rs > 0) ? (double) li.rs : (double) c.meanisize;
+	double molPerBp = c.basecov ? (covMean / readLen) : covMean;
+	if (molPerBp <= 0) molPerBp = 1e-9;
+	double winBp = (double) c.targetReads / molPerBp;
+	double minWin = std::max(100.0, 4.0 * readLen);
+	double maxWin = 2000000.0;
+	if (winBp < minWin) winBp = minWin;
+	if (winBp > maxWin) winBp = maxWin;
+	c.targetExpCov = covMean * winBp;
+	double effReads = molPerBp * winBp;
+	double covDepth = c.basecov ? covMean : (covMean * readLen);
+	now = boost::posix_time::second_clock::local_time();
+	std::cerr << '[' << boost::posix_time::to_simple_string(now) << "] " << "Auto window size: " << (uint32_t) winBp << " bp, " << (uint32_t) effReads << " reads/window (" << (c.basecov ? "base-level" : "fragment") << ", coverage " << (uint32_t) (covDepth + 0.5) << "x)" << std::endl;
+      }
     }
 
     // Count reads

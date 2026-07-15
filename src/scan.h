@@ -57,6 +57,7 @@ namespace torali
 	if (scanCounts[refIndex][i].select) all.push_back(scanCounts[refIndex][i].cov);
       }
     }
+    if (all.empty()) return std::make_pair(0, 0);
     std::sort(all.begin(), all.end());
     uint32_t median = all[all.size() / 2];
     std::vector<uint32_t> absdev;
@@ -127,6 +128,7 @@ namespace torali
 	if (seqlen == -1) continue;
 	else seqlen = -1;
 	seq = faidx_fetch_seq(faiMap, tname.c_str(), 0, faidx_seq_len(faiMap, tname.c_str()), &seqlen);
+	if (seq == NULL) continue;
       }
 
       // Get Mappability
