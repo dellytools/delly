@@ -44,8 +44,8 @@ if (length(args)>1) {
 }
 
 # Whole genome
-maxCN = as.integer(max(x[,6])+1)
-#maxCN = 8
+maxCN = 8
+maxCN = min(c(as.integer(max(x[,6])+1), maxCN))
 p = ggplot(data=x, aes(x=start, y=x[,6]))
 p = p + geom_point(pch=21, color="black", fill="black", size=0.5)
 p = p + xlab("Chromosome")
@@ -64,7 +64,8 @@ for(chrname in unique(x$chr)) {
  print(chrname)
  sub = x[x$chr == chrname,]
  sl = seg[seg$chr == chrname,]
- maxCN = as.integer(max(sub[,6])+1)
+ maxCN = 8
+ maxCN = min(c(as.integer(max(sub[,6])+1), maxCN))
  p = ggplot(data=sub, aes(x=start, y=sub[,6]))
  p = p + geom_point(pch=21, color="black", fill="black", size=0.5)
  p = p + ylab("Copy-number") + xlab(chrname)
