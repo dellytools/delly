@@ -76,9 +76,11 @@ namespace torali
     uint32_t winlen;
     double covsum;
     double expcov;
+    double ucov;
+    double tcov;
     bool valid;
 
-    CovWin(uint32_t const s, uint32_t const e, uint32_t const w, double const cs, double const ec, bool vld) : start(s), end(e), winlen(w), covsum(cs), expcov(ec), valid(vld) {}
+    CovWin(uint32_t const s, uint32_t const e, uint32_t const w, double const cs, double const ec, double const uc, double const tc, bool vld) : start(s), end(e), winlen(w), covsum(cs), expcov(ec), ucov(uc), tcov(tc), valid(vld) {}
   };
 
   struct CountDNAConfigLib {
@@ -117,7 +119,7 @@ namespace torali
     if (!c.covfile.empty()) {
       dataOut.push(boost::iostreams::gzip_compressor());
       dataOut.push(boost::iostreams::file_sink(c.covfile.string(), std::ios_base::out | std::ios_base::binary));
-      dataOut << "chr\tstart\tend\t" << c.sampleName << "_mappable\t" << c.sampleName << "_logR\t" << c.sampleName << "_CN" << std::endl;
+      dataOut << "chr\tstart\tend\t" << c.sampleName << "_uniqfrac\t" << c.sampleName << "_logR\t" << c.sampleName << "_CN" << std::endl;
     }
 
     // CNVs
@@ -346,17 +348,25 @@ namespace torali
 	if (c.adaptive) {
 	  double covsum = 0;
 	  double expcov = 0;
+	  double ucov = 0;
+	  double tcov = 0;
 	  uint32_t winlen = 0;
 	  uint32_t start = 0;
 	  for(uint32_t pos = 0; pos < hdr->target_len[refIndex]; ++pos) {
+	    if (!c.hasMapFile) {
+	      ucov += covUniq[pos];
+	      tcov += cov[pos];
+	    }
 	    if ((gcContent[pos] > gcbound.first) && (gcContent[pos] < gcbound.second) && (uniqContent[pos] >= c.fragmentUnique * c.meanisize)) {
 	      covsum += cov[pos];
 	      expcov += gcbias[gcContent[pos]].coverage;
 	      ++winlen;
 	      if (expcov >= c.targetExpCov) {
-		wins.push_back(CovWin(start, pos + 1, winlen, covsum, expcov, true));
+		wins.push_back(CovWin(start, pos + 1, winlen, covsum, expcov, ucov, tcov, true));
 		covsum = 0;
 		expcov = 0;
+		ucov = 0;
+		tcov = 0;
 		winlen = 0;
 		start = pos + 1;
 	      }
@@ -368,8 +378,14 @@ namespace torali
 	    if (start + c.window_size < hdr->target_len[refIndex]) {
 	      double covsum = 0;
 	      double expcov = 0;
+	      double ucov = 0;
+	      double tcov = 0;
 	      uint32_t winlen = 0;
 	      for(uint32_t pos = start; pos < start + c.window_size; ++pos) {
+		if (!c.hasMapFile) {
+		  ucov += covUniq[pos];
+		  tcov += cov[pos];
+		}
 		if ((gcContent[pos] > gcbound.first) && (gcContent[pos] < gcbound.second) && (uniqContent[pos] >= c.fragmentUnique * c.meanisize)) {
 		  covsum += cov[pos];
 		  expcov += gcbias[gcContent[pos]].coverage;
@@ -377,7 +393,7 @@ namespace torali
 		}
 	      }
 	      bool valid = (winlen >= c.fracWindow * c.window_size);
-	      wins.push_back(CovWin(start, start + c.window_size, winlen, covsum, expcov, valid));
+	      wins.push_back(CovWin(start, start + c.window_size, winlen, covsum, expcov, ucov, tcov, valid));
 	    }
 	  }
 	}
@@ -417,12 +433,24 @@ namespace torali
 	  i = b + 1;
 	}
 
-	// Write valid windows
+	// Flag non-unique windows
+	bool uniqGate = (c.basecov && (!c.hasMapFile));
+	if (uniqGate) {
+	  for(uint32_t i = 0; i < nw; ++i) {
+	    if (naFlag[i]) continue;
+	    if ((wins[i].tcov > 0) && (wins[i].ucov <= c.uniqueToTotalCovRatio * wins[i].tcov)) naFlag[i] = true;
+	  }
+	}
+
+	// Write windows
 	if (!c.covfile.empty()) {
 	  std::string chrn(hdr->target_name[refIndex]);
 	  for(uint32_t i = 0; i < nw; ++i) {
+	    double uniqFrac;
+	    if (uniqGate) uniqFrac = (wins[i].tcov > 0) ? (wins[i].ucov / wins[i].tcov) : -1.0;
+	    else uniqFrac = (wins[i].end > wins[i].start) ? ((double) wins[i].winlen / (double) (wins[i].end - wins[i].start)) : -1.0;
 	    if (naFlag[i]) {
-	      dataOut << chrn << "\t" << wins[i].start << "\t" << wins[i].end << "\t" << wins[i].winlen << "\tNA\tNA" << std::endl;
+	      dataOut << chrn << "\t" << wins[i].start << "\t" << wins[i].end << "\t" << uniqFrac << "\tNA\tNA" << std::endl;
 	    } else {
 	      double cn = chrPloidy;
 	      double logR = 0;
@@ -430,7 +458,7 @@ namespace torali
 		cn = (c.expectedCN * wins[i].covsum / wins[i].expcov - chrCtrlPloidy * (1 - c.purity)) / c.purity;
 		logR = std::log2((wins[i].covsum + 1.0) / (wins[i].expcov + 1.0));
 	      }
-	      dataOut << chrn << "\t" << wins[i].start << "\t" << wins[i].end << "\t" << wins[i].winlen << "\t" << logR << "\t" << cn << std::endl;
+	      dataOut << chrn << "\t" << wins[i].start << "\t" << wins[i].end << "\t" << uniqFrac << "\t" << logR << "\t" << cn << std::endl;
 	    }
 	  }
 	}
@@ -495,6 +523,11 @@ namespace torali
     window.add_options()
       ("window,w", boost::program_options::value<uint32_t>(&c.window_size)->default_value(0), "window size in bp (0: automatic, coverage-adaptive)")
       ("bed-intervals,b", boost::program_options::value<boost::filesystem::path>(&c.bedFile), "input BED file (targeted intervals)")
+      ("mapq-uniq", boost::program_options::value<uint16_t>(&c.mapqUniq)->default_value(20), "min. MAPQ for a uniquely-placed read")
+      ("target-reads", boost::program_options::value<uint32_t>(&c.targetReads)->default_value(150), "target reads/window")
+
+      ("fraction-unique", boost::program_options::value<float>(&c.uniqueToTotalCovRatio)->default_value(0.8), "uniqueness filter [0,1]")
+      ("basecov", "force base-level read-depth counting")
       ;
 
     boost::program_options::options_description hidden("Hidden options");
@@ -502,16 +535,12 @@ namespace torali
       ("input-file", boost::program_options::value<boost::filesystem::path>(&c.bamFile), "input BAM/CRAM file")
       ("fragment", boost::program_options::value<float>(&c.fragmentUnique)->default_value(0.97), "min. fragment uniqueness [0,1]")
       ("statsfile", boost::program_options::value<boost::filesystem::path>(&c.statsFile), "gzipped stats output file (optional)")
-      ("target-reads", boost::program_options::value<uint32_t>(&c.targetReads)->default_value(150), "target reads/window for automatic window size")
-      ("mapq-uniq", boost::program_options::value<uint16_t>(&c.mapqUniq)->default_value(20), "min. MAPQ for a uniquely-placed read")
       ("window-offset", boost::program_options::value<uint32_t>(&c.window_offset)->default_value(0), "window offset (0: window size)")
       ("fraction-window", boost::program_options::value<float>(&c.fracWindow)->default_value(0.25), "min. callable window fraction [0,1]")
       ("scan-window", boost::program_options::value<uint32_t>(&c.scanWindow)->default_value(10000), "GC scanning window size")
-      ("fraction-unique", boost::program_options::value<float>(&c.uniqueToTotalCovRatio)->default_value(0.8), "uniqueness filter for scan windows [0,1]")
       ("scan-regions", boost::program_options::value<boost::filesystem::path>(&c.scanFile), "GC scanning regions in BED format")
       ("mad-cutoff", boost::program_options::value<uint16_t>(&c.mad)->default_value(3), "median + 3 * mad count cutoff")
       ("percentile", boost::program_options::value<float>(&c.exclgc)->default_value(0.0005), "excl. extreme GC fraction")
-      ("basecov", "force base-level read-depth counting")
       ("no-window-selection", "no scan window selection")
       ;
 
