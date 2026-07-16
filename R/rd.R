@@ -16,6 +16,7 @@ sdUNDO = 1.5
 # Parse coverage table
 args = commandArgs(trailingOnly=TRUE)
 x = read.table(args[1], header=T)
+x = x[!is.na(x[,6]),] 
 
 # Fix chromosome ordering
 if (sum(x$chr %in% chrNamesLong) > sum(x$chr %in% chrNamesShort)) { chrs = chrNamesLong; } else { chrs = chrNamesShort; }
