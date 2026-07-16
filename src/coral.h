@@ -69,7 +69,18 @@ namespace torali
     boost::filesystem::path scanFile;
     std::set<int32_t> refIdx;
   };
-  
+
+  struct CovWin {
+    uint32_t start;
+    uint32_t end;
+    uint32_t winlen;
+    double covsum;
+    double expcov;
+    bool valid;
+
+    CovWin(uint32_t const s, uint32_t const e, uint32_t const w, double const cs, double const ec, bool vld) : start(s), end(e), winlen(w), covsum(cs), expcov(ec), valid(vld) {}
+  };
+
   struct CountDNAConfigLib {
     uint16_t madCutoff;
     uint16_t madNormalCutoff;
@@ -300,7 +311,6 @@ namespace torali
 
       // BED File (target intervals)
       if (c.hasBedFile) {
-	// Fixed Window Length
 	for(typename TChrIntervals::iterator it = bedRegions[refIndex].begin(); it != bedRegions[refIndex].end(); ++it) {
 	  if ((it->first < it->second) && (it->second <= hdr->target_len[refIndex])) {
 	    double covsum = 0;
@@ -322,7 +332,7 @@ namespace torali
 	      double logR = 0;
 	      if (expcov > 0) {
 		cn = (c.expectedCN * covsum / expcov - chrCtrlPloidy * (1 - c.purity)) / c.purity;
-		logR = std::log2(covsum / expcov);
+		logR = std::log2((covsum + 1.0) / (expcov + 1.0));
 	      }
 	      if (!c.covfile.empty()) dataOut << std::string(hdr->target_name[refIndex]) << "\t" << it->first << "\t" << it->second << "\t" << winlen << "\t" << logR << "\t" << cn << std::endl;
 	    } else {
@@ -332,6 +342,7 @@ namespace torali
 	}
       } else {
 	// Genome-wide
+	std::vector<CovWin> wins;
 	if (c.adaptive) {
 	  double covsum = 0;
 	  double expcov = 0;
@@ -343,13 +354,7 @@ namespace torali
 	      expcov += gcbias[gcContent[pos]].coverage;
 	      ++winlen;
 	      if (expcov >= c.targetExpCov) {
-		double cn = chrPloidy;
-		double logR = 0;
-		if (expcov > 0) {
-		  cn = (c.expectedCN * covsum / expcov - chrCtrlPloidy * (1 - c.purity)) / c.purity;
-		  logR = std::log2(covsum / expcov);
-		}
-		if (!c.covfile.empty()) dataOut << std::string(hdr->target_name[refIndex]) << "\t" << start << "\t" << (pos + 1) << "\t" << winlen << "\t" << logR << "\t" << cn << std::endl;
+		wins.push_back(CovWin(start, pos + 1, winlen, covsum, expcov, true));
 		covsum = 0;
 		expcov = 0;
 		winlen = 0;
@@ -363,27 +368,69 @@ namespace torali
 	    if (start + c.window_size < hdr->target_len[refIndex]) {
 	      double covsum = 0;
 	      double expcov = 0;
-	      //double obsexp = 0;
 	      uint32_t winlen = 0;
 	      for(uint32_t pos = start; pos < start + c.window_size; ++pos) {
 		if ((gcContent[pos] > gcbound.first) && (gcContent[pos] < gcbound.second) && (uniqContent[pos] >= c.fragmentUnique * c.meanisize)) {
 		  covsum += cov[pos];
-		  //obsexp += gcbias[gcContent[pos]].obsexp;
 		  expcov += gcbias[gcContent[pos]].coverage;
 		  ++winlen;
 		}
 	      }
-	      if (winlen >= c.fracWindow * c.window_size) {
-		//obsexp /= (double) winlen;
-		// Normalized counts: double count = ((double) covsum / obsexp ) * (double) c.window_size / (double) winlen;
-		double cn = chrPloidy;
-		double logR = 0;
-		if (expcov > 0) {
-		  cn = (c.expectedCN * covsum / expcov - chrCtrlPloidy * (1 - c.purity)) / c.purity;
-		  logR = std::log2(covsum / expcov);
-		}
-		if (!c.covfile.empty()) dataOut << std::string(hdr->target_name[refIndex]) << "\t" << start << "\t" << (start + c.window_size) << "\t" << winlen << "\t" << logR << "\t" << cn << std::endl;
+	      bool valid = (winlen >= c.fracWindow * c.window_size);
+	      wins.push_back(CovWin(start, start + c.window_size, winlen, covsum, expcov, valid));
+	    }
+	  }
+	}
+
+	// Separate true hom. dels from unmappable
+	uint32_t nw = wins.size();
+	std::vector<bool> naFlag(nw, false);
+	std::vector<bool> suspect(nw, false);
+	std::vector<bool> strong(nw, false);
+	double lowFrac = 0.1;         // close to CN0
+	double flankFrac = 0.5;       // clear no CN0
+	uint32_t maxHomDel = 1000000; // max size for hom. DEL
+	for(uint32_t i = 0; i < nw; ++i) {
+	  if ((!wins[i].valid) || (wins[i].expcov <= 0)) {
+	    naFlag[i] = true;
+	    continue;
+	  }
+	  double r = wins[i].covsum / wins[i].expcov;
+	  suspect[i] = (r < lowFrac);
+	  strong[i] = (r >= flankFrac);
+	}
+	for(uint32_t i = 0; i < nw; ) {
+	  if (naFlag[i] || (!suspect[i])) {
+	    ++i;
+	    continue;
+	  }
+	  uint32_t a = i;
+	  uint32_t b = i;
+	  while ((b + 1 < nw) && (!naFlag[b+1]) && suspect[b+1]) ++b;
+	  uint32_t runBp = wins[b].end - wins[a].start;
+	  bool leftStrong = (a > 0) && (!naFlag[a-1]) && strong[a-1];
+	  bool rightStrong = (b + 1 < nw) && (!naFlag[b+1]) && strong[b+1];
+	  bool keepDel = leftStrong && rightStrong && (runBp <= maxHomDel);
+	  if (!keepDel) {
+	    for(uint32_t k = a; k <= b; ++k) naFlag[k] = true;
+	  }
+	  i = b + 1;
+	}
+
+	// Write valid windows
+	if (!c.covfile.empty()) {
+	  std::string chrn(hdr->target_name[refIndex]);
+	  for(uint32_t i = 0; i < nw; ++i) {
+	    if (naFlag[i]) {
+	      dataOut << chrn << "\t" << wins[i].start << "\t" << wins[i].end << "\t" << wins[i].winlen << "\tNA\tNA" << std::endl;
+	    } else {
+	      double cn = chrPloidy;
+	      double logR = 0;
+	      if (wins[i].expcov > 0) {
+		cn = (c.expectedCN * wins[i].covsum / wins[i].expcov - chrCtrlPloidy * (1 - c.purity)) / c.purity;
+		logR = std::log2((wins[i].covsum + 1.0) / (wins[i].expcov + 1.0));
 	      }
+	      dataOut << chrn << "\t" << wins[i].start << "\t" << wins[i].end << "\t" << wins[i].winlen << "\t" << logR << "\t" << cn << std::endl;
 	    }
 	  }
 	}
