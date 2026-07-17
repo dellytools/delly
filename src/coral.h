@@ -57,7 +57,6 @@ namespace torali
     float uniqueToTotalCovRatio;
     float fracWindow;
     float fragmentUnique;
-    float controlMaf;
     std::string sampleName;
     boost::filesystem::path segfile;
     boost::filesystem::path genofile;
@@ -596,6 +595,7 @@ namespace torali
 
     // Adaptive windows
     c.adaptive = false;
+    c.targetExpCov = 0;
     if (c.window_size == 0) {
       if (c.hasBedFile) c.window_size = 10000;
       else c.adaptive = true;

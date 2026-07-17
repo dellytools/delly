@@ -180,7 +180,7 @@ namespace torali
     F[0] = -beta;
     std::vector<int32_t> R;
     for(int32_t t = kmin; t <= N; ++t) {
-      R.push_back(t - kmin);
+      if ((t == kmin) || (t >= 2 * kmin)) R.push_back(t - kmin);
       double best = std::numeric_limits<double>::max();
       int32_t bestS = 0;
       for(uint32_t ri = 0; ri < R.size(); ++ri) {
