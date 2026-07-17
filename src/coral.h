@@ -466,6 +466,9 @@ namespace torali
     // Sort CNVs
     sort(cnvs.begin(), cnvs.end());
 
+    // Merge CNVs
+    if (!c.hasGenoFile) mergeAdjacentSameCN(cnvs);
+
     // Genotype CNVs
     cnvVCF(c, cnvs);
 

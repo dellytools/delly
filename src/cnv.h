@@ -163,6 +163,31 @@ namespace torali
     }
   }
   
+  // Merge segments
+  inline void
+  mergeAdjacentSameCN(std::vector<CNV>& cnvs) {
+    if (cnvs.empty()) return;
+    std::vector<CNV> out;
+    out.push_back(cnvs[0]);
+    for(uint32_t i = 1; i < cnvs.size(); ++i) {
+      CNV& prev = out.back();
+      CNV const& cur = cnvs[i];
+      bool sameCN = (prev.cn >= 0) && (cur.cn >= 0) && ((int32_t) (prev.cn + 0.5) == (int32_t) (cur.cn + 0.5));
+      if (sameCN && (prev.chr == cur.chr)) {
+	double w1 = (double) (prev.end - prev.start);
+	double w2 = (double) (cur.end - cur.start);
+	double wsum = (w1 + w2 > 0) ? (w1 + w2) : 1.0;
+	prev.cn = (prev.cn * w1 + cur.cn * w2) / wsum;
+	prev.mappable = (prev.mappable * w1 + cur.mappable * w2) / wsum;
+	prev.sd = (prev.sd * w1 + cur.sd * w2) / wsum;
+	prev.ciendlow = cur.ciendlow;
+	prev.ciendhigh = cur.ciendhigh;
+	prev.end = cur.end;
+      } else out.push_back(cur);
+    }
+    cnvs.swap(out);
+  }
+
   // piecewise segmentation
   inline void
   cnvSegment(std::vector<double> const& y, double const beta, int32_t const kmin, std::vector<int32_t>& bnd) {
@@ -420,7 +445,7 @@ namespace torali
 	std::string chrName = bcf_hdr_id2name(hdr, rec->rid);
 	int32_t tid = bam_name2id(hd, chrName.c_str());
 	cnv.chr = tid;
-	cnv.start = rec->pos - 1;
+	cnv.start = rec->pos;
 	cnv.qval = rec->qual;
 
 	// Parse CNV type
@@ -553,7 +578,7 @@ namespace torali
       
 	// Output main vcf fields
 	rec->rid = bcf_hdr_name2id(hdr, bamhd->target_name[cnvs[i].chr]);
-	int32_t svStartPos = cnvs[i].start + 1;
+	int32_t svStartPos = cnvs[i].start;
 	int32_t svEndPos = cnvs[i].end;
 	if (svEndPos >= (int32_t) bamhd->target_len[cnvs[i].chr]) svEndPos = bamhd->target_len[cnvs[i].chr] - 1;
 	rec->pos = svStartPos;
