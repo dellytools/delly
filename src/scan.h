@@ -235,8 +235,10 @@ namespace torali
 	  int32_t bin = _findScanWindow(c, hdr->target_len[refIndex], binMap, midPoint);
 	  if (bin >= 0) {
 	    ++scanCounts[refIndex][bin].cov;
-	    
-	    if (uniqContent[midPoint] >= c.fragmentUnique * c.meanisize) ++scanCounts[refIndex][bin].uniqcov;
+
+	    // Fragment uniqueness
+	    bool uniqFrag = (c.hasMapFile) ? (uniqContent[midPoint] >= c.fragmentUnique * c.meanisize) : (rec->core.qual >= c.mapqUniq);
+	    if (uniqFrag) ++scanCounts[refIndex][bin].uniqcov;
 	    ++totalCov;
 	  }
 	}

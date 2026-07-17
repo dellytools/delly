@@ -160,8 +160,13 @@ namespace torali
       typedef std::vector<TCount> TCoverage;
       TCoverage cov(hdr->target_len[refIndex], 0);
       TCoverage covUniq;
-      if (!c.hasMapFile) covUniq.resize(hdr->target_len[refIndex], 0);
-      
+      TCoverage covTot;
+      if (!c.hasMapFile) {
+	covUniq.resize(hdr->target_len[refIndex], 0);
+	if (!c.basecov) covTot.resize(hdr->target_len[refIndex], 0);
+      }
+      TCoverage& covMap = ((!c.hasMapFile) && (!c.basecov)) ? covTot : cov;
+
       // Mate map
       typedef boost::unordered_map<std::size_t, bool> TMateMap;
       TMateMap mateMap;
@@ -180,6 +185,11 @@ namespace torali
 	  else addBaseCoverage(rec, cov, covUniq, c.mapqUniq, hdr->target_len[refIndex], maxCoverage);
 	  continue;
 	}
+
+	// Fragment counting
+
+	// Fill covTot
+	if (!c.hasMapFile) addBaseCoverage(rec, covTot, covUniq, c.mapqUniq, hdr->target_len[refIndex], maxCoverage);
 
 	int32_t midPoint = rec->core.pos + halfAlignmentLength(rec);
 	if (rec->core.flag & BAM_FPAIRED) {
@@ -223,7 +233,7 @@ namespace torali
 
       // Summarize GC coverage
       for(uint32_t i = 0; i < hdr->target_len[refIndex]; ++i) {
-	bool uniqPos = (c.hasMapFile) ? (uniqContent[i] >= c.fragmentUnique * c.meanisize) : ((cov[i] > 0) && (2 * (uint32_t) covUniq[i] >= (uint32_t) cov[i]));
+	bool uniqPos = (c.hasMapFile) ? (uniqContent[i] >= c.fragmentUnique * c.meanisize) : ((covMap[i] > 0) && (2 * (uint32_t) covUniq[i] >= (uint32_t) covMap[i]));
 	if (uniqPos) {
 	  // Valid bin?
 	  int32_t bin = _findScanWindow(c, hdr->target_len[refIndex], binMap, i);

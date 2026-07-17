@@ -221,7 +221,12 @@ namespace torali
       typedef std::vector<TCount> TCoverage;
       TCoverage cov(hdr->target_len[refIndex], 0);
       TCoverage covUniq;
-      if (!c.hasMapFile) covUniq.resize(hdr->target_len[refIndex], 0);
+      TCoverage covTot;
+      if (!c.hasMapFile) {
+	covUniq.resize(hdr->target_len[refIndex], 0);
+	if (!c.basecov) covTot.resize(hdr->target_len[refIndex], 0);
+      }
+      TCoverage& covMap = ((!c.hasMapFile) && (!c.basecov)) ? covTot : cov;
 
       {
 	// Mate map
@@ -238,12 +243,17 @@ namespace torali
 	  if (rec->core.qual < c.minQual) continue;
 	  if ((rec->core.flag & BAM_FPAIRED) && ((rec->core.flag & BAM_FMUNMAP) || (rec->core.tid != rec->core.mtid))) continue;
 
-	  // Base coverage
+	  // Base-level counting
 	  if (c.basecov) {
 	    if (c.hasMapFile) addBaseCoverage(rec, cov, hdr->target_len[refIndex], maxCoverage);
 	    else addBaseCoverage(rec, cov, covUniq, c.mapqUniq, hdr->target_len[refIndex], maxCoverage);
 	    continue;
 	  }
+
+	  // Fragment counting
+
+	  // Use covTot instead of cov
+	  if (!c.hasMapFile) addBaseCoverage(rec, covTot, covUniq, c.mapqUniq, hdr->target_len[refIndex], maxCoverage);
 
 	  // Fragment coverage
 	  int32_t midPoint = rec->core.pos + halfAlignmentLength(rec);
@@ -288,8 +298,8 @@ namespace torali
       if (!c.hasMapFile) {
 	for(uint32_t pos = 0; pos < hdr->target_len[refIndex]; ++pos) {
 	  bool u;
-	  if (cov[pos] == 0) u = ((ref[pos] != 'N') && (ref[pos] != 'n'));
-	  else u = (2 * (uint32_t) covUniq[pos] >= (uint32_t) cov[pos]);
+	  if (covMap[pos] == 0) u = ((ref[pos] != 'N') && (ref[pos] != 'n'));
+	  else u = (2 * (uint32_t) covUniq[pos] >= (uint32_t) covMap[pos]);
 	  uniqContent[pos] = (u ? (uint16_t) c.meanisize : 0);
 	}
       }
@@ -355,7 +365,7 @@ namespace torali
 	  for(uint32_t pos = 0; pos < hdr->target_len[refIndex]; ++pos) {
 	    if (!c.hasMapFile) {
 	      ucov += covUniq[pos];
-	      tcov += cov[pos];
+	      tcov += covMap[pos];
 	    }
 	    if ((gcContent[pos] > gcbound.first) && (gcContent[pos] < gcbound.second) && (uniqContent[pos] >= c.fragmentUnique * c.meanisize)) {
 	      covsum += cov[pos];
@@ -384,7 +394,7 @@ namespace torali
 	      for(uint32_t pos = start; pos < start + c.window_size; ++pos) {
 		if (!c.hasMapFile) {
 		  ucov += covUniq[pos];
-		  tcov += cov[pos];
+		  tcov += covMap[pos];
 		}
 		if ((gcContent[pos] > gcbound.first) && (gcContent[pos] < gcbound.second) && (uniqContent[pos] >= c.fragmentUnique * c.meanisize)) {
 		  covsum += cov[pos];
@@ -521,13 +531,11 @@ namespace torali
     
     boost::program_options::options_description window("Read-depth windows");
     window.add_options()
-      ("window,w", boost::program_options::value<uint32_t>(&c.window_size)->default_value(0), "window size in bp (0: automatic, coverage-adaptive)")
+      ("window,w", boost::program_options::value<uint32_t>(&c.window_size)->default_value(0), "window size in bp (0: automatic)")
       ("bed-intervals,b", boost::program_options::value<boost::filesystem::path>(&c.bedFile), "input BED file (targeted intervals)")
-      ("mapq-uniq", boost::program_options::value<uint16_t>(&c.mapqUniq)->default_value(20), "min. MAPQ for a uniquely-placed read")
-      ("target-reads", boost::program_options::value<uint32_t>(&c.targetReads)->default_value(150), "target reads/window")
-
       ("fraction-unique", boost::program_options::value<float>(&c.uniqueToTotalCovRatio)->default_value(0.8), "uniqueness filter [0,1]")
       ("basecov", "force base-level read-depth counting")
+      ("fragmentcov", "force fragment-level read-depth counting")
       ;
 
     boost::program_options::options_description hidden("Hidden options");
@@ -537,6 +545,8 @@ namespace torali
       ("statsfile", boost::program_options::value<boost::filesystem::path>(&c.statsFile), "gzipped stats output file (optional)")
       ("window-offset", boost::program_options::value<uint32_t>(&c.window_offset)->default_value(0), "window offset (0: window size)")
       ("fraction-window", boost::program_options::value<float>(&c.fracWindow)->default_value(0.25), "min. callable window fraction [0,1]")
+      ("mapq-uniq", boost::program_options::value<uint16_t>(&c.mapqUniq)->default_value(20), "min. MAPQ for a uniquely-placed read")
+      ("target-reads", boost::program_options::value<uint32_t>(&c.targetReads)->default_value(150), "target reads/window")
       ("scan-window", boost::program_options::value<uint32_t>(&c.scanWindow)->default_value(10000), "GC scanning window size")
       ("scan-regions", boost::program_options::value<boost::filesystem::path>(&c.scanFile), "GC scanning regions in BED format")
       ("mad-cutoff", boost::program_options::value<uint16_t>(&c.mad)->default_value(3), "median + 3 * mad count cutoff")
@@ -766,16 +776,10 @@ namespace torali
       sam_close(samfile);
     }
 
-    // Counting model
-    c.basecov = false;
-    if (!c.hasMapFile) {
-      // No mappability map req. base-level coverage arrays
-      c.basecov = true;
-    } else {
-      // Base-level coverage
-      if (vm.count("basecov")) c.basecov = true;
-      else c.basecov = ((!pairedLib) && (li.rs >= 500));  // Single-end reads > 500bp 
-    }
+    // Counting model with auto = long single-end reads base-level otherwise fragment
+    if (vm.count("basecov")) c.basecov = true;
+    else if (vm.count("fragmentcov")) c.basecov = false;
+    else c.basecov = ((!pairedLib) && (li.rs >= 500));  
 
     // GC bias estimation
     typedef std::pair<uint32_t, uint32_t> TGCBound;
