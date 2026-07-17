@@ -488,6 +488,31 @@ namespace torali
     }
   }
 
+  // Collect split-read breakpoints
+  template<typename TBpPos>
+  inline void
+  addSplitReadBreakpoints(bam1_t const* rec, uint32_t const minClip, uint32_t const minRefSep, uint32_t const reflen, TBpPos& clips) {
+    int32_t rp = rec->core.pos; // reference pointer
+    const uint32_t* cigar = bam_get_cigar(rec);
+    for (std::size_t i = 0; i < rec->core.n_cigar; ++i) {
+      int32_t op = bam_cigar_op(cigar[i]);
+      uint32_t ol = bam_cigar_oplen(cigar[i]);
+      if ((op == BAM_CMATCH) || (op == BAM_CEQUAL) || (op == BAM_CDIFF)) {
+	rp += ol;
+      } else if (op == BAM_CDEL) {
+	if (ol > minRefSep) {
+	  if ((rp >= 0) && (rp < (int32_t) reflen)) clips.push_back(rp);
+	  if ((rp + (int32_t) ol >= 0) && (rp + (int32_t) ol < (int32_t) reflen)) clips.push_back(rp + (int32_t) ol);
+	}
+	rp += ol;
+      } else if (op == BAM_CREF_SKIP) {
+	rp += ol;
+      } else if ((op == BAM_CSOFT_CLIP) || (op == BAM_CHARD_CLIP)) {
+	if ((ol > minClip) && (rp >= 0) && (rp < (int32_t) reflen)) clips.push_back(rp);
+      }
+    }
+  }
+
   inline std::size_t hash_pair(bam1_t* rec) {
     std::size_t seed = hash_string(bam_get_qname(rec));
     boost::hash_combine(seed, rec->core.tid);

@@ -30,10 +30,14 @@ namespace torali
     bool hasBedFile;
     bool hasScanFile;
     bool noScanWindowSelection;
-    bool segmentation;
+    bool hasSegFile;
     bool hasGenoFile;
-    bool hasVcfFile;
     uint32_t nchr;
+    uint32_t minClip;
+    uint32_t minRefSep;
+    uint32_t minBpSupport;
+    float minCnShift;
+    float penalty;
     uint32_t meanisize;
     uint32_t window_size;
     uint32_t window_offset;
@@ -54,10 +58,8 @@ namespace torali
     float fracWindow;
     float fragmentUnique;
     float controlMaf;
-    float stringency;
-    float cn_offset;
     std::string sampleName;
-    boost::filesystem::path vcffile;
+    boost::filesystem::path segfile;
     boost::filesystem::path genofile;
     boost::filesystem::path outfile;
     boost::filesystem::path covfile;
@@ -126,20 +128,6 @@ namespace torali
     std::vector<CNV> cnvs;
     if (c.hasGenoFile) parseVcfCNV(c, hdr, cnvs);
 
-    // SVs for breakpoint refinement
-    typedef std::vector<SVBreakpoint> TChrBreakpoints;
-    typedef std::vector<TChrBreakpoints> TGenomicBreakpoints;
-    TGenomicBreakpoints svbp(c.nchr, TChrBreakpoints());
-    if (c.hasVcfFile) {
-      std::vector<StructuralVariantRecord> svs;
-      vcfParse(c, hdr, svs);
-      for(uint32_t i = 0; i < svs.size(); ++i) {
-	svbp[svs[i].chr].push_back(SVBreakpoint(svs[i].svStart, svs[i].ciposlow, svs[i].ciposhigh, svs[i].mapq));
-	svbp[svs[i].chr2].push_back(SVBreakpoint(svs[i].svEnd, svs[i].ciendlow, svs[i].ciendhigh, svs[i].mapq));
-      }
-      for (uint32_t i = 0; i < svbp.size(); ++i) sort(svbp[i].begin(), svbp[i].end());
-    }
-    
     // Iterate chromosomes
     faidx_t* faiMap = NULL;
     if (c.hasMapFile) faiMap = fai_load(c.mapFile.string().c_str());
@@ -228,11 +216,13 @@ namespace torali
       }
       TCoverage& covMap = ((!c.hasMapFile) && (!c.basecov)) ? covTot : cov;
 
+      // Split-read breakpoints
+      std::vector<int32_t> clips;
       {
 	// Mate map
 	typedef boost::unordered_map<std::size_t, bool> TMateMap;
 	TMateMap mateMap;
-	
+
 	// Count reads
 	hts_itr_t* iter = sam_itr_queryi(idx, refIndex, 0, hdr->target_len[refIndex]);
 	bam1_t* rec = bam_init1();
@@ -242,6 +232,9 @@ namespace torali
 	  if (rec->core.flag & (BAM_FQCFAIL | BAM_FDUP | BAM_FUNMAP | BAM_FSECONDARY | BAM_FSUPPLEMENTARY)) continue;
 	  if (rec->core.qual < c.minQual) continue;
 	  if ((rec->core.flag & BAM_FPAIRED) && ((rec->core.flag & BAM_FMUNMAP) || (rec->core.tid != rec->core.mtid))) continue;
+
+	  // Collect split-read breakpoints
+	  if (rec->core.qual >= c.mapqUniq) addSplitReadBreakpoints(rec, c.minClip, c.minRefSep, hdr->target_len[refIndex], clips);
 
 	  // Base-level counting
 	  if (c.basecov) {
@@ -305,17 +298,13 @@ namespace torali
       }
       if (ref != NULL) free(ref);
 
+      // Split-read breakpoints
+      std::vector<SVBreakpoint> chrbp;
+      collectBreakpoints(c, gcbound, gcContent, uniqContent, gcbias, cov, hdr, refIndex, clips, chrbp);
+
       // CNV discovery
       if (!c.hasGenoFile) {
-	// Call CNVs
-	std::vector<CNV> chrcnv;
-	callCNVs(c, gcbound, gcContent, uniqContent, gcbias, cov, hdr, refIndex, chrcnv);
-
-	// Merge adjacent CNVs lacking read-depth shift
-	mergeCNVs(c, chrcnv, cnvs);
-
-	// Refine breakpoints
-	if (c.hasVcfFile) breakpointRefinement(c, gcbound, gcContent, uniqContent, gcbias, cov, hdr, refIndex, svbp, cnvs);
+	segmentRD(c, gcbound, gcContent, uniqContent, gcbias, cov, hdr, refIndex, chrbp, cnvs);
       }
       
       // CNV genotyping
@@ -509,16 +498,18 @@ namespace torali
       ("mappability,m", boost::program_options::value<boost::filesystem::path>(&c.mapFile), "input mappability map (optional)")
       ("outfile,o", boost::program_options::value<boost::filesystem::path>(&c.outfile), "BCF output file")
       ("covfile,c", boost::program_options::value<boost::filesystem::path>(&c.covfile), "gzipped coverage file")
+      ("segmentation,u", boost::program_options::value<boost::filesystem::path>(&c.segfile), "segmentation BED output file")
       ;
 
     boost::program_options::options_description cnv("CNV calling");
     cnv.add_options()
-      ("sdrd,x", boost::program_options::value<float>(&c.stringency)->default_value(2), "min. SD read-depth shift")
-      ("cn-offset,t", boost::program_options::value<float>(&c.cn_offset)->default_value(0.1), "min. CN offset")
       ("cnv-size,z", boost::program_options::value<uint32_t>(&c.minCnvSize)->default_value(1000), "min. CNV size")
-      ("svfile,l", boost::program_options::value<boost::filesystem::path>(&c.vcffile), "delly SV file for breakpoint refinement")
-      ("vcffile,v", boost::program_options::value<boost::filesystem::path>(&c.genofile), "input VCF/BCF file for re-genotyping")
-      ("segmentation,u", "copy-number segmentation")
+      ("vcffile,v", boost::program_options::value<boost::filesystem::path>(&c.genofile), "input CNV BCF file for re-genotyping")
+      ("minclip", boost::program_options::value<uint32_t>(&c.minClip)->default_value(25), "min. clipping length")
+      ("minrefsep", boost::program_options::value<uint32_t>(&c.minRefSep)->default_value(30), "min. reference separation")
+      ("min-bp-support", boost::program_options::value<uint32_t>(&c.minBpSupport)->default_value(3), "min. split-read support")
+      ("min-cn-shift", boost::program_options::value<float>(&c.minCnShift)->default_value(0.5), "min. read-depth shift")
+      ("penalty", boost::program_options::value<float>(&c.penalty)->default_value(3), "segmentation penalty")
       ;
 
     boost::program_options::options_description cancer("Ploidy/purity correction");
@@ -619,8 +610,8 @@ namespace torali
     c.expectedCN = c.purity * c.ploidy + (1.0 - c.purity) * c.ctrlPloidy;
     
     // Segmentation
-    if (vm.count("segmentation")) c.segmentation = true;
-    else c.segmentation = false;
+    if (vm.count("segmentation")) c.hasSegFile = true;
+    else c.hasSegFile = false;
 
     // Window offset
     if ((c.window_offset == 0) || (c.window_offset > c.window_size)) c.window_offset = c.window_size;
@@ -645,27 +636,6 @@ namespace torali
       bcf_close(ifile);
       c.hasGenoFile = true;
     } else c.hasGenoFile = false;
-
-    // Check input VCF file (delly SV file)
-    if (vm.count("svfile")) {
-      if (!(boost::filesystem::exists(c.vcffile) && boost::filesystem::is_regular_file(c.vcffile) && boost::filesystem::file_size(c.vcffile))) {
-	std::cerr << "Input VCF/BCF file is missing: " << c.vcffile.string() << std::endl;
-	return 1;
-      }
-      htsFile* ifile = bcf_open(c.vcffile.string().c_str(), "r");
-      if (ifile == NULL) {
-	std::cerr << "Fail to open file " << c.vcffile.string() << std::endl;
-	return 1;
-      }
-      bcf_hdr_t* hdr = bcf_hdr_read(ifile);
-      if (hdr == NULL) {
-	std::cerr << "Fail to open index file " << c.vcffile.string() << std::endl;
-	return 1;
-      }
-      bcf_hdr_destroy(hdr);
-      bcf_close(ifile);
-      c.hasVcfFile = true;
-    } else c.hasVcfFile = false;
 
     // Check outfile
     if (!vm.count("outfile")) c.outfile = "-";

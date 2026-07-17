@@ -1,6 +1,10 @@
 #ifndef CNV_H
 #define CNV_H
 
+#include <limits>
+#include <algorithm>
+#include <fstream>
+
 #include <boost/filesystem.hpp>
 #include <boost/multi_array.hpp>
 #include <boost/date_time/posix_time/posix_time.hpp>
@@ -41,138 +45,67 @@ namespace torali
     }
   };
 
-
-  struct BpCNV {
-    int32_t start;
-    int32_t end;
-    double zscore;
-
-    BpCNV(int32_t const s, int32_t const e, double const z) : start(s), end(e), zscore(z) {}
-  };
-
-
-  template<typename TConfig>
+  // Collect candidate CNV boundaries
+  template<typename TConfig, typename TGcBias, typename TCoverage>
   inline void
-  mergeCNVs(TConfig const& c, std::vector<CNV>& chrcnv, std::vector<CNV>& cnvs) {
-    // Merge neighboring segments if too similar
-    bool merged = true;
-    std::vector<CNV> newcnv;
-    while(merged) {
-      int32_t k = -1;
-      for(int32_t i = 0; i < (int32_t) chrcnv.size(); ++i) {
-	if (i <= k) continue;
-	k = i;
-	for(int32_t j = i + 1; j < (int32_t) chrcnv.size(); ++j) {
-	  bool allValid = true;
-	  for(int32_t pre = i; pre < j; ++pre) {
-	    double diff = std::abs(chrcnv[pre].cn - chrcnv[j].cn);
-	    if (diff >= c.cn_offset) {
-	      allValid = false;
-	      break;
-	    }
-	  }
-	  if (allValid) k = j;
-	  else break;
-	}
-	if (k > i) {
-	  // Merge
-	  double cn = (chrcnv[i].cn + chrcnv[k].cn) / 2.0;
-	  double mp = (chrcnv[i].mappable + chrcnv[k].mappable) / 2.0;
-	  newcnv.push_back(CNV(chrcnv[i].chr, chrcnv[i].start, chrcnv[k].end, chrcnv[i].ciposlow, chrcnv[i].ciposhigh, chrcnv[k].ciendlow, chrcnv[k].ciendhigh, cn, mp));	  
-	} else {
-	  newcnv.push_back(chrcnv[i]);
-	}
+  collectBreakpoints(TConfig const& c, std::pair<uint32_t, uint32_t> const& gcbound, std::vector<uint16_t> const& gcContent, std::vector<uint16_t> const& uniqContent, TGcBias const& gcbias, TCoverage const& cov, bam_hdr_t const* hdr, int32_t const refIndex, std::vector<int32_t>& clips, std::vector<SVBreakpoint>& chrbp) {
+    if (clips.empty()) return;
+    std::sort(clips.begin(), clips.end());
+    int32_t bpTol = (int32_t) (2 * c.minClip);
+    double flankExpTarget = (c.targetExpCov > 0) ? c.targetExpCov : 1000.0;
+    int32_t maxFlank = 1000000;
+    uint32_t i = 0;
+    while (i < clips.size()) {
+      // Cluster split-reads
+      uint32_t j = i;
+      int64_t possum = clips[i];
+      uint32_t support = 1;
+      while ((j + 1 < clips.size()) && (clips[j+1] - clips[j] <= bpTol)) {
+	++j;
+	possum += clips[j];
+	++support;
       }
-      if (newcnv.size() == chrcnv.size()) merged = false;
-      else {
-	chrcnv = newcnv;
-	newcnv.clear();
-      }
-    }
-
-    // Insert into global CNV vector
-    for(uint32_t i = 0; i < chrcnv.size(); ++i) {
-      cnvs.push_back(chrcnv[i]);
-      //std::cerr << chrcnv[i].chr << '\t' << chrcnv[i].start << '\t' << chrcnv[i].end << "\tMerged" << std::endl;
-    }
-  }
-
-
-  template<typename TConfig, typename TGcBias, typename TCoverage, typename TGenomicBreakpoints>
-  inline void
-  breakpointRefinement(TConfig const& c, std::pair<uint32_t, uint32_t> const& gcbound, std::vector<uint16_t> const& gcContent, std::vector<uint16_t> const& uniqContent, TGcBias const& gcbias, TCoverage const& cov, bam_hdr_t const* hdr, int32_t const refIndex, TGenomicBreakpoints const& svbp, std::vector<CNV>& cnvs) {
-    typedef typename TGenomicBreakpoints::value_type TSVs;
-    
-    // Estimate CN shift
-    for(uint32_t n = 1; n < cnvs.size(); ++n) {
-      if ((cnvs[n-1].chr != refIndex) || (cnvs[n].chr != refIndex)) continue;
-      double precovsum = 0;
-      double preexpcov = 0;
-      double succovsum = 0;
-      double sucexpcov = 0;
-      int32_t pos = cnvs[n-1].start;
-      while((pos < cnvs[n].end) && (pos < (int32_t) hdr->target_len[refIndex])) {
-	if ((gcContent[pos] > gcbound.first) && (gcContent[pos] < gcbound.second) && (uniqContent[pos] >= c.fragmentUnique * c.meanisize)) {
-	  if (pos < cnvs[n-1].end) {
-	    precovsum += cov[pos];
-	    preexpcov += gcbias[gcContent[pos]].coverage;
-	  } else {
-	    succovsum += cov[pos];
-	    sucexpcov += gcbias[gcContent[pos]].coverage;
-	  }
-	}
-	++pos;
-      }
-      double precndiff = std::abs((c.ploidy * precovsum / preexpcov) - (c.ploidy * succovsum / sucexpcov));
-
-      // Intersect with delly SVs
-      typename TSVs::const_iterator itbest = svbp[refIndex].end();
-      int32_t searchStart = std::max(0, std::min(cnvs[n-1].ciendlow, cnvs[n-1].end - 1000));
-      int32_t searchEnd = std::max(cnvs[n].ciposhigh, cnvs[n].start + 1000);
-      int32_t midpoint = (int32_t) ((cnvs[n-1].start + cnvs[n-1].end) / 2);
-      if (searchStart < midpoint) searchStart = midpoint;
-      midpoint = (int32_t) ((cnvs[n].start + cnvs[n].end) / 2);
-      if (searchEnd > midpoint) searchEnd = midpoint;
-      // Current CNV start for this breakpoint
-      auto itsv = std::lower_bound(svbp[refIndex].begin(), svbp[refIndex].end(), SVBreakpoint(searchStart));
-      for(; itsv != svbp[refIndex].end(); ++itsv) {
-	if (itsv->pos > searchEnd) break;
-	if ((itbest == svbp[refIndex].end()) || (itsv->qual > itbest->qual)) itbest = itsv;
-      }
-      if ((itbest != svbp[refIndex].end()) && (itbest->qual >= 50)) {
-	// Check refined CNV
-	precovsum = 0;
-	preexpcov = 0;
-	succovsum = 0;
-	sucexpcov = 0;
-	pos = cnvs[n-1].start;
-	while((pos < cnvs[n].end) && (pos < (int32_t) hdr->target_len[refIndex])) {
+      if (support >= c.minBpSupport) {
+	int32_t bppos = (int32_t) (possum / support);
+	// Read-depth shift left/right of breakpoint
+	double lcov = 0;
+	double lexp = 0;
+	int32_t lspan = 0;
+	int32_t pos = bppos - 1;
+	while ((pos >= 0) && (lexp < flankExpTarget) && (lspan < maxFlank)) {
 	  if ((gcContent[pos] > gcbound.first) && (gcContent[pos] < gcbound.second) && (uniqContent[pos] >= c.fragmentUnique * c.meanisize)) {
-	    if (pos < itbest->pos) {
-	      precovsum += cov[pos];
-	      preexpcov += gcbias[gcContent[pos]].coverage;
-	    } else {
-	      succovsum += cov[pos];
-	      sucexpcov += gcbias[gcContent[pos]].coverage;
-	    }
+	    lcov += cov[pos];
+	    lexp += gcbias[gcContent[pos]].coverage;
+	  }
+	  --pos;
+	  ++lspan;
+	}
+	double rcov = 0;
+	double rexp = 0;
+	int32_t rspan = 0;
+	pos = bppos;
+	while ((pos < (int32_t) hdr->target_len[refIndex]) && (rexp < flankExpTarget) && (rspan < maxFlank)) {
+	  if ((gcContent[pos] > gcbound.first) && (gcContent[pos] < gcbound.second) && (uniqContent[pos] >= c.fragmentUnique * c.meanisize)) {
+	    rcov += cov[pos];
+	    rexp += gcbias[gcContent[pos]].coverage;
 	  }
 	  ++pos;
+	  ++rspan;
 	}
-	double postcndiff = std::abs((c.ploidy * precovsum / preexpcov) - (c.ploidy * succovsum / sucexpcov));
-	//std::cerr << cnvs[n-1].end << ',' << itbest->pos << ',' << precndiff << ',' << postcndiff << std::endl;
-	if ((precndiff < postcndiff + c.cn_offset) && (std::abs(cnvs[n].start - itbest->pos) < 50000)) {
-	  // Accept new breakpoint
-	  cnvs[n-1].end = itbest->pos;
-	  cnvs[n].start = itbest->pos;
-	  cnvs[n-1].ciendlow = itbest->pos + itbest->cilow;
-	  cnvs[n-1].ciendhigh = itbest->pos + itbest->cihigh;
-	  cnvs[n].ciposlow = itbest->pos + itbest->cilow;
-	  cnvs[n].ciposhigh = itbest->pos + itbest->cihigh;
+	if ((lexp >= 0.5 * flankExpTarget) && (rexp >= 0.5 * flankExpTarget)) {
+	  double cnL = c.ploidy * lcov / lexp;
+	  double cnR = c.ploidy * rcov / rexp;
+	  if (std::abs(cnL - cnR) >= c.minCnShift) {
+	    int32_t qual = 50 + (int32_t) std::min(support, (uint32_t) 40);
+	    chrbp.push_back(SVBreakpoint(bppos, -bpTol, bpTol, qual));
+	  }
 	}
       }
+      i = j + 1;
     }
+    std::sort(chrbp.begin(), chrbp.end());
   }
-  
+
 
   template<typename TConfig, typename TGcBias, typename TCoverage>
   inline void
@@ -230,184 +163,222 @@ namespace torali
     }
   }
   
-  template<typename TConfig, typename TGcBias, typename TCoverage>
+  // piecewise segmentation
   inline void
-  callCNVs(TConfig const& c, std::pair<uint32_t, uint32_t> const& gcbound, std::vector<uint16_t> const& gcContent, std::vector<uint16_t> const& uniqContent, TGcBias const& gcbias, TCoverage const& cov, bam_hdr_t const* hdr, int32_t const refIndex, std::vector<CNV>& cnvs) {
-
-    // Parameters
-    int32_t smallestWin = c.minCnvSize / 10;
-    int32_t biggestWin = smallestWin * 200;
-    uint32_t chain = 10;
-
-    // Find breakpoints
-    std::vector<BpCNV> bpmax;
-    if (bpmax.empty()) {
-      // Scanning window sizes
-      std::vector<int32_t> winsize;
-      int32_t wsize = smallestWin;
-      while (wsize < biggestWin) {
-	winsize.push_back(wsize);
-	wsize *= 2;
-      }
-
-      // Iterate window sizes
-      typedef int32_t TCnVal;
-      typedef std::vector<TCnVal> TCN;
-      typedef std::vector<int32_t> TChrPos;
-      std::vector<BpCNV> bpvec;
-      for(uint32_t idx = 0; idx < winsize.size(); ++idx) {
-	uint32_t idxOffset = winsize[idx] / winsize[0];
-	//std::cerr << idx << ',' << winsize[idx] << ',' << idxOffset << ',' << bpvec.size() << ',' << hdr->target_len[refIndex] << std::endl;
-	TCN cnvec;
-	TChrPos wpos;
-	uint32_t wstart = 0;
-	while(wstart < hdr->target_len[refIndex]) {
-	  double covsum = 0;
-	  double expcov = 0;
-	  int32_t winlen = 0;
-	  uint32_t pos = wstart;
-	  while ((winlen < winsize[idx]) && (pos < hdr->target_len[refIndex])) {
-	    if ((gcContent[pos] > gcbound.first) && (gcContent[pos] < gcbound.second) && (uniqContent[pos] >= c.fragmentUnique * c.meanisize)) {
-	      covsum += cov[pos];
-	      expcov += gcbias[gcContent[pos]].coverage;
-	      ++winlen;
-	    }
-	    ++pos;
-	  }
-	  if (winlen == winsize[idx]) {
-	    // Full window
-	    if (expcov > 0) cnvec.push_back((int32_t) boost::math::round(c.ploidy * covsum / expcov * 100.0));
-	    else cnvec.push_back((int32_t) boost::math::round(c.ploidy * 100.0));
-	    wpos.push_back(wstart);
-	  }
-	  wstart = pos;
-	}
-	
-	// Identify breakpoints
-	TCN pre(chain, -1);
-	TCN suc(chain, -1);
-	TChrPos prep(chain, 0);
-	TChrPos sucp(chain, 0);
-	uint32_t idxbp = 0;
-	for(uint32_t k = 0; k < cnvec.size(); ++k) {
-	  if (k < chain) {
-	    pre[k % chain] = cnvec[k];
-	    prep[k % chain] = wpos[k];
-	    if (k + 1 < cnvec.size()) {
-	      if (idx == 0 ) bpvec.push_back(BpCNV(wpos[k], wpos[k+1], 0));
-	      else idxbp += idxOffset;
-	    }
-	  } else if (k < 2 * chain) {
-	    suc[k % chain] = cnvec[k];
-	    sucp[k % chain] = wpos[k];
-	  } else {
-	    // Midpoint
-	    TCnVal val = suc[k%chain];	  
-	    int32_t pos = sucp[k%chain];
-	    int32_t posNext = sucp[(k+1)%chain];
-	    suc[k%chain] = cnvec[k];
-	    sucp[k%chain] = wpos[k];
-	    
-	    // Debug
-	    //for(uint32_t m = 0; m < pre.size(); ++m) std::cerr << prep[m] << '\t' << pre[m] << std::endl;
-	    //std::cerr << "M:" << pos << '\t' << val << std::endl;
-	    //for(uint32_t m = 0; m < suc.size(); ++m) std::cerr << sucp[m] << '\t' << suc[m] << std::endl;
-	    
-	    // Any shift in CN?
-	    boost::accumulators::accumulator_set<TCnVal, boost::accumulators::features<boost::accumulators::tag::mean, boost::accumulators::tag::variance> > accpre;
-	    boost::accumulators::accumulator_set<TCnVal, boost::accumulators::features<boost::accumulators::tag::mean, boost::accumulators::tag::variance> > accsuc;
-	    for(uint32_t m = 0; m < pre.size(); ++m) accpre(pre[m]);
-	    for(uint32_t m = 0; m < suc.size(); ++m) accsuc(suc[m]);
-	    double diff = std::abs(boost::accumulators::mean(accsuc) - boost::accumulators::mean(accpre));
-	    // Breakpoint candidate
-	    double zscore = 0;
-	    if ((diff > c.stringency * sqrt(boost::accumulators::variance(accpre))) && (diff > c.stringency * sqrt(boost::accumulators::variance(accsuc)))) {
-	      zscore = diff / std::max(sqrt(boost::accumulators::variance(accpre)), sqrt(boost::accumulators::variance(accsuc)));
-	    }
-	    if (idx == 0) bpvec.push_back(BpCNV(pos, posNext, zscore));
-	    else {
-	      for(uint32_t sub = idxbp; sub < idxbp + idxOffset; ++sub) bpvec[sub].zscore += zscore;
-	      idxbp += idxOffset;
-	    }
-	    pre[k%chain] = val;
-	    prep[k%chain] = pos;
-	  }
+  cnvSegment(std::vector<double> const& y, double const beta, int32_t const kmin, std::vector<int32_t>& bnd) {
+    int32_t N = (int32_t) y.size();
+    bnd.clear();
+    if (N < 2 * kmin) return; // one segment
+    std::vector<double> S1(N + 1, 0.0);
+    std::vector<double> S2(N + 1, 0.0);
+    for(int32_t i = 0; i < N; ++i) {
+      S1[i+1] = S1[i] + y[i];
+      S2[i+1] = S2[i] + y[i] * y[i];
+    }
+    std::vector<double> F(N + 1, 0.0);
+    std::vector<int32_t> prev(N + 1, 0);
+    F[0] = -beta;
+    std::vector<int32_t> R;
+    for(int32_t t = kmin; t <= N; ++t) {
+      R.push_back(t - kmin);
+      double best = std::numeric_limits<double>::max();
+      int32_t bestS = 0;
+      for(uint32_t ri = 0; ri < R.size(); ++ri) {
+	int32_t s = R[ri];
+	double n = (double) (t - s);
+	double sm = S1[t] - S1[s];
+	double val = F[s] + ((S2[t] - S2[s]) - sm * sm / n) + beta;
+	if (val < best) {
+	  best = val;
+	  bestS = s;
 	}
       }
+      F[t] = best;
+      prev[t] = bestS;
+      
+      // Prune
+      std::vector<int32_t> Rn;
+      Rn.reserve(R.size());
+      for(uint32_t ri = 0; ri < R.size(); ++ri) {
+	int32_t s = R[ri];
+	double n = (double) (t - s);
+	double sm = S1[t] - S1[s];
+	if (F[s] + ((S2[t] - S2[s]) - sm * sm / n) <= F[t]) Rn.push_back(s);
+      }
+      R = Rn;
+    }
     
-      // Local maxima
-      if (bpvec.size()) {
-	int32_t pos = bpvec[0].start;
-	int32_t posNext = bpvec[0].end;
-	double bestDiff = bpvec[0].zscore;
-	for(uint32_t n = 1; n < bpvec.size(); ++n) {
-	  //std::cerr << "B:" << bpvec[n].start << '-' << bpvec[n].end << ':' << bpvec[n].zscore << std::endl;
-	  if (bpvec[n].zscore == 0) {
-	    if (bestDiff != 0) {
-	      //std::cerr << "M:" << pos << '-' << posNext << ':' << bestDiff << std::endl;
-	      bpmax.push_back(BpCNV(pos, posNext, bestDiff));
-	      pos = bpvec[n].start;
-	      posNext = bpvec[n].end;
-	      bestDiff = bpvec[n].zscore;
-	    }
-	  } else {
-	    if (bpvec[n].zscore > bestDiff) {
-	      // Replace local max
-	      pos = bpvec[n].start;
-	      posNext = bpvec[n].end;
-	      bestDiff = bpvec[n].zscore;
-	    } else if (bpvec[n].zscore == bestDiff) {
-	      // Extend local max
-	      posNext = bpvec[n].end;
-	    }
-	  }
-	}
-      }
+    // Backtrack internal boundaries
+    std::vector<int32_t> rev;
+    int32_t t = N;
+    while (t > 0) {
+      int32_t s = prev[t];
+      if (s > 0) rev.push_back(s);
+      if (s >= t) break;
+      t = s;
     }
-
-    // Breakpoints
-    for(uint32_t n = 0; n <= bpmax.size(); ++n) {
-      int32_t cil = 0;
-      int32_t cih = 0;
-      if (n > 0) {
-	cil = bpmax[n-1].start;
-	cih = bpmax[n-1].end;
-      }
-      int32_t cel = hdr->target_len[refIndex] - 1;
-      int32_t ceh = hdr->target_len[refIndex] - 1;
-      if (n < bpmax.size()) {
-	cel = bpmax[n].start;
-	ceh = bpmax[n].end;
-      }
-      //std::cerr << (cih - cil) << ';' << (ceh - cel) << std::endl;
-      int32_t cnvstart = (int32_t) ((cil + cih)/2);
-      int32_t cnvend = (int32_t) ((cel + ceh)/2);
-      int32_t estcnvstart = -1;
-      int32_t estcnvend = -1;
-      double covsum = 0;
-      double expcov = 0;
-      int32_t winlen = 0;
-      int32_t pos = cnvstart;
-      while((pos < cnvend) && (pos < (int32_t) hdr->target_len[refIndex])) {
-	if ((gcContent[pos] > gcbound.first) && (gcContent[pos] < gcbound.second) && (uniqContent[pos] >= c.fragmentUnique * c.meanisize)) {
-	  if (estcnvstart == -1) estcnvstart = pos;
-	  estcnvend = pos;
-	  covsum += cov[pos];
-	  expcov += gcbias[gcContent[pos]].coverage;
-	  ++winlen;
-	}
-	++pos;
-      }
-      if ((estcnvstart != -1) && (estcnvend != -1) && (estcnvend - estcnvstart > 0)) {
-	double cn = c.ploidy;
-	if (expcov > 0) cn = c.ploidy * covsum / expcov;
-	double mp = (double) winlen / (double) (estcnvend - estcnvstart);
-	cnvs.push_back(CNV(refIndex, estcnvstart, estcnvend, cil, cih, cel, ceh, cn, mp));
-	//std::cerr << hdr->target_name[refIndex] << '\t' << estcnvstart << '\t' << estcnvend << '\t' << '(' << cil << ',' << cih << ')' << '\t' << '(' << cel << ',' << ceh << ')' << '\t' << cn << '\t' << mp << std::endl;
-      }
-    }
+    for(int32_t i = (int32_t) rev.size() - 1; i >= 0; --i) bnd.push_back(rev[i]);
   }
 
+  // Segment read-depth
+  template<typename TConfig, typename TGcBias, typename TCoverage>
+  inline void
+  segmentRD(TConfig const& c, std::pair<uint32_t, uint32_t> const& gcbound, std::vector<uint16_t> const& gcContent, std::vector<uint16_t> const& uniqContent, TGcBias const& gcbias, TCoverage const& cov, bam_hdr_t const* hdr, int32_t const refIndex, std::vector<SVBreakpoint> const& chrbp, std::vector<CNV>& cnvs) {
+    int32_t reflen = (int32_t) hdr->target_len[refIndex];
+    int32_t kmin = 4;
+    int32_t bpTol = (int32_t) (2 * c.minClip);
+    
+    // Coverage-adaptive segmentation
+    double pcfTargetExp = (c.targetExpCov > 0) ? (c.targetExpCov / 8.0) : 0.0;
+    int32_t pcfWinBases = std::max(1, (int32_t) (c.minCnvSize / 10));
+
+    // Per-window read-depth profile over callable positions
+    std::vector<double> y;
+    std::vector<double> wcov;
+    std::vector<double> wexp;
+    std::vector<int32_t> ws;
+    std::vector<int32_t> we;
+    {
+      double covsum = 0, expcov = 0;
+      int32_t winlen = 0, start = -1, last = -1;
+      for(int32_t pos = 0; pos < reflen; ++pos) {
+	if ((gcContent[pos] > gcbound.first) && (gcContent[pos] < gcbound.second) && (uniqContent[pos] >= c.fragmentUnique * c.meanisize)) {
+	  if (start < 0) start = pos;
+	  covsum += cov[pos];
+	  expcov += gcbias[gcContent[pos]].coverage;
+	  last = pos;
+	  ++winlen;
+	  bool close = (pcfTargetExp > 0) ? (expcov >= pcfTargetExp) : (winlen >= pcfWinBases);
+	  if (close) {
+	    y.push_back((expcov > 0) ? (c.ploidy * covsum / expcov) : (double) c.ploidy);
+	    wcov.push_back(covsum);
+	    wexp.push_back(expcov);
+	    ws.push_back(start);
+	    we.push_back(pos + 1);
+	    covsum = 0;
+	    expcov = 0;
+	    winlen = 0;
+	    start = -1;
+	  }
+	}
+      }
+      if ((winlen > 0) && (start >= 0)) {
+	y.push_back((expcov > 0) ? (c.ploidy * covsum / expcov) : (double) c.ploidy);
+	wcov.push_back(covsum);
+	wexp.push_back(expcov);
+	ws.push_back(start);
+	we.push_back(last + 1);
+      }
+    }
+    int32_t N = (int32_t) y.size();
+    if (N < 1) return;
+
+    // per-window noise
+    double sigma = 0.02;
+    if (N > 1) {
+      std::vector<double> diff;
+      diff.reserve(N - 1);
+      for(int32_t i = 1; i < N; ++i) diff.push_back(std::abs(y[i] - y[i-1]));
+      std::sort(diff.begin(), diff.end());
+      int32_t m = std::max(1, (2 * (int32_t) diff.size()) / 3);
+      double s = 0;
+      for(int32_t i = 0; i < m; ++i) s += diff[i];
+      sigma = (s / m) / 1.128379;
+    }
+    if (sigma < 0.02) sigma = 0.02;
+
+    // Segmentation
+    double beta = c.penalty * sigma * sigma * std::log((double) std::max(N, 2));
+    std::vector<int32_t> pcfbnd;
+    cnvSegment(y, beta, kmin, pcfbnd);
+
+    // Boundary set
+    std::vector<std::pair<int32_t, int32_t> > B;
+    B.push_back(std::make_pair(0, -1));
+    for(uint32_t i = 0; i < pcfbnd.size(); ++i) B.push_back(std::make_pair(pcfbnd[i], -1));
+    B.push_back(std::make_pair(N, -1));
+
+    // Fuse split-read breakpoints
+    for(uint32_t k = 0; k < chrbp.size(); ++k) {
+      int32_t bppos = chrbp[k].pos;
+      int32_t lo = 0, hi = N;
+      while (lo < hi) {
+	int32_t mid = (lo + hi) / 2;
+	if (ws[mid] < bppos) lo = mid + 1;
+	else hi = mid;
+      }
+      int32_t wi = lo;
+      if ((wi <= 0) || (wi >= N)) continue;
+      int32_t bi = 0;
+      for(uint32_t b = 1; b + 1 < B.size(); ++b) {
+	if (std::abs(B[b].first - wi) < std::abs(B[bi].first - wi)) bi = b;
+      }
+      if ((bi > 0) && (std::abs(B[bi].first - wi) <= 1)) {
+	B[bi].first = wi;
+	B[bi].second = bppos;
+      } else {
+	B.push_back(std::make_pair(wi, bppos));
+      }
+    }
+    std::sort(B.begin(), B.end());
+    B.erase(std::unique(B.begin(), B.end(), [](std::pair<int32_t,int32_t> const& a, std::pair<int32_t,int32_t> const& b){ return a.first == b.first; }), B.end());
+
+    // Segment sums
+    uint32_t ns = B.size() - 1;
+    std::vector<double> segcov(ns, 0);
+    std::vector<double> segexp(ns, 0);
+    std::vector<int32_t> segnw(ns, 0);
+    for(uint32_t s = 0; s < ns; ++s) {
+      for(int32_t w = B[s].first; w < B[s+1].first; ++w) {
+	segcov[s] += wcov[w];
+	segexp[s] += wexp[w];
+	++segnw[s];
+      }
+    }
+
+    // Merge neighbors
+    bool merged = true;
+    while (merged && (ns > 1)) {
+      merged = false;
+      for(uint32_t s = 0; s + 1 < ns; ++s) {
+	double cnL = (segexp[s] > 0) ? (c.ploidy * segcov[s] / segexp[s]) : (double) c.ploidy;
+	double cnR = (segexp[s+1] > 0) ? (c.ploidy * segcov[s+1] / segexp[s+1]) : (double) c.ploidy;
+	bool doMerge = ((int32_t) (cnL + 0.5) == (int32_t) (cnR + 0.5));
+	if (!doMerge && (B[s+1].second < 0)) {
+	  int32_t mn = std::min(segnw[s], segnw[s+1]);
+	  double tol = 0.3 + 1.0 / std::sqrt((double) std::max(mn, 1));
+	  if (std::abs(cnL - cnR) < tol) doMerge = true;
+	}
+	if (doMerge) {
+	  segcov[s] += segcov[s+1];
+	  segexp[s] += segexp[s+1];
+	  segnw[s] += segnw[s+1];
+	  B.erase(B.begin() + s + 1);
+	  segcov.erase(segcov.begin() + s + 1);
+	  segexp.erase(segexp.begin() + s + 1);
+	  segnw.erase(segnw.begin() + s + 1);
+	  --ns;
+	  merged = true;
+	  break;
+	}
+      }
+    }
+
+    // Output segments
+    for(uint32_t s = 0; s < ns; ++s) {
+      int32_t wa = B[s].first;
+      int32_t wb = B[s+1].first;
+      if (wb <= wa) continue;
+      int32_t start = (B[s].second >= 0) ? B[s].second : ws[wa];
+      int32_t end = (B[s+1].second >= 0) ? B[s+1].second : we[wb-1];
+      int32_t cil = (B[s].second >= 0) ? (start - bpTol) : ws[wa];
+      int32_t cih = (B[s].second >= 0) ? (start + bpTol) : (we[wa] - 1);
+      int32_t cel = (B[s+1].second >= 0) ? (end - bpTol) : ws[wb-1];
+      int32_t ceh = (B[s+1].second >= 0) ? (end + bpTol) : (we[wb-1]);
+      double cn = (segexp[s] > 0) ? (c.ploidy * segcov[s] / segexp[s]) : (double) c.ploidy;
+      cnvs.push_back(CNV(refIndex, start, end, cil, cih, cel, ceh, cn, 1.0));
+    }
+  }
 
   // Parse Delly CNV VCF file
   template<typename TConfig>
@@ -546,6 +517,10 @@ namespace torali
     bcf_hdr_add_sample(hdr, NULL);
     if (bcf_hdr_write(fp, hdr) != 0) std::cerr << "Error: Failed to write BCF header!" << std::endl;
 
+    // Segmentation BED output
+    std::ofstream segOut;
+    if (c.hasSegFile) segOut.open(c.segfile.string().c_str());
+
     uint32_t cnvid = 0;
     if (!cnvs.empty()) {
       // Genotype arrays
@@ -569,7 +544,12 @@ namespace torali
 
 	// Integer copy-number
 	int32_t absCN = (int32_t) boost::math::round(cnvs[i].cn);
-	if ((!c.segmentation) && (absCN == c.ploidy)) continue;
+
+	// Segmentation
+	if (c.hasSegFile) segOut << bamhd->target_name[cnvs[i].chr] << '\t' << cnvs[i].start << '\t' << cnvs[i].end << "\tSEG" << (i + 1) << '\t' << absCN << '\n';
+
+	// CNVs only to BCF
+	if (absCN == c.ploidy) continue;
       
 	// Output main vcf fields
 	rec->rid = bcf_hdr_name2id(hdr, bamhd->target_name[cnvs[i].chr]);
