@@ -37,6 +37,7 @@ namespace torali
     uint32_t minRefSep;
     uint32_t minBpSupport;
     float minCnShift;
+    float cnMergeTol;
     float penalty;
     uint32_t meanisize;
     uint32_t window_size;
@@ -307,7 +308,7 @@ namespace torali
       }
       
       // CNV genotyping
-      genotypeCNVs(c, gcbound, gcContent, uniqContent, gcbias, cov, hdr, refIndex, cnvs);
+      genotypeCNVs(c, gcbound, gcContent, uniqContent, gcbias, cov, covUniq, covMap, hdr, refIndex, cnvs);
 
       // BED File (target intervals)
       if (c.hasBedFile) {
@@ -467,7 +468,7 @@ namespace torali
     sort(cnvs.begin(), cnvs.end());
 
     // Merge CNVs
-    if (!c.hasGenoFile) mergeAdjacentSameCN(cnvs);
+    if (!c.hasGenoFile) mergeAdjacentSameCN(cnvs, c.cnMergeTol);
 
     // Genotype CNVs
     cnvVCF(c, cnvs);
@@ -512,6 +513,7 @@ namespace torali
       ("min-bp-support", boost::program_options::value<uint32_t>(&c.minBpSupport)->default_value(3), "min. split-read support")
       ("min-cn-shift", boost::program_options::value<float>(&c.minCnShift)->default_value(0.5), "min. read-depth shift")
       ("penalty", boost::program_options::value<float>(&c.penalty)->default_value(3), "segmentation penalty")
+      ("cnv-merge", boost::program_options::value<float>(&c.cnMergeTol)->default_value(0.5), "min. log2 ratio to separate CNVs")
       ;
 
     boost::program_options::options_description cancer("Ploidy/purity correction");

@@ -36,12 +36,27 @@ namespace torali
     int32_t cilow;
     int32_t cihigh;
     int32_t qual;
+    int32_t support;
 
-    explicit SVBreakpoint(int32_t const p) : pos(p), cilow(0), cihigh(0), qual(0) {}
-    SVBreakpoint(int32_t const p, int32_t const cil, int32_t const cih, int32_t q) : pos(p), cilow(cil), cihigh(cih), qual(q) {}
+    explicit SVBreakpoint(int32_t const p) : pos(p), cilow(0), cihigh(0), qual(0), support(0) {}
+    SVBreakpoint(int32_t const p, int32_t const cil, int32_t const cih, int32_t q, int32_t const sup) : pos(p), cilow(cil), cihigh(cih), qual(q), support(sup) {}
 
     bool operator<(const SVBreakpoint& sv2) const {
       return ((pos<sv2.pos) || ((pos==sv2.pos) && (qual<sv2.qual)));
+    }
+  };
+
+  // Segment boundary
+  struct CnvBoundary {
+    int32_t w;
+    int32_t bp;
+    int32_t sr;
+
+    CnvBoundary(int32_t const w_, int32_t const bp_, int32_t const sr_) : w(w_), bp(bp_), sr(sr_) {}
+
+    bool operator<(const CnvBoundary& o) const {
+      // keep better-supported junction for same window
+      return ((w < o.w) || ((w == o.w) && (sr > o.sr)));
     }
   };
 
@@ -97,7 +112,7 @@ namespace torali
 	  double cnR = c.ploidy * rcov / rexp;
 	  if (std::abs(cnL - cnR) >= c.minCnShift) {
 	    int32_t qual = 50 + (int32_t) std::min(support, (uint32_t) 40);
-	    chrbp.push_back(SVBreakpoint(bppos, -bpTol, bpTol, qual));
+	    chrbp.push_back(SVBreakpoint(bppos, -bpTol, bpTol, qual, (int32_t) support));
 	  }
 	}
       }
@@ -109,7 +124,7 @@ namespace torali
 
   template<typename TConfig, typename TGcBias, typename TCoverage>
   inline void
-  genotypeCNVs(TConfig const& c, std::pair<uint32_t, uint32_t> const& gcbound, std::vector<uint16_t> const& gcContent, std::vector<uint16_t> const& uniqContent, TGcBias const& gcbias, TCoverage const& cov, bam_hdr_t const* hdr, int32_t const refIndex, std::vector<CNV>& cnvs) {
+  genotypeCNVs(TConfig const& c, std::pair<uint32_t, uint32_t> const& gcbound, std::vector<uint16_t> const& gcContent, std::vector<uint16_t> const& uniqContent, TGcBias const& gcbias, TCoverage const& cov, TCoverage const& covUniq, TCoverage const& covMap, bam_hdr_t const* hdr, int32_t const refIndex, std::vector<CNV>& cnvs) {
     for(uint32_t n = 0; n < cnvs.size(); ++n) {
       if (cnvs[n].chr != refIndex) continue;
       double covsum = 0;
@@ -129,6 +144,29 @@ namespace torali
       double mp = (double) winlen / (double) (cnvs[n].end - cnvs[n].start);
       cnvs[n].cn = cn;
       cnvs[n].mappable = mp;
+
+      // Uniquely-mappable
+      double ufrac = -1;
+      if (c.hasMapFile) {
+	// Mappability map
+	double umapsum = 0;
+	int32_t uspan = 0;
+	for(int32_t p = cnvs[n].start; (p < cnvs[n].end) && (p < (int32_t) hdr->target_len[refIndex]); ++p) {
+	  umapsum += (double) uniqContent[p];
+	  ++uspan;
+	}
+	if ((uspan > 0) && (c.meanisize > 0)) ufrac = std::min(1.0, umapsum / ((double) uspan * (double) c.meanisize));
+      } else {
+	// Map free
+	double ucov = 0;
+	double tcov = 0;
+	for(int32_t p = cnvs[n].start; (p < cnvs[n].end) && (p < (int32_t) hdr->target_len[refIndex]); ++p) {
+	  ucov += covUniq[p];
+	  tcov += covMap[p];
+	}
+	if (tcov > 0) ufrac = ucov / tcov;
+      }
+      cnvs[n].uniqfrac = ufrac;
 
       // Estimate SD
       boost::accumulators::accumulator_set<double, boost::accumulators::features<boost::accumulators::tag::mean, boost::accumulators::tag::variance> > acc;
@@ -165,14 +203,20 @@ namespace torali
   
   // Merge segments
   inline void
-  mergeAdjacentSameCN(std::vector<CNV>& cnvs) {
+  mergeAdjacentSameCN(std::vector<CNV>& cnvs, double const mergeTol) {
     if (cnvs.empty()) return;
     std::vector<CNV> out;
     out.push_back(cnvs[0]);
     for(uint32_t i = 1; i < cnvs.size(); ++i) {
       CNV& prev = out.back();
       CNV const& cur = cnvs[i];
-      bool sameCN = (prev.cn >= 0) && (cur.cn >= 0) && ((int32_t) (prev.cn + 0.5) == (int32_t) (cur.cn + 0.5));
+      // Same CN?
+      bool sameCN = false;
+      if ((prev.cn >= 0) && (cur.cn >= 0)) {
+	double zl = std::log2(std::max(prev.cn, 0.03));
+	double zr = std::log2(std::max(cur.cn, 0.03));
+	sameCN = (std::abs(zl - zr) < mergeTol);
+      }
       if (sameCN && (prev.chr == cur.chr)) {
 	double w1 = (double) (prev.end - prev.start);
 	double w2 = (double) (cur.end - cur.start);
@@ -183,6 +227,7 @@ namespace torali
 	prev.ciendlow = cur.ciendlow;
 	prev.ciendhigh = cur.ciendhigh;
 	prev.end = cur.end;
+	prev.srright = cur.srright;
       } else out.push_back(cur);
     }
     cnvs.swap(out);
@@ -257,15 +302,19 @@ namespace torali
     double pcfTargetExp = (c.targetExpCov > 0) ? (c.targetExpCov / 8.0) : 0.0;
     int32_t pcfWinBases = std::max(1, (int32_t) (c.minCnvSize / 10));
 
-    // Per-window read-depth profile over callable positions
-    std::vector<double> y;
+    // Per-window profile using log2 scale
+    double const rFloor = 1.0 / 64.0;
+    std::vector<double> z;
     std::vector<double> wcov;
     std::vector<double> wexp;
     std::vector<int32_t> ws;
     std::vector<int32_t> we;
     {
-      double covsum = 0, expcov = 0;
-      int32_t winlen = 0, start = -1, last = -1;
+      double covsum = 0;
+      double expcov = 0;
+      int32_t winlen = 0;
+      int32_t start = -1;
+      int32_t last = -1;
       for(int32_t pos = 0; pos < reflen; ++pos) {
 	if ((gcContent[pos] > gcbound.first) && (gcContent[pos] < gcbound.second) && (uniqContent[pos] >= c.fragmentUnique * c.meanisize)) {
 	  if (start < 0) start = pos;
@@ -275,7 +324,8 @@ namespace torali
 	  ++winlen;
 	  bool close = (pcfTargetExp > 0) ? (expcov >= pcfTargetExp) : (winlen >= pcfWinBases);
 	  if (close) {
-	    y.push_back((expcov > 0) ? (c.ploidy * covsum / expcov) : (double) c.ploidy);
+	    double r = (expcov > 0) ? (covsum / expcov) : 1.0;
+	    z.push_back(std::log2(std::max(r, rFloor)));
 	    wcov.push_back(covsum);
 	    wexp.push_back(expcov);
 	    ws.push_back(start);
@@ -288,14 +338,15 @@ namespace torali
 	}
       }
       if ((winlen > 0) && (start >= 0)) {
-	y.push_back((expcov > 0) ? (c.ploidy * covsum / expcov) : (double) c.ploidy);
+	double r = (expcov > 0) ? (covsum / expcov) : 1.0;
+	z.push_back(std::log2(std::max(r, rFloor)));
 	wcov.push_back(covsum);
 	wexp.push_back(expcov);
 	ws.push_back(start);
 	we.push_back(last + 1);
       }
     }
-    int32_t N = (int32_t) y.size();
+    int32_t N = (int32_t) z.size();
     if (N < 1) return;
 
     // per-window noise
@@ -303,7 +354,7 @@ namespace torali
     if (N > 1) {
       std::vector<double> diff;
       diff.reserve(N - 1);
-      for(int32_t i = 1; i < N; ++i) diff.push_back(std::abs(y[i] - y[i-1]));
+      for(int32_t i = 1; i < N; ++i) diff.push_back(std::abs(z[i] - z[i-1]));
       std::sort(diff.begin(), diff.end());
       int32_t m = std::max(1, (2 * (int32_t) diff.size()) / 3);
       double s = 0;
@@ -315,13 +366,13 @@ namespace torali
     // Segmentation
     double beta = c.penalty * sigma * sigma * std::log((double) std::max(N, 2));
     std::vector<int32_t> pcfbnd;
-    cnvSegment(y, beta, kmin, pcfbnd);
+    cnvSegment(z, beta, kmin, pcfbnd);
 
     // Boundary set
-    std::vector<std::pair<int32_t, int32_t> > B;
-    B.push_back(std::make_pair(0, -1));
-    for(uint32_t i = 0; i < pcfbnd.size(); ++i) B.push_back(std::make_pair(pcfbnd[i], -1));
-    B.push_back(std::make_pair(N, -1));
+    std::vector<CnvBoundary> B;
+    B.push_back(CnvBoundary(0, -1, 0));
+    for(uint32_t i = 0; i < pcfbnd.size(); ++i) B.push_back(CnvBoundary(pcfbnd[i], -1, 0));
+    B.push_back(CnvBoundary(N, -1, 0));
 
     // Fuse split-read breakpoints
     for(uint32_t k = 0; k < chrbp.size(); ++k) {
@@ -336,17 +387,18 @@ namespace torali
       if ((wi <= 0) || (wi >= N)) continue;
       int32_t bi = 0;
       for(uint32_t b = 1; b + 1 < B.size(); ++b) {
-	if (std::abs(B[b].first - wi) < std::abs(B[bi].first - wi)) bi = b;
+	if (std::abs(B[b].w - wi) < std::abs(B[bi].w - wi)) bi = b;
       }
-      if ((bi > 0) && (std::abs(B[bi].first - wi) <= 1)) {
-	B[bi].first = wi;
-	B[bi].second = bppos;
+      if ((bi > 0) && (std::abs(B[bi].w - wi) <= 1)) {
+	B[bi].w = wi;
+	B[bi].bp = bppos;
+	B[bi].sr = chrbp[k].support;
       } else {
-	B.push_back(std::make_pair(wi, bppos));
+	B.push_back(CnvBoundary(wi, bppos, chrbp[k].support));
       }
     }
     std::sort(B.begin(), B.end());
-    B.erase(std::unique(B.begin(), B.end(), [](std::pair<int32_t,int32_t> const& a, std::pair<int32_t,int32_t> const& b){ return a.first == b.first; }), B.end());
+    B.erase(std::unique(B.begin(), B.end(), [](CnvBoundary const& a, CnvBoundary const& b){ return a.w == b.w; }), B.end());
 
     // Segment sums
     uint32_t ns = B.size() - 1;
@@ -354,54 +406,56 @@ namespace torali
     std::vector<double> segexp(ns, 0);
     std::vector<int32_t> segnw(ns, 0);
     for(uint32_t s = 0; s < ns; ++s) {
-      for(int32_t w = B[s].first; w < B[s+1].first; ++w) {
+      for(int32_t w = B[s].w; w < B[s+1].w; ++w) {
 	segcov[s] += wcov[w];
 	segexp[s] += wexp[w];
 	++segnw[s];
       }
     }
 
-    // Merge neighbors
-    bool merged = true;
-    while (merged && (ns > 1)) {
-      merged = false;
+    // Merge neighbours
+    double const zK = 3.0;
+    double const zFloor = c.cnMergeTol;
+    while (ns > 1) {
+      int32_t best = -1;
+      double bestDz = 0;
       for(uint32_t s = 0; s + 1 < ns; ++s) {
+	if (B[s+1].bp >= 0) continue;  // keep split-read boundaries
 	double cnL = (segexp[s] > 0) ? (c.ploidy * segcov[s] / segexp[s]) : (double) c.ploidy;
 	double cnR = (segexp[s+1] > 0) ? (c.ploidy * segcov[s+1] / segexp[s+1]) : (double) c.ploidy;
-	bool doMerge = ((int32_t) (cnL + 0.5) == (int32_t) (cnR + 0.5));
-	if (!doMerge && (B[s+1].second < 0)) {
-	  int32_t mn = std::min(segnw[s], segnw[s+1]);
-	  double tol = 0.3 + 1.0 / std::sqrt((double) std::max(mn, 1));
-	  if (std::abs(cnL - cnR) < tol) doMerge = true;
-	}
-	if (doMerge) {
-	  segcov[s] += segcov[s+1];
-	  segexp[s] += segexp[s+1];
-	  segnw[s] += segnw[s+1];
-	  B.erase(B.begin() + s + 1);
-	  segcov.erase(segcov.begin() + s + 1);
-	  segexp.erase(segexp.begin() + s + 1);
-	  segnw.erase(segnw.begin() + s + 1);
-	  --ns;
-	  merged = true;
-	  break;
-	}
+	double dz = std::abs(std::log2(std::max(cnL / c.ploidy, rFloor)) - std::log2(std::max(cnR / c.ploidy, rFloor)));
+	double se = sigma * std::sqrt(1.0 / (double) std::max(segnw[s], 1) + 1.0 / (double) std::max(segnw[s+1], 1));
+	double tol = std::max(zFloor, zK * se);
+	if ((dz < tol) && ((best < 0) || (dz < bestDz))) { best = (int32_t) s; bestDz = dz; }
       }
+      if (best < 0) break;
+      uint32_t s = (uint32_t) best;
+      segcov[s] += segcov[s+1];
+      segexp[s] += segexp[s+1];
+      segnw[s] += segnw[s+1];
+      B.erase(B.begin() + s + 1);
+      segcov.erase(segcov.begin() + s + 1);
+      segexp.erase(segexp.begin() + s + 1);
+      segnw.erase(segnw.begin() + s + 1);
+      --ns;
     }
 
     // Output segments
     for(uint32_t s = 0; s < ns; ++s) {
-      int32_t wa = B[s].first;
-      int32_t wb = B[s+1].first;
+      int32_t wa = B[s].w;
+      int32_t wb = B[s+1].w;
       if (wb <= wa) continue;
-      int32_t start = (B[s].second >= 0) ? B[s].second : ws[wa];
-      int32_t end = (B[s+1].second >= 0) ? B[s+1].second : we[wb-1];
-      int32_t cil = (B[s].second >= 0) ? (start - bpTol) : ws[wa];
-      int32_t cih = (B[s].second >= 0) ? (start + bpTol) : (we[wa] - 1);
-      int32_t cel = (B[s+1].second >= 0) ? (end - bpTol) : ws[wb-1];
-      int32_t ceh = (B[s+1].second >= 0) ? (end + bpTol) : (we[wb-1]);
+      int32_t start = (B[s].bp >= 0) ? B[s].bp : ws[wa];
+      int32_t end = (B[s+1].bp >= 0) ? B[s+1].bp : we[wb-1];
+      int32_t cil = (B[s].bp >= 0) ? (start - bpTol) : ws[wa];
+      int32_t cih = (B[s].bp >= 0) ? (start + bpTol) : (we[wa] - 1);
+      int32_t cel = (B[s+1].bp >= 0) ? (end - bpTol) : ws[wb-1];
+      int32_t ceh = (B[s+1].bp >= 0) ? (end + bpTol) : (we[wb-1]);
       double cn = (segexp[s] > 0) ? (c.ploidy * segcov[s] / segexp[s]) : (double) c.ploidy;
-      cnvs.push_back(CNV(refIndex, start, end, cil, cih, cel, ceh, cn, 1.0));
+      CNV cnvRec(refIndex, start, end, cil, cih, cel, ceh, cn, 1.0);
+      cnvRec.srleft = B[s].sr;
+      cnvRec.srright = B[s+1].sr;
+      cnvs.push_back(cnvRec);
     }
   }
 
@@ -421,13 +475,17 @@ namespace torali
     int32_t* cipos = NULL;
     int32_t nmp = 0;
     float* mp = NULL;
+    int32_t nsrl = 0;
+    int32_t* srl = NULL;
+    int32_t nsrr = 0;
+    int32_t* srr = NULL;
     int32_t nsvt = 0;
     char* svt = NULL;
     int32_t nmethod = 0;
     char* method = NULL;
     uint16_t wimethod = 0; 
     while (bcf_read(ifile, hdr, rec) == 0) {
-      bcf_unpack(rec, BCF_UN_INFO);
+      bcf_unpack(rec, BCF_UN_SHR);
 
       // Delly BCF file?
       if (!wimethod) {
@@ -447,6 +505,7 @@ namespace torali
 	cnv.chr = tid;
 	cnv.start = rec->pos;
 	cnv.qval = rec->qual;
+	if ((rec->d.id != NULL) && (std::string(rec->d.id) != ".")) cnv.id = std::string(rec->d.id);
 
 	// Parse CNV type
 	if (bcf_get_info_string(hdr, rec, "SVTYPE", &svt, &nsvt) > 0) {
@@ -472,6 +531,10 @@ namespace torali
 	}
 	if (bcf_get_info_float(hdr, rec, "MP", &mp, &nmp) > 0) cnv.mappable = (double) *mp;
 	else cnv.mappable = 0;
+	if (bcf_get_info_int32(hdr, rec, "SRL", &srl, &nsrl) > 0) cnv.srleft = *srl;
+	else cnv.srleft = 0;
+	if (bcf_get_info_int32(hdr, rec, "SRR", &srr, &nsrr) > 0) cnv.srright = *srr;
+	else cnv.srright = 0;
 
 	cnvs.push_back(cnv);
       }
@@ -482,6 +545,8 @@ namespace torali
     free(method);
     free(cipos);
     free(mp);
+    free(srl);
+    free(srr);
     
     // Close VCF
     bcf_hdr_destroy(hdr);
@@ -515,8 +580,12 @@ namespace torali
     bcf_hdr_append(hdr, "##INFO=<ID=CIEND,Number=2,Type=Integer,Description=\"Confidence interval around END\">");
     bcf_hdr_append(hdr, "##INFO=<ID=CIPOS,Number=2,Type=Integer,Description=\"Confidence interval around POS\">");
     bcf_hdr_append(hdr, "##INFO=<ID=END,Number=1,Type=Integer,Description=\"End position of the copy-number variant\">");
-    bcf_hdr_append(hdr, "##INFO=<ID=MP,Number=1,Type=Float,Description=\"Mappable fraction of CNV\">");
+    bcf_hdr_append(hdr, "##INFO=<ID=MP,Number=1,Type=Float,Description=\"Callable (GC- and mappability-passing) fraction of the CNV span\">");
+    bcf_hdr_append(hdr, "##INFO=<ID=UNIQ,Number=1,Type=Float,Description=\"Uniquely-mappable fraction\">");
+    bcf_hdr_append(hdr, "##INFO=<ID=SRL,Number=1,Type=Integer,Description=\"Split-read support at the left breakpoint\">");
+    bcf_hdr_append(hdr, "##INFO=<ID=SRR,Number=1,Type=Integer,Description=\"Split-read support at the right breakpoint\">");
     bcf_hdr_append(hdr, "##INFO=<ID=IMPRECISE,Number=0,Type=Flag,Description=\"Imprecise copy-number variant\">");
+    bcf_hdr_append(hdr, "##INFO=<ID=PRECISE,Number=0,Type=Flag,Description=\"Precise copy-number variant\">");
     bcf_hdr_append(hdr, "##INFO=<ID=SVTYPE,Number=1,Type=String,Description=\"Type of structural variant\">");
     bcf_hdr_append(hdr, "##INFO=<ID=SVMETHOD,Number=1,Type=String,Description=\"Type of approach used to detect CNV\">");
     bcf_hdr_append(hdr, "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">");
@@ -571,28 +640,33 @@ namespace torali
 	int32_t absCN = (int32_t) boost::math::round(cnvs[i].cn);
 
 	// Segmentation
-	if (c.hasSegFile) segOut << bamhd->target_name[cnvs[i].chr] << '\t' << cnvs[i].start << '\t' << cnvs[i].end << "\tSEG" << (i + 1) << '\t' << absCN << '\n';
+	if (c.hasSegFile) segOut << bamhd->target_name[cnvs[i].chr] << '\t' << cnvs[i].start << '\t' << cnvs[i].end << "\tSEG" << (i + 1) << '\t' << cnvs[i].cn << '\n';
 
-	// CNVs only to BCF
-	if (absCN == c.ploidy) continue;
-      
+	// Only true CNVs, unless in genotyping mode
+	if ((!c.hasGenoFile) && (absCN == c.ploidy)) continue;
+
 	// Output main vcf fields
 	rec->rid = bcf_hdr_name2id(hdr, bamhd->target_name[cnvs[i].chr]);
 	int32_t svStartPos = cnvs[i].start;
 	int32_t svEndPos = cnvs[i].end;
 	if (svEndPos >= (int32_t) bamhd->target_len[cnvs[i].chr]) svEndPos = bamhd->target_len[cnvs[i].chr] - 1;
 	rec->pos = svStartPos;
-	std::string id("CNV");
-	std::string padNumber = boost::lexical_cast<std::string>(++cnvid);
-	padNumber.insert(padNumber.begin(), 8 - padNumber.length(), '0');
-	id += padNumber;
+	std::string id;
+	if ((c.hasGenoFile) && (!cnvs[i].id.empty())) id = cnvs[i].id;
+	else {
+	  id = "CNV";
+	  std::string padNumber = boost::lexical_cast<std::string>(++cnvid);
+	  padNumber.insert(padNumber.begin(), 8 - padNumber.length(), '0');
+	  id += padNumber;
+	}
 	bcf_update_id(hdr, rec, id.c_str());
 	std::string svtype = "CNV";
 	std::string alleles = "N,<" + svtype + ">";
 	bcf_update_alleles_str(hdr, rec, alleles.c_str());
       
 	// Add INFO fields
-	bcf_update_info_flag(hdr, rec, "IMPRECISE", NULL, 1);
+	if ((cnvs[i].srleft > 0) && (cnvs[i].srright > 0)) bcf_update_info_flag(hdr, rec, "PRECISE", NULL, 1);
+	else bcf_update_info_flag(hdr, rec, "IMPRECISE", NULL, 1);
 
 	bcf_update_info_string(hdr, rec, "SVTYPE", svtype.c_str());
 	std::string dellyVersion("EMBL.DELLYv");
@@ -610,6 +684,12 @@ namespace torali
 	bcf_update_info_int32(hdr, rec, "CIEND", ciend, 2);
 	float tmpf = cnvs[i].mappable;
 	bcf_update_info_float(hdr, rec, "MP", &tmpf, 1);
+	float uniqf = cnvs[i].uniqfrac;
+	bcf_update_info_float(hdr, rec, "UNIQ", &uniqf, 1);
+	int32_t srltmp = cnvs[i].srleft;
+	bcf_update_info_int32(hdr, rec, "SRL", &srltmp, 1);
+	int32_t srrtmp = cnvs[i].srright;
+	bcf_update_info_int32(hdr, rec, "SRR", &srrtmp, 1);
 
 	// Genotyping
 	cnval[0] = absCN;

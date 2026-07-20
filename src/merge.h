@@ -69,6 +69,11 @@ namespace torali
     int32_t seqCutoff;
     int32_t recurrentSamples;
     float repMinAF;
+    int32_t cnvMinSupport;
+    int32_t cnvLargeSize;
+    int32_t cnvStrongQual;
+    float cnvMinUniq;
+    float cnvGainUniq;
     boost::filesystem::path outfile;
     boost::filesystem::path genome;
     std::vector<boost::filesystem::path> files;
@@ -1236,7 +1241,13 @@ namespace torali
     bcf_hdr_append(hdr_out, "##INFO=<ID=CIPOS,Number=2,Type=Integer,Description=\"Confidence interval around POS\">");
     bcf_hdr_append(hdr_out, "##INFO=<ID=END,Number=1,Type=Integer,Description=\"End position of the copy-number variant\">");
     bcf_hdr_append(hdr_out, "##INFO=<ID=MP,Number=1,Type=Float,Description=\"Mappable fraction of CNV\">");
+    bcf_hdr_append(hdr_out, "##INFO=<ID=UNIQ,Number=1,Type=Float,Description=\"Uniquely-mappable fraction\">");
+    bcf_hdr_append(hdr_out, "##INFO=<ID=SRL,Number=1,Type=Integer,Description=\"Split-read support at the left breakpoint\">");
+    bcf_hdr_append(hdr_out, "##INFO=<ID=SRR,Number=1,Type=Integer,Description=\"Split-read support at the right breakpoint\">");
+    bcf_hdr_append(hdr_out, "##INFO=<ID=SUPPLOSS,Number=1,Type=Integer,Description=\"Number of samples supporting a loss\">");
+    bcf_hdr_append(hdr_out, "##INFO=<ID=SUPPGAIN,Number=1,Type=Integer,Description=\"Number of samples supporting a gain\">");
     bcf_hdr_append(hdr_out, "##INFO=<ID=IMPRECISE,Number=0,Type=Flag,Description=\"Imprecise copy-number variant\">");
+    bcf_hdr_append(hdr_out, "##INFO=<ID=PRECISE,Number=0,Type=Flag,Description=\"Precise copy-number variant\">");
     bcf_hdr_append(hdr_out, "##INFO=<ID=SVTYPE,Number=1,Type=String,Description=\"Type of structural variant\">");
     bcf_hdr_append(hdr_out, "##INFO=<ID=SVMETHOD,Number=1,Type=String,Description=\"Type of approach used to detect CNV\">");
     
@@ -1316,10 +1327,8 @@ namespace torali
 	bool precise = false;
 	bool passPrecise = true;
 	if (bcf_get_info_flag(hdr[idx], rec[idx], "PRECISE", 0, 0) > 0) precise=true;
-	if ((c.filterForPrecise) && (!precise)) passPrecise = false;
-	
-	// Check PASS and precise
-	if ((rec[idx]->qual >= c.qualthres) && (passPrecise) && (pass)) {
+	if ((c.filterForPrecise) && (!precise)) passPrecise = false;	
+	if ((passPrecise) && (pass)) {
 	  // Correct size
 	  std::string chrName(bcf_hdr_id2name(hdr[idx], rec[idx]->rid));
 	  uint32_t tid = cMap[chrName];
@@ -1334,11 +1343,21 @@ namespace torali
 	    // Is this a selected interval
 	    typename TIntervalScores::const_iterator iter = std::lower_bound(iSelected[tid].begin(), iSelected[tid].end(), IntervalScore(svStart, svEnd, score));
 	    bool foundInterval = false;
+	    int32_t suppLoss = 0;
+	    int32_t suppGain = 0;
+	    int32_t srlval = 0;
+	    int32_t srrval = 0;
+	    float uniqval = -1;
 	    for(; (iter != iSelected[tid].end()) && (iter->start == svStart); ++iter) {
 	      if ((iter->start == svStart) && (iter->end == svEnd) && (iter->score == score)) {
 		// Duplicate?
 		if (gis[tid].find(std::make_pair(svStart, svEnd)) == gis[tid].end()) {
 		  foundInterval = true;
+		  suppLoss = iter->suppLoss;
+		  suppGain = iter->suppGain;
+		  srlval = iter->srl;
+		  srrval = iter->srr;
+		  uniqval = iter->uniq;
 		  gis[tid].insert(std::make_pair(svStart, svEnd));
 		}
 		break;
@@ -1350,7 +1369,9 @@ namespace torali
 	      bcf_get_info_int32(hdr[idx], rec[idx], "CIEND", &ciend, &nciend);
 	      float mpval = 0;
 	      if (bcf_get_info_float(hdr[idx], rec[idx], "MP", &mp, &nmp) > 0) mpval = *mp;
-	      
+	      // precise, split-reads at both breakpoints
+	      precise = ((srlval > 0) && (srrval > 0));
+
 	      // Create new record
 	      rout->rid = bcf_hdr_name2id(hdr_out, chrName.c_str());
 	      rout->pos = rec[idx]->pos;
@@ -1382,7 +1403,12 @@ namespace torali
 	      bcf_update_info_int32(hdr_out, rout, "CIPOS", cipos, 2);
 	      bcf_update_info_int32(hdr_out, rout, "CIEND", ciend, 2);
 	      bcf_update_info_float(hdr_out, rout, "MP", &mpval, 1);
-	      
+	      bcf_update_info_float(hdr_out, rout, "UNIQ", &uniqval, 1);
+	      bcf_update_info_int32(hdr_out, rout, "SRL", &srlval, 1);
+	      bcf_update_info_int32(hdr_out, rout, "SRR", &srrval, 1);
+	      bcf_update_info_int32(hdr_out, rout, "SUPPLOSS", &suppLoss, 1);
+	      bcf_update_info_int32(hdr_out, rout, "SUPPGAIN", &suppGain, 1);
+
 	      // Write record
 	      bcf_write1(fp, hdr_out, rout);
 	      bcf_clear1(rout);
@@ -1421,13 +1447,23 @@ namespace torali
   }
 
 
-  // For CNVs, interval representation
+  // CNVs
   struct IntervalScore {
     uint32_t start;
     uint32_t end;
     int32_t score;
-    
-    IntervalScore(uint32_t s, uint32_t e, int32_t c) : start(s), end(e), score(c) {}
+    int32_t cn;
+    int32_t srl;
+    int32_t srr;
+    float uniq;
+    int32_t suppLoss;
+    int32_t suppGain;
+
+    IntervalScore(uint32_t s, uint32_t e, int32_t c) : start(s), end(e), score(c), cn(2), srl(0), srr(0), uniq(-1), suppLoss(0), suppGain(0) {}
+
+    bool precise() const {
+      return ((srl > 0) && (srr > 0));
+    }
 
     bool operator<(const IntervalScore& s2) const {
       return ((start < s2.start) || ((start == s2.start) && (end < s2.end)));
@@ -1440,10 +1476,20 @@ namespace torali
       htsFile* ifile = bcf_open(c.files[file_c].string().c_str(), "r");
       bcf_hdr_t* hdr = bcf_hdr_read(ifile);
       bcf1_t* rec = bcf_init();
-      int32_t nsvend = 0; int32_t* svend = NULL;
-      int32_t nsvt = 0; char* svt = NULL;
+      int32_t nsvend = 0;
+      int32_t* svend = NULL;
+      int32_t nsvt = 0;
+      char* svt = NULL;
+      int32_t nsrl = 0;
+      int32_t* srl = NULL;
+      int32_t nsrr = 0;
+      int32_t* srr = NULL;
+      int32_t nuniq = 0;
+      float* uniq = NULL;
+      int32_t ncn = 0;
+      int32_t* cn = NULL;
       while (bcf_read(ifile, hdr, rec) == 0) {
-	bcf_unpack(rec, BCF_UN_INFO);
+	bcf_unpack(rec, BCF_UN_ALL);
 	bool pass = true;
 	if (c.filterForPass) pass = (bcf_has_filter(hdr, rec, const_cast<char*>("PASS"))==1);
 	if (!pass) continue;
@@ -1459,11 +1505,19 @@ namespace torali
 	bool precise = false;
 	if (bcf_get_info_flag(hdr, rec, "PRECISE", 0, 0) > 0) precise=true;
 	if ((c.filterForPrecise) && (!precise)) continue;
-	if (rec->qual < c.qualthres) continue;
-	iScore[tid].push_back(IntervalScore(svStart, svEnd, rec->qual));
+	IntervalScore ivs(svStart, svEnd, rec->qual);
+	if (bcf_get_format_int32(hdr, rec, "CN", &cn, &ncn) > 0) ivs.cn = cn[0];
+	if (bcf_get_info_int32(hdr, rec, "SRL", &srl, &nsrl) > 0) ivs.srl = *srl;
+	if (bcf_get_info_int32(hdr, rec, "SRR", &srr, &nsrr) > 0) ivs.srr = *srr;
+	if (bcf_get_info_float(hdr, rec, "UNIQ", &uniq, &nuniq) > 0) ivs.uniq = *uniq;
+	iScore[tid].push_back(ivs);
       }
       if (svend != NULL) free(svend);
       if (svt != NULL) free(svt);
+      if (srl != NULL) free(srl);
+      if (srr != NULL) free(srr);
+      if (uniq != NULL) free(uniq);
+      if (cn != NULL) free(cn);
       bcf_hdr_destroy(hdr);
       bcf_close(ifile);
       bcf_destroy(rec);
@@ -1472,38 +1526,62 @@ namespace torali
   
   template<typename TGenomeIntervals>
   void _processCNVIntervalMap(MergeConfig const& c, TGenomeIntervals const& iScore, TGenomeIntervals& iSelected) {
-    typedef typename TGenomeIntervals::value_type TIntervalScores;
     unsigned int seqId = 0;
     for(typename TGenomeIntervals::const_iterator iG = iScore.begin(); iG != iScore.end(); ++iG, ++seqId) {
-      typedef std::vector<bool> TIntervalSelector;
-      TIntervalSelector keepInterval;
-      keepInterval.resize(iG->size(), true);
-      typename TIntervalSelector::iterator iK = keepInterval.begin();
-      for(typename TIntervalScores::const_iterator iS = iG->begin(); iS != iG->end(); ++iS, ++iK) {
-	typename TIntervalScores::const_iterator iSNext = iS;
-	typename TIntervalSelector::iterator iKNext = iK;
-	++iSNext; ++iKNext;
-	for(; iSNext != iG->end(); ++iSNext, ++iKNext) {
-	  if (iSNext->start - iS->start > c.bpoffset) break;
-	  else {
-	    if (((iSNext->end > iS->end) && (iSNext->end - iS->end < c.bpoffset)) || ((iSNext->end <= iS->end) &&(iS->end - iSNext->end < c.bpoffset))) {
-	      if (recOverlap(iS->start, iS->end, iSNext->start, iSNext->end) >= c.recoverlap) {
-		if (iS->score < iSNext->score) *iK = false;
-		else if (iSNext ->score < iS->score) *iKNext = false;
-		else {
-		  if (iS->start < iSNext->start) *iKNext = false;
-		  else if (iS->end < iSNext->end) *iKNext = false;
-		  else *iK = false;
-		}
-	      }
-	    }
+      // Cluster overlapping calls
+      std::size_t n = iG->size();
+      std::vector<bool> used(n, false);
+      for(std::size_t i = 0; i < n; ++i) {
+	if (used[i]) continue;
+	IntervalScore const& lead = (*iG)[i];
+	std::size_t repIdx = i;
+	int32_t suppLoss = 0;
+	int32_t suppGain = 0;
+	bool preciseLoss = false;
+	bool preciseGain = false;
+	float bestUniq = -1;
+	int32_t bestSrl = 0;
+	int32_t bestSrr = 0;
+	for(std::size_t j = i; j < n; ++j) {
+	  if (used[j]) continue;
+	  IntervalScore const& cur = (*iG)[j];
+	  if (cur.start - lead.start > c.bpoffset) break;
+	  // Overlap?
+	  if (j != i) {
+	    bool endClose = ((cur.end > lead.end) && (cur.end - lead.end < c.bpoffset)) || ((cur.end <= lead.end) && (lead.end - cur.end < c.bpoffset));
+	    if ((!endClose) || (recOverlap(lead.start, lead.end, cur.start, cur.end) < c.recoverlap)) continue;
 	  }
+	  used[j] = true;
+	  if (cur.cn < 2) {
+	    ++suppLoss;
+	    if (cur.precise()) preciseLoss = true;
+	  }
+	  else if (cur.cn > 2) {
+	    ++suppGain;
+	    if (cur.precise()) preciseGain = true;
+	  }
+	  if (cur.uniq > bestUniq) bestUniq = cur.uniq;
+	  if (cur.srl > bestSrl) bestSrl = cur.srl;
+	  if (cur.srr > bestSrr) bestSrr = cur.srr;
+	  if (cur.score > (*iG)[repIdx].score) repIdx = j;
 	}
-	if (*iK) iSelected[seqId].push_back(IntervalScore(iS->start, iS->end, iS->score));
+	IntervalScore const& rep = (*iG)[repIdx];
+	int32_t size = (int32_t) (rep.end - rep.start);
+	bool lossOk = (suppLoss >= c.cnvMinSupport) || preciseLoss || (size >= c.cnvLargeSize) || ((rep.score >= c.cnvStrongQual) && (bestUniq >= c.cnvMinUniq));
+	bool gainOk = preciseGain || ((suppGain >= c.cnvMinSupport) && (bestUniq >= c.cnvGainUniq));
+	if ((lossOk) || (gainOk)) {
+	  IntervalScore keep(rep.start, rep.end, rep.score);
+	  keep.suppLoss = suppLoss;
+	  keep.suppGain = suppGain;
+	  keep.srl = bestSrl;
+	  keep.srr = bestSrr;
+	  keep.uniq = bestUniq;
+	  iSelected[seqId].push_back(keep);
+	}
       }
+      std::sort(iSelected[seqId].begin(), iSelected[seqId].end());
     }
   }
-
 
   // Group loci that req. multi-allelic genotyping
   inline void
@@ -1833,7 +1911,17 @@ namespace torali
       ("junc-seqid", boost::program_options::value<float>(&c.juncSeqId)->default_value(0.7), "min. consensus identity")
       ("seq-cutoff", boost::program_options::value<int32_t>(&c.seqCutoff)->default_value(10000), "max. seq. length for identity checks")
       ;
-    
+
+    // CNV merge options
+    boost::program_options::options_description cnvmerge("CNV merge parameters (with -e)");
+    cnvmerge.add_options()
+      ("cnv-min-support", boost::program_options::value<int32_t>(&c.cnvMinSupport)->default_value(10), "carrier count to keep a recurrent CNV")
+      ("cnv-large-size", boost::program_options::value<int32_t>(&c.cnvLargeSize)->default_value(200000), "min. size for a loss to pass on read-depth alone")
+      ("cnv-strong-qual", boost::program_options::value<int32_t>(&c.cnvStrongQual)->default_value(200), "min. quality for a read-depth loss")
+      ("cnv-min-uniq", boost::program_options::value<float>(&c.cnvMinUniq)->default_value(0.75), "min. UNIQ for a singleton loss")
+      ("cnv-gain-uniq", boost::program_options::value<float>(&c.cnvGainUniq)->default_value(0.9), "min. UNIQ for a recurrent gain")
+      ;
+
     // Define hidden options
     boost::program_options::options_description hidden("Hidden options");
     hidden.add_options()
@@ -1844,9 +1932,9 @@ namespace torali
     
     // Set the visibility
     boost::program_options::options_description cmdline_options;
-    cmdline_options.add(generic).add(svmerge).add(hidden);
+    cmdline_options.add(generic).add(svmerge).add(cnvmerge).add(hidden);
     boost::program_options::options_description visible_options;
-    visible_options.add(generic).add(svmerge);
+    visible_options.add(generic).add(svmerge).add(cnvmerge);
     boost::program_options::variables_map vm;
     boost::program_options::store(boost::program_options::command_line_parser(argc, argv).options(cmdline_options).positional(pos_args).run(), vm);
     boost::program_options::notify(vm);
