@@ -295,6 +295,21 @@ namespace torali
 	  else u = (2 * (uint32_t) covUniq[pos] >= (uint32_t) covMap[pos]);
 	  uniqContent[pos] = (u ? (uint16_t) c.meanisize : 0);
 	}
+	// hom-del or unmappable?
+	uint32_t maxHomDel = 1000000;
+	uint32_t rstart = 0;
+	while (rstart < hdr->target_len[refIndex]) {
+	  if (covMap[rstart] == 0) {
+	    uint32_t rend = rstart;
+	    while ((rend < hdr->target_len[refIndex]) && (covMap[rend] == 0)) ++rend;
+	    bool leftOK = (rstart > 0) && (uniqContent[rstart - 1] > 0);
+	    bool rightOK = (rend < hdr->target_len[refIndex]) && (uniqContent[rend] > 0);
+	    if ((!leftOK) || (!rightOK) || (rend - rstart > maxHomDel)) {
+	      for(uint32_t k = rstart; k < rend; ++k) uniqContent[k] = 0;
+	    }
+	    rstart = rend;
+	  } else ++rstart;
+	}
       }
       if (ref != NULL) free(ref);
 
