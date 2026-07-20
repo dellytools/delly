@@ -298,9 +298,9 @@ namespace torali
     int32_t kmin = 4;
     int32_t bpTol = (int32_t) (2 * c.minClip);
     
-    // Coverage-adaptive segmentation
-    double pcfTargetExp = (c.targetExpCov > 0) ? (c.targetExpCov / 8.0) : 0.0;
-    int32_t pcfWinBases = std::max(1, (int32_t) (c.minCnvSize / 10));
+    // Segment at the window resolution
+    double pcfTargetExp = (c.targetExpCov > 0) ? c.targetExpCov : 0.0;
+    int32_t pcfWinBases = (c.window_size > 0) ? (int32_t) c.window_size : std::max(1, (int32_t) c.minCnvSize);
 
     // Per-window profile using log2 scale
     double const rFloor = 1.0 / 64.0;
@@ -356,10 +356,7 @@ namespace torali
       diff.reserve(N - 1);
       for(int32_t i = 1; i < N; ++i) diff.push_back(std::abs(z[i] - z[i-1]));
       std::sort(diff.begin(), diff.end());
-      int32_t m = std::max(1, (2 * (int32_t) diff.size()) / 3);
-      double s = 0;
-      for(int32_t i = 0; i < m; ++i) s += diff[i];
-      sigma = (s / m) / 1.128379;
+      sigma = diff[diff.size() / 2] / 0.9539;
     }
     if (sigma < 0.02) sigma = 0.02;
 
@@ -420,7 +417,6 @@ namespace torali
       int32_t best = -1;
       double bestDz = 0;
       for(uint32_t s = 0; s + 1 < ns; ++s) {
-	if (B[s+1].bp >= 0) continue;  // keep split-read boundaries
 	double cnL = (segexp[s] > 0) ? (c.ploidy * segcov[s] / segexp[s]) : (double) c.ploidy;
 	double cnR = (segexp[s+1] > 0) ? (c.ploidy * segcov[s+1] / segexp[s+1]) : (double) c.ploidy;
 	double dz = std::abs(std::log2(std::max(cnL / c.ploidy, rFloor)) - std::log2(std::max(cnR / c.ploidy, rFloor)));
