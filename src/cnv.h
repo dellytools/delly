@@ -82,35 +82,46 @@ namespace torali
       }
       if (support >= c.minBpSupport) {
 	int32_t bppos = (int32_t) (possum / support);
-	// Read-depth shift left/right of breakpoint
-	double lcov = 0;
-	double lexp = 0;
-	int32_t lspan = 0;
-	int32_t pos = bppos - 1;
-	while ((pos >= 0) && (lexp < flankExpTarget) && (lspan < maxFlank)) {
-	  if ((gcContent[pos] > gcbound.first) && (gcContent[pos] < gcbound.second) && (uniqContent[pos] >= c.fragmentUnique * c.meanisize)) {
-	    lcov += cov[pos];
-	    lexp += gcbias[gcContent[pos]].coverage;
+	double const rFloor = 1.0 / 64.0;
+	double const subExp = flankExpTarget / 8.0;
+	std::vector<double> zl, zr;
+	{
+	  double covsum = 0, expcov = 0;
+	  int32_t span = 0;
+	  for(int32_t pos = bppos - 1; (pos >= 0) && (span < maxFlank) && (zl.size() < 8); --pos, ++span) {
+	    if ((gcContent[pos] > gcbound.first) && (gcContent[pos] < gcbound.second) && (uniqContent[pos] >= c.fragmentUnique * c.meanisize)) {
+	      covsum += cov[pos];
+	      expcov += gcbias[gcContent[pos]].coverage;
+	      if (expcov >= subExp) { zl.push_back(std::log2(std::max(covsum / expcov, rFloor))); covsum = 0; expcov = 0; }
+	    }
 	  }
-	  --pos;
-	  ++lspan;
 	}
-	double rcov = 0;
-	double rexp = 0;
-	int32_t rspan = 0;
-	pos = bppos;
-	while ((pos < (int32_t) hdr->target_len[refIndex]) && (rexp < flankExpTarget) && (rspan < maxFlank)) {
-	  if ((gcContent[pos] > gcbound.first) && (gcContent[pos] < gcbound.second) && (uniqContent[pos] >= c.fragmentUnique * c.meanisize)) {
-	    rcov += cov[pos];
-	    rexp += gcbias[gcContent[pos]].coverage;
+	{
+	  double covsum = 0, expcov = 0;
+	  int32_t span = 0;
+	  for(int32_t pos = bppos; (pos < (int32_t) hdr->target_len[refIndex]) && (span < maxFlank) && (zr.size() < 8); ++pos, ++span) {
+	    if ((gcContent[pos] > gcbound.first) && (gcContent[pos] < gcbound.second) && (uniqContent[pos] >= c.fragmentUnique * c.meanisize)) {
+	      covsum += cov[pos];
+	      expcov += gcbias[gcContent[pos]].coverage;
+	      if (expcov >= subExp) { zr.push_back(std::log2(std::max(covsum / expcov, rFloor))); covsum = 0; expcov = 0; }
+	    }
 	  }
-	  ++pos;
-	  ++rspan;
 	}
-	if ((lexp >= 0.5 * flankExpTarget) && (rexp >= 0.5 * flankExpTarget)) {
-	  double cnL = c.ploidy * lcov / lexp;
-	  double cnR = c.ploidy * rcov / rexp;
-	  if (std::abs(cnL - cnR) >= c.minCnShift) {
+	if ((zl.size() >= 2) && (zr.size() >= 2)) {
+	  double mL = 0, mR = 0;
+	  for(uint32_t k = 0; k < zl.size(); ++k) mL += zl[k];
+	  mL /= (double) zl.size();
+	  for(uint32_t k = 0; k < zr.size(); ++k) mR += zr[k];
+	  mR /= (double) zr.size();
+	  double ss = 0;
+	  for(uint32_t k = 0; k < zl.size(); ++k) ss += (zl[k] - mL) * (zl[k] - mL);
+	  for(uint32_t k = 0; k < zr.size(); ++k) ss += (zr[k] - mR) * (zr[k] - mR);
+	  double sd = std::sqrt(ss / (double) (zl.size() + zr.size() - 2));
+	  double se = sd * std::sqrt(1.0 / (double) zl.size() + 1.0 / (double) zr.size());
+	  double cnL = c.ploidy * std::exp2(mL);
+	  double cnR = c.ploidy * std::exp2(mR);
+	  // Robust shift?
+	  if ((std::abs(cnL - cnR) >= c.minCnShift) && (std::abs(mR - mL) >= 3.0 * se)) {
 	    int32_t qual = 50 + (int32_t) std::min(support, (uint32_t) 40);
 	    chrbp.push_back(SVBreakpoint(bppos, -bpTol, bpTol, qual, (int32_t) support));
 	  }
