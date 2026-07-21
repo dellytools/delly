@@ -69,9 +69,7 @@ namespace torali
     int32_t seqCutoff;
     int32_t recurrentSamples;
     float repMinAF;
-    int32_t cnvMinSupport;
     int32_t cnvLargeSize;
-    int32_t cnvStrongQual;
     float cnvMinUniq;
     float cnvGainUniq;
     boost::filesystem::path outfile;
@@ -1567,8 +1565,8 @@ namespace torali
 	}
 	IntervalScore const& rep = (*iG)[repIdx];
 	int32_t size = (int32_t) (rep.end - rep.start);
-	bool lossOk = (suppLoss >= c.cnvMinSupport) || preciseLoss || (size >= c.cnvLargeSize) || ((rep.score >= c.cnvStrongQual) && (bestUniq >= c.cnvMinUniq));
-	bool gainOk = preciseGain || ((suppGain >= c.cnvMinSupport) && (bestUniq >= c.cnvGainUniq));
+	bool lossOk = (suppLoss >= c.recurrentSamples) || preciseLoss || (size >= c.cnvLargeSize) || ((rep.score >= c.qualthres) && (bestUniq >= c.cnvMinUniq));
+	bool gainOk = preciseGain || ((suppGain >= c.recurrentSamples) && (bestUniq >= c.cnvGainUniq));
 	if ((lossOk) || (gainOk)) {
 	  IntervalScore keep(rep.start, rep.end, rep.score);
 	  keep.suppLoss = suppLoss;
@@ -1882,7 +1880,8 @@ namespace torali
     generic.add_options()
       ("help,?", "show help message")
       ("outfile,o", boost::program_options::value<boost::filesystem::path>(&c.outfile), "Merged SV BCF output file")
-      ("quality,y", boost::program_options::value<int32_t>(&c.qualthres)->default_value(200), "min. SV site quality")
+      ("quality,y", boost::program_options::value<int32_t>(&c.qualthres)->default_value(200), "min. SV/CNV quality")
+      ("recurrent", boost::program_options::value<int32_t>(&c.recurrentSamples)->default_value(10), "carrier count to keep low-quality SVs/CNVs")
       ("chunks,u", boost::program_options::value<uint32_t>(&c.chunksize)->default_value(500), "max. chunk size to merge groups of BCF files")
       ("vaf,a", boost::program_options::value<float>(&c.vaf)->default_value(0.15), "min. fractional ALT support")
       ("coverage,v", boost::program_options::value<uint32_t>(&c.coverage)->default_value(5), "min. coverage")
@@ -1899,7 +1898,6 @@ namespace torali
       ("genome,g", boost::program_options::value<boost::filesystem::path>(&c.genome), "reference FASTA")
       ("bp-offset,b", boost::program_options::value<uint32_t>(&c.bpoffset)->default_value(1000), "default max. breakpoint offset")
       ("rec-overlap,r", boost::program_options::value<float>(&c.recoverlap)->default_value(0.8), "default min. reciprocal overlap")
-      ("recurrent", boost::program_options::value<int32_t>(&c.recurrentSamples)->default_value(10), "carrier count to keep low-quality SVs")
       ("rep-min-af", boost::program_options::value<float>(&c.repMinAF)->default_value(0.005), "min. carrier fraction to keep a redundant rare allele (0 disables)")
       ("mei-offset", boost::program_options::value<int32_t>(&c.meiOffset)->default_value(50), "max. breakpoint offset for MEIs")
       ("mei-sizeratio", boost::program_options::value<float>(&c.meiSizeRatio)->default_value(0.85), "min. size ratio for MEIs")
@@ -1915,9 +1913,7 @@ namespace torali
     // CNV merge options
     boost::program_options::options_description cnvmerge("CNV merge parameters (with -e)");
     cnvmerge.add_options()
-      ("cnv-min-support", boost::program_options::value<int32_t>(&c.cnvMinSupport)->default_value(10), "carrier count to keep a recurrent CNV")
       ("cnv-large-size", boost::program_options::value<int32_t>(&c.cnvLargeSize)->default_value(200000), "min. size for a loss to pass on read-depth alone")
-      ("cnv-strong-qual", boost::program_options::value<int32_t>(&c.cnvStrongQual)->default_value(200), "min. quality for a read-depth loss")
       ("cnv-min-uniq", boost::program_options::value<float>(&c.cnvMinUniq)->default_value(0.75), "min. UNIQ for a singleton loss")
       ("cnv-gain-uniq", boost::program_options::value<float>(&c.cnvGainUniq)->default_value(0.9), "min. UNIQ for a recurrent gain")
       ;
