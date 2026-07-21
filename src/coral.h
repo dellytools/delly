@@ -38,6 +38,7 @@ namespace torali
     uint32_t minBpSupport;
     float minCnShift;
     float cnMergeTol;
+    float cnMinCallable;
     float penalty;
     uint32_t meanisize;
     uint32_t window_size;
@@ -528,6 +529,7 @@ namespace torali
       ("min-bp-support", boost::program_options::value<uint32_t>(&c.minBpSupport)->default_value(3), "min. split-read support")
       ("penalty", boost::program_options::value<float>(&c.penalty)->default_value(3), "segmentation penalty")
       ("cnv-merge", boost::program_options::value<float>(&c.cnMergeTol)->default_value(0.25), "min. log2 ratio to separate CNVs")
+      ("cnv-min-callable", boost::program_options::value<float>(&c.cnMinCallable)->default_value(0.75), "min. callable fraction")
       ;
 
     boost::program_options::options_description cancer("Ploidy/purity correction");

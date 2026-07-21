@@ -647,7 +647,7 @@ namespace torali
 	int32_t absCN = (int32_t) boost::math::round(cnvs[i].cn);
 
 	// Segmentation
-	if (c.hasSegFile) segOut << bamhd->target_name[cnvs[i].chr] << '\t' << cnvs[i].start << '\t' << cnvs[i].end << "\tSEG" << (i + 1) << '\t' << cnvs[i].cn << '\n';
+	if ((c.hasSegFile) && (cnvs[i].mappable >= c.cnMinCallable)) segOut << bamhd->target_name[cnvs[i].chr] << '\t' << cnvs[i].start << '\t' << cnvs[i].end << "\tSEG" << (i + 1) << '\t' << cnvs[i].cn << '\n';
 
 	// Only true CNVs, unless in genotyping mode
 	if ((!c.hasGenoFile) && (absCN == c.ploidy)) continue;
@@ -708,10 +708,10 @@ namespace torali
 	if (c.hasGenoFile) rec->qual = cnvs[i].qval;  // Leave site quality in genotyping mode
 	else rec->qual = qval;
 	tmpi = bcf_hdr_id2int(hdr, BCF_DT_ID, "PASS");
-	if (rec->qual < 15) tmpi = bcf_hdr_id2int(hdr, BCF_DT_ID, "LowQual");
+	if ((rec->qual < 15) || (cnvs[i].mappable < c.cnMinCallable)) tmpi = bcf_hdr_id2int(hdr, BCF_DT_ID, "LowQual");
 	bcf_update_filter(hdr, rec, &tmpi, 1);
-	
-	if (gqval[0] < 15) ftarr[0] = "LowQual";
+
+	if ((gqval[0] < 15) || (cnvs[i].mappable < c.cnMinCallable)) ftarr[0] = "LowQual";
 	else ftarr[0] = "PASS";
 	std::vector<const char*> strp(bcf_hdr_nsamples(hdr));
 	std::transform(ftarr.begin(), ftarr.end(), strp.begin(), cstyle_str());	
