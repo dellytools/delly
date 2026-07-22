@@ -762,6 +762,32 @@ namespace torali
       }
       c.meanisize = ((int32_t) (li.median / 2)) * 2 + 1;
 
+      // Coverage-aware GC scan window 
+      bool autoScanWin = (!vm.count("scan-window")) || (vm["scan-window"].defaulted());
+      if ((autoScanWin) && (idx != NULL)) {
+	uint64_t totalMapped = 0;
+	uint64_t genomeLen = 0;
+	for(int32_t refIndex = 0; refIndex < hdr->n_targets; ++refIndex) {
+	  uint64_t mapped = 0;
+	  uint64_t unmapped = 0;
+	  hts_idx_get_stat(idx, refIndex, &mapped, &unmapped);
+	  if (mapped > 0) {
+	    totalMapped += mapped;
+	    genomeLen += hdr->target_len[refIndex];
+	  }
+	}
+	if (pairedLib) totalMapped /= 2;   // fragments
+	if ((totalMapped > 0) && (genomeLen > 0)) {
+	  double fragPerBp = (double) totalMapped / (double) genomeLen;
+	  uint32_t targetScanReads = 30; 
+	  uint32_t autoScan = (uint32_t) (targetScanReads / fragPerBp);
+	  if (autoScan < c.scanWindow) autoScan = c.scanWindow;
+	  uint32_t maxScan = 1000000;
+	  if (autoScan > maxScan) autoScan = maxScan;
+	  if (autoScan > c.scanWindow) c.scanWindow = autoScan;
+	}
+      }
+
       // Clean-up
       bam_hdr_destroy(hdr);
       hts_idx_destroy(idx);
@@ -799,7 +825,7 @@ namespace torali
 	  return 1;
 	}
 	if (sampleScanVec[sampleScanVec.size()/2] < 5) {
-	  std::cerr << "Please increase the window size. Coverage is too low!" << std::endl;
+	  std::cerr << "Coverage in the GC scan window is too low." << std::endl;
 	  return 1;
 	}
       }
