@@ -71,6 +71,11 @@ namespace torali
     float rcorr;
     float rddel;
     float rddup;
+    float maxsd;
+    float recCnv;
+    float pgerm;
+    float cn_offset;
+    uint16_t ploidy;
     std::string filter;
     std::set<std::string> tumorSet;
     std::set<std::string> controlSet;
@@ -80,10 +85,10 @@ namespace torali
   };
   
   
-  // One buffered record for the redundant SV search
+  // redundant SV buffer
   struct RedRec {
     bcf1_t* rec;
-    std::vector<int8_t> dos;   // GTs (0/1/2, -1 missing)
+    std::vector<int8_t> dos;
     std::string svtype;
     int32_t spos;
     int32_t epos;
@@ -120,6 +125,19 @@ namespace torali
     return true;
   }
 
+  // Reciprocal-overlap for CNVs
+  inline bool
+  _redReciprocal(RedRec const& a, RedRec const& b, float const recOverlap) {
+    if (a.svtype != b.svtype) return false;
+    int32_t ovlStart = std::max(a.spos, b.spos);
+    int32_t ovlEnd = std::min(a.epos, b.epos);
+    int32_t ovl = ovlEnd - ovlStart;
+    if (ovl <= 0) return false;
+    int32_t mx = std::max(a.epos - a.spos, b.epos - b.spos);
+    if (mx <= 0) return false;
+    return ((float) ovl / (float) mx >= recOverlap);
+  }
+
   // remove redundant SVs
   inline void
   _flushRedundancy(std::vector<RedRec>& win, int32_t const flushBelow, bool const flushAll, htsFile* ofile, bcf_hdr_t* hdr_out, bool const softFilter, int32_t const redId) {
@@ -141,6 +159,339 @@ namespace torali
     win.swap(keep);
   }
 
+  // Somatic CNV filter
+  template<typename TConfig>
+  inline bool
+  _filterSomaticCNV(TConfig const& c, bcf_hdr_t* hdr, bcf_hdr_t* hdr_out, bcf1_t* rec) {
+    int32_t nsmpl = bcf_hdr_nsamples(hdr);
+    int32_t nrdcn = 0;
+    int32_t nrdsd = 0;
+    float* rdcn = NULL;
+    float* rdsd = NULL;
+    bcf_get_format_float(hdr, rec, "RDCN", &rdcn, &nrdcn);
+    bcf_get_format_float(hdr, rec, "RDSD", &rdsd, &nrdsd);
+    bool fail = true;
+    if ((rdcn != NULL) && (rdsd != NULL) && (nrdcn >= nsmpl) && (nrdsd >= nsmpl)) {
+      typedef std::pair<float, float> TCnSd;
+      std::vector<TCnSd> control;
+      std::vector<TCnSd> tumor;
+      bool invalidCNV = false;
+      for (int32_t i = 0; i < nsmpl; ++i) {
+	if ((!std::isfinite(rdcn[i])) || (rdcn[i] == -1)) { invalidCNV = true; break; }
+	if (c.controlSet.find(hdr->samples[i]) != c.controlSet.end()) control.push_back(std::make_pair(rdcn[i], rdsd[i]));
+	else if (c.tumorSet.find(hdr->samples[i]) != c.tumorSet.end()) tumor.push_back(std::make_pair(rdcn[i], rdsd[i]));
+      }
+      if ((!invalidCNV) && (!tumor.empty()) && (!control.empty())) {
+	double bestCnOffset = 0;
+	bool somaticcnv = false;
+	double lowestp = 1;
+	for (uint32_t i = 0; i < tumor.size(); ++i) {
+	  bool germcnv = false;
+	  double highestprob = 0;
+	  double tcnoffset = -1;
+	  for (uint32_t k = 0; k < control.size(); ++k) {
+	    boost::math::normal s1(control[k].first, std::max(0.025, (double) control[k].second));
+	    double prob1 = boost::math::pdf(s1, tumor[i].first);
+	    boost::math::normal s2(tumor[i].first, std::max(0.025, (double) tumor[i].second));
+	    double prob2 = boost::math::pdf(s2, control[k].first);
+	    double prob = std::max(prob1, prob2);
+	    if (prob > c.pgerm) germcnv = true;
+	    else if (prob > highestprob) highestprob = prob;
+	    double cndiff = std::abs(tumor[i].first - control[k].first);
+	    if (cndiff < c.cn_offset) germcnv = true;
+	    else if ((tcnoffset == -1) || (cndiff < tcnoffset)) tcnoffset = cndiff;
+	  }
+	  if (!germcnv) {
+	    somaticcnv = true;
+	    if ((highestprob < lowestp) && (tcnoffset > bestCnOffset)) { lowestp = highestprob; bestCnOffset = tcnoffset; }
+	  }
+	}
+	if (somaticcnv) {
+	  fail = false;
+	  _remove_info_tag(hdr_out, rec, "SOMATIC");
+	  bcf_update_info_flag(hdr_out, rec, "SOMATIC", NULL, 1);
+	  float pg = (float) lowestp;
+	  _remove_info_tag(hdr_out, rec, "PGERM");
+	  bcf_update_info_float(hdr_out, rec, "PGERM", &pg, 1);
+	  float cndiv = (float) bestCnOffset;
+	  _remove_info_tag(hdr_out, rec, "CNDIFF");
+	  bcf_update_info_float(hdr_out, rec, "CNDIFF", &cndiv, 1);
+	}
+      }
+    }
+    if (rdcn != NULL) free(rdcn);
+    if (rdsd != NULL) free(rdsd);
+    return fail;
+  }
+
+  // Germline CNV filter
+  template<typename TConfig>
+  inline bool
+  _filterGermlineCNV(TConfig const& c, bcf_hdr_t* hdr, bcf_hdr_t* hdr_out, bcf1_t* rec, std::vector<int8_t>& dos, int32_t& cnvac, int32_t& cnvncalled, std::string& outSvtype) {
+    int32_t nsmpl = bcf_hdr_nsamples(hdr);
+    outSvtype = "CNV";
+
+    // Fetch copy-number state fields
+    int32_t ncnval = 0;
+    int32_t* cnval = NULL;
+    int32_t nrdcn = 0;
+    float* rdcn = NULL;
+    int32_t nrdsd = 0;
+    float* rdsd = NULL;
+    int32_t ngqval = 0;
+    int32_t* gqval = NULL;
+    int32_t ncnl = 0;
+    float* cnl = NULL;
+    bcf_get_format_int32(hdr, rec, "CN", &cnval, &ncnval);
+    bcf_get_format_float(hdr, rec, "RDCN", &rdcn, &nrdcn);
+    bcf_get_format_float(hdr, rec, "RDSD", &rdsd, &nrdsd);
+    bcf_get_format_int32(hdr, rec, "GQ", &gqval, &ngqval);
+    bcf_get_format_float(hdr, rec, "CNL", &cnl, &ncnl);
+    char** ftin = NULL; int nftin = 0;
+    int32_t rft = bcf_get_format_string(hdr, rec, "FT", &ftin, &nftin);
+    bool ok = ((rdcn != NULL) && (nrdcn >= nsmpl));
+    if (ok && (ncnval < nsmpl)) cnval = (int32_t*) realloc(cnval, nsmpl * sizeof(int32_t));
+    if (ok && (ngqval < nsmpl)) gqval = (int32_t*) realloc(gqval, nsmpl * sizeof(int32_t));
+    if (ok && (ncnl < nsmpl * MAX_CN)) cnl = (float*) realloc(cnl, nsmpl * MAX_CN * sizeof(float));
+    int32_t* gts = (int32_t*) malloc(nsmpl * 2 * sizeof(int32_t));
+    int32_t* plval = (int32_t*) malloc(nsmpl * 3 * sizeof(int32_t));
+    std::vector<bool> validSmpl(nsmpl, false);
+    std::vector<bool> confident(nsmpl, false);
+    dos.assign(nsmpl, (int8_t) -1);
+    cnvac = 0;
+    cnvncalled = 0;
+
+    bool refined = false;
+    bool keep = false;
+    int32_t ncar = 0;
+    double ficStore = 0;
+    double hwepvalStore = 1;
+    double cnsdStore = 0;
+
+    if (ok) {
+      // CN-shift
+      double shiftSum = 0;
+      int32_t nconf = 0;
+      for (int32_t i = 0; i < nsmpl; ++i) {
+	if ((std::isfinite(rdcn[i])) && (rdcn[i] != -1)) {
+	  validSmpl[i] = true;
+	  if ((rft > 0) && (ftin[i] != NULL) && (std::string(ftin[i]) == "PASS")) {
+	    confident[i] = true;
+	    shiftSum += boost::math::round(rdcn[i]) - rdcn[i];
+	    ++nconf;
+	  }
+	}
+      }
+      double cnshift = (nconf > 0) ? (shiftSum / (double) nconf) : 0;
+
+      // DEL or DUP?
+      std::vector<int32_t> cncount(MAX_CN, 0);
+      int32_t hdel = 0;
+      int32_t hdup = 0;
+      int32_t hbeyond = 0;
+      for (int32_t i = 0; i < nsmpl; ++i) {
+	if (!validSmpl[i]) continue;
+	rdcn[i] += cnshift;
+	if (!confident[i]) continue;
+	int32_t r = boost::math::iround(rdcn[i]);
+	if ((r >= 0) && (r < MAX_CN)) ++cncount[r];
+	if ((r == 0) || (r == 1)) ++hdel;
+	else if ((r == 3) || (r == 4)) ++hdup;
+	else if (r >= 5) ++hbeyond;
+      }
+      ncar = hdel + hdup + hbeyond;
+      int32_t cnmain = 0;
+      for (uint32_t k = 1; k < MAX_CN; ++k) {
+	if (cncount[k] > cncount[cnmain]) cnmain = k;
+      }
+      std::string cls = "CNV";
+      if ((nconf < 50) || (ncar == 0)) cls = "DROP";
+      else if ((hdel >= hdup) && ((double) (hdup + hbeyond) <= 0.05 * (double) ncar)) cls = "DEL";
+      else if ((hdup > hdel) && ((double) (hdel + hbeyond) <= 0.05 * (double) ncar)) cls = "DUP";
+
+      if (cls != "DROP") {
+	keep = true;
+	outSvtype = cls;
+	bool biallelic = ((cls == "DEL") || (cls == "DUP"));
+	int32_t sRR = 2;
+	int32_t sRA = 1;
+	int32_t sAA = 0;
+	if (cls == "DUP") {
+	  sRA = 3;
+	  sAA = 4;
+	}
+
+	// Population SD
+	double sMean = 0;
+	double sVar = 0;
+	int32_t nMain = 0;
+	for (int32_t i = 0; i < nsmpl; ++i) {
+	  if ((confident[i]) && (boost::math::iround(rdcn[i]) == cnmain)) {
+	    sMean += rdcn[i];
+	    ++nMain;
+	  }
+	}
+	if (nMain > 0) sMean /= (double) nMain;
+	for (int32_t i = 0; i < nsmpl; ++i) {
+	  if ((confident[i]) && (boost::math::iround(rdcn[i]) == cnmain)) sVar += (rdcn[i] - sMean) * (rdcn[i] - sMean);
+	}
+	double sd = (nMain > 0) ? std::sqrt(sVar / (double) nMain) : 0.025;
+	if (sd < 0.025) sd = 0.025;
+	cnsdStore = sd;
+
+	// Recompute copy-number likelihoods
+	typedef std::vector<double> TGLs;
+	std::vector<TGLs> glVector;
+	for (int32_t i = 0; i < nsmpl; ++i) {
+	  if (!validSmpl[i]) {
+	    gts[i*2] = bcf_gt_missing; gts[i*2 + 1] = bcf_gt_missing;
+	    for (int32_t k = 0; k < 3; ++k) plval[i*3 + k] = bcf_int32_missing;
+	    cnval[i] = bcf_int32_missing;
+	    gqval[i] = 0;
+	    continue;
+	  }
+	  _computeCNLs(c, rdcn[i], sd, cnl, gqval, i);
+	  cnval[i] = boost::math::iround(rdcn[i]);
+	  if (!biallelic) {
+	    // multi-allelic CNV
+	    gts[i*2] = bcf_gt_missing; gts[i*2 + 1] = bcf_gt_missing;
+	    for (int32_t k = 0; k < 3; ++k) plval[i*3 + k] = bcf_int32_missing;
+	    continue;
+	  }
+	  double glRR = cnl[i*MAX_CN + sRR];
+	  double glRA = cnl[i*MAX_CN + sRA];
+	  double glAA = cnl[i*MAX_CN + sAA];
+	  int32_t bestGt = 0;
+	  double glbest = glRR;
+	  if (glRA > glbest) {
+	    bestGt = 1;
+	    glbest = glRA;
+	  }
+	  if (glAA > glbest) {
+	    bestGt = 2;
+	    glbest = glAA;
+	  }
+	  plval[i*3 + 0] = (int32_t) std::max(0.0, boost::math::round(-10.0 * (glRR - glbest)));
+	  plval[i*3 + 1] = (int32_t) std::max(0.0, boost::math::round(-10.0 * (glRA - glbest)));
+	  plval[i*3 + 2] = (int32_t) std::max(0.0, boost::math::round(-10.0 * (glAA - glbest)));
+	  if (bestGt == 0) {
+	    gts[i*2] = bcf_gt_unphased(0);
+	    gts[i*2 + 1] = bcf_gt_unphased(0);
+	  }
+	  else if (bestGt == 1) {
+	    gts[i*2] = bcf_gt_unphased(0);
+	    gts[i*2 + 1] = bcf_gt_unphased(1);
+	  }
+	  else {
+	    gts[i*2] = bcf_gt_unphased(1);
+	    gts[i*2 + 1] = bcf_gt_unphased(1);
+	  }
+	  if (confident[i]) {
+	    TGLs tri(3);
+	    tri[0] = std::pow((double) 10.0, glRR);
+	    tri[1] = std::pow((double) 10.0, glRA);
+	    tri[2] = std::pow((double) 10.0, glAA);
+	    glVector.push_back(tri);
+	    dos[i] = (int8_t) bestGt;
+	    cnvac += bestGt;
+	    ++cnvncalled;
+	  }
+	}
+
+	// Population estimates
+	if (!glVector.empty()) {
+	  refined = true;
+	  double hweAF[2];
+	  hweAF[0] = 0.5;
+	  hweAF[1] = 0.5;
+	  _estBiallelicAF(c, glVector, hweAF);
+	  double mleGTFreq[3];
+	  mleGTFreq[0] = 0;
+	  mleGTFreq[1] = 0;
+	  mleGTFreq[2] = 0;
+	  _estBiallelicGTFreq(c, glVector, mleGTFreq);
+	  double Fic = 0;
+	  _estBiallelicFIC(glVector, hweAF, Fic);
+	  double rsq = 0;
+	  _estBiallelicRSQ(glVector, hweAF, rsq);
+	  double pval = 1;
+	  _estBiallelicHWE_LRT(glVector, hweAF, mleGTFreq, pval);
+	  ficStore = Fic;
+	  hwepvalStore = pval;
+	  float afmle = (float) hweAF[1];
+	  int32_t acmle = (int32_t) boost::math::iround(hweAF[1] * 2.0 * (double) glVector.size());
+	  float gfmle[3];
+	  gfmle[0] = (float) mleGTFreq[0];
+	  gfmle[1] = (float) mleGTFreq[1];
+	  gfmle[2] = (float) mleGTFreq[2];
+	  float ficv = (float) Fic;
+	  float rsqv = (float) rsq;
+	  float hwev = (float) pval;
+	  _remove_info_tag(hdr_out, rec, "AFmle");
+	  bcf_update_info_float(hdr_out, rec, "AFmle", &afmle, 1);
+	  _remove_info_tag(hdr_out, rec, "ACmle");
+	  bcf_update_info_int32(hdr_out, rec, "ACmle", &acmle, 1);
+	  _remove_info_tag(hdr_out, rec, "GFmle");
+	  bcf_update_info_float(hdr_out, rec, "GFmle", gfmle, 3);
+	  _remove_info_tag(hdr_out, rec, "FIC");
+	  bcf_update_info_float(hdr_out, rec, "FIC", &ficv, 1);
+	  _remove_info_tag(hdr_out, rec, "RSQ");
+	  bcf_update_info_float(hdr_out, rec, "RSQ", &rsqv, 1);
+	  _remove_info_tag(hdr_out, rec, "HWEpval");
+	  bcf_update_info_float(hdr_out, rec, "HWEpval", &hwev, 1);
+	}
+
+	// Relabel
+	float cnsh = (float) cnshift; float cnsdv = (float) sd;
+	_remove_info_tag(hdr_out, rec, "CNSHIFT");
+	bcf_update_info_float(hdr_out, rec, "CNSHIFT", &cnsh, 1);
+	_remove_info_tag(hdr_out, rec, "CNSD");
+	bcf_update_info_float(hdr_out, rec, "CNSD", &cnsdv, 1);
+	_remove_info_tag(hdr_out, rec, "SUBTYPE");
+	const char* subt = "CNV";
+	bcf_update_info_string(hdr_out, rec, "SUBTYPE", subt);
+	bcf_update_info_string(hdr_out, rec, "SVTYPE", cls.c_str());
+	std::string alleles = (cls == "DEL") ? "N,<DEL>" : ((cls == "DUP") ? "N,<DUP>" : "N,<CNV>");
+	bcf_update_alleles_str(hdr_out, rec, alleles.c_str());
+
+	// Genotype fields
+	std::vector<std::string> ftarr(nsmpl, "PASS");
+	for (int32_t i = 0; i < nsmpl; ++i) {
+	  if ((!confident[i]) || (gqval[i] < 15)) ftarr[i] = "LowQual";
+	}
+	std::vector<const char*> strp(nsmpl);
+	std::transform(ftarr.begin(), ftarr.end(), strp.begin(), cstyle_str());
+	bcf_update_genotypes(hdr_out, rec, gts, nsmpl * 2);
+	bcf_update_format_int32(hdr_out, rec, "CN", cnval, nsmpl);
+	bcf_update_format_float(hdr_out, rec, "CNL", cnl, nsmpl * MAX_CN);
+	if (biallelic) bcf_update_format_int32(hdr_out, rec, "PL", plval, nsmpl * 3);
+	bcf_update_format_int32(hdr_out, rec, "GQ", gqval, nsmpl);
+	bcf_update_format_string(hdr_out, rec, "FT", &strp[0], nsmpl);
+	bcf_update_format_float(hdr_out, rec, "RDCN", rdcn, nsmpl);
+      }
+    }
+
+    // Filter
+    bool failgerm = false;
+    if (!keep) failgerm = true;
+    if (cnsdStore > c.maxsd) failgerm = true;
+    if ((refined) && (ncar >= 10) && (c.hwe > 0) && (ficStore < 0) && (hwepvalStore < c.hwe)) failgerm = true;
+    if ((keep) && (!failgerm)) {
+      int32_t fltid = bcf_hdr_id2int(hdr_out, BCF_DT_ID, "PASS");
+      bcf_update_filter(hdr_out, rec, &fltid, 1);
+    }
+
+    if (cnval != NULL) free(cnval);
+    if (rdcn != NULL) free(rdcn);
+    if (rdsd != NULL) free(rdsd);
+    if (gqval != NULL) free(gqval);
+    if (cnl != NULL) free(cnl);
+    if (ftin != NULL) { free(ftin[0]); free(ftin); }
+    free(gts);
+    free(plval);
+    return failgerm;
+  }
+
   template<typename TFilterConfig>
   inline int
   filterRun(TFilterConfig const& c) {
@@ -159,6 +510,10 @@ namespace torali
       bcf_hdr_append(hdr_out, "##INFO=<ID=RDRATIO,Number=1,Type=Float,Description=\"Read-depth ratio of tumor vs. normal.\">");
       bcf_hdr_remove(hdr_out, BCF_HL_INFO, "SOMATIC");
       bcf_hdr_append(hdr_out, "##INFO=<ID=SOMATIC,Number=0,Type=Flag,Description=\"Somatic structural variant.\">");
+      bcf_hdr_remove(hdr_out, BCF_HL_INFO, "PGERM");
+      bcf_hdr_append(hdr_out, "##INFO=<ID=PGERM,Number=1,Type=Float,Description=\"Probability of being germline.\">");
+      bcf_hdr_remove(hdr_out, BCF_HL_INFO, "CNDIFF");
+      bcf_hdr_append(hdr_out, "##INFO=<ID=CNDIFF,Number=1,Type=Float,Description=\"Absolute tumor-control copy-number difference.\">");
       if (c.softFilter) {
 	bcf_hdr_append(hdr_out, "##FILTER=<ID=FailDellyFilter,Description=\"Failed delly filter.\">");
 	bcf_hdr_append(hdr_out, "##FILTER=<ID=FailSomatic,Description=\"Failed somatic filter (likely germline variant).\">");
@@ -174,6 +529,15 @@ namespace torali
       bcf_hdr_append(hdr_out, "##INFO=<ID=FIC,Number=1,Type=Float,Description=\"Inbreeding coefficient.\">");
       bcf_hdr_append(hdr_out, "##INFO=<ID=RSQ,Number=1,Type=Float,Description=\"Imputation quality R^2.\">");
       bcf_hdr_append(hdr_out, "##INFO=<ID=HWEpval,Number=1,Type=Float,Description=\"HWE likelihood-ratio test p-value.\">");
+      bcf_hdr_remove(hdr_out, BCF_HL_INFO, "CNSHIFT");
+      bcf_hdr_append(hdr_out, "##INFO=<ID=CNSHIFT,Number=1,Type=Float,Description=\"Estimated CN shift.\">");
+      bcf_hdr_remove(hdr_out, BCF_HL_INFO, "CNSD");
+      bcf_hdr_append(hdr_out, "##INFO=<ID=CNSD,Number=1,Type=Float,Description=\"CN standard deviation.\">");
+      bcf_hdr_remove(hdr_out, BCF_HL_INFO, "SUBTYPE");
+      bcf_hdr_append(hdr_out, "##INFO=<ID=SUBTYPE,Number=1,Type=String,Description=\"Structural variant subtype.\">");
+      if (bcf_hdr_id2int(hdr_out, BCF_DT_ID, "PL") < 0) bcf_hdr_append(hdr_out, "##FORMAT=<ID=PL,Number=G,Type=Integer,Description=\"Phred-scaled genotype likelihoods for RR,RA,AA genotypes.\">");
+      if (bcf_hdr_id2int(hdr_out, BCF_DT_ID, "DEL") < 0) bcf_hdr_append(hdr_out, "##ALT=<ID=DEL,Description=\"Deletion\">");
+      if (bcf_hdr_id2int(hdr_out, BCF_DT_ID, "DUP") < 0) bcf_hdr_append(hdr_out, "##ALT=<ID=DUP,Description=\"Duplication\">");
       if (c.softFilter) {
 	bcf_hdr_append(hdr_out, "##FILTER=<ID=RedundantSV,Description=\"Redundant SV site.\">");
 	bcf_hdr_append(hdr_out, "##FILTER=<ID=FailDellyFilter,Description=\"Failed delly filter.\">");
@@ -226,14 +590,17 @@ namespace torali
     while (bcf_read(ifile, hdr, rec) == 0) {
       bcf_unpack(rec, BCF_UN_INFO);
 
-      // Advance the collapse window: flush records that can no longer have a redundant partner
-      if (collapse) {
-	if (rec->rid != redChrom) { _flushRedundancy(redWin, 0, true, ofile, hdr_out, c.softFilter, redId); redChrom = rec->rid; }
-	else _flushRedundancy(redWin, rec->pos - c.rdist, false, ofile, hdr_out, c.softFilter, redId);
-      }
-
-      // Check SV type
+      // Redundant SVs
       bcf_get_info_string(hdr, rec, "SVTYPE", &svt, &nsvt);
+      bool cnvRec = ((germline) && (std::string(svt) == "CNV"));
+      if (collapse) {
+	if (rec->rid != redChrom) {
+	  _flushRedundancy(redWin, 0, true, ofile, hdr_out, c.softFilter, redId); redChrom = rec->rid;
+	}
+	else {
+	  if (!cnvRec) _flushRedundancy(redWin, rec->pos - c.rdist, false, ofile, hdr_out, c.softFilter, redId);
+	}
+      }
 
       // Check size and PASS
       bcf_get_info_int32(hdr, rec, "END", &svend, &nsvend);
@@ -241,9 +608,102 @@ namespace torali
       if (c.filterForPass) pass = (bcf_has_filter(hdr, rec, const_cast<char*>("PASS"))==1);
       int32_t svlen = 1;
       if (svend != NULL) svlen = *svend - rec->pos;
+
+      // Germline CNV
+      if ((germline) && (std::string(svt) == "CNV")) {
+	if ((pass) && (svlen >= c.minsize) && (svlen <= c.maxsize)) {
+	  bcf_unpack(rec, BCF_UN_ALL);
+	  bool cnprecise = (bcf_get_info_flag(hdr, rec, "PRECISE", 0, 0) > 0);
+	  std::vector<int8_t> cdos;
+	  int32_t cdosac = 0, cdosncalled = 0;
+	  std::string cnsvt = "CNV";
+	  bool failgerm = _filterGermlineCNV(c, hdr, hdr_out, rec, cdos, cdosac, cdosncalled, cnsvt);
+	  if (!failgerm) {
+	    if (collapse) {
+	      // Collect CNV
+	      RedRec rr;
+	      rr.rec = bcf_dup(rec);
+	      rr.svtype = cnsvt;
+	      rr.spos = rec->pos;
+	      rr.epos = (svend != NULL) ? (*svend) : rec->pos;
+	      rr.len = std::abs(svlen);
+	      rr.qual = rec->qual;
+	      rr.precise = cnprecise;
+	      rr.eligible = true;
+	      rr.redundant = false;
+	      rr.dos.swap(cdos);
+	      rr.ac = cdosac;
+	      rr.ncalled = cdosncalled;
+	      // Collapse
+	      for(std::vector<RedRec>::iterator wit = redWin.begin(); wit != redWin.end(); ++wit) {
+		if ((!wit->eligible) || (wit->redundant)) continue;
+		if (_redReciprocal(rr, *wit, c.recCnv)) {
+		  double r2 = _dosageR2(rr.dos, wit->dos, c.rminshared);
+		  if (r2 >= (double) c.rcorr) {
+		    if (_redBetter(rr, *wit)) wit->redundant = true;
+		    else {
+		      rr.redundant = true;
+		      break;
+		    }
+		  }
+		}
+	      }
+	      redWin.push_back(rr);
+	    } else bcf_write1(ofile, hdr_out, rec);
+	  } else if (c.softFilter) {
+	    int32_t tmpi = bcf_hdr_id2int(hdr_out, BCF_DT_ID, "FailGermline");
+	    bcf_update_filter(hdr_out, rec, &tmpi, 1);
+	    if (collapse) {
+	      RedRec rr;
+	      rr.rec = bcf_dup(rec);
+	      rr.svtype = cnsvt;
+	      rr.spos = rec->pos;
+	      rr.epos = (svend != NULL) ? (*svend) : rec->pos;
+	      rr.len = 0; rr.qual = rec->qual; rr.precise = cnprecise;
+	      rr.eligible = false; rr.redundant = false; rr.ac = 0; rr.ncalled = 0;
+	      redWin.push_back(rr);
+	    } else bcf_write1(ofile, hdr_out, rec);
+	  }
+	} else if (c.softFilter) {
+	  int32_t tmpi = bcf_hdr_id2int(hdr_out, BCF_DT_ID, "FailDellyFilter");
+	  bcf_update_filter(hdr_out, rec, &tmpi, 1);
+	  if (collapse) {
+	    RedRec rr;
+	    rr.rec = bcf_dup(rec);
+	    rr.svtype = "CNV";
+	    rr.spos = rec->pos;
+	    rr.epos = (svend != NULL) ? (*svend) : rec->pos;
+	    rr.len = 0; rr.qual = rec->qual; rr.precise = false;
+	    rr.eligible = false; rr.redundant = false; rr.ac = 0; rr.ncalled = 0;
+	    redWin.push_back(rr);
+	  } else bcf_write1(ofile, hdr_out, rec);
+	}
+	continue;
+      }
+
+      // Somatic CNV
+      if (std::string(svt) == "CNV") {
+	if ((pass) && (svlen >= c.minsize) && (svlen <= c.maxsize)) {
+	  bcf_unpack(rec, BCF_UN_ALL);
+	  bool failsom = _filterSomaticCNV(c, hdr, hdr_out, rec);
+	  if (!failsom) bcf_write1(ofile, hdr_out, rec);
+	  else if (c.softFilter) {
+	    int32_t tmpi = bcf_hdr_id2int(hdr_out, BCF_DT_ID, "FailSomatic");
+	    bcf_update_filter(hdr_out, rec, &tmpi, 1);
+	    bcf_write1(ofile, hdr_out, rec);
+	  }
+	} else if (c.softFilter) {
+	  int32_t tmpi = bcf_hdr_id2int(hdr_out, BCF_DT_ID, "FailDellyFilter");
+	  bcf_update_filter(hdr_out, rec, &tmpi, 1);
+	  bcf_write1(ofile, hdr_out, rec);
+	}
+	continue;
+      }
+
+      // SVs
       int32_t inslenVal = 0;
       if (bcf_get_info_int32(hdr, rec, "INSLEN", &inslen, &ninslen) > 0) inslenVal = *inslen;
-      if ((rec->qual >= c.qualthres) && (pass) && ((std::string(svt) == "BND") || ((std::string(svt) == "INS") && (inslenVal >= c.minsize) && (inslenVal <= c.maxsize)) || ((std::string(svt) != "BND") && (std::string(svt) != "INS") && (svlen >= c.minsize) && (svlen <= c.maxsize)))) {
+      if ((rec->qual >= c.qualthres) && (pass) && ((std::string(svt) == "BND") ||((std::string(svt) == "INS") && (inslenVal >= c.minsize) && (inslenVal <= c.maxsize)) || ((std::string(svt) != "BND") && (std::string(svt) != "INS") && (svlen >= c.minsize) && (svlen <= c.maxsize)))) {
 	// Check genotypes
 	bcf_unpack(rec, BCF_UN_ALL);
 	bool precise = false;
@@ -512,7 +972,8 @@ namespace torali
 	} else bcf_write1(ofile, hdr_out, rec);
       }
     }
-    // Flush any records still buffered in the collapse window
+    
+    // Remaining records?
     if (collapse) _flushRedundancy(redWin, 0, true, ofile, hdr_out, c.softFilter, redId);
     bcf_destroy(rec);
 
@@ -559,43 +1020,49 @@ namespace torali
     generic.add_options()
       ("help,?", "show help message")
       ("filter,f", boost::program_options::value<std::string>(&c.filter)->default_value("somatic"), "Filter mode (somatic, germline)")
-      ("outfile,o", boost::program_options::value<boost::filesystem::path>(&c.outfile), "Filtered SV BCF output file")
-      ("quality,y", boost::program_options::value<int32_t>(&c.qualthres)->default_value(300), "min. SV site quality")
-      ("altaf,a", boost::program_options::value<float>(&c.altaf)->default_value(0.03), "min. fractional ALT support")
-      ("minsize,m", boost::program_options::value<int32_t>(&c.minsize)->default_value(0), "min. SV size")
-      ("maxsize,n", boost::program_options::value<int32_t>(&c.maxsize)->default_value(500000000), "max. SV size")
-      ("ratiogeno,r", boost::program_options::value<float>(&c.ratiogeno)->default_value(0.75), "min. fraction of genotyped samples")
+      ("outfile,o", boost::program_options::value<boost::filesystem::path>(&c.outfile), "Filtered SV/CNV BCF output file")
+      ("minsize,m", boost::program_options::value<int32_t>(&c.minsize)->default_value(0), "min. SV/CNV size")
+      ("maxsize,n", boost::program_options::value<int32_t>(&c.maxsize)->default_value(500000000), "max. SV/CNV size")
+      ("quality,y", boost::program_options::value<int32_t>(&c.qualthres)->default_value(300), "min. site quality (SV)")
+      ("altaf,a", boost::program_options::value<float>(&c.altaf)->default_value(0.03), "min. fractional ALT support (SV)")
+      ("ratiogeno,r", boost::program_options::value<float>(&c.ratiogeno)->default_value(0.75), "min. fraction of genotyped samples (SV)")
       ("pass,p", "Filter sites for PASS")
-      ("tag,t", "Tag filtered sites in the FILTER column instead of removing them")
+      ("tag,t", "Tag filtered sites")
       ;
 
     // Define somatic options
     boost::program_options::options_description somatic("Somatic options");
     somatic.add_options()
-      ("samples,s", boost::program_options::value<boost::filesystem::path>(&c.samplefile), "Two-column sample file listing sample name and tumor or control")
-      ("coverage,v", boost::program_options::value<int32_t>(&c.coverage)->default_value(10), "min. coverage in tumor")
-      ("controlcontamination,c", boost::program_options::value<float>(&c.controlcont)->default_value(0.0), "max. fractional ALT support in control")
+      ("samples,s", boost::program_options::value<boost::filesystem::path>(&c.samplefile), "sample file")
+      ("coverage,v", boost::program_options::value<int32_t>(&c.coverage)->default_value(10), "min. coverage in tumor (SV)")
+      ("controlcont,c", boost::program_options::value<float>(&c.controlcont)->default_value(0.0), "max. frac. ALT support in control (SV)")
+      ("pgerm", boost::program_options::value<float>(&c.pgerm)->default_value(0.001), "probability germline (CNV)")
+      ("cn-offset", boost::program_options::value<float>(&c.cn_offset)->default_value(0.2), "min. tumor-control CN offset (CNV)")
       ;
 
     // Define germline options
     boost::program_options::options_description germline("Germline options");
     germline.add_options()
-      ("rddel,e", boost::program_options::value<float>(&c.rddel)->default_value(0.8), "max. read-depth ratio of carrier vs. non-carrier for a deletion")
-      ("rddup,u", boost::program_options::value<float>(&c.rddup)->default_value(1.2), "min. read-depth ratio of carrier vs. non-carrier for a duplication")
-      ("genogq,j", boost::program_options::value<float>(&c.genogq)->default_value(10), "set genotypes below this posterior GQ to missing")
-      ("hwe,w", boost::program_options::value<float>(&c.hwe)->default_value(0.000001), "min. HWE p-value for excess-heterozygosity (one-sided; set 0 to disable)")
-      ("no-refine", boost::program_options::bool_switch(&c.noRefine), "disable population refinement")
-      ("no-collapse", boost::program_options::bool_switch(&c.noCollapse), "disable redundant-SV collapse")
-      ("rdist", boost::program_options::value<int32_t>(&c.rdist)->default_value(250), "max. breakpoint distance for redundant SVs")
-      ("rsize", boost::program_options::value<float>(&c.rsize)->default_value(0.8), "min. size ratio for redundant SVs")
-      ("rcorr", boost::program_options::value<float>(&c.rcorr)->default_value(0.8), "min. genotype r-squared for redundant SVs")
-      ("rminshared", boost::program_options::value<int32_t>(&c.rminshared)->default_value(20), "min. samples to assess GT concordance")
+      ("rddel,e", boost::program_options::value<float>(&c.rddel)->default_value(0.8), "max. RD ratio for DEL (SV)")
+      ("rddup,u", boost::program_options::value<float>(&c.rddup)->default_value(1.2), "min. RD ratio for DUP (SV)")
+      ("genogq,j", boost::program_options::value<float>(&c.genogq)->default_value(10), "min. GQ for non-missing (SV)")
+      ("rdist", boost::program_options::value<int32_t>(&c.rdist)->default_value(250), "max. BP distance for redundant sites (SV)")
+      ("rsize", boost::program_options::value<float>(&c.rsize)->default_value(0.8), "min. size ratio for redundant sites (SV)")
+      ("maxsd", boost::program_options::value<float>(&c.maxsd)->default_value(0.5), "max. population copy-number SD (CNV)")
+      ("cnv-ploidy", boost::program_options::value<uint16_t>(&c.ploidy)->default_value(2), "baseline ploidy for CNV genotyping (CNV)")
+      ("cnv-reciprocal", boost::program_options::value<float>(&c.recCnv)->default_value(0.8), "min. reciprocal overlap (CNV)")
+      ("hwe,w", boost::program_options::value<float>(&c.hwe)->default_value(0.000001), "min. HWE p-value for excess-het")
+      ("no-collapse", boost::program_options::bool_switch(&c.noCollapse), "disable redundant-site collapse")
+      ("no-refine", boost::program_options::bool_switch(&c.noRefine), "disable population refinement (SV)")
+
       ;
 
     // Define hidden options
     boost::program_options::options_description hidden("Hidden options");
     hidden.add_options()
       ("input-file", boost::program_options::value<boost::filesystem::path>(&c.vcffile), "input file")
+      ("rcorr", boost::program_options::value<float>(&c.rcorr)->default_value(0.8), "min. genotype R^2 for redundant sites")
+      ("rminshared", boost::program_options::value<int32_t>(&c.rminshared)->default_value(20), "min. samples to assess GT concordance")
       ;
     boost::program_options::positional_options_description pos_args;
     pos_args.add("input-file", -1);

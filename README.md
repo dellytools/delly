@@ -12,7 +12,7 @@
 [![GitHub license](https://img.shields.io/badge/License-BSD%203--Clause-blue.svg)](https://github.com/dellytools/delly/blob/main/LICENSE)
 [![GitHub Releases](https://img.shields.io/github/release/dellytools/delly.svg)](https://github.com/dellytools/delly/releases)
 
-Delly is an integrated structural variant (SV) prediction method that can discover, genotype and visualize deletions, insertions, tandem duplications, inversions and translocations at single-nucleotide resolution in short-read and long-read whole-genome sequencing data. It uses paired-ends, split-reads and read-depth to discover and genotype SVs in the genome.
+Delly is an integrated structural variant (SV) and copy-number variant (CNV) prediction method that can discover, genotype and visualize deletions, insertions, tandem duplications, inversions and translocations at single-nucleotide resolution in short-read and long-read whole-genome sequencing data. It uses paired-ends, split-reads and read-depth to discover and genotype SVs in the genome.
 
 # Installing Delly
 
@@ -72,7 +72,6 @@ Somatic SV calling is available for short-reads (subcommand: sr) and long-reads 
 `delly [sr|lr] -o t1.bcf -g hg38.fa tumor1.bam control1.bam ... controlN.bam`
 
 
-
 ## Germline SV calling
 
 Germline SV calling is available for short-reads (subcommand: sr) and long-reads (subcommand: lr).
@@ -100,6 +99,81 @@ Germline SV calling is available for short-reads (subcommand: sr) and long-reads
 `delly filter -f germline -o germline.bcf merged.bcf`
 
 
+## CNV calling
+
+You can generate read-depth profiles with delly using
+
+`delly cnv -g hg38.fa -c out.cov.gz -o out.bcf -u out.seg.bed input.bam`
+
+You can optionally use a [mappability map](https://gear-genomics.embl.de/data/delly/) to improve read-depth normalization.
+
+`delly cnv -g hg38.fa -m hg38.map -c out.cov.gz -o out.bcf -u out.seg.bed input.bam`
+
+The output file `out.cov.gz` and read-depth segmentation can be plotted using [R](https://www.r-project.org/)
+
+`Rscript R/rd.R out.cov.gz out.seg.bed`
+
+Instead of segmenting the read-depth information, you can also visualize the CNV calls.
+
+`bcftools query -f "%CHROM\t%POS\t%INFO/END\t%ID[\t%RDCN]\n" out.bcf > seg.bed`
+
+`Rscript R/rd.R out.cov.gz seg.bed`
+
+
+## Germline CNV calling
+
+Germline CNV calling can be done using short- or long-reads using this workflow.
+
+* Call CNVs for each sample
+
+`delly cnv -o c1.bcf -g hg38.fa input.bam`
+
+* Merge CNVs into a unified CNV site list
+
+`delly merge -e -o sites.bcf c1.bcf c2.bcf ... cN.bcf`
+
+* Genotype CNVs for each sample
+
+`delly cnv -v sites.bcf -g hg38.fa -o geno1.bcf input.bam`
+
+* Merge genotypes using [bcftools](https://github.com/samtools/bcftools)
+
+`bcftools merge -m id -O b -o merged.bcf geno1.bcf ... genoN.bcf`
+
+* Apply the germline CNV filter
+
+`delly filter -f germline -o germline.bcf merged.bcf`
+
+* Optional: Plot copy-number distributions for large number of samples (>>100)
+
+`bcftools query -f "%ID[\t%RDCN]\n" filtered.bcf > plot.tsv`
+
+`Rscript R/cnv.R plot.tsv`
+
+## Somatic copy-number alterations (SCNAs)
+
+* CNVs are first called on the tumor genome. Depending on the coverage, tumor purity and heterogeneity you can adapt parameters `-z`, `-t` and `-x` which control the sensitivity of SCNA detection.
+
+`delly cnv -o tumor.bcf -c tumor.cov.gz -g hg38.fa tumor.bam`
+
+* Then these CNVs are genotyped in the control sample.
+
+`delly cnv -v tumor.bcf -o control.bcf -g hg38.fa control.bam`
+
+* You can then merge both files using [bcftools](https://github.com/samtools/bcftools).
+
+`bcftools merge -m id -O b -o tumor_control.bcf tumor.bcf control.bcf`
+
+* Somatic filtering requires a tab-delimited sample description file where the first column is the sample id (as in the VCF/BCF file) and the second column is either tumor or control.
+
+`delly filter -p -f somatic -o somatic.bcf -s samples.tsv tumor_control.bcf`
+
+* Optional: Plot the SCNAs using bcftools and R.
+
+`bcftools query -s tumor -f "%CHROM\t%POS\t%INFO/END\t%ID[\t%RDCN]\n" somatic.bcf > segmentation.bed`
+
+`Rscript R/rd.R tumor.cov.gz segmentation.bed`
+
 
 ## Examples
 
@@ -116,7 +190,6 @@ More in-depth tutorials for SV calling are available here:
 * Short-read SV calling: [https://github.com/tobiasrausch/vc](https://github.com/tobiasrausch/vc)
 
 * Long-read SV calling: [https://github.com/tobiasrausch/sv](https://github.com/tobiasrausch/sv)
-
 
 
 ## Alternate alignments for genome graphs
@@ -146,91 +219,6 @@ Structural variants are still reported with respect to GRCh38 coordinates but th
 Please note that for inter-chromosomal translocations, delly uses `INFO/CHR2` for the second chromosome. You can convert an inter-chromosomal translocation to the two-record breakend format using:
 
 `python scripts/delly2bnd.py -v delly.bcf -r hg38.fa -o delly.bnd.bcf`
-
-
-## Read-depth profiles and copy-number variant calling
-
-You can generate read-depth profiles with delly. This requires a mappability map which can be downloaded here:
-
-[Mappability Maps](https://gear-genomics.embl.de/data/delly/)
-
-The command to count reads in 10kbp mappable windows and normalize the coverage is:
-
-`delly cnv -a -g hg38.fa -m hg38.map -c out.cov.gz -o out.bcf input.bam`
-
-The output file `out.cov.gz` can be plotted using [R](https://www.r-project.org/) to generate normalized copy-number profiles and segment the read-depth information:
-
-`Rscript R/rd.R out.cov.gz`
-
-Instead of segmenting the read-depth information, you can also visualize the CNV calls.
-
-`bcftools query -f "%CHROM\t%POS\t%INFO/END\t%ID[\t%RDCN]\n" out.bcf > seg.bed`
-
-`Rscript R/rd.R out.cov.gz seg.bed`
-
-With `-s` you can output a statistics file with GC bias information.
-
-`delly cnv -g hg38.fa -m hg38.map -c out.cov.gz -o out.bcf -s stats.gz input.bam`
-
-`zcat stats.gz | grep "^GC" > gc.bias.tsv`
-
-`Rscript R/gcbias.R gc.bias.tsv`
-
-
-## Germline CNV calling
-
-Delly uses GC and mappability fragment correction to call CNVs. This requires a [mappability map](https://gear-genomics.embl.de/data/delly/).
-
-* Call CNVs for each sample and optionally refine breakpoints using delly SV calls
-
-`delly cnv -o c1.bcf -g hg38.fa -m hg38.map -l delly.sv.bcf input.bam`
-
-* Merge CNVs into a unified site list
-
-`delly merge -e -p -o sites.bcf -m 1000 -n 100000 c1.bcf c2.bcf ... cN.bcf`
-
-* Genotype CNVs for each sample
-
-`delly cnv -u -v sites.bcf -g hg38.fa -m hg38.map -o geno1.bcf input.bam`
-
-* Merge genotypes using [bcftools](https://github.com/samtools/bcftools)
-
-`bcftools merge -m id -O b -o merged.bcf geno1.bcf ... genoN.bcf`
-
-* Filter for germline CNVs
-
-`delly classify -f germline -o filtered.bcf merged.bcf`
-
-* Optional: Plot copy-number distribution for large number of samples (>>100)
-
-`bcftools query -f "%ID[\t%RDCN]\n" filtered.bcf > plot.tsv`
-
-`Rscript R/cnv.R plot.tsv`
-
-
-## Somatic copy-number alterations (SCNAs)
-
-* For somatic copy-number alterations, delly first segments the tumor genome (`-u` is required). Depending on the coverage, tumor purity and heterogeneity you can adapt parameters `-z`, `-t` and `-x` which control the sensitivity of SCNA detection.
-
-`delly cnv -u -z 10000 -o tumor.bcf -c tumor.cov.gz -g hg38.fa -m hg38.map tumor.bam`
-
-* Then these tumor SCNAs are genotyped in the control sample (`-u` is required).
-
-`delly cnv -u -v tumor.bcf -o control.bcf -g hg38.fa -m hg38.map control.bam`
-
-* The VCF IDs are matched between tumor and control. Thus, you can merge both files using [bcftools](https://github.com/samtools/bcftools).
-
-`bcftools merge -m id -O b -o tumor_control.bcf tumor.bcf control.bcf`
-
-* Somatic filtering requires a tab-delimited sample description file where the first column is the sample id (as in the VCF/BCF file) and the second column is either tumor or control.
-
-`delly classify -p -f somatic -o somatic.bcf -s samples.tsv tumor_control.bcf`
-
-* Optional: Plot the SCNAs using bcftools and R.
-
-`bcftools query -s tumor -f "%CHROM\t%POS\t%INFO/END\t%ID[\t%RDCN]\n" somatic.bcf > segmentation.bed`
-
-`Rscript R/rd.R tumor.cov.gz segmentation.bed`
 
 
 # FAQ

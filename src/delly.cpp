@@ -13,7 +13,6 @@
 #include "version.h"
 #include "delly.h"
 #include "filter.h"
-#include "classify.h"
 #include "merge.h"
 #include "tegua.h"
 #include "coral.h"
@@ -26,18 +25,15 @@ inline void
 displayUsage() {
   std::cerr << "Usage: delly <command> <arguments>" << std::endl;
   std::cerr << std::endl;
-  std::cerr << "SV calling:" << std::endl;
+  std::cerr << "SV/CNV calling:" << std::endl;
   std::cerr << "    sr           short-read SV discovery" << std::endl;
   std::cerr << "    lr           long-read SV discovery" << std::endl;
   std::cerr << "    asm          assembly-based SV discovery" << std::endl;
+  std::cerr << "    cnv          short- or long-read CNV discovery" << std::endl;
   std::cerr << std::endl;
-  std::cerr << "SV merging and filtering:" << std::endl;
-  std::cerr << "    merge        merge structural variants" << std::endl;
-  std::cerr << "    filter       filter somatic or germline structural variants" << std::endl;
-  std::cerr << std::endl;
-  std::cerr << "Copy-number variant calling:" << std::endl;
-  std::cerr << "    cnv          discover and genotype copy-number variants" << std::endl;
-  std::cerr << "    classify     classify somatic or germline copy-number variants" << std::endl;
+  std::cerr << "SV/CNV merging and filtering:" << std::endl;
+  std::cerr << "    merge        merge variants" << std::endl;
+  std::cerr << "    filter       filter somatic or germline variants" << std::endl;
   std::cerr << std::endl;
 }
 
@@ -78,9 +74,6 @@ int main(int argc, char **argv) {
     }
     else if ((std::string(argv[1]) == "cnv")) {
       return coral(argc-1,argv+1);
-    }
-    else if ((std::string(argv[1]) == "classify")) {
-      return classify(argc-1,argv+1);
     }
     else if ((std::string(argv[1]) == "filter")) {
       return filter(argc-1,argv+1);

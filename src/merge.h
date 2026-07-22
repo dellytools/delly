@@ -1879,9 +1879,10 @@ namespace torali
     boost::program_options::options_description generic("Generic options");
     generic.add_options()
       ("help,?", "show help message")
+      ("genome,g", boost::program_options::value<boost::filesystem::path>(&c.genome), "reference FASTA")
       ("outfile,o", boost::program_options::value<boost::filesystem::path>(&c.outfile), "Merged SV BCF output file")
       ("quality,y", boost::program_options::value<int32_t>(&c.qualthres)->default_value(200), "min. SV/CNV quality")
-      ("recurrent", boost::program_options::value<int32_t>(&c.recurrentSamples)->default_value(10), "carrier count to keep low-quality SVs/CNVs")
+      ("recurrent,q", boost::program_options::value<int32_t>(&c.recurrentSamples)->default_value(10), "carrier count to keep low-quality SVs/CNVs")
       ("chunks,u", boost::program_options::value<uint32_t>(&c.chunksize)->default_value(500), "max. chunk size to merge groups of BCF files")
       ("vaf,a", boost::program_options::value<float>(&c.vaf)->default_value(0.15), "min. fractional ALT support")
       ("coverage,v", boost::program_options::value<uint32_t>(&c.coverage)->default_value(5), "min. coverage")
@@ -1895,7 +1896,6 @@ namespace torali
     // Define overlap options
     boost::program_options::options_description svmerge("SV merge parameters");
     svmerge.add_options()
-      ("genome,g", boost::program_options::value<boost::filesystem::path>(&c.genome), "reference FASTA")
       ("bp-offset,b", boost::program_options::value<uint32_t>(&c.bpoffset)->default_value(1000), "default max. breakpoint offset")
       ("rec-overlap,r", boost::program_options::value<float>(&c.recoverlap)->default_value(0.8), "default min. reciprocal overlap")
       ("rep-min-af", boost::program_options::value<float>(&c.repMinAF)->default_value(0.005), "min. carrier fraction to keep a redundant rare allele (0 disables)")
