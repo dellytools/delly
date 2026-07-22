@@ -49,7 +49,7 @@ For PacBio sequencing data:
 
 For a haplotype-resolved assembly:
 
-`delly asm -y diploid -g hg38.fa> s1.h1.bam s1.h2.bam s2.h1.bam s2.h2.bam ...`
+`delly asm -y diploid -g hg38.fa s1.h1.bam s1.h2.bam s2.h1.bam s2.h2.bam ...`
 
 For a so-called squashed assembly:
 
@@ -146,7 +146,7 @@ Germline CNV calling can be done using short- or long-reads using this workflow.
 
 * Optional: Plot copy-number distributions for large number of samples (>>100)
 
-`bcftools query -f "%ID[\t%RDCN]\n" filtered.bcf > plot.tsv`
+`bcftools query -f "%ID[\t%RDCN]\n" germline.bcf > plot.tsv`
 
 `Rscript R/cnv.R plot.tsv`
 
