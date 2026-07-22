@@ -228,12 +228,37 @@ namespace torali
       }
       bam_destroy1(rec);
       hts_itr_destroy(iter);
+
+      // No mappability
+      if (!c.hasMapFile) {
+	for(uint32_t pos = 0; pos < hdr->target_len[refIndex]; ++pos) {
+	  bool u;
+	  if (covMap[pos] == 0) u = ((ref[pos] != 'N') && (ref[pos] != 'n'));
+	  else u = (2 * (uint32_t) covUniq[pos] >= (uint32_t) covMap[pos]);
+	  uniqContent[pos] = (u ? (uint16_t) c.meanisize : 0);
+	}
+	// hom-del or unmappable?
+	uint32_t maxHomDel = 1000000;
+	uint32_t rstart = 0;
+	while (rstart < hdr->target_len[refIndex]) {
+	  if (covMap[rstart] == 0) {
+	    uint32_t rend = rstart;
+	    while ((rend < hdr->target_len[refIndex]) && (covMap[rend] == 0)) ++rend;
+	    bool leftOK = (rstart > 0) && (uniqContent[rstart - 1] > 0);
+	    bool rightOK = (rend < hdr->target_len[refIndex]) && (uniqContent[rend] > 0);
+	    if ((!leftOK) || (!rightOK) || (rend - rstart > maxHomDel)) {
+	      for(uint32_t k = rstart; k < rend; ++k) uniqContent[k] = 0;
+	    }
+	    rstart = rend;
+	  } else ++rstart;
+	}
+      }
       if (seq != NULL) free(seq);
       if (ref != NULL) free(ref);
 
       // Summarize GC coverage
       for(uint32_t i = 0; i < hdr->target_len[refIndex]; ++i) {
-	bool uniqPos = (c.hasMapFile) ? (uniqContent[i] >= c.fragmentUnique * c.meanisize) : ((covMap[i] > 0) && (2 * (uint32_t) covUniq[i] >= (uint32_t) covMap[i]));
+	bool uniqPos = (uniqContent[i] >= c.fragmentUnique * c.meanisize);
 	if (uniqPos) {
 	  // Valid bin?
 	  int32_t bin = _findScanWindow(c, hdr->target_len[refIndex], binMap, i);
