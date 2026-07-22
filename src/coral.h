@@ -2,6 +2,7 @@
 #define CORAL_H
 
 #include <limits>
+#include <iomanip>
 
 #include <boost/icl/split_interval_map.hpp>
 #include <boost/dynamic_bitset.hpp>
@@ -868,7 +869,7 @@ namespace torali
 	double effReads = molPerBp * winBp;
 	double covDepth = c.basecov ? covMean : (covMean * readLen);
 	now = boost::posix_time::second_clock::local_time();
-	std::cerr << '[' << boost::posix_time::to_simple_string(now) << "] " << "Auto window size: " << (uint32_t) winBp << " bp, " << (uint32_t) effReads << " reads/window (" << (c.basecov ? "base-level" : "fragment") << ", coverage " << (uint32_t) (covDepth + 0.5) << "x)" << std::endl;
+	std::cerr << '[' << boost::posix_time::to_simple_string(now) << "] " << "Auto window size: " << (uint32_t) winBp << " bp, " << (uint32_t) effReads << " reads/window (" << (c.basecov ? "base-level" : "fragment") << ", coverage " << std::fixed << std::setprecision(2) << covDepth << std::defaultfloat << "x)" << std::endl;
       }
     }
 
