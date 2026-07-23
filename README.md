@@ -111,7 +111,7 @@ The output file `out.cov.gz` and the segmentation `out.seg.bed` can be plotted u
 
 Instead of the segmentation, you can also visualize the CNV calls.
 
-`bcftools query -f "%CHROM\t%POS\t%INFO/END\t%ID[\t%RDCN]\n" out.bcf > seg.bed`
+`bcftools query -i 'QUAL>200' -f "%CHROM\t%POS\t%INFO/END\t%ID[\t%RDCN]\n" out.bcf > seg.bed`
 
 `Rscript R/rd.R out.cov.gz seg.bed`
 
