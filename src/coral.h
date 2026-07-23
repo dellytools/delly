@@ -36,7 +36,6 @@ namespace torali
     uint32_t minClip;
     uint32_t minRefSep;
     uint32_t minBpSupport;
-    float minCnShift;
     float cnMergeTol;
     float cnMinCallable;
     float penalty;

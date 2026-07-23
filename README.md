@@ -148,7 +148,7 @@ Germline CNV calling can be done using short- or long-reads using this workflow.
 
 ## Somatic copy-number alterations (SCNAs)
 
-* CNVs are first called on the tumor genome. Depending on the coverage, tumor purity and heterogeneity you can adapt parameters `-z`, `-t` and `-x` which control the sensitivity of SCNA detection.
+* CNVs are first called on the tumor genome. Depending on the coverage and tumor purity you can adapt the minimum CNV size (`-z`) and the sample purity (`-p`) which affect the sensitivity of SCNA detection.
 
 `delly cnv -o tumor.bcf -c tumor.cov.gz -g hg38.fa tumor.bam`
 

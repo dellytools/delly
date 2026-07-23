@@ -450,25 +450,6 @@ namespace torali
     return (alignmentLength(rec) / 2);
   }
 
-  // Base-level read-depth
-  template<typename TCoverage>
-  inline void
-  addBaseCoverage(bam1_t const* rec, TCoverage& cov, uint32_t const reflen, uint32_t const maxCoverage) {
-    int32_t rp = rec->core.pos; // reference pointer
-    const uint32_t* cigar = bam_get_cigar(rec);
-    for (std::size_t i = 0; i < rec->core.n_cigar; ++i) {
-      int32_t op = bam_cigar_op(cigar[i]);
-      uint32_t ol = bam_cigar_oplen(cigar[i]);
-      if ((op == BAM_CMATCH) || (op == BAM_CEQUAL) || (op == BAM_CDIFF)) {
-	for (uint32_t k = 0; k < ol; ++k, ++rp) {
-	  if ((rp >= 0) && (rp < (int32_t) reflen) && (cov[rp] < maxCoverage - 1)) ++cov[rp];
-	}
-      } else if ((op == BAM_CDEL) || (op == BAM_CREF_SKIP)) {
-	rp += ol;
-      }
-    }
-  }
-
   // Base-level read-depth with high MAPQ track
   template<typename TCoverage>
   inline void

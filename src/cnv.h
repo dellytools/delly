@@ -69,6 +69,7 @@ namespace torali
     int32_t bpTol = (int32_t) (2 * c.minClip);
     double flankExpTarget = (c.targetExpCov > 0) ? c.targetExpCov : 1000.0;
     int32_t maxFlank = 1000000;
+    double minCnShift = 0.5;
     uint32_t i = 0;
     while (i < clips.size()) {
       // Cluster split-reads
@@ -121,7 +122,7 @@ namespace torali
 	  double cnL = c.ploidy * std::exp2(mL);
 	  double cnR = c.ploidy * std::exp2(mR);
 	  // Robust shift?
-	  if ((std::abs(cnL - cnR) >= c.minCnShift) && (std::abs(mR - mL) >= 3.0 * se)) {
+	  if ((std::abs(cnL - cnR) >= minCnShift) && (std::abs(mR - mL) >= 3.0 * se)) {
 	    int32_t qual = 50 + (int32_t) std::min(support, (uint32_t) 40);
 	    chrbp.push_back(SVBreakpoint(bppos, -bpTol, bpTol, qual, (int32_t) support));
 	  }
