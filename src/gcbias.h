@@ -46,26 +46,151 @@ namespace torali
       }
     }
     if (lowerBound >= upperBound) upperBound = lowerBound + 1;
-    /*
-    // Adjust total
-    uint64_t totalSampleCount = 0;
-    uint64_t totalReferenceCount = 0;
-    for(uint32_t i = lowerBound + 1; i < upperBound; ++i) {
-      totalSampleCount += gcbias[i].sample;
-      totalReferenceCount += gcbias[i].reference;
-    }    
-    // Re-estimate observed/expected
-    for(uint32_t i = lowerBound + 1; i < upperBound; ++i) {
-      gcbias[i].fractionSample = (double) gcbias[i].sample / (double) totalSampleCount;
-      gcbias[i].fractionReference = (double) gcbias[i].reference / (double) totalReferenceCount;
-      gcbias[i].obsexp = 1;
-      if (gcbias[i].fractionReference > 0) gcbias[i].obsexp = gcbias[i].fractionSample / gcbias[i].fractionReference;
-    }
-    */
-    
     return std::make_pair(lowerBound, upperBound);
   }
 
+
+  // Map window GC fraction to region
+  inline double
+  regCorrFactor(std::vector<double> const& regcorr, double const gcfrac) {
+    if (regcorr.empty()) return 1.0;
+    int32_t b = (int32_t) (gcfrac * (double) (regcorr.size() - 1) + 0.5);
+    if (b < 0) b = 0;
+    if (b >= (int32_t) regcorr.size()) b = (int32_t) regcorr.size() - 1;
+    return (regcorr[b] > 0) ? regcorr[b] : 1.0;
+  }
+
+  // Smooth GC curve
+  inline void
+  smoothFillCurve(std::vector<double>& curve, std::vector<double> const& weight) {
+    int32_t n = (int32_t) curve.size();
+    if (n < 3) return;
+    double last = 0;
+    bool have = false;
+    for(int32_t i = 0; i < n; ++i) {
+      if (weight[i] > 0) { last = curve[i]; have = true; }
+      else if (have) curve[i] = last;
+    }
+    last = 0; have = false;
+    for(int32_t i = n - 1; i >= 0; --i) {
+      if (weight[i] > 0) { last = curve[i]; have = true; }
+      else if (have) curve[i] = last;
+    }
+    // 3-bin smoothing
+    std::vector<double> sm(curve);
+    for(int32_t i = 1; i + 1 < n; ++i) {
+      double w0 = weight[i-1] + 1.0;
+      double w1 = 2.0 * (weight[i] + 1.0);
+      double w2 = weight[i+1] + 1.0;
+      sm[i] = (curve[i-1] * w0 + curve[i] * w1 + curve[i+1] * w2) / (w0 + w1 + w2);
+    }
+    curve = sm;
+  }
+
+  // Regional GC correction
+  template<typename TConfig, typename TGCBound>
+  inline void
+  estimateRegionalGc(TConfig const& c, TGCBound const& gcbound, std::vector<GcBias> const& gcbias, std::vector<std::vector<ScanWindow> > const& scanCounts, uint32_t const regWin, std::vector<double>& regcorr) {
+    uint32_t const nbin = 101;
+    regcorr.assign(nbin, 1.0);
+    std::vector<std::vector<double> > ratios(nbin);
+
+    // Reference GC
+    samFile* samfile = sam_open(c.bamFile.string().c_str(), "r");
+    bam_hdr_t* hdr = sam_hdr_read(samfile);
+    faidx_t* faiRef = fai_load(c.genome.string().c_str());
+    boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
+    std::cerr << '[' << boost::posix_time::to_simple_string(now) << "] " << "Estimate regional GC correction" << std::endl;
+
+    uint32_t const sw = (c.scanWindow > 0) ? c.scanWindow : 10000;
+    uint32_t const grp = std::max((uint32_t) 1, regWin / sw);
+
+    for (int refIndex = 0; refIndex < hdr->n_targets; ++refIndex) {
+      if (scanCounts[refIndex].empty()) continue;
+      std::string tname(hdr->target_name[refIndex]);
+      int32_t seqlen = faidx_seq_len(faiRef, tname.c_str());
+      if (seqlen == -1) continue;
+      else seqlen = -1;
+      char* ref = faidx_fetch_seq(faiRef, tname.c_str(), 0, faidx_seq_len(faiRef, tname.c_str()), &seqlen);
+      if (ref == NULL) continue;
+
+      // GC content
+      std::vector<uint16_t> gcContent(hdr->target_len[refIndex], 0);
+      {
+	typedef boost::dynamic_bitset<> TBitSet;
+	TBitSet gcref(hdr->target_len[refIndex], false);
+	for(uint32_t i = 0; i < hdr->target_len[refIndex]; ++i) {
+	  if ((ref[i] == 'c') || (ref[i] == 'C') || (ref[i] == 'g') || (ref[i] == 'G')) gcref[i] = 1;
+	}
+	int32_t halfwin = (int32_t) (c.meanisize / 2);
+	int32_t gcsum = 0;
+	for(int32_t pos = halfwin; pos < (int32_t) hdr->target_len[refIndex] - halfwin; ++pos) {
+	  if (pos == halfwin) { for(int32_t i = pos - halfwin; i <= pos + halfwin; ++i) gcsum += gcref[i]; }
+	  else { gcsum -= gcref[pos - halfwin - 1]; gcsum += gcref[pos + halfwin]; }
+	  gcContent[pos] = gcsum;
+	}
+      }
+      free(ref);
+
+      // Regional windows
+      uint32_t nb = (uint32_t) scanCounts[refIndex].size();
+      for(uint32_t g0 = 0; g0 < nb; g0 += grp) {
+	uint32_t g1 = std::min(nb, g0 + grp);
+	double observed = 0;
+	for(uint32_t bi = g0; bi < g1; ++bi) observed += (double) scanCounts[refIndex][bi].cov;
+	int32_t rstart = scanCounts[refIndex][g0].start;
+	int32_t rend = scanCounts[refIndex][g1 - 1].end;
+	if (rend > (int32_t) hdr->target_len[refIndex]) rend = (int32_t) hdr->target_len[refIndex];
+	if (rend <= rstart) continue;
+	double fineExp = 0;
+	double gcnum = 0;
+	uint32_t winlen = 0;
+	for(int32_t pos = rstart; pos < rend; ++pos) {
+	  if ((gcContent[pos] > gcbound.first) && (gcContent[pos] < gcbound.second)) {
+	    fineExp += gcbias[gcContent[pos]].coverage;
+	    gcnum += gcContent[pos];
+	    ++winlen;
+	  }
+	}
+	uint32_t totalBases = (uint32_t) (rend - rstart);
+	if ((winlen >= totalBases / 2) && (fineExp > 0) && (observed > 0)) {
+	  double obsValid = observed * ((double) winlen / (double) totalBases);
+	  double gcfrac = (gcnum / (double) winlen) / (double) c.meanisize;
+	  int32_t b = (int32_t) (gcfrac * (double) (nbin - 1) + 0.5);
+	  if ((b >= 0) && (b < (int32_t) nbin)) ratios[b].push_back(obsValid / fineExp);
+	}
+      }
+    }
+    fai_destroy(faiRef);
+    sam_close(samfile);
+    bam_hdr_destroy(hdr);
+
+    // Median per GC bin
+    std::vector<double> weight(nbin, 0);
+    double wsum = 0;
+    double wtot = 0;
+    for(uint32_t b = 0; b < nbin; ++b) {
+      if (ratios[b].size() >= 10) {
+	std::sort(ratios[b].begin(), ratios[b].end());
+	double med = ratios[b][ratios[b].size() / 2];
+	regcorr[b] = med;
+	weight[b] = (double) ratios[b].size();
+	wsum += med * (double) ratios[b].size();
+	wtot += (double) ratios[b].size();
+      } else regcorr[b] = 0;
+    }
+    // Preserve the ploidy baseline
+    double mean = (wtot > 0) ? (wsum / wtot) : 1.0;
+    if (mean > 0) {
+      for(uint32_t b = 0; b < nbin; ++b) {
+	if (weight[b] > 0) regcorr[b] /= mean;
+      }
+    }
+    smoothFillCurve(regcorr, weight);
+    for(uint32_t b = 0; b < nbin; ++b) {
+      if (regcorr[b] <= 0) regcorr[b] = 1.0;
+    }
+  }
 
   template<typename TConfig, typename TGCBound>
   inline void
@@ -80,8 +205,6 @@ namespace torali
     boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
     std::cerr << '[' << boost::posix_time::to_simple_string(now) << "] " << "Estimate GC bias" << std::endl;
 
-    faidx_t* faiMap = NULL;
-    if (c.hasMapFile) faiMap = fai_load(c.mapFile.string().c_str());
     faidx_t* faiRef = fai_load(c.genome.string().c_str());
     for (int refIndex = 0; refIndex < hdr->n_targets; ++refIndex) {
       if (scanCounts[refIndex].empty()) continue;
@@ -104,17 +227,7 @@ namespace torali
       char* ref = faidx_fetch_seq(faiRef, tname.c_str(), 0, faidx_seq_len(faiRef, tname.c_str()), &seqlen);
       if (ref == NULL) continue;
 
-      // Mappability map (optional)
-      char* seq = NULL;
-      if (c.hasMapFile) {
-	seqlen = faidx_seq_len(faiMap, tname.c_str());
-	if (seqlen == - 1) { if (ref != NULL) free(ref); continue; }
-	else seqlen = -1;
-	seq = faidx_fetch_seq(faiMap, tname.c_str(), 0, faidx_seq_len(faiMap, tname.c_str()), &seqlen);
-	if (seq == NULL) { free(ref); continue; }
-      }
-
-      // Get GC and Mappability
+      // Get GC content
       std::vector<uint16_t> uniqContent(hdr->target_len[refIndex], 0);
       std::vector<uint16_t> gcContent(hdr->target_len[refIndex], 0);
       {
@@ -125,32 +238,17 @@ namespace torali
 	  if ((ref[i] == 'c') || (ref[i] == 'C') || (ref[i] == 'g') || (ref[i] == 'G')) gcref[i] = 1;
 	}
 
-	// Mappability map
-	TBitSet uniq(hdr->target_len[refIndex], false);
-	if (c.hasMapFile) {
-	  for(uint32_t i = 0; i < hdr->target_len[refIndex]; ++i) {
-	    if (seq[i] == 'C') uniq[i] = true;
-	  }
-	}
-
 	// Sum across fragments
 	int32_t halfwin = (int32_t) (c.meanisize / 2);
-	int32_t usum = 0;
 	int32_t gcsum = 0;
 	for(int32_t pos = halfwin; pos < (int32_t) hdr->target_len[refIndex] - halfwin; ++pos) {
 	  if (pos == halfwin) {
-	    for(int32_t i = pos - halfwin; i<=pos+halfwin; ++i) {
-	      usum += uniq[i];
-	      gcsum += gcref[i];
-	    }
+	    for(int32_t i = pos - halfwin; i<=pos+halfwin; ++i) gcsum += gcref[i];
 	  } else {
-	    usum -= uniq[pos - halfwin - 1];
 	    gcsum -= gcref[pos - halfwin - 1];
-	    usum += uniq[pos + halfwin];
 	    gcsum += gcref[pos + halfwin];
 	  }
 	  gcContent[pos] = gcsum;
-	  if (c.hasMapFile) uniqContent[pos] = usum;
 	}
       }
 
@@ -159,13 +257,10 @@ namespace torali
       uint32_t maxCoverage = std::numeric_limits<TCount>::max();
       typedef std::vector<TCount> TCoverage;
       TCoverage cov(hdr->target_len[refIndex], 0);
-      TCoverage covUniq;
+      TCoverage covUniq(hdr->target_len[refIndex], 0);
       TCoverage covTot;
-      if (!c.hasMapFile) {
-	covUniq.resize(hdr->target_len[refIndex], 0);
-	if (!c.basecov) covTot.resize(hdr->target_len[refIndex], 0);
-      }
-      TCoverage& covMap = ((!c.hasMapFile) && (!c.basecov)) ? covTot : cov;
+      if (!c.basecov) covTot.resize(hdr->target_len[refIndex], 0);
+      TCoverage& covMap = (!c.basecov) ? covTot : cov;
 
       // Mate map
       typedef boost::unordered_map<std::size_t, bool> TMateMap;
@@ -181,15 +276,12 @@ namespace torali
 	if ((rec->core.flag & BAM_FPAIRED) && ((rec->core.flag & BAM_FMUNMAP) || (rec->core.tid != rec->core.mtid))) continue;
 	if (rec->core.qual < c.minQual) continue;
 	if (c.basecov) {
-	  if (c.hasMapFile) addBaseCoverage(rec, cov, hdr->target_len[refIndex], maxCoverage);
-	  else addBaseCoverage(rec, cov, covUniq, c.mapqUniq, hdr->target_len[refIndex], maxCoverage);
+	  addBaseCoverage(rec, cov, covUniq, c.mapqUniq, hdr->target_len[refIndex], maxCoverage);
 	  continue;
 	}
 
-	// Fragment counting
-
 	// Fill covTot
-	if (!c.hasMapFile) addBaseCoverage(rec, covTot, covUniq, c.mapqUniq, hdr->target_len[refIndex], maxCoverage);
+	addBaseCoverage(rec, covTot, covUniq, c.mapqUniq, hdr->target_len[refIndex], maxCoverage);
 
 	int32_t midPoint = rec->core.pos + halfAlignmentLength(rec);
 	if (rec->core.flag & BAM_FPAIRED) {
@@ -229,31 +321,28 @@ namespace torali
       bam_destroy1(rec);
       hts_itr_destroy(iter);
 
-      // No mappability
-      if (!c.hasMapFile) {
-	for(uint32_t pos = 0; pos < hdr->target_len[refIndex]; ++pos) {
-	  bool u;
-	  if (covMap[pos] == 0) u = ((ref[pos] != 'N') && (ref[pos] != 'n'));
-	  else u = (2 * (uint32_t) covUniq[pos] >= (uint32_t) covMap[pos]);
-	  uniqContent[pos] = (u ? (uint16_t) c.meanisize : 0);
-	}
-	// hom-del or unmappable?
-	uint32_t maxHomDel = 1000000;
-	uint32_t rstart = 0;
-	while (rstart < hdr->target_len[refIndex]) {
-	  if (covMap[rstart] == 0) {
-	    uint32_t rend = rstart;
-	    while ((rend < hdr->target_len[refIndex]) && (covMap[rend] == 0)) ++rend;
-	    bool leftOK = (rstart > 0) && (uniqContent[rstart - 1] > 0);
-	    bool rightOK = (rend < hdr->target_len[refIndex]) && (uniqContent[rend] > 0);
-	    if ((!leftOK) || (!rightOK) || (rend - rstart > maxHomDel)) {
-	      for(uint32_t k = rstart; k < rend; ++k) uniqContent[k] = 0;
-	    }
-	    rstart = rend;
-	  } else ++rstart;
-	}
+      // Callable positions
+      for(uint32_t pos = 0; pos < hdr->target_len[refIndex]; ++pos) {
+	bool u;
+	if (covMap[pos] == 0) u = ((ref[pos] != 'N') && (ref[pos] != 'n'));
+	else u = (2 * (uint32_t) covUniq[pos] >= (uint32_t) covMap[pos]);
+	uniqContent[pos] = (u ? (uint16_t) c.meanisize : 0);
       }
-      if (seq != NULL) free(seq);
+      // hom-del or unmappable?
+      uint32_t maxHomDel = 1000000;
+      uint32_t rstart = 0;
+      while (rstart < hdr->target_len[refIndex]) {
+	if (covMap[rstart] == 0) {
+	  uint32_t rend = rstart;
+	  while ((rend < hdr->target_len[refIndex]) && (covMap[rend] == 0)) ++rend;
+	  bool leftOK = (rstart > 0) && (uniqContent[rstart - 1] > 0);
+	  bool rightOK = (rend < hdr->target_len[refIndex]) && (uniqContent[rend] > 0);
+	  if ((!leftOK) || (!rightOK) || (rend - rstart > maxHomDel)) {
+	    for(uint32_t k = rstart; k < rend; ++k) uniqContent[k] = 0;
+	  }
+	  rstart = rend;
+	} else ++rstart;
+      }
       if (ref != NULL) free(ref);
 
       // Summarize GC coverage
@@ -275,6 +364,14 @@ namespace torali
     for(uint32_t i = 0; i < gcbias.size(); ++i) {
       if (gcbias[i].reference) gcbias[i].coverage /= (double) gcbias[i].reference;
       else gcbias[i].coverage = 0;
+    }
+    // Smooth
+    {
+      std::vector<double> cvals(gcbias.size(), 0);
+      std::vector<double> weight(gcbias.size(), 0);
+      for(uint32_t i = 0; i < gcbias.size(); ++i) { cvals[i] = gcbias[i].coverage; weight[i] = (double) gcbias[i].reference; }
+      smoothFillCurve(cvals, weight);
+      for(uint32_t i = 0; i < gcbias.size(); ++i) gcbias[i].coverage = cvals[i];
     }
 
     // Determine percentiles
@@ -329,7 +426,6 @@ namespace torali
     }
     
     fai_destroy(faiRef);
-    if (faiMap != NULL) fai_destroy(faiMap);
     hts_idx_destroy(idx);
     sam_close(samfile);
     bam_hdr_destroy(hdr);

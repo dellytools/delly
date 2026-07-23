@@ -101,19 +101,15 @@ Germline SV calling is available for short-reads (subcommand: sr) and long-reads
 
 ## CNV calling
 
-You can generate read-depth profiles with delly using
+`delly cnv` is a whole-genome read-depth method with GC-bias and mappability correction. Whole-exome or targeted data are not supported. You can generate read-depth profiles with delly using
 
 `delly cnv -g hg38.fa -c out.cov.gz -o out.bcf -u out.seg.bed input.bam`
 
-You can optionally use a [mappability map](https://gear-genomics.embl.de/data/delly/) to improve read-depth normalization.
-
-`delly cnv -g hg38.fa -m hg38.map -c out.cov.gz -o out.bcf -u out.seg.bed input.bam`
-
-The output file `out.cov.gz` and read-depth segmentation can be plotted using [R](https://www.r-project.org/)
+The output file `out.cov.gz` and the segmentation `out.seg.bed` can be plotted using [R](https://www.r-project.org/)
 
 `Rscript R/rd.R out.cov.gz out.seg.bed`
 
-Instead of segmenting the read-depth information, you can also visualize the CNV calls.
+Instead of the segmentation, you can also visualize the CNV calls.
 
 `bcftools query -f "%CHROM\t%POS\t%INFO/END\t%ID[\t%RDCN]\n" out.bcf > seg.bed`
 
@@ -183,7 +179,7 @@ Some small examples are included for short-read, long-read and copy-number varia
 
 `delly lr -g example/ref.fa -o lr.bcf example/lr.bam`
 
-`delly cnv -g example/ref.fa -m example/map.fa.gz -c out.cov.gz -o cnv.bcf example/sr.bam`
+`delly cnv -g example/ref.fa -c out.cov.gz -o cnv.bcf example/sr.bam`
 
 More in-depth tutorials for SV calling are available here:
 
@@ -237,17 +233,6 @@ BAM/CRAM files need to be sorted, indexed and ideally duplicate marked.
 
 * Usage/discussion mailing list?         
 There is a delly discussion group [delly-users](http://groups.google.com/d/forum/delly-users).
-
-* How can I compute a mappability map?               
-A basic mappability map can be built using [dicey](https://github.com/gear-genomics/dicey), [samtools](https://github.com/samtools/samtools) and [bwa](https://github.com/lh3/bwa) with the below commands (as an example for the sacCer3 reference):
-```
-dicey chop sacCer3.fa
-bwa index sacCer3.fa
-bwa mem sacCer3.fa read1.fq.gz read2.fq.gz | samtools sort -@ 8 -o srt.bam -
-samtools index srt.bam 
-dicey mappability2 srt.bam 
-gunzip map.fa.gz && bgzip map.fa && samtools faidx map.fa.gz 
-```
 
 # Citation
 

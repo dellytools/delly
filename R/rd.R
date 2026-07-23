@@ -33,6 +33,8 @@ if (length(args)>1) {
  # Provided on the command-line
  seg = read.table(args[2], header=F, sep="\t")
  colnames(seg) = c("chr", "start", "end", "id", "cn")
+ seg = seg[seg$chr %in% chrs,]
+ seg$chr = factor(seg$chr, levels=chrs)
 } else {
  # Segment logR
  cnaData = CNA(x$logratio, maploc=x$pos, chrom=x$chr, sampleid="Sample", presorted=T)

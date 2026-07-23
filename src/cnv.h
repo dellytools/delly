@@ -135,7 +135,7 @@ namespace torali
 
   template<typename TConfig, typename TGcBias, typename TCoverage>
   inline void
-  genotypeCNVs(TConfig const& c, std::pair<uint32_t, uint32_t> const& gcbound, std::vector<uint16_t> const& gcContent, std::vector<uint16_t> const& uniqContent, TGcBias const& gcbias, TCoverage const& cov, TCoverage const& covUniq, TCoverage const& covMap, bam_hdr_t const* hdr, int32_t const refIndex, std::vector<CNV>& cnvs) {
+  genotypeCNVs(TConfig const& c, std::pair<uint32_t, uint32_t> const& gcbound, std::vector<uint16_t> const& gcContent, std::vector<uint16_t> const& uniqContent, TGcBias const& gcbias, std::vector<float> const& tileFac, uint32_t const regWin, TCoverage const& cov, TCoverage const& covUniq, TCoverage const& covMap, bam_hdr_t const* hdr, int32_t const refIndex, std::vector<CNV>& cnvs) {
     for(uint32_t n = 0; n < cnvs.size(); ++n) {
       if (cnvs[n].chr != refIndex) continue;
       double covsum = 0;
@@ -145,7 +145,7 @@ namespace torali
       while((pos < cnvs[n].end) && (pos < (int32_t) hdr->target_len[refIndex])) {
 	if ((gcContent[pos] > gcbound.first) && (gcContent[pos] < gcbound.second) && (uniqContent[pos] >= c.fragmentUnique * c.meanisize)) {
 	  covsum += cov[pos];
-	  expcov += gcbias[gcContent[pos]].coverage;
+	  expcov += gcbias[gcContent[pos]].coverage * (tileFac.empty() ? 1.0 : (double) tileFac[pos / regWin]);
 	  ++winlen;
 	}
 	++pos;
@@ -158,25 +158,13 @@ namespace torali
 
       // Uniquely-mappable
       double ufrac = -1;
-      if (c.hasMapFile) {
-	// Mappability map
-	double umapsum = 0;
-	int32_t uspan = 0;
-	for(int32_t p = cnvs[n].start; (p < cnvs[n].end) && (p < (int32_t) hdr->target_len[refIndex]); ++p) {
-	  umapsum += (double) uniqContent[p];
-	  ++uspan;
-	}
-	if ((uspan > 0) && (c.meanisize > 0)) ufrac = std::min(1.0, umapsum / ((double) uspan * (double) c.meanisize));
-      } else {
-	// Map free
-	double ucov = 0;
-	double tcov = 0;
-	for(int32_t p = cnvs[n].start; (p < cnvs[n].end) && (p < (int32_t) hdr->target_len[refIndex]); ++p) {
-	  ucov += covUniq[p];
-	  tcov += covMap[p];
-	}
-	if (tcov > 0) ufrac = ucov / tcov;
+      double ucov = 0;
+      double tcov = 0;
+      for(int32_t p = cnvs[n].start; (p < cnvs[n].end) && (p < (int32_t) hdr->target_len[refIndex]); ++p) {
+	ucov += covUniq[p];
+	tcov += covMap[p];
       }
+      if (tcov > 0) ufrac = ucov / tcov;
       cnvs[n].uniqfrac = ufrac;
 
       // Estimate SD
@@ -190,7 +178,7 @@ namespace torali
 	while((pos < cnvs[n].end) && (pos < (int32_t) hdr->target_len[refIndex])) {
 	  if ((gcContent[pos] > gcbound.first) && (gcContent[pos] < gcbound.second) && (uniqContent[pos] >= c.fragmentUnique * c.meanisize)) {
 	    covsum += cov[pos];
-	    expcov += gcbias[gcContent[pos]].coverage;
+	    expcov += gcbias[gcContent[pos]].coverage * (tileFac.empty() ? 1.0 : (double) tileFac[pos / regWin]);
 	    ++winlen;
 	    if (winlen % wsz == 0) {
 	      double cn = c.ploidy;
@@ -304,7 +292,7 @@ namespace torali
   // Segment read-depth
   template<typename TConfig, typename TGcBias, typename TCoverage>
   inline void
-  segmentRD(TConfig const& c, std::pair<uint32_t, uint32_t> const& gcbound, std::vector<uint16_t> const& gcContent, std::vector<uint16_t> const& uniqContent, TGcBias const& gcbias, TCoverage const& cov, bam_hdr_t const* hdr, int32_t const refIndex, std::vector<SVBreakpoint> const& chrbp, std::vector<CNV>& cnvs) {
+  segmentRD(TConfig const& c, std::pair<uint32_t, uint32_t> const& gcbound, std::vector<uint16_t> const& gcContent, std::vector<uint16_t> const& uniqContent, TGcBias const& gcbias, std::vector<float> const& tileFac, uint32_t const regWin, TCoverage const& cov, bam_hdr_t const* hdr, int32_t const refIndex, std::vector<SVBreakpoint> const& chrbp, std::vector<CNV>& cnvs) {
     int32_t reflen = (int32_t) hdr->target_len[refIndex];
     int32_t kmin = 4;
     int32_t bpTol = (int32_t) (2 * c.minClip);
@@ -322,37 +310,41 @@ namespace torali
     std::vector<int32_t> we;
     {
       double covsum = 0;
-      double expcov = 0;
+      double expraw = 0;
+      double expcor = 0;
       int32_t winlen = 0;
       int32_t start = -1;
       int32_t last = -1;
       for(int32_t pos = 0; pos < reflen; ++pos) {
 	if ((gcContent[pos] > gcbound.first) && (gcContent[pos] < gcbound.second) && (uniqContent[pos] >= c.fragmentUnique * c.meanisize)) {
 	  if (start < 0) start = pos;
+	  double e1 = gcbias[gcContent[pos]].coverage;
 	  covsum += cov[pos];
-	  expcov += gcbias[gcContent[pos]].coverage;
+	  expraw += e1;
+	  expcor += e1 * (tileFac.empty() ? 1.0 : (double) tileFac[pos / regWin]);
 	  last = pos;
 	  ++winlen;
-	  bool close = (pcfTargetExp > 0) ? (expcov >= pcfTargetExp) : (winlen >= pcfWinBases);
+	  bool close = (pcfTargetExp > 0) ? (expraw >= pcfTargetExp) : (winlen >= pcfWinBases);
 	  if (close) {
-	    double r = (expcov > 0) ? (covsum / expcov) : 1.0;
+	    double r = (expcor > 0) ? (covsum / expcor) : 1.0;
 	    z.push_back(std::log2(std::max(r, rFloor)));
 	    wcov.push_back(covsum);
-	    wexp.push_back(expcov);
+	    wexp.push_back(expcor);
 	    ws.push_back(start);
 	    we.push_back(pos + 1);
 	    covsum = 0;
-	    expcov = 0;
+	    expraw = 0;
+	    expcor = 0;
 	    winlen = 0;
 	    start = -1;
 	  }
 	}
       }
       if ((winlen > 0) && (start >= 0)) {
-	double r = (expcov > 0) ? (covsum / expcov) : 1.0;
+	double r = (expcor > 0) ? (covsum / expcor) : 1.0;
 	z.push_back(std::log2(std::max(r, rFloor)));
 	wcov.push_back(covsum);
-	wexp.push_back(expcov);
+	wexp.push_back(expcor);
 	ws.push_back(start);
 	we.push_back(last + 1);
       }
@@ -587,7 +579,7 @@ namespace torali
     bcf_hdr_append(hdr, "##INFO=<ID=CIEND,Number=2,Type=Integer,Description=\"Confidence interval around END\">");
     bcf_hdr_append(hdr, "##INFO=<ID=CIPOS,Number=2,Type=Integer,Description=\"Confidence interval around POS\">");
     bcf_hdr_append(hdr, "##INFO=<ID=END,Number=1,Type=Integer,Description=\"End position of the copy-number variant\">");
-    bcf_hdr_append(hdr, "##INFO=<ID=MP,Number=1,Type=Float,Description=\"Callable (GC- and mappability-passing) fraction of the CNV span\">");
+    bcf_hdr_append(hdr, "##INFO=<ID=MP,Number=1,Type=Float,Description=\"Callable fraction of the CNV span\">");
     bcf_hdr_append(hdr, "##INFO=<ID=UNIQ,Number=1,Type=Float,Description=\"Uniquely-mappable fraction\">");
     bcf_hdr_append(hdr, "##INFO=<ID=SRL,Number=1,Type=Integer,Description=\"Split-read support at the left breakpoint\">");
     bcf_hdr_append(hdr, "##INFO=<ID=SRR,Number=1,Type=Integer,Description=\"Split-read support at the right breakpoint\">");
