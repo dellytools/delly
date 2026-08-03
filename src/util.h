@@ -53,12 +53,16 @@ namespace torali
     double cn;
     double mappable;
     double uniqfrac;
+    double lowcomplex;
+    double rdcnu;
+    double rdcnt;
     double sd;
+    bool useTotal;
     std::string id;
 
 
-    CNV() : chr(0), start(0), end(0), ciposlow(0), ciposhigh(0), ciendlow(0), ciendhigh(0), qval(0), srleft(0), srright(0), cn(-1), mappable(0), uniqfrac(-1), sd(1), id("") {}
-    CNV(int32_t const c, int32_t const s, int32_t const e, int32_t const cil, int32_t const cih, int32_t const cel, int32_t ceh, double const estcn, double const mp) : chr(c), start(s), end(e), ciposlow(cil), ciposhigh(cih), ciendlow(cel), ciendhigh(ceh), qval(0), srleft(0), srright(0), cn(estcn), mappable(mp), uniqfrac(-1), sd(1), id("") {}
+    CNV() : chr(0), start(0), end(0), ciposlow(0), ciposhigh(0), ciendlow(0), ciendhigh(0), qval(0), srleft(0), srright(0), cn(-1), mappable(0), uniqfrac(-1), lowcomplex(0), rdcnu(-1), rdcnt(-1), sd(1), useTotal(false), id("") {}
+    CNV(int32_t const c, int32_t const s, int32_t const e, int32_t const cil, int32_t const cih, int32_t const cel, int32_t ceh, double const estcn, double const mp) : chr(c), start(s), end(e), ciposlow(cil), ciposhigh(cih), ciendlow(cel), ciendhigh(ceh), qval(0), srleft(0), srright(0), cn(estcn), mappable(mp), uniqfrac(-1), lowcomplex(0), rdcnu(-1), rdcnt(-1), sd(1), useTotal(false), id("") {}
 
     bool operator<(const CNV& sv2) const {
       return ((chr<sv2.chr) || ((chr==sv2.chr) && (start<sv2.start)) || ((chr==sv2.chr) && (start==sv2.start) && (end<sv2.end)) || ((chr==sv2.chr) && (start==sv2.start) && (end==sv2.end) && (cn < sv2.cn)));

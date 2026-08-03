@@ -32,12 +32,12 @@ namespace torali
     bool regionalGc;
     bool hasSegFile;
     bool hasGenoFile;
+    bool hasExcludeFile;
     uint32_t nchr;
     uint32_t minClip;
     uint32_t minRefSep;
     uint32_t minBpSupport;
     float cnMergeTol;
-    float cnMinCallable;
     float penalty;
     uint32_t meanisize;
     uint32_t window_size;
@@ -58,6 +58,8 @@ namespace torali
     float uniqueToTotalCovRatio;
     float fracWindow;
     float fragmentUnique;
+    int32_t cnvMinQual;
+    float cnvDelConfirm;
     std::string sampleName;
     boost::filesystem::path segfile;
     boost::filesystem::path genofile;
@@ -67,6 +69,7 @@ namespace torali
     boost::filesystem::path statsFile;
     boost::filesystem::path bamFile;
     boost::filesystem::path scanFile;
+    boost::filesystem::path exclude;
     std::set<int32_t> refIdx;
   };
 
@@ -279,21 +282,22 @@ namespace torali
 	  rstart = rend;
 	} else ++rstart;
       }
-      if (ref != NULL) free(ref);
-
       // Split-read breakpoints
       std::vector<SVBreakpoint> chrbp;
       collectBreakpoints(c, gcbound, gcContent, uniqContent, gcbias, cov, hdr, refIndex, clips, chrbp);
 
       // CNV discovery
       if (!c.hasGenoFile) {
-	segmentRD(c, gcbound, gcContent, uniqContent, gcbias, tileFac, regWin, cov, hdr, refIndex, chrbp, cnvs);
+	segmentRD(c, gcbound, gcContent, uniqContent, gcbias, tileFac, regWin, cov, hdr, refIndex, chrbp, uniqueTrack(), -1, cnvs);
+	segmentRD(c, gcbound, gcContent, uniqContent, gcbias, tileFac, regWin, cov, hdr, refIndex, chrbp, totalTrack(), 1, cnvs);
       }
 
       // CNV genotyping
-      genotypeCNVs(c, gcbound, gcContent, uniqContent, gcbias, tileFac, regWin, cov, covUniq, covMap, hdr, refIndex, cnvs);
+      genotypeCNVs(c, gcbound, gcContent, uniqContent, gcbias, tileFac, regWin, cov, covUniq, covMap, ref, hdr, refIndex, cnvs);
+      if (ref != NULL) free(ref);
 
       // Genome-wide read-depth windows
+      DepthTrack const dt = uniqueTrack();
       std::vector<CovWin> wins;
       if (c.adaptive) {
 	double covsum = 0;
@@ -306,8 +310,8 @@ namespace torali
 	for(uint32_t pos = 0; pos < hdr->target_len[refIndex]; ++pos) {
 	  ucov += covUniq[pos];
 	  tcov += covMap[pos];
-	  if ((gcContent[pos] > gcbound.first) && (gcContent[pos] < gcbound.second) && (uniqContent[pos] >= c.fragmentUnique * c.meanisize)) {
-	    double e1 = gcbias[gcContent[pos]].coverage;
+	  if (_posUsed(dt, c, gcContent, uniqContent, gcbound, pos)) {
+	    double e1 = _expCov(dt, gcbias, gcContent[pos]);
 	    covsum += cov[pos];
 	    expraw += e1;
 	    expcor += e1 * (tileFac.empty() ? 1.0 : (double) tileFac[pos / regWin]);
@@ -336,9 +340,9 @@ namespace torali
 	    for(uint32_t pos = start; pos < start + c.window_size; ++pos) {
 	      ucov += covUniq[pos];
 	      tcov += covMap[pos];
-	      if ((gcContent[pos] > gcbound.first) && (gcContent[pos] < gcbound.second) && (uniqContent[pos] >= c.fragmentUnique * c.meanisize)) {
+	      if (_posUsed(dt, c, gcContent, uniqContent, gcbound, pos)) {
 		covsum += cov[pos];
-		expcov += gcbias[gcContent[pos]].coverage * (tileFac.empty() ? 1.0 : (double) tileFac[pos / regWin]);
+		expcov += _expCov(dt, gcbias, gcContent[pos]) * (tileFac.empty() ? 1.0 : (double) tileFac[pos / regWin]);
 		++winlen;
 	      }
 	    }
@@ -420,6 +424,29 @@ namespace torali
     // Merge CNVs
     if (!c.hasGenoFile) mergeAdjacentSameCN(cnvs, c.cnMergeTol);
 
+    // Exclude regions
+    if (c.hasExcludeFile) {
+      typedef boost::icl::interval_set<uint32_t> TChrIntervals;
+      typedef TChrIntervals::interval_type TIVal;
+      std::vector<TChrIntervals> validRegions;
+      if (_parseExcludeIntervals(c, hdr, validRegions)) {
+	std::vector<CNV> keep;
+	keep.reserve(cnvs.size());
+	for(uint32_t i = 0; i < cnvs.size(); ++i) {
+	  int32_t s = cnvs[i].start;
+	  int32_t e = cnvs[i].end;
+	  if ((e <= s) || (cnvs[i].chr < 0) || (cnvs[i].chr >= (int32_t) validRegions.size())) { keep.push_back(cnvs[i]); continue; }
+	  TChrIntervals ci;
+	  ci.insert(TIVal::right_open((uint32_t) s, (uint32_t) e));
+	  TChrIntervals inter = ci & validRegions[cnvs[i].chr];
+	  uint32_t validbp = 0;
+	  for(TChrIntervals::const_iterator it = inter.begin(); it != inter.end(); ++it) validbp += (it->upper() - it->lower());
+	  if ((double) validbp >= 0.5 * (double) (e - s)) keep.push_back(cnvs[i]);
+	}
+	cnvs.swap(keep);
+      }
+    }
+
     // Genotype CNVs
     cnvVCF(c, cnvs);
 
@@ -446,6 +473,7 @@ namespace torali
     generic.add_options()
       ("help,?", "show help message")
       ("genome,g", boost::program_options::value<boost::filesystem::path>(&c.genome), "genome file")
+      ("exclude,x", boost::program_options::value<boost::filesystem::path>(&c.exclude), "file with regions to exclude")
       ("quality,q", boost::program_options::value<uint16_t>(&c.minQual)->default_value(10), "min. mapping quality")
       ("outfile,o", boost::program_options::value<boost::filesystem::path>(&c.outfile), "BCF output file")
       ("covfile,c", boost::program_options::value<boost::filesystem::path>(&c.covfile), "gzipped coverage file")
@@ -461,7 +489,7 @@ namespace torali
       ("min-bp-support", boost::program_options::value<uint32_t>(&c.minBpSupport)->default_value(3), "min. split-read support")
       ("penalty", boost::program_options::value<float>(&c.penalty)->default_value(3), "segmentation penalty")
       ("cnv-merge", boost::program_options::value<float>(&c.cnMergeTol)->default_value(0.25), "min. log2 ratio to separate CNVs")
-      ("cnv-min-callable", boost::program_options::value<float>(&c.cnMinCallable)->default_value(0.75), "min. callable fraction")
+      ("cnv-qual", boost::program_options::value<int32_t>(&c.cnvMinQual)->default_value(5), "min. quality for PASS")
       ;
 
     boost::program_options::options_description cancer("Ploidy/purity correction");
@@ -476,6 +504,7 @@ namespace torali
     window.add_options()
       ("window,w", boost::program_options::value<uint32_t>(&c.window_size)->default_value(0), "window size in bp (0: automatic)")
       ("fraction-unique", boost::program_options::value<float>(&c.uniqueToTotalCovRatio)->default_value(0.8), "uniqueness filter [0,1]")
+      ("cnv-del-confirm", boost::program_options::value<float>(&c.cnvDelConfirm)->default_value(1.5), "max. total-depth CN for DEL")
       ("basecov", "force base-level counting")
       ("fragmentcov", "force fragment-level counting")
       ("no-regional-gc", "disable broad GC correction")
@@ -533,6 +562,10 @@ namespace torali
     // Scan regions
     if (vm.count("scan-regions")) c.hasScanFile = true;
     else c.hasScanFile = false;
+
+    // Exclude regions
+    if (vm.count("exclude")) c.hasExcludeFile = true;
+    else c.hasExcludeFile = false;
 
     // Scan window selection
     if (vm.count("no-window-selection")) c.noScanWindowSelection = true;
@@ -771,8 +804,8 @@ namespace torali
 	sam_close(samfile);
 	
 	// GC bias summary
-	statsOut << "GC\tgcsum\tsample\treference\tpercentileSample\tpercentileReference\tfractionSample\tfractionReference\tobsexp\tmeancoverage" << std::endl;
-	for(uint32_t i = 0; i < gcbias.size(); ++i) statsOut << "GC\t" << i << "\t" << gcbias[i].sample << "\t" << gcbias[i].reference << "\t" << gcbias[i].percentileSample << "\t" << gcbias[i].percentileReference << "\t" << gcbias[i].fractionSample << "\t" << gcbias[i].fractionReference << "\t" << gcbias[i].obsexp << "\t" << gcbias[i].coverage << std::endl;
+	statsOut << "GC\tgcsum\tsample\treference\tpercentileSample\tpercentileReference\tfractionSample\tfractionReference\tobsexp\tmeancoverage\tmeancoverageTotal\treferenceTotal" << std::endl;
+	for(uint32_t i = 0; i < gcbias.size(); ++i) statsOut << "GC\t" << i << "\t" << gcbias[i].sample << "\t" << gcbias[i].reference << "\t" << gcbias[i].percentileSample << "\t" << gcbias[i].percentileReference << "\t" << gcbias[i].fractionSample << "\t" << gcbias[i].fractionReference << "\t" << gcbias[i].obsexp << "\t" << gcbias[i].coverage << "\t" << gcbias[i].coverageTotal << "\t" << gcbias[i].referenceTotal << std::endl;
 	statsOut << "BoundsGC\t" << gcbound.first << "," << gcbound.second << std::endl;
 	statsOut.pop();
 	statsOut.pop();

@@ -30,8 +30,11 @@ namespace torali
     double percentileReference;
     double obsexp;
     double coverage;
+    double coverageTotal;
+    int64_t sampleTotal;
+    int32_t referenceTotal;
 
-    GcBias() : sample(0), reference(0), fractionSample(0), fractionReference(0), percentileSample(0), percentileReference(0), obsexp(0), coverage(0) {}
+    GcBias() : sample(0), reference(0), fractionSample(0), fractionReference(0), percentileSample(0), percentileReference(0), obsexp(0), coverage(0), coverageTotal(0), sampleTotal(0), referenceTotal(0) {}
   };
 
   template<typename TConfig>
@@ -347,11 +350,14 @@ namespace torali
 
       // Summarize GC coverage
       for(uint32_t i = 0; i < hdr->target_len[refIndex]; ++i) {
-	bool uniqPos = (uniqContent[i] >= c.fragmentUnique * c.meanisize);
-	if (uniqPos) {
-	  // Valid bin?
-	  int32_t bin = _findScanWindow(c, hdr->target_len[refIndex], binMap, i);
-	  if ((bin >= 0) && (scanCounts[refIndex][bin].select)) {
+	int32_t bin = _findScanWindow(c, hdr->target_len[refIndex], binMap, i);
+	if ((bin >= 0) && (scanCounts[refIndex][bin].select)) {
+	  // Total-depth model
+	  ++gcbias[gcContent[i]].referenceTotal;
+	  gcbias[gcContent[i]].sampleTotal += cov[i];
+	  gcbias[gcContent[i]].coverageTotal += cov[i];
+	  // Unique-depth model
+	  if (uniqContent[i] >= c.fragmentUnique * c.meanisize) {
 	    ++gcbias[gcContent[i]].reference;
 	    gcbias[gcContent[i]].sample += cov[i];
 	    gcbias[gcContent[i]].coverage += cov[i];
@@ -364,6 +370,8 @@ namespace torali
     for(uint32_t i = 0; i < gcbias.size(); ++i) {
       if (gcbias[i].reference) gcbias[i].coverage /= (double) gcbias[i].reference;
       else gcbias[i].coverage = 0;
+      if (gcbias[i].referenceTotal) gcbias[i].coverageTotal /= (double) gcbias[i].referenceTotal;
+      else gcbias[i].coverageTotal = 0;
     }
     // Smooth
     {
@@ -372,6 +380,11 @@ namespace torali
       for(uint32_t i = 0; i < gcbias.size(); ++i) { cvals[i] = gcbias[i].coverage; weight[i] = (double) gcbias[i].reference; }
       smoothFillCurve(cvals, weight);
       for(uint32_t i = 0; i < gcbias.size(); ++i) gcbias[i].coverage = cvals[i];
+      std::vector<double> tvals(gcbias.size(), 0);
+      std::vector<double> tweight(gcbias.size(), 0);
+      for(uint32_t i = 0; i < gcbias.size(); ++i) { tvals[i] = gcbias[i].coverageTotal; tweight[i] = (double) gcbias[i].referenceTotal; }
+      smoothFillCurve(tvals, tweight);
+      for(uint32_t i = 0; i < gcbias.size(); ++i) gcbias[i].coverageTotal = tvals[i];
     }
 
     // Determine percentiles

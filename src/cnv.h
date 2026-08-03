@@ -55,15 +55,62 @@ namespace torali
     CnvBoundary(int32_t const w_, int32_t const bp_, int32_t const sr_) : w(w_), bp(bp_), sr(sr_) {}
 
     bool operator<(const CnvBoundary& o) const {
-      // keep better-supported junction for same window
       return ((w < o.w) || ((w == o.w) && (sr > o.sr)));
     }
   };
+
+  // Depth track
+  struct DepthTrack {
+    bool gated;
+    bool totalGc;
+  };
+
+  inline DepthTrack uniqueTrack() {
+    DepthTrack dt;
+    dt.gated = true;
+    dt.totalGc = false;
+    return dt;
+  }
+
+  inline DepthTrack totalTrack() {
+    DepthTrack dt;
+    dt.gated = false;
+    dt.totalGc = true;
+    return dt;
+  }
+
+  template<typename TConfig>
+  inline bool
+  _posUsed(DepthTrack const& dt, TConfig const& c, std::vector<uint16_t> const& gcContent, std::vector<uint16_t> const& uniqContent, std::pair<uint32_t, uint32_t> const& gcbound, int32_t const pos) {
+    if (!((gcContent[pos] > gcbound.first) && (gcContent[pos] < gcbound.second))) return false;
+    return (!dt.gated) || (uniqContent[pos] >= c.fragmentUnique * c.meanisize);
+  }
+  
+  template<typename TGcBias>
+  inline double
+  _expCov(DepthTrack const& dt, TGcBias const& gcbias, uint16_t const gc) {
+    return dt.totalGc ? gcbias[gc].coverageTotal : gcbias[gc].coverage;
+  }
+
+  // Read-depth copy number
+  template<typename TConfig, typename TGcBias, typename TCoverage>
+  inline double
+  _segmentCN(TConfig const& c, DepthTrack const& dt, std::pair<uint32_t, uint32_t> const& gcbound, std::vector<uint16_t> const& gcContent, std::vector<uint16_t> const& uniqContent, TGcBias const& gcbias, std::vector<float> const& tileFac, uint32_t const regWin, TCoverage const& cov, int32_t const start, int32_t const end, int32_t const reflen) {
+    double covsum = 0, expcov = 0;
+    for(int32_t p = start; (p < end) && (p < reflen); ++p) {
+      if (_posUsed(dt, c, gcContent, uniqContent, gcbound, p)) {
+	covsum += cov[p];
+	expcov += _expCov(dt, gcbias, gcContent[p]) * (tileFac.empty() ? 1.0 : (double) tileFac[p / regWin]);
+      }
+    }
+    return (expcov > 0) ? (c.ploidy * covsum / expcov) : (double) c.ploidy;
+  }
 
   // Collect candidate CNV boundaries
   template<typename TConfig, typename TGcBias, typename TCoverage>
   inline void
   collectBreakpoints(TConfig const& c, std::pair<uint32_t, uint32_t> const& gcbound, std::vector<uint16_t> const& gcContent, std::vector<uint16_t> const& uniqContent, TGcBias const& gcbias, TCoverage const& cov, bam_hdr_t const* hdr, int32_t const refIndex, std::vector<int32_t>& clips, std::vector<SVBreakpoint>& chrbp) {
+    DepthTrack const dt = uniqueTrack();
     if (clips.empty()) return;
     std::sort(clips.begin(), clips.end());
     int32_t bpTol = (int32_t) (2 * c.minClip);
@@ -90,9 +137,9 @@ namespace torali
 	  double covsum = 0, expcov = 0;
 	  int32_t span = 0;
 	  for(int32_t pos = bppos - 1; (pos >= 0) && (span < maxFlank) && (zl.size() < 8); --pos, ++span) {
-	    if ((gcContent[pos] > gcbound.first) && (gcContent[pos] < gcbound.second) && (uniqContent[pos] >= c.fragmentUnique * c.meanisize)) {
+	    if (_posUsed(dt, c, gcContent, uniqContent, gcbound, pos)) {
 	      covsum += cov[pos];
-	      expcov += gcbias[gcContent[pos]].coverage;
+	      expcov += _expCov(dt, gcbias, gcContent[pos]);
 	      if (expcov >= subExp) { zl.push_back(std::log2(std::max(covsum / expcov, rFloor))); covsum = 0; expcov = 0; }
 	    }
 	  }
@@ -101,9 +148,9 @@ namespace torali
 	  double covsum = 0, expcov = 0;
 	  int32_t span = 0;
 	  for(int32_t pos = bppos; (pos < (int32_t) hdr->target_len[refIndex]) && (span < maxFlank) && (zr.size() < 8); ++pos, ++span) {
-	    if ((gcContent[pos] > gcbound.first) && (gcContent[pos] < gcbound.second) && (uniqContent[pos] >= c.fragmentUnique * c.meanisize)) {
+	    if (_posUsed(dt, c, gcContent, uniqContent, gcbound, pos)) {
 	      covsum += cov[pos];
-	      expcov += gcbias[gcContent[pos]].coverage;
+	      expcov += _expCov(dt, gcbias, gcContent[pos]);
 	      if (expcov >= subExp) { zr.push_back(std::log2(std::max(covsum / expcov, rFloor))); covsum = 0; expcov = 0; }
 	    }
 	  }
@@ -134,19 +181,35 @@ namespace torali
   }
 
 
+  // Reference low-complexity
+  inline double
+  _lowComplexFrac(char const* ref, int32_t const start, int32_t const end) {
+    int32_t const tile = 500;
+    double const entCut = 1.8;
+    int32_t nt = 0, lc = 0;
+    for(int32_t p = start; (p + tile <= end); p += tile) {
+      std::string s(ref + p, ref + p + tile);
+      for(uint32_t i = 0; i < s.size(); ++i) s[i] = toupper(s[i]);
+      if (entropy(s) < entCut) ++lc;
+      ++nt;
+    }
+    return (nt > 0) ? ((double) lc / (double) nt) : 0.0;
+  }
+
   template<typename TConfig, typename TGcBias, typename TCoverage>
   inline void
-  genotypeCNVs(TConfig const& c, std::pair<uint32_t, uint32_t> const& gcbound, std::vector<uint16_t> const& gcContent, std::vector<uint16_t> const& uniqContent, TGcBias const& gcbias, std::vector<float> const& tileFac, uint32_t const regWin, TCoverage const& cov, TCoverage const& covUniq, TCoverage const& covMap, bam_hdr_t const* hdr, int32_t const refIndex, std::vector<CNV>& cnvs) {
+  genotypeCNVs(TConfig const& c, std::pair<uint32_t, uint32_t> const& gcbound, std::vector<uint16_t> const& gcContent, std::vector<uint16_t> const& uniqContent, TGcBias const& gcbias, std::vector<float> const& tileFac, uint32_t const regWin, TCoverage const& cov, TCoverage const& covUniq, TCoverage const& covMap, char const* ref, bam_hdr_t const* hdr, int32_t const refIndex, std::vector<CNV>& cnvs) {
     for(uint32_t n = 0; n < cnvs.size(); ++n) {
       if (cnvs[n].chr != refIndex) continue;
+      DepthTrack const dt = cnvs[n].useTotal ? totalTrack() : uniqueTrack();
       double covsum = 0;
       double expcov = 0;
       int32_t winlen = 0;
       int32_t pos = cnvs[n].start;
       while((pos < cnvs[n].end) && (pos < (int32_t) hdr->target_len[refIndex])) {
-	if ((gcContent[pos] > gcbound.first) && (gcContent[pos] < gcbound.second) && (uniqContent[pos] >= c.fragmentUnique * c.meanisize)) {
+	if (_posUsed(dt, c, gcContent, uniqContent, gcbound, pos)) {
 	  covsum += cov[pos];
-	  expcov += gcbias[gcContent[pos]].coverage * (tileFac.empty() ? 1.0 : (double) tileFac[pos / regWin]);
+	  expcov += _expCov(dt, gcbias, gcContent[pos]) * (tileFac.empty() ? 1.0 : (double) tileFac[pos / regWin]);
 	  ++winlen;
 	}
 	++pos;
@@ -156,6 +219,11 @@ namespace torali
       double mp = (double) winlen / (double) (cnvs[n].end - cnvs[n].start);
       cnvs[n].cn = cn;
       cnvs[n].mappable = mp;
+
+      // Double track CN
+      int32_t const reflenL = (int32_t) hdr->target_len[refIndex];
+      cnvs[n].rdcnu = _segmentCN(c, uniqueTrack(), gcbound, gcContent, uniqContent, gcbias, tileFac, regWin, cov, cnvs[n].start, cnvs[n].end, reflenL);
+      cnvs[n].rdcnt = _segmentCN(c, totalTrack(), gcbound, gcContent, uniqContent, gcbias, tileFac, regWin, cov, cnvs[n].start, cnvs[n].end, reflenL);
 
       // Uniquely-mappable
       double ufrac = -1;
@@ -168,6 +236,9 @@ namespace torali
       if (tcov > 0) ufrac = ucov / tcov;
       cnvs[n].uniqfrac = ufrac;
 
+      // Reference low-complexity fraction of the CNV span
+      cnvs[n].lowcomplex = _lowComplexFrac(ref, cnvs[n].start, std::min(cnvs[n].end, (int32_t) hdr->target_len[refIndex]));
+
       // Estimate SD
       boost::accumulators::accumulator_set<double, boost::accumulators::features<boost::accumulators::tag::mean, boost::accumulators::tag::variance> > acc;
       uint32_t wsz = winlen / 10;
@@ -177,9 +248,9 @@ namespace torali
 	winlen = 0;
 	pos = cnvs[n].start;
 	while((pos < cnvs[n].end) && (pos < (int32_t) hdr->target_len[refIndex])) {
-	  if ((gcContent[pos] > gcbound.first) && (gcContent[pos] < gcbound.second) && (uniqContent[pos] >= c.fragmentUnique * c.meanisize)) {
+	  if (_posUsed(dt, c, gcContent, uniqContent, gcbound, pos)) {
 	    covsum += cov[pos];
-	    expcov += gcbias[gcContent[pos]].coverage * (tileFac.empty() ? 1.0 : (double) tileFac[pos / regWin]);
+	    expcov += _expCov(dt, gcbias, gcContent[pos]) * (tileFac.empty() ? 1.0 : (double) tileFac[pos / regWin]);
 	    ++winlen;
 	    if (winlen % wsz == 0) {
 	      double cn = c.ploidy;
@@ -293,7 +364,7 @@ namespace torali
   // Segment read-depth
   template<typename TConfig, typename TGcBias, typename TCoverage>
   inline void
-  segmentRD(TConfig const& c, std::pair<uint32_t, uint32_t> const& gcbound, std::vector<uint16_t> const& gcContent, std::vector<uint16_t> const& uniqContent, TGcBias const& gcbias, std::vector<float> const& tileFac, uint32_t const regWin, TCoverage const& cov, bam_hdr_t const* hdr, int32_t const refIndex, std::vector<SVBreakpoint> const& chrbp, std::vector<CNV>& cnvs) {
+  segmentRD(TConfig const& c, std::pair<uint32_t, uint32_t> const& gcbound, std::vector<uint16_t> const& gcContent, std::vector<uint16_t> const& uniqContent, TGcBias const& gcbias, std::vector<float> const& tileFac, uint32_t const regWin, TCoverage const& cov, bam_hdr_t const* hdr, int32_t const refIndex, std::vector<SVBreakpoint> const& chrbp, DepthTrack const& dt, int const keepDir, std::vector<CNV>& cnvs) {
     int32_t reflen = (int32_t) hdr->target_len[refIndex];
     int32_t kmin = 4;
     int32_t bpTol = (int32_t) (2 * c.minClip);
@@ -317,9 +388,9 @@ namespace torali
       int32_t start = -1;
       int32_t last = -1;
       for(int32_t pos = 0; pos < reflen; ++pos) {
-	if ((gcContent[pos] > gcbound.first) && (gcContent[pos] < gcbound.second) && (uniqContent[pos] >= c.fragmentUnique * c.meanisize)) {
+	if (_posUsed(dt, c, gcContent, uniqContent, gcbound, pos)) {
 	  if (start < 0) start = pos;
-	  double e1 = gcbias[gcContent[pos]].coverage;
+	  double e1 = _expCov(dt, gcbias, gcContent[pos]);
 	  covsum += cov[pos];
 	  expraw += e1;
 	  expcor += e1 * (tileFac.empty() ? 1.0 : (double) tileFac[pos / regWin]);
@@ -452,9 +523,12 @@ namespace torali
       int32_t cel = (B[s+1].bp >= 0) ? (end - bpTol) : ws[wb-1];
       int32_t ceh = (B[s+1].bp >= 0) ? (end + bpTol) : (we[wb-1]);
       double cn = (segexp[s] > 0) ? (c.ploidy * segcov[s] / segexp[s]) : (double) c.ploidy;
+      if ((keepDir < 0) && (cn >= (double) c.ploidy)) continue;
+      if ((keepDir > 0) && (cn <= (double) c.ploidy)) continue;
       CNV cnvRec(refIndex, start, end, cil, cih, cel, ceh, cn, 1.0);
       cnvRec.srleft = B[s].sr;
       cnvRec.srright = B[s+1].sr;
+      cnvRec.useTotal = (!dt.gated);
       cnvs.push_back(cnvRec);
     }
   }
@@ -582,6 +656,9 @@ namespace torali
     bcf_hdr_append(hdr, "##INFO=<ID=END,Number=1,Type=Integer,Description=\"End position of the copy-number variant\">");
     bcf_hdr_append(hdr, "##INFO=<ID=MP,Number=1,Type=Float,Description=\"Callable fraction of the CNV span\">");
     bcf_hdr_append(hdr, "##INFO=<ID=UNIQ,Number=1,Type=Float,Description=\"Uniquely-mappable fraction\">");
+    bcf_hdr_append(hdr, "##INFO=<ID=LC,Number=1,Type=Float,Description=\"Low-complexity fraction of the CNV\">");
+    bcf_hdr_append(hdr, "##INFO=<ID=RDCNU,Number=1,Type=Float,Description=\"Est. copy number from the unique track\">");
+    bcf_hdr_append(hdr, "##INFO=<ID=RDCNT,Number=1,Type=Float,Description=\"Est. copy number from the total depth track\">");
     bcf_hdr_append(hdr, "##INFO=<ID=SRL,Number=1,Type=Integer,Description=\"Split-read support at the left breakpoint\">");
     bcf_hdr_append(hdr, "##INFO=<ID=SRR,Number=1,Type=Integer,Description=\"Split-read support at the right breakpoint\">");
     bcf_hdr_append(hdr, "##INFO=<ID=IMPRECISE,Number=0,Type=Flag,Description=\"Imprecise copy-number variant\">");
@@ -640,7 +717,7 @@ namespace torali
 	int32_t absCN = (int32_t) boost::math::round(cnvs[i].cn);
 
 	// Segmentation
-	if ((c.hasSegFile) && (cnvs[i].mappable >= c.cnMinCallable)) segOut << bamhd->target_name[cnvs[i].chr] << '\t' << cnvs[i].start << '\t' << cnvs[i].end << "\tSEG" << (i + 1) << '\t' << cnvs[i].cn << '\n';
+	if (c.hasSegFile) segOut << bamhd->target_name[cnvs[i].chr] << '\t' << cnvs[i].start << '\t' << cnvs[i].end << "\tSEG" << (i + 1) << '\t' << cnvs[i].cn << '\n';
 
 	// Only true CNVs, unless in genotyping mode
 	if ((!c.hasGenoFile) && (absCN == c.ploidy)) continue;
@@ -686,6 +763,12 @@ namespace torali
 	bcf_update_info_float(hdr, rec, "MP", &tmpf, 1);
 	float uniqf = cnvs[i].uniqfrac;
 	bcf_update_info_float(hdr, rec, "UNIQ", &uniqf, 1);
+		float lctmp = cnvs[i].lowcomplex;
+		bcf_update_info_float(hdr, rec, "LC", &lctmp, 1);
+	float rdcnutmp = cnvs[i].rdcnu;
+	bcf_update_info_float(hdr, rec, "RDCNU", &rdcnutmp, 1);
+	float rdcnttmp = cnvs[i].rdcnt;
+	bcf_update_info_float(hdr, rec, "RDCNT", &rdcnttmp, 1);
 	int32_t srltmp = cnvs[i].srleft;
 	bcf_update_info_int32(hdr, rec, "SRL", &srltmp, 1);
 	int32_t srrtmp = cnvs[i].srright;
@@ -698,13 +781,29 @@ namespace torali
 	gts[0] = bcf_gt_missing;
 	gts[1] = bcf_gt_missing;
 	int32_t qval = _computeCNLs(c, cnvs[i].cn, cnvs[i].sd, cnl, gqval);
+	// Mappability-aware quality
+	if (!cnvs[i].useTotal) {
+	  double alpha = 0;
+	  if ((cnvs[i].rdcnt > 0.1) && (cnvs[i].rdcnu >= 0)) {
+	    alpha = 1.0 - cnvs[i].rdcnu / cnvs[i].rdcnt;
+	    if (alpha < 0) alpha = 0;
+	    if (alpha > 1) alpha = 1;
+	  }
+	  double relq = cnvs[i].mappable * (1.0 - cnvs[i].lowcomplex) * (1.0 - alpha);
+	  if (relq < 0) relq = 0;
+	  if (relq > 1) relq = 1;
+	  qval = (int32_t) (qval * relq);
+	  gqval[0] = (int32_t) (gqval[0] * relq);
+	}
 	if (c.hasGenoFile) rec->qual = cnvs[i].qval;  // Leave site quality in genotyping mode
 	else rec->qual = qval;
+	// Filter DELs
+	bool delReject = ((cnvs[i].cn < (double) c.ploidy) && (cnvs[i].rdcnt >= 0) && (cnvs[i].rdcnt > c.cnvDelConfirm));
 	tmpi = bcf_hdr_id2int(hdr, BCF_DT_ID, "PASS");
-	if ((rec->qual < 15) || (cnvs[i].mappable < c.cnMinCallable)) tmpi = bcf_hdr_id2int(hdr, BCF_DT_ID, "LowQual");
+	if ((rec->qual < c.cnvMinQual) || (delReject)) tmpi = bcf_hdr_id2int(hdr, BCF_DT_ID, "LowQual");
 	bcf_update_filter(hdr, rec, &tmpi, 1);
 
-	if ((gqval[0] < 15) || (cnvs[i].mappable < c.cnMinCallable)) ftarr[0] = "LowQual";
+	if ((gqval[0] < c.cnvMinQual) || (delReject)) ftarr[0] = "LowQual";
 	else ftarr[0] = "PASS";
 	std::vector<const char*> strp(bcf_hdr_nsamples(hdr));
 	std::transform(ftarr.begin(), ftarr.end(), strp.begin(), cstyle_str());	

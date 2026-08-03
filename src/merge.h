@@ -668,7 +668,16 @@ namespace torali
       return (a.tid < b.tid) || ((a.tid == b.tid) && (a.svStart < b.svStart)); });
 
     // Single-linkage
-    int32_t scanWin = std::max((int32_t) c.bpoffset, 2 * c.trOffset);
+    int32_t maxSize = 0, maxHom = 0, maxPeriod = 0;
+    for(size_t i = 0; i < nodes.size(); ++i) {
+      if (nodes[i].size > maxSize) maxSize = nodes[i].size;
+      if (nodes[i].homlen > maxHom) maxHom = nodes[i].homlen;
+      if (nodes[i].trperiod > maxPeriod) maxPeriod = nodes[i].trperiod;
+    }
+    int32_t scanWin = std::max((int32_t) c.bpoffset, std::max(c.meiOffset, c.trOffset));
+    scanWin = std::max(scanWin, (int32_t) (c.trFrac * maxSize));
+    scanWin = std::max(scanWin, 2 * maxPeriod);
+    scanWin = std::max(scanWin, maxHom + 10);
     UnionFind uf(nodes.size());
     for(size_t i = 0; i < nodes.size(); ++i) {
       for(size_t j = i; j > 0; ) {

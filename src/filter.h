@@ -72,6 +72,7 @@ namespace torali
     float rddel;
     float rddup;
     float maxsd;
+    float cnvmap;
     float recCnv;
     float pgerm;
     float cn_offset;
@@ -249,6 +250,15 @@ namespace torali
     bcf_get_format_float(hdr, rec, "CNL", &cnl, &ncnl);
     char** ftin = NULL; int nftin = 0;
     int32_t rft = bcf_get_format_string(hdr, rec, "FT", &ftin, &nftin);
+    // CNV span mappability and uniqueness
+    float mpfrac = 1;
+    float uqfrac = 1;
+    float* mpval = NULL; int32_t nmp = 0;
+    float* uqval = NULL; int32_t nuq = 0;
+    if (bcf_get_info_float(hdr, rec, "MP", &mpval, &nmp) > 0) mpfrac = mpval[0];
+    if (bcf_get_info_float(hdr, rec, "UNIQ", &uqval, &nuq) > 0) uqfrac = uqval[0];
+    if (mpval != NULL) free(mpval);
+    if (uqval != NULL) free(uqval);
     bool ok = ((rdcn != NULL) && (nrdcn >= nsmpl));
     if (ok && (ncnval < nsmpl)) cnval = (int32_t*) realloc(cnval, nsmpl * sizeof(int32_t));
     if (ok && (ngqval < nsmpl)) gqval = (int32_t*) realloc(gqval, nsmpl * sizeof(int32_t));
@@ -475,6 +485,7 @@ namespace torali
     bool failgerm = false;
     if (!keep) failgerm = true;
     if (cnsdStore > c.maxsd) failgerm = true;
+    if ((mpfrac < c.cnvmap) || (uqfrac < c.cnvmap)) failgerm = true;
     if ((refined) && (ncar >= 10) && (c.hwe > 0) && (ficStore < 0) && (hwepvalStore < c.hwe)) failgerm = true;
     if ((keep) && (!failgerm)) {
       int32_t fltid = bcf_hdr_id2int(hdr_out, BCF_DT_ID, "PASS");
@@ -821,11 +832,13 @@ namespace torali
 	int32_t ac[2];
 	ac[0] = 0;
 	ac[1] = 0;
+	int32_t ncar = 0;
 	for (int i = 0; i < bcf_hdr_nsamples(hdr); ++i) {
 	  if ((bcf_gt_allele(gt[i*2]) != -1) && (bcf_gt_allele(gt[i*2 + 1]) != -1)) {
 	    int gt_type = bcf_gt_allele(gt[i*2]) + bcf_gt_allele(gt[i*2 + 1]);
 	    ++ac[bcf_gt_allele(gt[i*2])];
 	    ++ac[bcf_gt_allele(gt[i*2 + 1])];
+	    if (gt_type >= 1) ++ncar;
 	    if ((germline) || (c.controlSet.find(hdr->samples[i]) != c.controlSet.end())) {
 	      // Control or population genomics
 	      ++nCount;
@@ -897,7 +910,7 @@ namespace torali
 	  if ((std::string(svt)=="DEL") && (rdRatio > c.rddel)) failgerm = true;
 	  if ((std::string(svt)=="DUP") && (rdRatio < c.rddup)) failgerm = true;
 	  if ((std::string(svt)!="DEL") && (std::string(svt)!="DUP") && (rrefvarpercentile > 0)) failgerm = true;
-	  if ((refined) && (c.hwe > 0) && (ficStore < 0) && (hwepvalStore < c.hwe)) failgerm = true;
+	  if ((refined) && (ncar >= 10) && (c.hwe > 0) && (ficStore < 0) && (hwepvalStore < c.hwe)) failgerm = true;
 	  if (!failgerm) {
 	    _remove_info_tag(hdr_out, rec, "RDRATIO");
 	    bcf_update_info_float(hdr_out, rec, "RDRATIO", &rdRatio, 1);
@@ -1049,6 +1062,7 @@ namespace torali
       ("rdist", boost::program_options::value<int32_t>(&c.rdist)->default_value(250), "max. BP distance for redundant sites (SV)")
       ("rsize", boost::program_options::value<float>(&c.rsize)->default_value(0.8), "min. size ratio for redundant sites (SV)")
       ("maxsd", boost::program_options::value<float>(&c.maxsd)->default_value(0.5), "max. population copy-number SD (CNV)")
+      ("cnv-mappability", boost::program_options::value<float>(&c.cnvmap)->default_value(0.5), "min. mappable and unique fraction of the CNV")
       ("cnv-ploidy", boost::program_options::value<uint16_t>(&c.ploidy)->default_value(2), "baseline ploidy for CNV genotyping (CNV)")
       ("cnv-reciprocal", boost::program_options::value<float>(&c.recCnv)->default_value(0.8), "min. reciprocal overlap (CNV)")
       ("hwe,w", boost::program_options::value<float>(&c.hwe)->default_value(0.000001), "min. HWE p-value for excess-het")
