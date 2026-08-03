@@ -364,7 +364,7 @@ namespace torali
   // Segment read-depth
   template<typename TConfig, typename TGcBias, typename TCoverage>
   inline void
-  segmentRD(TConfig const& c, std::pair<uint32_t, uint32_t> const& gcbound, std::vector<uint16_t> const& gcContent, std::vector<uint16_t> const& uniqContent, TGcBias const& gcbias, std::vector<float> const& tileFac, uint32_t const regWin, TCoverage const& cov, bam_hdr_t const* hdr, int32_t const refIndex, std::vector<SVBreakpoint> const& chrbp, DepthTrack const& dt, int const keepDir, std::vector<CNV>& cnvs) {
+  segmentRD(TConfig const& c, std::pair<uint32_t, uint32_t> const& gcbound, std::vector<uint16_t> const& gcContent, std::vector<uint16_t> const& uniqContent, TGcBias const& gcbias, std::vector<float> const& tileFac, uint32_t const regWin, TCoverage const& cov, bam_hdr_t const* hdr, int32_t const refIndex, std::vector<SVBreakpoint> const& chrbp, DepthTrack const& dt, std::vector<CNV>& cnvs) {
     int32_t reflen = (int32_t) hdr->target_len[refIndex];
     int32_t kmin = 4;
     int32_t bpTol = (int32_t) (2 * c.minClip);
@@ -523,8 +523,6 @@ namespace torali
       int32_t cel = (B[s+1].bp >= 0) ? (end - bpTol) : ws[wb-1];
       int32_t ceh = (B[s+1].bp >= 0) ? (end + bpTol) : (we[wb-1]);
       double cn = (segexp[s] > 0) ? (c.ploidy * segcov[s] / segexp[s]) : (double) c.ploidy;
-      if ((keepDir < 0) && (cn >= (double) c.ploidy)) continue;
-      if ((keepDir > 0) && (cn <= (double) c.ploidy)) continue;
       CNV cnvRec(refIndex, start, end, cil, cih, cel, ceh, cn, 1.0);
       cnvRec.srleft = B[s].sr;
       cnvRec.srright = B[s+1].sr;

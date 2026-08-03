@@ -287,10 +287,7 @@ namespace torali
       collectBreakpoints(c, gcbound, gcContent, uniqContent, gcbias, cov, hdr, refIndex, clips, chrbp);
 
       // CNV discovery
-      if (!c.hasGenoFile) {
-	segmentRD(c, gcbound, gcContent, uniqContent, gcbias, tileFac, regWin, cov, hdr, refIndex, chrbp, uniqueTrack(), -1, cnvs);
-	segmentRD(c, gcbound, gcContent, uniqContent, gcbias, tileFac, regWin, cov, hdr, refIndex, chrbp, totalTrack(), 1, cnvs);
-      }
+      if (!c.hasGenoFile) segmentRD(c, gcbound, gcContent, uniqContent, gcbias, tileFac, regWin, cov, hdr, refIndex, chrbp, uniqueTrack(), cnvs);
 
       // CNV genotyping
       genotypeCNVs(c, gcbound, gcContent, uniqContent, gcbias, tileFac, regWin, cov, covUniq, covMap, ref, hdr, refIndex, cnvs);
