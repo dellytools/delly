@@ -283,17 +283,6 @@ namespace torali
 	  rstart = rend;
 	} else ++rstart;
       }
-      // Split-read breakpoints
-      std::vector<SVBreakpoint> chrbp;
-      collectBreakpoints(c, gcbound, gcContent, uniqContent, gcbias, cov, hdr, refIndex, clips, chrbp);
-
-      // CNV discovery
-      if (!c.hasGenoFile) segmentRD(c, gcbound, gcContent, uniqContent, gcbias, tileFac, regWin, cov, hdr, refIndex, chrbp, uniqueTrack(), cnvs);
-
-      // CNV genotyping
-      genotypeCNVs(c, gcbound, gcContent, uniqContent, gcbias, tileFac, regWin, cov, covUniq, covMap, ref, hdr, refIndex, cnvs);
-      if (ref != NULL) free(ref);
-
       // Genome-wide read-depth windows
       DepthTrack const dt = uniqueTrack();
       std::vector<CovWin> wins;
@@ -393,6 +382,24 @@ namespace torali
 	  if ((wins[i].tcov > 0) && (wins[i].ucov <= c.uniqueToTotalCovRatio * wins[i].tcov)) naFlag[i] = true;
 	}
       }
+
+      // Exclude NA windows
+      for(uint32_t i = 0; i < nw; ++i) {
+	if (naFlag[i]) {
+	  for(uint32_t k = wins[i].start; k < wins[i].end; ++k) uniqContent[k] = 0;
+	}
+      }
+
+      // Split-read breakpoints
+      std::vector<SVBreakpoint> chrbp;
+      collectBreakpoints(c, gcbound, gcContent, uniqContent, gcbias, cov, hdr, refIndex, clips, chrbp);
+
+      // CNV discovery
+      if (!c.hasGenoFile) segmentRD(c, gcbound, gcContent, uniqContent, gcbias, tileFac, regWin, cov, hdr, refIndex, chrbp, uniqueTrack(), cnvs);
+
+      // CNV genotyping
+      genotypeCNVs(c, gcbound, gcContent, uniqContent, gcbias, tileFac, regWin, cov, covUniq, covMap, ref, hdr, refIndex, cnvs);
+      if (ref != NULL) free(ref);
 
       // Write windows
       if (!c.covfile.empty()) {
