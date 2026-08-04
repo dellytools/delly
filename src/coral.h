@@ -25,6 +25,7 @@ namespace torali
 
   struct CountDNAConfig {
     bool basecov;
+    bool somatic;
     bool adaptive;
     bool hasStatsFile;
     bool hasScanFile;
@@ -464,6 +465,7 @@ namespace torali
   int coral(int argc, char **argv) {
     CountDNAConfig c;
     std::string haploidChr;
+    std::string mode;
 
     // Parameter
     boost::program_options::options_description generic("Generic options");
@@ -491,6 +493,7 @@ namespace torali
 
     boost::program_options::options_description cancer("Ploidy/purity correction");
     cancer.add_options()
+      ("mode,m", boost::program_options::value<std::string>(&mode)->default_value("germline"), "CNV calling mode [germline|somatic]")
       ("ploidy,y", boost::program_options::value<float>(&c.ploidy)->default_value(2), "sample ploidy")
       ("purity,p", boost::program_options::value<float>(&c.purity)->default_value(1), "sample purity [0.1, 1]")
       ("ctrl-ploidy", boost::program_options::value<float>(&c.ctrlPloidy)->default_value(2), "control ploidy")
@@ -574,6 +577,14 @@ namespace torali
     c.targetExpCov = 0;
     if (c.window_size == 0) c.adaptive = true;
     if (c.targetReads == 0) c.targetReads = 150;
+
+    // Calling mode
+    c.somatic = (mode == "somatic");
+    if (c.somatic) {
+      // More sensitive segmentation
+      if (vm["penalty"].defaulted()) c.penalty = 1.25;
+      if (vm["cnv-merge"].defaulted()) c.cnMergeTol = 0;
+    }
 
     // Purity
     if (c.purity > 1) c.purity = 1;

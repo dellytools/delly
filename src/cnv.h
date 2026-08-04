@@ -92,6 +92,13 @@ namespace torali
     return dt.totalGc ? gcbias[gc].coverageTotal : gcbias[gc].coverage;
   }
 
+  template<typename TConfig>
+  inline double
+  _ratioToCN(TConfig const& c, double const r) {
+    if (c.somatic) return (c.expectedCN * r - c.ctrlPloidy * (1.0 - c.purity)) / c.purity;
+    return (double) c.ploidy * r;
+  }
+
   // Read-depth copy number
   template<typename TConfig, typename TGcBias, typename TCoverage>
   inline double
@@ -103,7 +110,7 @@ namespace torali
 	expcov += _expCov(dt, gcbias, gcContent[p]) * (tileFac.empty() ? 1.0 : (double) tileFac[p / regWin]);
       }
     }
-    return (expcov > 0) ? (c.ploidy * covsum / expcov) : (double) c.ploidy;
+    return (expcov > 0) ? _ratioToCN(c, covsum / expcov) : (double) c.ploidy;
   }
 
   // Collect candidate CNV boundaries
@@ -215,7 +222,7 @@ namespace torali
 	++pos;
       }
       double cn = c.ploidy;
-      if (expcov > 0) cn = c.ploidy * covsum / expcov;
+      if (expcov > 0) cn = _ratioToCN(c, covsum / expcov);
       double mp = (double) winlen / (double) (cnvs[n].end - cnvs[n].start);
       cnvs[n].cn = cn;
       cnvs[n].mappable = mp;
@@ -254,7 +261,7 @@ namespace torali
 	    ++winlen;
 	    if (winlen % wsz == 0) {
 	      double cn = c.ploidy;
-	      if (expcov > 0) cn = c.ploidy * covsum / expcov;
+	      if (expcov > 0) cn = _ratioToCN(c, covsum / expcov);
 	      acc(cn);
 	      covsum = 0;
 	      expcov = 0;
@@ -522,7 +529,7 @@ namespace torali
       int32_t cih = (B[s].bp >= 0) ? (start + bpTol) : (we[wa] - 1);
       int32_t cel = (B[s+1].bp >= 0) ? (end - bpTol) : ws[wb-1];
       int32_t ceh = (B[s+1].bp >= 0) ? (end + bpTol) : (we[wb-1]);
-      double cn = (segexp[s] > 0) ? (c.ploidy * segcov[s] / segexp[s]) : (double) c.ploidy;
+      double cn = (segexp[s] > 0) ? _ratioToCN(c, segcov[s] / segexp[s]) : (double) c.ploidy;
       CNV cnvRec(refIndex, start, end, cil, cih, cel, ceh, cn, 1.0);
       cnvRec.srleft = B[s].sr;
       cnvRec.srright = B[s+1].sr;
@@ -718,7 +725,7 @@ namespace torali
 	if (c.hasSegFile) segOut << bamhd->target_name[cnvs[i].chr] << '\t' << cnvs[i].start << '\t' << cnvs[i].end << "\tSEG" << (i + 1) << '\t' << cnvs[i].cn << '\n';
 
 	// Only true CNVs, unless in genotyping mode
-	if ((!c.hasGenoFile) && (absCN == c.ploidy)) continue;
+	if ((!c.hasGenoFile) && (!c.somatic) && (absCN == c.ploidy)) continue;
 
 	// Output main vcf fields
 	rec->rid = bcf_hdr_name2id(hdr, bamhd->target_name[cnvs[i].chr]);
@@ -780,7 +787,7 @@ namespace torali
 	gts[1] = bcf_gt_missing;
 	int32_t qval = _computeCNLs(c, cnvs[i].cn, cnvs[i].sd, cnl, gqval);
 	// Mappability-aware quality
-	if (!cnvs[i].useTotal) {
+	if ((!c.somatic) && (!cnvs[i].useTotal)) {
 	  double alpha = 0;
 	  if ((cnvs[i].rdcnt > 0.1) && (cnvs[i].rdcnu >= 0)) {
 	    alpha = 1.0 - cnvs[i].rdcnu / cnvs[i].rdcnt;
@@ -796,7 +803,7 @@ namespace torali
 	if (c.hasGenoFile) rec->qual = cnvs[i].qval;  // Leave site quality in genotyping mode
 	else rec->qual = qval;
 	// Filter DELs
-	bool delReject = ((cnvs[i].cn < (double) c.ploidy) && (cnvs[i].rdcnt >= 0) && (cnvs[i].rdcnt > c.cnvDelConfirm));
+	bool delReject = ((!c.somatic) && (cnvs[i].cn < (double) c.ploidy) && (cnvs[i].rdcnt >= 0) && (cnvs[i].rdcnt > c.cnvDelConfirm));
 	tmpi = bcf_hdr_id2int(hdr, BCF_DT_ID, "PASS");
 	if ((rec->qual < c.cnvMinQual) || (delReject)) tmpi = bcf_hdr_id2int(hdr, BCF_DT_ID, "LowQual");
 	bcf_update_filter(hdr, rec, &tmpi, 1);
