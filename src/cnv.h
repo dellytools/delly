@@ -295,7 +295,7 @@ namespace torali
 	double zr = std::log2(std::max(cur.cn, 0.03));
 	sameCN = (std::abs(zl - zr) < mergeTol);
       }
-      if (sameCN && (prev.chr == cur.chr)) {
+      if (sameCN && (prev.chr == cur.chr) && (cur.start <= prev.end)) {
 	double w1 = (double) (prev.end - prev.start);
 	double w2 = (double) (cur.end - cur.start);
 	double wsum = (w1 + w2 > 0) ? (w1 + w2) : 1.0;
@@ -371,7 +371,7 @@ namespace torali
   // Segment read-depth
   template<typename TConfig, typename TGcBias, typename TCoverage>
   inline void
-  segmentRD(TConfig const& c, std::pair<uint32_t, uint32_t> const& gcbound, std::vector<uint16_t> const& gcContent, std::vector<uint16_t> const& uniqContent, TGcBias const& gcbias, std::vector<float> const& tileFac, uint32_t const regWin, TCoverage const& cov, bam_hdr_t const* hdr, int32_t const refIndex, std::vector<SVBreakpoint> const& chrbp, DepthTrack const& dt, std::vector<CNV>& cnvs) {
+  segmentRD(TConfig const& c, std::pair<uint32_t, uint32_t> const& gcbound, std::vector<uint16_t> const& gcContent, std::vector<uint16_t> const& uniqContent, TGcBias const& gcbias, std::vector<float> const& tileFac, uint32_t const regWin, TCoverage const& cov, bam_hdr_t const* hdr, int32_t const refIndex, std::vector<SVBreakpoint> const& chrbp, DepthTrack const& dt, std::vector<std::pair<int32_t, int32_t> > const& naiv, std::vector<CNV>& cnvs) {
     int32_t reflen = (int32_t) hdr->target_len[refIndex];
     int32_t kmin = 4;
     int32_t bpTol = (int32_t) (2 * c.minClip);
@@ -387,6 +387,7 @@ namespace torali
     std::vector<double> wexp;
     std::vector<int32_t> ws;
     std::vector<int32_t> we;
+    std::vector<bool> gapStart;
     {
       double covsum = 0;
       double expraw = 0;
@@ -394,7 +395,29 @@ namespace torali
       int32_t winlen = 0;
       int32_t start = -1;
       int32_t last = -1;
+      bool runStart = true;
+      uint32_t naIdx = 0;
       for(int32_t pos = 0; pos < reflen; ++pos) {
+	// Crossed NA gap
+	while ((naIdx < naiv.size()) && (pos >= naiv[naIdx].second)) {
+	  if (start >= 0) {
+	    double r = (expcor > 0) ? (covsum / expcor) : 1.0;
+	    z.push_back(std::log2(std::max(r, rFloor)));
+	    wcov.push_back(covsum);
+	    wexp.push_back(expcor);
+	    ws.push_back(start);
+	    we.push_back(last + 1);
+	    gapStart.push_back(runStart);
+	    runStart = false;
+	    covsum = 0;
+	    expraw = 0;
+	    expcor = 0;
+	    winlen = 0;
+	    start = -1;
+	  }
+	  runStart = true;
+	  ++naIdx;
+	}
 	if (_posUsed(dt, c, gcContent, uniqContent, gcbound, pos)) {
 	  if (start < 0) start = pos;
 	  double e1 = _expCov(dt, gcbias, gcContent[pos]);
@@ -411,6 +434,8 @@ namespace torali
 	    wexp.push_back(expcor);
 	    ws.push_back(start);
 	    we.push_back(pos + 1);
+	    gapStart.push_back(runStart);
+	    runStart = false;
 	    covsum = 0;
 	    expraw = 0;
 	    expcor = 0;
@@ -426,6 +451,8 @@ namespace torali
 	wexp.push_back(expcor);
 	ws.push_back(start);
 	we.push_back(last + 1);
+	gapStart.push_back(runStart);
+	runStart = false;
       }
     }
     int32_t N = (int32_t) z.size();
@@ -453,7 +480,11 @@ namespace torali
     for(uint32_t i = 0; i < pcfbnd.size(); ++i) B.push_back(CnvBoundary(pcfbnd[i], -1, 0));
     B.push_back(CnvBoundary(N, -1, 0));
 
-    // Fuse split-read breakpoints
+    // Unmappable gap
+    for(int32_t i = 1; i < N; ++i) if (gapStart[i]) B.push_back(CnvBoundary(i, -1, 0));
+
+    // Refine with split-reads
+    std::vector<int32_t> bpDist(B.size(), -1);
     for(uint32_t k = 0; k < chrbp.size(); ++k) {
       int32_t bppos = chrbp[k].pos;
       int32_t lo = 0, hi = N;
@@ -464,16 +495,16 @@ namespace torali
       }
       int32_t wi = lo;
       if ((wi <= 0) || (wi >= N)) continue;
-      int32_t bi = 0;
+      int32_t bi = -1;
       for(uint32_t b = 1; b + 1 < B.size(); ++b) {
-	if (std::abs(B[b].w - wi) < std::abs(B[bi].w - wi)) bi = b;
+	if ((bi < 0) || (std::abs(B[b].w - wi) < std::abs(B[bi].w - wi))) bi = (int32_t) b;
       }
-      if ((bi > 0) && (std::abs(B[bi].w - wi) <= 1)) {
-	B[bi].w = wi;
+      if ((bi < 0) || (std::abs(B[bi].w - wi) > 1)) continue;
+      int32_t d = std::abs(bppos - ws[B[bi].w]);
+      if ((bpDist[bi] < 0) || (d < bpDist[bi])) {
+	bpDist[bi] = d;
 	B[bi].bp = bppos;
 	B[bi].sr = chrbp[k].support;
-      } else {
-	B.push_back(CnvBoundary(wi, bppos, chrbp[k].support));
       }
     }
     std::sort(B.begin(), B.end());
@@ -504,7 +535,11 @@ namespace torali
 	double dz = std::abs(std::log2(std::max(cnL / c.ploidy, rFloor)) - std::log2(std::max(cnR / c.ploidy, rFloor)));
 	double se = sigma * std::sqrt(1.0 / (double) std::max(segnw[s], 1) + 1.0 / (double) std::max(segnw[s+1], 1));
 	double tol = std::max(zFloor, zK * se);
-	if ((dz < tol) && ((best < 0) || (dz < bestDz))) { best = (int32_t) s; bestDz = dz; }
+	bool gapB = (B[s+1].w < N) && gapStart[B[s+1].w];
+	if ((dz < tol) && (!gapB) && ((best < 0) || (dz < bestDz))) {
+	  best = (int32_t) s;
+	  bestDz = dz;
+	}
       }
       if (best < 0) break;
       uint32_t s = (uint32_t) best;
@@ -523,16 +558,18 @@ namespace torali
       int32_t wa = B[s].w;
       int32_t wb = B[s+1].w;
       if (wb <= wa) continue;
-      int32_t start = (B[s].bp >= 0) ? B[s].bp : ws[wa];
-      int32_t end = (B[s+1].bp >= 0) ? B[s+1].bp : we[wb-1];
-      int32_t cil = (B[s].bp >= 0) ? (start - bpTol) : ws[wa];
-      int32_t cih = (B[s].bp >= 0) ? (start + bpTol) : (we[wa] - 1);
-      int32_t cel = (B[s+1].bp >= 0) ? (end - bpTol) : ws[wb-1];
-      int32_t ceh = (B[s+1].bp >= 0) ? (end + bpTol) : (we[wb-1]);
+      bool useLbp = (B[s].bp >= 0) && (!gapStart[wa]);
+      bool useRbp = (B[s+1].bp >= 0) && ((wb >= N) || (!gapStart[wb]));
+      int32_t start = useLbp ? B[s].bp : ws[wa];
+      int32_t end = useRbp ? B[s+1].bp : we[wb-1];
+      int32_t cil = useLbp ? (start - bpTol) : ws[wa];
+      int32_t cih = useLbp ? (start + bpTol) : (we[wa] - 1);
+      int32_t cel = useRbp ? (end - bpTol) : ws[wb-1];
+      int32_t ceh = useRbp ? (end + bpTol) : (we[wb-1]);
       double cn = (segexp[s] > 0) ? _ratioToCN(c, segcov[s] / segexp[s]) : (double) c.ploidy;
       CNV cnvRec(refIndex, start, end, cil, cih, cel, ceh, cn, 1.0);
-      cnvRec.srleft = B[s].sr;
-      cnvRec.srright = B[s+1].sr;
+      cnvRec.srleft = useLbp ? B[s].sr : 0;
+      cnvRec.srright = useRbp ? B[s+1].sr : 0;
       cnvRec.useTotal = (!dt.gated);
       cnvs.push_back(cnvRec);
     }

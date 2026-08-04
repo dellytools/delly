@@ -383,10 +383,29 @@ namespace torali
 	}
       }
 
+      // Flag low callable (large) windows
+      if ((c.adaptive) && (nw > 4)) {
+	std::vector<int32_t> spans(nw);
+	for(uint32_t i = 0; i < nw; ++i) spans[i] = (int32_t) (wins[i].end - wins[i].start);
+	std::vector<int32_t> tmp(spans);
+	std::sort(tmp.begin(), tmp.end());
+	int32_t medSpan = tmp[tmp.size() / 2];
+	for(uint32_t i = 0; i < nw; ++i) tmp[i] = std::abs(spans[i] - medSpan);
+	std::sort(tmp.begin(), tmp.end());
+	int32_t madSpan = tmp[tmp.size() / 2];
+	int32_t maxSpan = std::max(medSpan + (int32_t) c.mad * madSpan, 2 * medSpan);
+	for(uint32_t i = 0; i < nw; ++i) if (spans[i] > maxSpan) naFlag[i] = true;
+      }
+
       // Exclude NA windows
+      std::vector<std::pair<int32_t, int32_t> > naiv;
       for(uint32_t i = 0; i < nw; ++i) {
 	if (naFlag[i]) {
 	  for(uint32_t k = wins[i].start; k < wins[i].end; ++k) uniqContent[k] = 0;
+	  int32_t nas = (int32_t) wins[i].start;
+	  int32_t nae = (int32_t) wins[i].end;
+	  if ((!naiv.empty()) && (naiv.back().second >= nas)) naiv.back().second = std::max(naiv.back().second, nae);
+	  else naiv.push_back(std::make_pair(nas, nae));
 	}
       }
 
@@ -395,7 +414,7 @@ namespace torali
       collectBreakpoints(c, gcbound, gcContent, uniqContent, gcbias, cov, hdr, refIndex, clips, chrbp);
 
       // CNV discovery
-      if (!c.hasGenoFile) segmentRD(c, gcbound, gcContent, uniqContent, gcbias, tileFac, regWin, cov, hdr, refIndex, chrbp, uniqueTrack(), cnvs);
+      if (!c.hasGenoFile) segmentRD(c, gcbound, gcContent, uniqContent, gcbias, tileFac, regWin, cov, hdr, refIndex, chrbp, uniqueTrack(), naiv, cnvs);
 
       // CNV genotyping
       genotypeCNVs(c, gcbound, gcContent, uniqContent, gcbias, tileFac, regWin, cov, covUniq, covMap, ref, hdr, refIndex, cnvs);
