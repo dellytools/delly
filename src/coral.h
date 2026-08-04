@@ -47,6 +47,7 @@ namespace torali
     uint32_t minChrLen;
     uint32_t minCnvSize;
     uint32_t targetReads;
+    uint32_t minSegWin;
     double targetExpCov;
     uint16_t minQual;
     uint16_t mapqUniq;
@@ -545,6 +546,7 @@ namespace torali
       ("fraction-window", boost::program_options::value<float>(&c.fracWindow)->default_value(0.25), "min. callable window fraction [0,1]")
       ("mapq-uniq", boost::program_options::value<uint16_t>(&c.mapqUniq)->default_value(20), "min. MAPQ for a uniquely-placed read")
       ("target-reads", boost::program_options::value<uint32_t>(&c.targetReads)->default_value(150), "target reads/window")
+      ("min-windows", boost::program_options::value<uint32_t>(&c.minSegWin)->default_value(2), "min. windows per segment")
       ("scan-window", boost::program_options::value<uint32_t>(&c.scanWindow)->default_value(10000), "GC scanning window size")
       ("scan-regions", boost::program_options::value<boost::filesystem::path>(&c.scanFile), "GC scanning regions in BED format")
       ("mad-cutoff", boost::program_options::value<uint16_t>(&c.mad)->default_value(3), "median + 3 * mad count cutoff")

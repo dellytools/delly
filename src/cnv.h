@@ -373,7 +373,7 @@ namespace torali
   inline void
   segmentRD(TConfig const& c, std::pair<uint32_t, uint32_t> const& gcbound, std::vector<uint16_t> const& gcContent, std::vector<uint16_t> const& uniqContent, TGcBias const& gcbias, std::vector<float> const& tileFac, uint32_t const regWin, TCoverage const& cov, bam_hdr_t const* hdr, int32_t const refIndex, std::vector<SVBreakpoint> const& chrbp, DepthTrack const& dt, std::vector<std::pair<int32_t, int32_t> > const& naiv, std::vector<CNV>& cnvs) {
     int32_t reflen = (int32_t) hdr->target_len[refIndex];
-    int32_t kmin = 4;
+    int32_t kmin = std::max(1, (int32_t) c.minSegWin);
     int32_t bpTol = (int32_t) (2 * c.minClip);
     
     // Segment at the window resolution
