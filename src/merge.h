@@ -1549,14 +1549,15 @@ namespace torali
 	float bestUniq = -1;
 	int32_t bestSrl = 0;
 	int32_t bestSrr = 0;
+	int32_t cnvWin = std::max((int32_t) c.bpoffset, (int32_t) (c.normFrac * (lead.end - lead.start)));
 	for(std::size_t j = i; j < n; ++j) {
 	  if (used[j]) continue;
 	  IntervalScore const& cur = (*iG)[j];
-	  if (cur.start - lead.start > c.bpoffset) break;
+	  if ((int32_t) (cur.start - lead.start) > cnvWin) break;
 	  // Overlap?
 	  if (j != i) {
-	    bool endClose = ((cur.end > lead.end) && (cur.end - lead.end < c.bpoffset)) || ((cur.end <= lead.end) && (lead.end - cur.end < c.bpoffset));
-	    if ((!endClose) || (recOverlap(lead.start, lead.end, cur.start, cur.end) < c.recoverlap)) continue;
+	    int32_t endOff = (cur.end > lead.end) ? (cur.end - lead.end) : (lead.end - cur.end);
+	    if ((endOff >= cnvWin) || (recOverlap(lead.start, lead.end, cur.start, cur.end) < c.recoverlap)) continue;
 	  }
 	  used[j] = true;
 	  if (cur.cn < 2) {
