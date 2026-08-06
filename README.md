@@ -16,7 +16,9 @@ Delly is an integrated structural variant (SV) and copy-number variant (CNV) pre
 
 # Installing Delly
 
-Delly is available as a [pre-compiled binary](https://github.com/dellytools/delly/releases/), a [singularity container (SIF file)](https://github.com/dellytools/delly/releases/), a [docker container](https://hub.docker.com/r/dellytools/delly/) or via [Bioconda](https://anaconda.org/bioconda/delly). You can also build Delly from source: 
+Delly is available as a [pre-compiled binary](https://github.com/dellytools/delly/releases/), a [Singularity container (SIF file)](https://github.com/dellytools/delly/releases/), a [Docker container](https://hub.docker.com/r/dellytools/delly/), via [Bioconda](https://anaconda.org/bioconda/delly), or [Homebrew](https://github.com/dellytools/delly).
+
+You can also build Delly from source: 
 
 `git clone --recursive https://github.com/dellytools/delly.git && cd delly/ && make all`
 
