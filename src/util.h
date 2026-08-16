@@ -50,6 +50,7 @@ namespace torali
     int32_t qval;
     int32_t srleft;
     int32_t srright;
+    int32_t window;
     double cn;
     double mappable;
     double uniqfrac;
@@ -57,12 +58,11 @@ namespace torali
     double rdcnu;
     double rdcnt;
     double sd;
-    bool useTotal;
     std::string id;
 
 
-    CNV() : chr(0), start(0), end(0), ciposlow(0), ciposhigh(0), ciendlow(0), ciendhigh(0), qval(0), srleft(0), srright(0), cn(-1), mappable(0), uniqfrac(-1), lowcomplex(0), rdcnu(-1), rdcnt(-1), sd(1), useTotal(false), id("") {}
-    CNV(int32_t const c, int32_t const s, int32_t const e, int32_t const cil, int32_t const cih, int32_t const cel, int32_t ceh, double const estcn, double const mp) : chr(c), start(s), end(e), ciposlow(cil), ciposhigh(cih), ciendlow(cel), ciendhigh(ceh), qval(0), srleft(0), srright(0), cn(estcn), mappable(mp), uniqfrac(-1), lowcomplex(0), rdcnu(-1), rdcnt(-1), sd(1), useTotal(false), id("") {}
+    CNV() : chr(0), start(0), end(0), ciposlow(0), ciposhigh(0), ciendlow(0), ciendhigh(0), qval(0), srleft(0), srright(0), window(-1), cn(-1), mappable(0), uniqfrac(-1), lowcomplex(0), rdcnu(-1), rdcnt(-1), sd(1), id("") {}
+    CNV(int32_t const c, int32_t const s, int32_t const e, int32_t const cil, int32_t const cih, int32_t const cel, int32_t ceh, double const estcn, double const mp) : chr(c), start(s), end(e), ciposlow(cil), ciposhigh(cih), ciendlow(cel), ciendhigh(ceh), qval(0), srleft(0), srright(0), window(-1), cn(estcn), mappable(mp), uniqfrac(-1), lowcomplex(0), rdcnu(-1), rdcnt(-1), sd(1), id("") {}
 
     bool operator<(const CNV& sv2) const {
       return ((chr<sv2.chr) || ((chr==sv2.chr) && (start<sv2.start)) || ((chr==sv2.chr) && (start==sv2.start) && (end<sv2.end)) || ((chr==sv2.chr) && (start==sv2.start) && (end==sv2.end) && (cn < sv2.cn)));
@@ -468,6 +468,31 @@ namespace torali
 	for (uint32_t k = 0; k < ol; ++k, ++rp) {
 	  if ((rp >= 0) && (rp < (int32_t) reflen)) {
 	    if (cov[rp] < maxCoverage - 1) ++cov[rp];
+	    if (uniqueRead && (covUniq[rp] < maxCoverage - 1)) ++covUniq[rp];
+	  }
+	}
+      } else if ((op == BAM_CDEL) || (op == BAM_CREF_SKIP)) {
+	rp += ol;
+      }
+    }
+  }
+
+  // Base coverage by MAPQ
+  template<typename TCoverage>
+  inline void
+  addBaseCoverage3(bam1_t const* rec, TCoverage& covAll, TCoverage& cov, TCoverage& covUniq, uint16_t const minQual, uint16_t const mapqUniq, uint32_t const reflen, uint32_t const maxCoverage) {
+    bool passMinQual = (rec->core.qual >= minQual);
+    bool uniqueRead = (rec->core.qual >= mapqUniq);
+    int32_t rp = rec->core.pos; // reference pointer
+    const uint32_t* cigar = bam_get_cigar(rec);
+    for (std::size_t i = 0; i < rec->core.n_cigar; ++i) {
+      int32_t op = bam_cigar_op(cigar[i]);
+      uint32_t ol = bam_cigar_oplen(cigar[i]);
+      if ((op == BAM_CMATCH) || (op == BAM_CEQUAL) || (op == BAM_CDIFF)) {
+	for (uint32_t k = 0; k < ol; ++k, ++rp) {
+	  if ((rp >= 0) && (rp < (int32_t) reflen)) {
+	    if (covAll[rp] < maxCoverage - 1) ++covAll[rp];
+	    if (passMinQual && (cov[rp] < maxCoverage - 1)) ++cov[rp];
 	    if (uniqueRead && (covUniq[rp] < maxCoverage - 1)) ++covUniq[rp];
 	  }
 	}

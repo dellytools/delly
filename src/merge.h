@@ -72,6 +72,8 @@ namespace torali
     int32_t cnvLargeSize;
     float cnvMinUniq;
     float cnvGainUniq;
+    int32_t cnvMinWindows;
+    int32_t cnvMinCarriers;
     boost::filesystem::path outfile;
     boost::filesystem::path genome;
     std::vector<boost::filesystem::path> files;
@@ -1479,6 +1481,7 @@ namespace torali
   
   template<typename TGenomeIntervals, typename TContigMap>
   void _fillCNVIntervalMap(MergeConfig const& c, TGenomeIntervals& iScore, TContigMap& cMap) {
+    std::vector<int32_t> winvals;
     for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
       htsFile* ifile = bcf_open(c.files[file_c].string().c_str(), "r");
       bcf_hdr_t* hdr = bcf_hdr_read(ifile);
@@ -1495,6 +1498,8 @@ namespace torali
       float* uniq = NULL;
       int32_t ncn = 0;
       int32_t* cn = NULL;
+      int32_t nwin = 0;
+      int32_t* win = NULL;
       while (bcf_read(ifile, hdr, rec) == 0) {
 	bcf_unpack(rec, BCF_UN_ALL);
 	bool pass = true;
@@ -1509,6 +1514,9 @@ namespace torali
 	uint32_t svEnd = rec->pos + 2;
 	if (bcf_get_info_int32(hdr, rec, "END", &svend, &nsvend) > 0) svEnd = *svend;
 	if ((svEnd - svStart < c.minsize) || (svEnd - svStart > c.maxsize)) continue;
+	if (bcf_get_info_int32(hdr, rec, "WINDOW", &win, &nwin) > 0) {
+	  if (*win > 0) winvals.push_back(*win);
+	}
 	bool precise = false;
 	if (bcf_get_info_flag(hdr, rec, "PRECISE", 0, 0) > 0) precise=true;
 	if ((c.filterForPrecise) && (!precise)) continue;
@@ -1525,12 +1533,26 @@ namespace torali
       if (srr != NULL) free(srr);
       if (uniq != NULL) free(uniq);
       if (cn != NULL) free(cn);
+      if (win != NULL) free(win);
       bcf_hdr_destroy(hdr);
       bcf_close(ifile);
       bcf_destroy(rec);
     }
+    // Drop small CNVs based on auto-window
+    if ((c.cnvMinWindows > 0) && (!winvals.empty())) {
+      std::sort(winvals.begin(), winvals.end());
+      int32_t medWin = winvals[winvals.size() / 2];
+      int32_t minCnvSize = c.cnvMinWindows * medWin;
+      for(unsigned int tid = 0; tid < iScore.size(); ++tid) {
+	typename TGenomeIntervals::value_type kept;
+	for(typename TGenomeIntervals::value_type::const_iterator it = iScore[tid].begin(); it != iScore[tid].end(); ++it) {
+	  if ((int32_t) (it->end - it->start) >= minCnvSize) kept.push_back(*it);
+	}
+	iScore[tid].swap(kept);
+      }
+    }
   }
-  
+
   template<typename TGenomeIntervals>
   void _processCNVIntervalMap(MergeConfig const& c, TGenomeIntervals const& iScore, TGenomeIntervals& iSelected) {
     unsigned int seqId = 0;
@@ -1575,7 +1597,7 @@ namespace torali
 	}
 	IntervalScore const& rep = (*iG)[repIdx];
 	int32_t size = (int32_t) (rep.end - rep.start);
-	bool lossOk = (suppLoss >= c.recurrentSamples) || preciseLoss || (size >= c.cnvLargeSize) || ((rep.score >= c.qualthres) && (bestUniq >= c.cnvMinUniq));
+	bool lossOk = (suppLoss >= c.recurrentSamples) || (suppLoss >= c.cnvMinCarriers) || preciseLoss || (size >= c.cnvLargeSize) || ((rep.score >= c.qualthres) && (bestUniq >= c.cnvMinUniq));
 	bool gainOk = preciseGain || ((suppGain >= c.recurrentSamples) && (bestUniq >= c.cnvGainUniq));
 	if ((lossOk) || (gainOk)) {
 	  IntervalScore keep(rep.start, rep.end, rep.score);
@@ -1926,6 +1948,8 @@ namespace torali
       ("cnv-large-size", boost::program_options::value<int32_t>(&c.cnvLargeSize)->default_value(200000), "min. size for a loss to pass on read-depth alone")
       ("cnv-min-uniq", boost::program_options::value<float>(&c.cnvMinUniq)->default_value(0.75), "min. UNIQ for a singleton loss")
       ("cnv-gain-uniq", boost::program_options::value<float>(&c.cnvGainUniq)->default_value(0.9), "min. UNIQ for a recurrent gain")
+      ("cnv-min-windows", boost::program_options::value<int32_t>(&c.cnvMinWindows)->default_value(3), "min. CNV size as number of auto-windows")
+      ("cnv-min-carriers", boost::program_options::value<int32_t>(&c.cnvMinCarriers)->default_value(3), "min. recurrent samples")
       ;
 
     // Define hidden options

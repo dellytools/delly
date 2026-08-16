@@ -73,6 +73,8 @@ namespace torali
     float rddup;
     float maxsd;
     float cnvmap;
+    float cnvmaxmiss;
+    float cnvmaxaf;
     float recCnv;
     float pgerm;
     float cn_offset;
@@ -97,14 +99,16 @@ namespace torali
     int32_t ac;
     int32_t ncalled;
     float qual;
+    float rsq = -1;
     bool precise;
     bool eligible;
     bool redundant;
   };
-  
+
   // Redundant record sort
   inline bool
   _redBetter(RedRec const& a, RedRec const& b) {
+    if ((a.rsq >= 0) && (b.rsq >= 0) && (std::abs(a.rsq - b.rsq) > 0.05)) return (a.rsq > b.rsq);
     if (a.precise != b.precise) return a.precise;
     if (a.ncalled != b.ncalled) return (a.ncalled > b.ncalled);
     if (a.ac != b.ac) return (a.ac > b.ac);
@@ -126,7 +130,7 @@ namespace torali
     return true;
   }
 
-  // Reciprocal-overlap for CNVs
+  // Containment-overlap for CNVs
   inline bool
   _redReciprocal(RedRec const& a, RedRec const& b, float const recOverlap) {
     if (a.svtype != b.svtype) return false;
@@ -134,9 +138,9 @@ namespace torali
     int32_t ovlEnd = std::min(a.epos, b.epos);
     int32_t ovl = ovlEnd - ovlStart;
     if (ovl <= 0) return false;
-    int32_t mx = std::max(a.epos - a.spos, b.epos - b.spos);
-    if (mx <= 0) return false;
-    return ((float) ovl / (float) mx >= recOverlap);
+    int32_t mn = std::min(a.epos - a.spos, b.epos - b.spos);
+    if (mn <= 0) return false;
+    return ((float) ovl / (float) mn >= recOverlap);
   }
 
   // remove redundant SVs
@@ -237,15 +241,12 @@ namespace torali
     int32_t* cnval = NULL;
     int32_t nrdcn = 0;
     float* rdcn = NULL;
-    int32_t nrdsd = 0;
-    float* rdsd = NULL;
     int32_t ngqval = 0;
     int32_t* gqval = NULL;
     int32_t ncnl = 0;
     float* cnl = NULL;
     bcf_get_format_int32(hdr, rec, "CN", &cnval, &ncnval);
     bcf_get_format_float(hdr, rec, "RDCN", &rdcn, &nrdcn);
-    bcf_get_format_float(hdr, rec, "RDSD", &rdsd, &nrdsd);
     bcf_get_format_int32(hdr, rec, "GQ", &gqval, &ngqval);
     bcf_get_format_float(hdr, rec, "CNL", &cnl, &ncnl);
     char** ftin = NULL; int nftin = 0;
@@ -277,43 +278,81 @@ namespace torali
     double ficStore = 0;
     double hwepvalStore = 1;
     double cnsdStore = 0;
+    double afStore = -1;
 
+    double cnshift = 0;
+    double sd = 0.025;
     if (ok) {
-      // CN-shift
-      double shiftSum = 0;
-      int32_t nconf = 0;
+      // CN normalization
+      std::vector<double> shiftv;
       for (int32_t i = 0; i < nsmpl; ++i) {
 	if ((std::isfinite(rdcn[i])) && (rdcn[i] != -1)) {
 	  validSmpl[i] = true;
-	  if ((rft > 0) && (ftin[i] != NULL) && (std::string(ftin[i]) == "PASS")) {
-	    confident[i] = true;
-	    shiftSum += boost::math::round(rdcn[i]) - rdcn[i];
-	    ++nconf;
-	  }
+	  shiftv.push_back(boost::math::round(rdcn[i]) - rdcn[i]);
 	}
       }
-      double cnshift = (nconf > 0) ? (shiftSum / (double) nconf) : 0;
+      if (!shiftv.empty()) {
+	std::sort(shiftv.begin(), shiftv.end());
+	cnshift = shiftv[shiftv.size() / 2];
+      }
+      for (int32_t i = 0; i < nsmpl; ++i) if (validSmpl[i]) rdcn[i] += cnshift;
 
-      // DEL or DUP?
+      // Main copy-number mode
       std::vector<int32_t> cncount(MAX_CN, 0);
+      for (int32_t i = 0; i < nsmpl; ++i) {
+	if (!validSmpl[i]) continue;
+	int32_t r = boost::math::iround(rdcn[i]);
+	if ((r >= 0) && (r < MAX_CN)) ++cncount[r];
+      }
+      int32_t cnmain = 0;
+      for (uint32_t k = 1; k < MAX_CN; ++k) {
+	if (cncount[k] > cncount[cnmain]) cnmain = k;
+      }
+
+      // Population SD around the main mode
+      double sMean = 0;
+      int32_t nMain = 0;
+      for (int32_t i = 0; i < nsmpl; ++i) {
+	if ((validSmpl[i]) && (boost::math::iround(rdcn[i]) == cnmain)) {
+	  sMean += rdcn[i];
+	  ++nMain;
+	}
+      }
+      if (nMain > 0) sMean /= (double) nMain;
+      double sVar = 0;
+      for (int32_t i = 0; i < nsmpl; ++i) {
+	if ((validSmpl[i]) && (boost::math::iround(rdcn[i]) == cnmain)) sVar += (rdcn[i] - sMean) * (rdcn[i] - sMean);
+      }
+      sd = (nMain > 0) ? std::sqrt(sVar / (double) nMain) : 0.025;
+      if (sd < 0.025) sd = 0.025;
+      cnsdStore = sd;
+
+      // GQ estimate
+      int32_t nconf = 0;
+      for (int32_t i = 0; i < nsmpl; ++i) {
+	if (!validSmpl[i]) {
+	  gqval[i] = 0;
+	  continue;
+	}
+	_computeCNLs(c, rdcn[i], sd, cnl, gqval, i);
+	if (gqval[i] >= c.genogq) {
+	  confident[i] = true;
+	  ++nconf;
+	}
+      }
+
+      // DEL or DUP
       int32_t hdel = 0;
       int32_t hdup = 0;
       int32_t hbeyond = 0;
       for (int32_t i = 0; i < nsmpl; ++i) {
-	if (!validSmpl[i]) continue;
-	rdcn[i] += cnshift;
 	if (!confident[i]) continue;
 	int32_t r = boost::math::iround(rdcn[i]);
-	if ((r >= 0) && (r < MAX_CN)) ++cncount[r];
 	if ((r == 0) || (r == 1)) ++hdel;
 	else if ((r == 3) || (r == 4)) ++hdup;
 	else if (r >= 5) ++hbeyond;
       }
       ncar = hdel + hdup + hbeyond;
-      int32_t cnmain = 0;
-      for (uint32_t k = 1; k < MAX_CN; ++k) {
-	if (cncount[k] > cncount[cnmain]) cnmain = k;
-      }
       std::string cls = "CNV";
       if ((nconf < 50) || (ncar == 0)) cls = "DROP";
       else if ((hdel >= hdup) && ((double) (hdup + hbeyond) <= 0.05 * (double) ncar)) cls = "DEL";
@@ -330,24 +369,6 @@ namespace torali
 	  sRA = 3;
 	  sAA = 4;
 	}
-
-	// Population SD
-	double sMean = 0;
-	double sVar = 0;
-	int32_t nMain = 0;
-	for (int32_t i = 0; i < nsmpl; ++i) {
-	  if ((confident[i]) && (boost::math::iround(rdcn[i]) == cnmain)) {
-	    sMean += rdcn[i];
-	    ++nMain;
-	  }
-	}
-	if (nMain > 0) sMean /= (double) nMain;
-	for (int32_t i = 0; i < nsmpl; ++i) {
-	  if ((confident[i]) && (boost::math::iround(rdcn[i]) == cnmain)) sVar += (rdcn[i] - sMean) * (rdcn[i] - sMean);
-	}
-	double sd = (nMain > 0) ? std::sqrt(sVar / (double) nMain) : 0.025;
-	if (sd < 0.025) sd = 0.025;
-	cnsdStore = sd;
 
 	// Recompute copy-number likelihoods
 	typedef std::vector<double> TGLs;
@@ -428,6 +449,7 @@ namespace torali
 	  _estBiallelicHWE_LRT(glVector, hweAF, mleGTFreq, pval);
 	  ficStore = Fic;
 	  hwepvalStore = pval;
+	  afStore = hweAF[1];
 	  float afmle = (float) hweAF[1];
 	  int32_t acmle = (int32_t) boost::math::iround(hweAF[1] * 2.0 * (double) glVector.size());
 	  float gfmle[3];
@@ -486,7 +508,13 @@ namespace torali
     if (!keep) failgerm = true;
     if (cnsdStore > c.maxsd) failgerm = true;
     if ((mpfrac < c.cnvmap) || (uqfrac < c.cnvmap)) failgerm = true;
+    if (c.cnvmaxmiss < 1) {
+      int32_t nvalid = 0;
+      for (int32_t i = 0; i < nsmpl; ++i) if (validSmpl[i]) ++nvalid;
+      if ((double) (nsmpl - nvalid) / (double) nsmpl > c.cnvmaxmiss) failgerm = true;
+    }
     if ((refined) && (ncar >= 10) && (c.hwe > 0) && (ficStore < 0) && (hwepvalStore < c.hwe)) failgerm = true;
+    if ((refined) && (c.cnvmaxaf < 1) && (outSvtype == "DEL") && (afStore > c.cnvmaxaf)) failgerm = true;
     if ((keep) && (!failgerm)) {
       int32_t fltid = bcf_hdr_id2int(hdr_out, BCF_DT_ID, "PASS");
       bcf_update_filter(hdr_out, rec, &fltid, 1);
@@ -494,7 +522,6 @@ namespace torali
 
     if (cnval != NULL) free(cnval);
     if (rdcn != NULL) free(rdcn);
-    if (rdsd != NULL) free(rdsd);
     if (gqval != NULL) free(gqval);
     if (cnl != NULL) free(cnl);
     if (ftin != NULL) { free(ftin[0]); free(ftin); }
@@ -560,6 +587,8 @@ namespace torali
     // VCF fields
     int32_t nsvend = 0;
     int32_t* svend = NULL;
+    int32_t nrsq = 0;
+    float* rsqbuf = NULL;
     int32_t nsvt = 0;
     char* svt = NULL;
     int32_t ninslen = 0;
@@ -640,6 +669,7 @@ namespace torali
 	      rr.len = std::abs(svlen);
 	      rr.qual = rec->qual;
 	      rr.precise = cnprecise;
+	      rr.rsq = (bcf_get_info_float(hdr_out, rec, "RSQ", &rsqbuf, &nrsq) > 0) ? (*rsqbuf) : -1;
 	      rr.eligible = true;
 	      rr.redundant = false;
 	      rr.dos.swap(cdos);
@@ -670,8 +700,14 @@ namespace torali
 	      rr.svtype = cnsvt;
 	      rr.spos = rec->pos;
 	      rr.epos = (svend != NULL) ? (*svend) : rec->pos;
-	      rr.len = 0; rr.qual = rec->qual; rr.precise = cnprecise;
-	      rr.eligible = false; rr.redundant = false; rr.ac = 0; rr.ncalled = 0;
+	      rr.len = 0;
+	      rr.qual = rec->qual;
+	      rr.precise = cnprecise;
+	      rr.rsq = -1;
+	      rr.eligible = false;
+	      rr.redundant = false;
+	      rr.ac = 0;
+	      rr.ncalled = 0;
 	      redWin.push_back(rr);
 	    } else bcf_write1(ofile, hdr_out, rec);
 	  }
@@ -684,8 +720,14 @@ namespace torali
 	    rr.svtype = "CNV";
 	    rr.spos = rec->pos;
 	    rr.epos = (svend != NULL) ? (*svend) : rec->pos;
-	    rr.len = 0; rr.qual = rec->qual; rr.precise = false;
-	    rr.eligible = false; rr.redundant = false; rr.ac = 0; rr.ncalled = 0;
+	    rr.len = 0;
+	    rr.qual = rec->qual;
+	    rr.precise = false;
+	    rr.rsq = -1;
+	    rr.eligible = false;
+	    rr.redundant = false;
+	    rr.ac = 0;
+	    rr.ncalled = 0;
 	    redWin.push_back(rr);
 	  } else bcf_write1(ofile, hdr_out, rec);
 	}
@@ -992,6 +1034,7 @@ namespace torali
 
     // Clean-up
     if (svend != NULL) free(svend);
+    if (rsqbuf != NULL) free(rsqbuf);
     if (svt != NULL) free(svt);
     if (inslen != NULL) free(inslen);
     if (gt != NULL) free(gt);
@@ -1062,10 +1105,12 @@ namespace torali
       ("rdist", boost::program_options::value<int32_t>(&c.rdist)->default_value(250), "max. BP distance for redundant sites (SV)")
       ("rsize", boost::program_options::value<float>(&c.rsize)->default_value(0.8), "min. size ratio for redundant sites (SV)")
       ("maxsd", boost::program_options::value<float>(&c.maxsd)->default_value(0.5), "max. population copy-number SD (CNV)")
-      ("cnv-mappability", boost::program_options::value<float>(&c.cnvmap)->default_value(0.5), "min. mappable and unique fraction of the CNV")
+      ("cnv-mappability", boost::program_options::value<float>(&c.cnvmap)->default_value(0.3), "min. mappable and unique fraction of the CNV")
+      ("cnv-max-missing", boost::program_options::value<float>(&c.cnvmaxmiss)->default_value(0.05), "max. fraction of missing GTs (CNV)")
+      ("cnv-max-af", boost::program_options::value<float>(&c.cnvmaxaf)->default_value(0.7), "max. AF for DEL (CNV)")
       ("cnv-ploidy", boost::program_options::value<uint16_t>(&c.ploidy)->default_value(2), "baseline ploidy for CNV genotyping (CNV)")
       ("cnv-reciprocal", boost::program_options::value<float>(&c.recCnv)->default_value(0.8), "min. reciprocal overlap (CNV)")
-      ("hwe,w", boost::program_options::value<float>(&c.hwe)->default_value(0.000001), "min. HWE p-value for excess-het")
+      ("hwe,w", boost::program_options::value<float>(&c.hwe)->default_value(0), "min. HWE p-value for excess-het (0=off)")
       ("no-collapse", boost::program_options::bool_switch(&c.noCollapse), "disable redundant-site collapse")
       ("no-refine", boost::program_options::bool_switch(&c.noRefine), "disable population refinement (SV)")
 

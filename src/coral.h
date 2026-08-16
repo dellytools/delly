@@ -62,6 +62,7 @@ namespace torali
     float fragmentUnique;
     int32_t cnvMinQual;
     float cnvDelConfirm;
+    float cnvDelRatio;
     std::string sampleName;
     boost::filesystem::path segfile;
     boost::filesystem::path genofile;
@@ -83,9 +84,11 @@ namespace torali
     double expcov;
     double ucov;
     double tcov;
+    double aall;
+    double eall;
     bool valid;
 
-    CovWin(uint32_t const s, uint32_t const e, uint32_t const w, double const cs, double const ec, double const uc, double const tc, bool vld) : start(s), end(e), winlen(w), covsum(cs), expcov(ec), ucov(uc), tcov(tc), valid(vld) {}
+    CovWin(uint32_t const s, uint32_t const e, uint32_t const w, double const cs, double const ec, double const uc, double const tc, double const aa, double const ea, bool vld) : start(s), end(e), winlen(w), covsum(cs), expcov(ec), ucov(uc), tcov(tc), aall(aa), eall(ea), valid(vld) {}
   };
 
   struct CountDNAConfigLib {
@@ -189,6 +192,7 @@ namespace torali
       typedef std::vector<TCount> TCoverage;
       TCoverage cov(hdr->target_len[refIndex], 0);
       TCoverage covUniq(hdr->target_len[refIndex], 0);
+      TCoverage covAll(hdr->target_len[refIndex], 0);
       TCoverage covTot;
       if (!c.basecov) covTot.resize(hdr->target_len[refIndex], 0);
       TCoverage& covMap = (!c.basecov) ? covTot : cov;
@@ -207,22 +211,19 @@ namespace torali
 	std::set<std::size_t> lastAlignedPosReads;
 	while (sam_itr_next(samfile, iter, rec) >= 0) {
 	  if (rec->core.flag & (BAM_FQCFAIL | BAM_FDUP | BAM_FUNMAP | BAM_FSECONDARY | BAM_FSUPPLEMENTARY)) continue;
-	  if (rec->core.qual < c.minQual) continue;
 	  if ((rec->core.flag & BAM_FPAIRED) && ((rec->core.flag & BAM_FMUNMAP) || (rec->core.tid != rec->core.mtid))) continue;
+
+	  // Base coverage
+	  addBaseCoverage3(rec, covAll, covMap, covUniq, c.minQual, c.mapqUniq, hdr->target_len[refIndex], maxCoverage);
+
+	  // Filter by quality
+	  if (rec->core.qual < c.minQual) continue;
 
 	  // Collect split-read breakpoints
 	  if (rec->core.qual >= c.mapqUniq) addSplitReadBreakpoints(rec, c.minClip, c.minRefSep, hdr->target_len[refIndex], clips);
 
-	  // Base-level counting
-	  if (c.basecov) {
-	    addBaseCoverage(rec, cov, covUniq, c.mapqUniq, hdr->target_len[refIndex], maxCoverage);
-	    continue;
-	  }
-
-	  // Fragment counting
-
-	  // Use covTot instead of cov
-	  addBaseCoverage(rec, covTot, covUniq, c.mapqUniq, hdr->target_len[refIndex], maxCoverage);
+	  // Base-level counting done
+	  if (c.basecov) continue;
 
 	  // Fragment coverage
 	  int32_t midPoint = rec->core.pos + halfAlignmentLength(rec);
@@ -293,11 +294,17 @@ namespace torali
 	double expcor = 0;
 	double ucov = 0;
 	double tcov = 0;
+	double aall = 0;
+	double eall = 0;
 	uint32_t winlen = 0;
 	uint32_t start = 0;
 	for(uint32_t pos = 0; pos < hdr->target_len[refIndex]; ++pos) {
 	  ucov += covUniq[pos];
 	  tcov += covMap[pos];
+	  if ((gcContent[pos] > gcbound.first) && (gcContent[pos] < gcbound.second)) {
+	    aall += covAll[pos];
+	    eall += gcbias[gcContent[pos]].coverageTotal;
+	  }
 	  if (_posUsed(dt, c, gcContent, uniqContent, gcbound, pos)) {
 	    double e1 = _expCov(dt, gcbias, gcContent[pos]);
 	    covsum += cov[pos];
@@ -305,12 +312,14 @@ namespace torali
 	    expcor += e1 * (tileFac.empty() ? 1.0 : (double) tileFac[pos / regWin]);
 	    ++winlen;
 	    if (expraw >= c.targetExpCov) {
-	      wins.push_back(CovWin(start, pos + 1, winlen, covsum, expcor, ucov, tcov, true));
+	      wins.push_back(CovWin(start, pos + 1, winlen, covsum, expcor, ucov, tcov, aall, eall, true));
 	      covsum = 0;
 	      expraw = 0;
 	      expcor = 0;
 	      ucov = 0;
 	      tcov = 0;
+	      aall = 0;
+	      eall = 0;
 	      winlen = 0;
 	      start = pos + 1;
 	    }
@@ -324,10 +333,16 @@ namespace torali
 	    double expcov = 0;
 	    double ucov = 0;
 	    double tcov = 0;
+	    double aall = 0;
+	    double eall = 0;
 	    uint32_t winlen = 0;
 	    for(uint32_t pos = start; pos < start + c.window_size; ++pos) {
 	      ucov += covUniq[pos];
 	      tcov += covMap[pos];
+	      if ((gcContent[pos] > gcbound.first) && (gcContent[pos] < gcbound.second)) {
+		aall += covAll[pos];
+		eall += gcbias[gcContent[pos]].coverageTotal;
+	      }
 	      if (_posUsed(dt, c, gcContent, uniqContent, gcbound, pos)) {
 		covsum += cov[pos];
 		expcov += _expCov(dt, gcbias, gcContent[pos]) * (tileFac.empty() ? 1.0 : (double) tileFac[pos / regWin]);
@@ -335,7 +350,7 @@ namespace torali
 	      }
 	    }
 	    bool valid = (winlen >= c.fracWindow * c.window_size);
-	    wins.push_back(CovWin(start, start + c.window_size, winlen, covsum, expcov, ucov, tcov, valid));
+	    wins.push_back(CovWin(start, start + c.window_size, winlen, covsum, expcov, ucov, tcov, aall, eall, valid));
 	  }
 	}
       }
@@ -375,16 +390,21 @@ namespace torali
 	i = b + 1;
       }
 
+      // Total-depth deletion signal
+      double delRatio = c.cnvDelRatio;
+
       // Flag non-unique windows
       bool uniqGate = c.basecov;
       if (uniqGate) {
 	for(uint32_t i = 0; i < nw; ++i) {
 	  if (naFlag[i]) continue;
+	  double rTot = (wins[i].eall > 0) ? (wins[i].aall / wins[i].eall) : 1.0;
+	  if (rTot < delRatio) continue;
 	  if ((wins[i].tcov > 0) && (wins[i].ucov <= c.uniqueToTotalCovRatio * wins[i].tcov)) naFlag[i] = true;
 	}
       }
 
-      // Flag low callable (large) windows
+      // Flag low callable windows
       if ((c.adaptive) && (nw > 4)) {
 	std::vector<int32_t> spans(nw);
 	for(uint32_t i = 0; i < nw; ++i) spans[i] = (int32_t) (wins[i].end - wins[i].start);
@@ -395,7 +415,12 @@ namespace torali
 	std::sort(tmp.begin(), tmp.end());
 	int32_t madSpan = tmp[tmp.size() / 2];
 	int32_t maxSpan = std::max(medSpan + (int32_t) c.mad * madSpan, 2 * medSpan);
-	for(uint32_t i = 0; i < nw; ++i) if (spans[i] > maxSpan) naFlag[i] = true;
+	for(uint32_t i = 0; i < nw; ++i) {
+	  if (spans[i] > maxSpan) {
+	    double rTot = (wins[i].eall > 0) ? (wins[i].aall / wins[i].eall) : 1.0;
+	    if (rTot >= delRatio) naFlag[i] = true;
+	  }
+	}
       }
 
       // Exclude NA windows
@@ -418,7 +443,7 @@ namespace torali
       if (!c.hasGenoFile) segmentRD(c, gcbound, gcContent, uniqContent, gcbias, tileFac, regWin, cov, hdr, refIndex, chrbp, uniqueTrack(), naiv, cnvs);
 
       // CNV genotyping
-      genotypeCNVs(c, gcbound, gcContent, uniqContent, gcbias, tileFac, regWin, cov, covUniq, covMap, ref, hdr, refIndex, cnvs);
+      genotypeCNVs(c, gcbound, gcContent, uniqContent, gcbias, tileFac, regWin, cov, covUniq, covMap, covAll, ref, hdr, refIndex, cnvs);
       if (ref != NULL) free(ref);
 
       // Write windows
@@ -532,6 +557,7 @@ namespace torali
       ("window,w", boost::program_options::value<uint32_t>(&c.window_size)->default_value(0), "window size in bp (0: automatic)")
       ("fraction-unique", boost::program_options::value<float>(&c.uniqueToTotalCovRatio)->default_value(0.8), "uniqueness filter [0,1]")
       ("cnv-del-confirm", boost::program_options::value<float>(&c.cnvDelConfirm)->default_value(1.5), "max. total-depth CN for DEL")
+      ("cnv-del-ratio", boost::program_options::value<float>(&c.cnvDelRatio)->default_value(0.75), "total-depth ratio")
       ("basecov", "force base-level counting")
       ("fragmentcov", "force fragment-level counting")
       ("no-regional-gc", "disable broad GC correction")
@@ -775,10 +801,11 @@ namespace torali
       sam_close(samfile);
     }
 
-    // Counting model with auto = long single-end reads base-level otherwise fragment
+    // Counting model
     if (vm.count("basecov")) c.basecov = true;
     else if (vm.count("fragmentcov")) c.basecov = false;
-    else c.basecov = ((!pairedLib) && (li.rs >= 500));  
+    else c.basecov = ((!pairedLib) && (li.rs >= 500));
+    if ((c.basecov) && (!vm.count("cnv-del-confirm"))) c.cnvDelConfirm = std::numeric_limits<float>::max();
 
     // GC bias estimation
     typedef std::pair<uint32_t, uint32_t> TGCBound;

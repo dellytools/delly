@@ -261,6 +261,7 @@ namespace torali
       typedef std::vector<TCount> TCoverage;
       TCoverage cov(hdr->target_len[refIndex], 0);
       TCoverage covUniq(hdr->target_len[refIndex], 0);
+      TCoverage covAll(hdr->target_len[refIndex], 0);
       TCoverage covTot;
       if (!c.basecov) covTot.resize(hdr->target_len[refIndex], 0);
       TCoverage& covMap = (!c.basecov) ? covTot : cov;
@@ -277,14 +278,9 @@ namespace torali
       while (sam_itr_next(samfile, iter, rec) >= 0) {
 	if (rec->core.flag & (BAM_FSECONDARY | BAM_FQCFAIL | BAM_FDUP | BAM_FSUPPLEMENTARY | BAM_FUNMAP)) continue;
 	if ((rec->core.flag & BAM_FPAIRED) && ((rec->core.flag & BAM_FMUNMAP) || (rec->core.tid != rec->core.mtid))) continue;
+	addBaseCoverage3(rec, covAll, covMap, covUniq, c.minQual, c.mapqUniq, hdr->target_len[refIndex], maxCoverage);
 	if (rec->core.qual < c.minQual) continue;
-	if (c.basecov) {
-	  addBaseCoverage(rec, cov, covUniq, c.mapqUniq, hdr->target_len[refIndex], maxCoverage);
-	  continue;
-	}
-
-	// Fill covTot
-	addBaseCoverage(rec, covTot, covUniq, c.mapqUniq, hdr->target_len[refIndex], maxCoverage);
+	if (c.basecov) continue;
 
 	int32_t midPoint = rec->core.pos + halfAlignmentLength(rec);
 	if (rec->core.flag & BAM_FPAIRED) {
@@ -354,8 +350,8 @@ namespace torali
 	if ((bin >= 0) && (scanCounts[refIndex][bin].select)) {
 	  // Total-depth model
 	  ++gcbias[gcContent[i]].referenceTotal;
-	  gcbias[gcContent[i]].sampleTotal += cov[i];
-	  gcbias[gcContent[i]].coverageTotal += cov[i];
+	  gcbias[gcContent[i]].sampleTotal += covAll[i];
+	  gcbias[gcContent[i]].coverageTotal += covAll[i];
 	  // Unique-depth model
 	  if (uniqContent[i] >= c.fragmentUnique * c.meanisize) {
 	    ++gcbias[gcContent[i]].reference;

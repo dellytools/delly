@@ -205,10 +205,10 @@ namespace torali
 
   template<typename TConfig, typename TGcBias, typename TCoverage>
   inline void
-  genotypeCNVs(TConfig const& c, std::pair<uint32_t, uint32_t> const& gcbound, std::vector<uint16_t> const& gcContent, std::vector<uint16_t> const& uniqContent, TGcBias const& gcbias, std::vector<float> const& tileFac, uint32_t const regWin, TCoverage const& cov, TCoverage const& covUniq, TCoverage const& covMap, char const* ref, bam_hdr_t const* hdr, int32_t const refIndex, std::vector<CNV>& cnvs) {
+  genotypeCNVs(TConfig const& c, std::pair<uint32_t, uint32_t> const& gcbound, std::vector<uint16_t> const& gcContent, std::vector<uint16_t> const& uniqContent, TGcBias const& gcbias, std::vector<float> const& tileFac, uint32_t const regWin, TCoverage const& cov, TCoverage const& covUniq, TCoverage const& covMap, TCoverage const& covAll, char const* ref, bam_hdr_t const* hdr, int32_t const refIndex, std::vector<CNV>& cnvs) {
     for(uint32_t n = 0; n < cnvs.size(); ++n) {
       if (cnvs[n].chr != refIndex) continue;
-      DepthTrack const dt = cnvs[n].useTotal ? totalTrack() : uniqueTrack();
+      DepthTrack const dt = uniqueTrack();
       double covsum = 0;
       double expcov = 0;
       int32_t winlen = 0;
@@ -230,7 +230,7 @@ namespace torali
       // Double track CN
       int32_t const reflenL = (int32_t) hdr->target_len[refIndex];
       cnvs[n].rdcnu = _segmentCN(c, uniqueTrack(), gcbound, gcContent, uniqContent, gcbias, tileFac, regWin, cov, cnvs[n].start, cnvs[n].end, reflenL);
-      cnvs[n].rdcnt = _segmentCN(c, totalTrack(), gcbound, gcContent, uniqContent, gcbias, tileFac, regWin, cov, cnvs[n].start, cnvs[n].end, reflenL);
+      cnvs[n].rdcnt = _segmentCN(c, totalTrack(), gcbound, gcContent, uniqContent, gcbias, tileFac, regWin, covAll, cnvs[n].start, cnvs[n].end, reflenL);
 
       // Uniquely-mappable
       double ufrac = -1;
@@ -570,7 +570,9 @@ namespace torali
       CNV cnvRec(refIndex, start, end, cil, cih, cel, ceh, cn, 1.0);
       cnvRec.srleft = useLbp ? B[s].sr : 0;
       cnvRec.srright = useRbp ? B[s+1].sr : 0;
-      cnvRec.useTotal = (!dt.gated);
+      int64_t wsum = 0;
+      for(int32_t k = wa; k < wb; ++k) wsum += (int64_t) (we[k] - ws[k]);
+      cnvRec.window = (wb > wa) ? (int32_t) (wsum / (wb - wa)) : (end - start);
       cnvs.push_back(cnvRec);
     }
   }
@@ -595,6 +597,8 @@ namespace torali
     int32_t* srl = NULL;
     int32_t nsrr = 0;
     int32_t* srr = NULL;
+    int32_t nwin = 0;
+    int32_t* win = NULL;
     int32_t nsvt = 0;
     char* svt = NULL;
     int32_t nmethod = 0;
@@ -651,6 +655,8 @@ namespace torali
 	else cnv.srleft = 0;
 	if (bcf_get_info_int32(hdr, rec, "SRR", &srr, &nsrr) > 0) cnv.srright = *srr;
 	else cnv.srright = 0;
+	if (bcf_get_info_int32(hdr, rec, "WINDOW", &win, &nwin) > 0) cnv.window = *win;
+	else cnv.window = -1;
 
 	cnvs.push_back(cnv);
       }
@@ -663,7 +669,8 @@ namespace torali
     free(mp);
     free(srl);
     free(srr);
-    
+    free(win);
+
     // Close VCF
     bcf_hdr_destroy(hdr);
     bcf_close(ifile);
@@ -703,6 +710,7 @@ namespace torali
     bcf_hdr_append(hdr, "##INFO=<ID=RDCNT,Number=1,Type=Float,Description=\"Est. copy number from the total depth track\">");
     bcf_hdr_append(hdr, "##INFO=<ID=SRL,Number=1,Type=Integer,Description=\"Split-read support at the left breakpoint\">");
     bcf_hdr_append(hdr, "##INFO=<ID=SRR,Number=1,Type=Integer,Description=\"Split-read support at the right breakpoint\">");
+    bcf_hdr_append(hdr, "##INFO=<ID=WINDOW,Number=1,Type=Integer,Description=\"Auto-window size\">");
     bcf_hdr_append(hdr, "##INFO=<ID=IMPRECISE,Number=0,Type=Flag,Description=\"Imprecise copy-number variant\">");
     bcf_hdr_append(hdr, "##INFO=<ID=PRECISE,Number=0,Type=Flag,Description=\"Precise copy-number variant\">");
     bcf_hdr_append(hdr, "##INFO=<ID=SVTYPE,Number=1,Type=String,Description=\"Type of structural variant\">");
@@ -815,6 +823,10 @@ namespace torali
 	bcf_update_info_int32(hdr, rec, "SRL", &srltmp, 1);
 	int32_t srrtmp = cnvs[i].srright;
 	bcf_update_info_int32(hdr, rec, "SRR", &srrtmp, 1);
+	if (cnvs[i].window >= 0) {
+	  int32_t wintmp = cnvs[i].window;
+	  bcf_update_info_int32(hdr, rec, "WINDOW", &wintmp, 1);
+	}
 
 	// Genotyping
 	cnval[0] = absCN;
@@ -824,7 +836,7 @@ namespace torali
 	gts[1] = bcf_gt_missing;
 	int32_t qval = _computeCNLs(c, cnvs[i].cn, cnvs[i].sd, cnl, gqval);
 	// Mappability-aware quality
-	if ((!c.somatic) && (!cnvs[i].useTotal)) {
+	if (!c.somatic) {
 	  double alpha = 0;
 	  if ((cnvs[i].rdcnt > 0.1) && (cnvs[i].rdcnu >= 0)) {
 	    alpha = 1.0 - cnvs[i].rdcnu / cnvs[i].rdcnt;
@@ -835,7 +847,6 @@ namespace torali
 	  if (relq < 0) relq = 0;
 	  if (relq > 1) relq = 1;
 	  qval = (int32_t) (qval * relq);
-	  gqval[0] = (int32_t) (gqval[0] * relq);
 	}
 	if (c.hasGenoFile) rec->qual = cnvs[i].qval;  // Leave site quality in genotyping mode
 	else rec->qual = qval;
