@@ -704,11 +704,17 @@ namespace torali
     std::vector<bool> validChr;
     validChr.resize(hdr->n_targets, true);
     if (c.hasExcludeFile) {
-      std::ifstream chrFile(c.exclude.string().c_str(), std::ifstream::in);
-      if (chrFile.is_open()) {
-	while (chrFile.good()) {
-	  std::string chrFromFile;
-	  getline(chrFile, chrFromFile);
+      std::ifstream chrFile;
+      boost::iostreams::filtering_streambuf<boost::iostreams::input> dataIn;
+      if (is_gz(c.exclude)) {
+	chrFile.open(c.exclude.string().c_str(), std::ios_base::in | std::ios_base::binary);
+	dataIn.push(boost::iostreams::gzip_decompressor(), 16*1024);
+      } else chrFile.open(c.exclude.string().c_str(), std::ifstream::in);
+      dataIn.push(chrFile);
+      std::istream instream(&dataIn);
+      {
+	std::string chrFromFile;
+	while (std::getline(instream, chrFromFile)) {
 	  typedef boost::tokenizer< boost::char_separator<char> > Tokenizer;
 	  boost::char_separator<char> sep(" \t,;");
 	  Tokenizer tokens(chrFromFile, sep);
@@ -751,8 +757,10 @@ namespace torali
 	    }
 	  }
 	}
-	chrFile.close();
       }
+      dataIn.pop();
+      if (is_gz(c.exclude)) dataIn.pop();
+      chrFile.close();
     }
     // Create the valid regions
     for (int32_t i = 0; i<hdr->n_targets; ++i) {
