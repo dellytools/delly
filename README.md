@@ -107,6 +107,14 @@ Germline SV calling is available for short-reads (subcommand: sr) and long-reads
 
 `delly cnv -g hg38.fa -c out.cov.gz -o out.bcf -u out.seg.bed input.bam`
 
+For somatic copy-number alterations (SCNA) please use the more sensitive somatic mode.
+
+`delly cnv -m somatic -g hg38.fa -c out.cov.gz -o out.bcf -u out.seg.bed input.bam`
+
+Optionally an [exclude map](https://gear-genomics.embl.de/data/delly/) can be used (recommended for short-reads)
+
+`delly cnv -g hg38.fa -x human.GRCh38.map.excl.tsv.gz -c out.cov.gz -o out.bcf -u out.seg.bed input.bam`
+
 The output file `out.cov.gz` and the segmentation `out.seg.bed` can be plotted using [R](https://www.r-project.org/)
 
 `Rscript R/rd.R out.cov.gz out.seg.bed`
@@ -116,7 +124,6 @@ Instead of the segmentation, you can also visualize the CNV calls.
 `bcftools query -i 'FILTER="PASS" && QUAL>200' -f "%CHROM\t%POS\t%INFO/END\t%ID[\t%RDCN]\n" out.bcf > seg.bed`
 
 `Rscript R/rd.R out.cov.gz seg.bed`
-
 
 ## Germline CNV calling
 

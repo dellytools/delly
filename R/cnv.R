@@ -13,7 +13,7 @@ if (sum(x$cn > 9)) { x[x$cn > 9,]$cn = 9; }
 
 x$cn = factor(x$cn, levels=0:9)
 nsamples = length(unique(x$variable))
-nbins = 2 * ceiling(sqrt(nsamples))
+nbins = 5 * ceiling(sqrt(nsamples))
 if (nbins < 30) { nbins = 30; }
 
 # Plot CNVs
