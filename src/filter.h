@@ -1110,7 +1110,7 @@ namespace torali
       ("cnv-max-af", boost::program_options::value<float>(&c.cnvmaxaf)->default_value(0.7), "max. AF for DEL (CNV)")
       ("cnv-ploidy", boost::program_options::value<uint16_t>(&c.ploidy)->default_value(2), "baseline ploidy for CNV genotyping (CNV)")
       ("cnv-reciprocal", boost::program_options::value<float>(&c.recCnv)->default_value(0.8), "min. reciprocal overlap (CNV)")
-      ("hwe,w", boost::program_options::value<float>(&c.hwe)->default_value(0), "min. HWE p-value for excess-het (0=off)")
+      ("hwe,w", boost::program_options::value<float>(&c.hwe)->default_value(0.000001), "min. HWE p-value for excess-het (0=off)")
       ("no-collapse", boost::program_options::bool_switch(&c.noCollapse), "disable redundant-site collapse")
       ("no-refine", boost::program_options::bool_switch(&c.noRefine), "disable population refinement (SV)")
 

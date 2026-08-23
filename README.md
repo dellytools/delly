@@ -98,7 +98,7 @@ Germline SV calling is available for short-reads (subcommand: sr) and long-reads
 
 * Apply the germline SV filter
 
-`delly filter -f germline -o germline.bcf merged.bcf`
+`delly filter --hwe 0.000001 -f germline -o germline.bcf merged.bcf`
 
 
 ## CNV calling
