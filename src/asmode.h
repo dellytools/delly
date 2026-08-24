@@ -434,7 +434,7 @@ namespace torali {
 	    std::string tname(hdr->target_name[refIndex]);
 	    seq = faidx_fetch_seq(fai, tname.c_str(), 0, hdr->target_len[refIndex], &seqlen);
 	  }
-	  svs[svid].alleles = _addAlleles(boost::to_upper_copy(std::string(seq + svs[svid].svStart - 1, seq + svs[svid].svStart)), std::string(hdr->target_name[svs[svid].chr2]), svs[svid], svs[svid].svt);
+	  svs[svid].alleles = _addAlleles(_refAnchor(seq, svs[svid].svStart, hdr->target_len[refIndex]), std::string(hdr->target_name[svs[svid].chr2]), svs[svid], svs[svid].svt);
 	}
       }
       // Annotate SV subtype

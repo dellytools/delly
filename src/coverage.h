@@ -189,7 +189,7 @@ namespace torali {
 
 	// Set tag alleles
 	if (itSV->chr == refIndex) {
-	  if (itSV->alleles.empty()) itSV->alleles = _addAlleles(boost::to_upper_copy(std::string(seq + itSV->svStart - 1, seq + itSV->svStart)), std::string(hdr->target_name[itSV->chr2]), *itSV, itSV->svt);
+	  if (itSV->alleles.empty()) itSV->alleles = _addAlleles(_refAnchor(seq, itSV->svStart, hdr->target_len[refIndex]), std::string(hdr->target_name[itSV->chr2]), *itSV, itSV->svt);
 	}
 	if (!itSV->precise) continue;
 

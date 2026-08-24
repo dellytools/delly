@@ -255,6 +255,14 @@ namespace torali
   _addAlleles(std::string const& ref, std::string const& alt) {
     return ref + "," + alt;
   }
+
+  inline std::string
+  _refAnchor(char const* seq, int32_t const svStart, int32_t const chrLen) {
+    int32_t p = svStart - 1;
+    if (p < 0) p = 0;
+    if (p >= chrLen) p = chrLen - 1;
+    return boost::to_upper_copy(std::string(seq + p, seq + p + 1));
+  }
       
   inline std::string
   _addAlleles(std::string const& ref, std::string const& chr2, StructuralVariantRecord const& sv, int32_t const svt) {

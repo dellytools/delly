@@ -154,7 +154,7 @@ namespace torali
 
       // Take care of symbolic ALTs and SV annotation
       for(typename TSVs::iterator itSV = svs.begin(); itSV != svs.end(); ++itSV) {
-	if ((itSV->chr == refIndex) && (itSV->alleles.empty())) itSV->alleles = _addAlleles(boost::to_upper_copy(std::string(seq + itSV->svStart - 1, seq + itSV->svStart)), std::string(hdr[0]->target_name[itSV->chr2]), *itSV, itSV->svt);
+	if ((itSV->chr == refIndex) && (itSV->alleles.empty())) itSV->alleles = _addAlleles(_refAnchor(seq, itSV->svStart, hdr[0]->target_len[refIndex]), std::string(hdr[0]->target_name[itSV->chr2]), *itSV, itSV->svt);
 
 	// Annotate SVs
 	if ((itSV->chr == refIndex) && (!_translocation(itSV->svt))) {
