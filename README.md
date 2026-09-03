@@ -69,10 +69,9 @@ Somatic SV calling is available for short-reads (subcommand: sr) and long-reads 
 
 `delly filter -f somatic -o t1.somatic.bcf -s samples.tsv t1.bcf`
 
-* You can also use a larger panel of normal for somatic SV filtering
+For tumor-only sequencing applications or additional germline SV filtering, you can also use a panel of normals (PoN) approach for somatic SV discovery using [sansa's](https://github.com/dellytools/sansa) [PoN filtering](https://github.com/dellytools/sansa#somatic-sv-filtering).
 
-`delly [sr|lr] -o t1.bcf -g hg38.fa tumor1.bam control1.bam ... controlN.bam`
-
+`sansa somatic -a pon.bcf t1.bcf`
 
 ## Germline SV calling
 
