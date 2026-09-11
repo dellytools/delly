@@ -249,8 +249,9 @@ namespace torali
     bcf_get_format_float(hdr, rec, "RDCN", &rdcn, &nrdcn);
     bcf_get_format_int32(hdr, rec, "GQ", &gqval, &ngqval);
     bcf_get_format_float(hdr, rec, "CNL", &cnl, &ncnl);
-    char** ftin = NULL; int nftin = 0;
-    int32_t rft = bcf_get_format_string(hdr, rec, "FT", &ftin, &nftin);
+    char** ftin = NULL;
+    int nftin = 0;
+    bcf_get_format_string(hdr, rec, "FT", &ftin, &nftin);
     // CNV span mappability and uniqueness
     float mpfrac = 1;
     float uqfrac = 1;

@@ -55,6 +55,7 @@ namespace torali
     int32_t nchr;
     int32_t minimumFlankSize;
     int32_t indelsize;
+    int32_t genoCap;
     int32_t minConsWindow;
     uint32_t graphPruning;
     uint32_t minRefSep;
@@ -396,6 +397,7 @@ namespace torali
     c.trMinFrac = 0.85;
     c.minimumFlankSize = 13;
     c.indelsize = 1000;
+    c.genoCap = 25;
     return dellyRun(c);
   }
 

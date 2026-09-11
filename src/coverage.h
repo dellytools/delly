@@ -24,6 +24,7 @@
 #include <htslib/sam.h>
 
 #include "tags.h"
+#include "svanno.h"
 #include "util.h"
 #include "msa.h"
 #include "split.h"
@@ -106,12 +107,30 @@ namespace torali {
 
   template<typename TConfig>
   inline double
-  _editDistanceHW(TConfig const& c, std::string const& query, std::string const& target) {
+  _editDistanceHW(TConfig const& c, std::string const& query, std::string const& target, int32_t& editDist) {
     double score = 0;
+    editDist = (int32_t) query.size();
     EdlibAlignResult align = edlibAlign(query.c_str(), query.size(), target.c_str(), target.size(), edlibNewAlignConfig(2 * c.flankQuality * query.size(), EDLIB_MODE_HW, EDLIB_TASK_DISTANCE, NULL, 0));
-    if (align.editDistance != -1) score = ((1.0 - c.flankQuality) * (double) query.size()) / (double) (align.editDistance + 1);
+    if (align.editDistance != -1) {
+      score = ((1.0 - c.flankQuality) * (double) query.size()) / (double) (align.editDistance + 1);
+      editDist = align.editDistance;
+    }
     edlibFreeAlignResult(align);
     return score;
+  }
+
+  // Edit-distance GQ
+  template<typename TConfig>
+  inline uint8_t
+  _editDistGenoQual(TConfig const& c, int32_t const refED, int32_t const altED, uint8_t const readQual) {
+    int32_t delta = refED - altED;
+    int32_t adelta = (delta < 0) ? -delta : delta;
+    double w = std::log10((double) c.flankQuality / (double) (1.0 - c.flankQuality));
+    double ex = (double) adelta * w;
+    if (ex > 4.0) ex = 4.0;
+    uint32_t mq = (uint32_t) (10.0 * std::log10(1.0 + std::pow(10.0, ex)));
+    if (mq > (uint32_t) c.genoCap) mq = (uint32_t) c.genoCap;
+    return (uint8_t) std::min(mq, (uint32_t) readQual);
   }
 
   template<typename TPos>
@@ -187,9 +206,10 @@ namespace torali {
 	  seq = faidx_fetch_seq(fai, tname.c_str(), 0, hdr->target_len[refIndex], &seqlen);
 	}
 
-	// Set tag alleles
+	// Set tag alleles and SV subtype
 	if (itSV->chr == refIndex) {
 	  if (itSV->alleles.empty()) itSV->alleles = _addAlleles(_refAnchor(seq, itSV->svStart, hdr->target_len[refIndex]), std::string(hdr->target_name[itSV->chr2]), *itSV, itSV->svt);
+	  if (!_translocation(itSV->svt)) annotateSV(c, hdr, seq, *itSV);
 	}
 	if (!itSV->precise) continue;
 
@@ -422,17 +442,20 @@ namespace torali {
 		std::size_t i = next.fetch_add(1, std::memory_order_relaxed);
 		if (i >= J) break;
 		AlignJob &job = jobs[i];
-		double scoreAlt = _editDistanceHW(c, job.consProbe, job.sequence);
-		double scoreRef = _editDistanceHW(c, job.refProbe, job.sequence);
+		int32_t altED = 0;
+		int32_t refED = 0;
+		double scoreAlt = _editDistanceHW(c, job.consProbe, job.sequence, altED);
+		double scoreRef = _editDistanceHW(c, job.refProbe, job.sequence, refED);
 		if ((scoreRef > 0.7) || (scoreAlt > 0.7)) {
 		  results[i].svId = job.svId;
 		  results[i].fileIndex = job.fileIndex;
+		  uint8_t q = _editDistGenoQual(c, refED, altED, job.qual);
 		  if (scoreRef > scoreAlt) {
 		    results[i].type = 'R';
-		    results[i].qual = (uint8_t) std::min(255, std::min((int) (scoreRef * 35), (int) job.qual));
+		    results[i].qual = q;
 		  } else {
 		    results[i].type = 'A';
-		    results[i].qual = (uint8_t) std::min(255, std::min((int) (scoreAlt * 35), (int) job.qual));
+		    results[i].qual = q;
 		  }
 		}
 	      }
@@ -517,16 +540,18 @@ namespace torali {
 
 		  // No multi-threading
 		  if (c.hasDumpFile) {
-		    double scoreAlt = _editDistanceHW(c, consProbe, sequence);
-		    double scoreRef = _editDistanceHW(c, refProbe, sequence);
+		    int32_t altED = 0, refED = 0;
+		    double scoreAlt = _editDistanceHW(c, consProbe, sequence, altED);
+		    double scoreRef = _editDistanceHW(c, refProbe, sequence, refED);
 		    if ((scoreRef > 0.7) || (scoreAlt > 0.7)) {
+		      uint8_t q = _editDistGenoQual(c, refED, altED, rec->core.qual);
 		      if (scoreRef > scoreAlt) {
 			// Account for reference bias
 			if (++refAlignedReadCount[file_c][itBp->id] % 2) {
-			  countMap[file_c][itBp->id].ref.push_back((uint8_t) std::min(255, std::min((int) (scoreRef * 35), (int) rec->core.qual)));
+			  countMap[file_c][itBp->id].ref.push_back(q);
 			}
 		      } else {
-			countMap[file_c][itBp->id].alt.push_back((uint8_t) std::min(255, std::min((int) (scoreAlt * 35), (int) rec->core.qual)));
+			countMap[file_c][itBp->id].alt.push_back(q);
 
 			std::string svid(_addID(itBp->svt));
 			std::string padNumber = boost::lexical_cast<std::string>(itBp->id);
