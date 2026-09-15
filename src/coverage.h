@@ -182,7 +182,7 @@ namespace torali {
   
   template<typename TConfig, typename TSVs, typename TBreakProbes, typename TGenomicBpRegion>
   inline void
-    _generateProbes(TConfig const& c, bam_hdr_t* hdr, TSVs& svs, TBreakProbes& refProbeArr, TBreakProbes& consProbeArr, TGenomicBpRegion& bpRegion, std::vector<bool>& svOnChr) {
+  _generateProbes(TConfig const& c, bam_hdr_t* hdr, TSVs& svs, TBreakProbes& refProbeArr, TBreakProbes& consProbeArr, TGenomicBpRegion& bpRegion, std::vector<bool>& svOnChr) {
     typedef typename TBreakProbes::value_type TProbes;
 
     // Preprocess REF and ALT
@@ -191,88 +191,100 @@ namespace torali {
 
     TProbes refProbes(svs.size());
     faidx_t* fai = fai_load(c.genome.string().c_str());
+
+    // Multi-threaded
+    uint32_t pgThreads = std::min(c.maxThreads, (uint32_t) 4);
+    ThreadPool pool(pgThreads);
+    std::mutex bpMutex;
     for(int32_t refIndex=0; refIndex < (int32_t) hdr->n_targets; ++refIndex) {
-      char* seq = NULL;
-
-      // Iterate all structural variants
+      // Collect SVs touching this chromosome
+      std::vector<typename TSVs::iterator> chrSVs;
       for(typename TSVs::iterator itSV = svs.begin(); itSV != svs.end(); ++itSV) {
-	if ((itSV->chr != refIndex) && (itSV->chr2 != refIndex)) continue;
-	svOnChr[refIndex] = true;
-	
-	// Lazy loading of reference sequence
-	if (seq == NULL) {
-	  int32_t seqlen = -1;
-	  std::string tname(hdr->target_name[refIndex]);
-	  seq = faidx_fetch_seq(fai, tname.c_str(), 0, hdr->target_len[refIndex], &seqlen);
-	}
-
-	// Set tag alleles and SV subtype
-	if (itSV->chr == refIndex) {
-	  if (itSV->alleles.empty()) itSV->alleles = _addAlleles(_refAnchor(seq, itSV->svStart, hdr->target_len[refIndex]), std::string(hdr->target_name[itSV->chr2]), *itSV, itSV->svt);
-	  if (!_translocation(itSV->svt)) annotateSV(c, hdr, seq, *itSV);
-	}
-	if (!itSV->precise) continue;
-
-	// Get the reference sequence
-	if ((itSV->chr != itSV->chr2) && (itSV->chr2 == refIndex)) {
-	  Breakpoint bp(*itSV);
-	  _initBreakpoint(hdr, bp, (int32_t) itSV->consensus.size(), itSV->svt);
-	  refProbes[itSV->id] = _getSVRef(c, seq, bp, refIndex, itSV->svt);
-	}
-	if (itSV->chr == refIndex) {
-	  Breakpoint bp(*itSV);
-	  if (_translocation(itSV->svt)) bp.part1 = refProbes[itSV->id];
-	  if (itSV->svt ==4) {
-	    int32_t bufferSpace = std::max((int32_t) ((itSV->consensus.size() - itSV->insLen) / 3), c.minimumFlankSize);
-	    _initBreakpoint(hdr, bp, bufferSpace, itSV->svt);
-	  } else _initBreakpoint(hdr, bp, (int32_t) itSV->consensus.size(), itSV->svt);
-	  std::string svRefStr = _getSVRef(c, seq, bp, refIndex, itSV->svt);
-	  
-	  // Find breakpoint to reference
-	  typedef boost::multi_array<char, 2> TAlign;
-	  TAlign align;
-	  if (!_consRefAlignment(itSV->consensus, svRefStr, align, itSV->svt)) continue;
-
-	  AlignDescriptor ad;
-	  if (!_findSplit(c, itSV->consensus, svRefStr, align, ad, itSV->svt)) continue;
-	  
-	  // Debug consensus to reference alignment
-	  //std::cerr << itSV->id << std::endl;
-	  //for(uint32_t i = 0; i<align.shape()[0]; ++i) {
-	  //for(uint32_t j = 0; j<align.shape()[1]; ++j) std::cerr << align[i][j];
-	  //std::cerr << std::endl;
-	  //}
-	  //std::cerr << std::endl;
-
-	  // Iterate all samples
-	  for (unsigned int bpPoint = 0; bpPoint<2; ++bpPoint) {
-	    int32_t regionChr, regionStart, regionEnd, cutConsStart, cutConsEnd, cutRefStart, cutRefEnd, bppos;
-	    if (bpPoint) {
-	      regionChr = itSV->chr2;
-	      regionStart = std::max(0, itSV->svEnd - c.minimumFlankSize);
-	      regionEnd = std::min((uint32_t) (itSV->svEnd + c.minimumFlankSize), hdr->target_len[itSV->chr2]);
-	      cutConsStart = ad.cEnd - ad.homLeft - c.minimumFlankSize;
-	      cutConsEnd = ad.cEnd + ad.homRight + c.minimumFlankSize;
-	      cutRefStart = _cutRefStart(ad.rStart, ad.rEnd, ad.homLeft + c.minimumFlankSize, bpPoint, itSV->svt);
-	      cutRefEnd = _cutRefEnd(ad.rStart, ad.rEnd, ad.homRight + c.minimumFlankSize, bpPoint, itSV->svt);
-	      bppos = itSV->svEnd;
-	    } else {
-	      regionChr = itSV->chr;
-	      regionStart = std::max(0, itSV->svStart - c.minimumFlankSize);
-	      regionEnd = std::min((uint32_t) (itSV->svStart + c.minimumFlankSize), hdr->target_len[itSV->chr]);
-	      cutConsStart = ad.cStart - ad.homLeft - c.minimumFlankSize;
-	      cutConsEnd = ad.cStart + ad.homRight + c.minimumFlankSize;
-	      cutRefStart = _cutRefStart(ad.rStart, ad.rEnd, ad.homLeft + c.minimumFlankSize, bpPoint, itSV->svt);
-	      cutRefEnd = _cutRefEnd(ad.rStart, ad.rEnd, ad.homRight + c.minimumFlankSize, bpPoint, itSV->svt);
-	      bppos = itSV->svStart;
-	    }
-	    consProbeArr[bpPoint][itSV->id] = itSV->consensus.substr(cutConsStart, (cutConsEnd - cutConsStart));
-	    refProbeArr[bpPoint][itSV->id] = svRefStr.substr(cutRefStart, (cutRefEnd - cutRefStart));
-	    bpRegion[regionChr].push_back(BpRegion(regionStart, regionEnd, bppos, ad.homLeft, ad.homRight, itSV->svt, itSV->id, bpPoint));
-	  }
+        if ((itSV->chr == refIndex) || (itSV->chr2 == refIndex)) {
+	  chrSVs.push_back(itSV);
+	  svOnChr[refIndex] = true;
 	}
       }
-      if (seq != NULL) free(seq);
+      if (chrSVs.empty()) continue;
+
+      // Load reference sequence
+      int32_t seqlen = -1;
+      std::string tname(hdr->target_name[refIndex]);
+      char* seq = faidx_fetch_seq(fai, tname.c_str(), 0, hdr->target_len[refIndex], &seqlen);
+
+      // SV probe generation
+      std::atomic<std::size_t> next(0);
+      std::vector<std::future<void> > futures;
+      futures.reserve(pgThreads);
+      for(uint32_t t = 0; t < pgThreads; ++t) {
+        futures.push_back(pool.enqueue([&, seq, refIndex]() {
+          for(;;) {
+            std::size_t si = next.fetch_add(1, std::memory_order_relaxed);
+            if (si >= chrSVs.size()) break;
+            typename TSVs::iterator itSV = chrSVs[si];
+
+            // Set tag alleles and SV subtype
+            if (itSV->chr == refIndex) {
+              if (itSV->alleles.empty()) itSV->alleles = _addAlleles(_refAnchor(seq, itSV->svStart, hdr->target_len[refIndex]), std::string(hdr->target_name[itSV->chr2]), *itSV, itSV->svt);
+              if (!_translocation(itSV->svt)) annotateSV(c, hdr, seq, *itSV);
+            }
+            if (!itSV->precise) continue;
+
+            // Reference sequence for the second (translocation) breakpoint
+            if ((itSV->chr != itSV->chr2) && (itSV->chr2 == refIndex)) {
+              Breakpoint bp(*itSV);
+              _initBreakpoint(hdr, bp, (int32_t) itSV->consensus.size(), itSV->svt);
+              refProbes[itSV->id] = _getSVRef(c, seq, bp, refIndex, itSV->svt);
+            }
+            if (itSV->chr == refIndex) {
+              Breakpoint bp(*itSV);
+              if (_translocation(itSV->svt)) bp.part1 = refProbes[itSV->id];
+              if (itSV->svt == 4) {
+                int32_t bufferSpace = std::max((int32_t) ((itSV->consensus.size() - itSV->insLen) / 3), c.minimumFlankSize);
+                _initBreakpoint(hdr, bp, bufferSpace, itSV->svt);
+              } else _initBreakpoint(hdr, bp, (int32_t) itSV->consensus.size(), itSV->svt);
+              std::string svRefStr = _getSVRef(c, seq, bp, refIndex, itSV->svt);
+
+              typedef boost::multi_array<char, 2> TAlign;
+              TAlign align;
+              if (!_consRefAlignment(itSV->consensus, svRefStr, align, itSV->svt)) continue;
+              AlignDescriptor ad;
+              if (!_findSplit(c, itSV->consensus, svRefStr, align, ad, itSV->svt)) continue;
+
+              for (unsigned int bpPoint = 0; bpPoint<2; ++bpPoint) {
+                int32_t regionChr, regionStart, regionEnd, cutConsStart, cutConsEnd, cutRefStart, cutRefEnd, bppos;
+                if (bpPoint) {
+                  regionChr = itSV->chr2;
+                  regionStart = std::max(0, itSV->svEnd - c.minimumFlankSize);
+                  regionEnd = std::min((uint32_t) (itSV->svEnd + c.minimumFlankSize), hdr->target_len[itSV->chr2]);
+                  cutConsStart = ad.cEnd - ad.homLeft - c.minimumFlankSize;
+                  cutConsEnd = ad.cEnd + ad.homRight + c.minimumFlankSize;
+                  cutRefStart = _cutRefStart(ad.rStart, ad.rEnd, ad.homLeft + c.minimumFlankSize, bpPoint, itSV->svt);
+                  cutRefEnd = _cutRefEnd(ad.rStart, ad.rEnd, ad.homRight + c.minimumFlankSize, bpPoint, itSV->svt);
+                  bppos = itSV->svEnd;
+                } else {
+                  regionChr = itSV->chr;
+                  regionStart = std::max(0, itSV->svStart - c.minimumFlankSize);
+                  regionEnd = std::min((uint32_t) (itSV->svStart + c.minimumFlankSize), hdr->target_len[itSV->chr]);
+                  cutConsStart = ad.cStart - ad.homLeft - c.minimumFlankSize;
+                  cutConsEnd = ad.cStart + ad.homRight + c.minimumFlankSize;
+                  cutRefStart = _cutRefStart(ad.rStart, ad.rEnd, ad.homLeft + c.minimumFlankSize, bpPoint, itSV->svt);
+                  cutRefEnd = _cutRefEnd(ad.rStart, ad.rEnd, ad.homRight + c.minimumFlankSize, bpPoint, itSV->svt);
+                  bppos = itSV->svStart;
+                }
+                consProbeArr[bpPoint][itSV->id] = itSV->consensus.substr(cutConsStart, (cutConsEnd - cutConsStart));
+                refProbeArr[bpPoint][itSV->id] = svRefStr.substr(cutRefStart, (cutRefEnd - cutRefStart));
+                {
+                  std::lock_guard<std::mutex> bpLock(bpMutex);
+                  bpRegion[regionChr].push_back(BpRegion(regionStart, regionEnd, bppos, ad.homLeft, ad.homRight, itSV->svt, itSV->id, bpPoint));
+                }
+              }
+            }
+          }
+        }));
+      }
+      for(auto& fut : futures) fut.get();
+      free(seq);
     }
     // Clean-up
     fai_destroy(fai);
@@ -301,6 +313,7 @@ namespace torali {
     for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
       samfile[file_c] = sam_open(c.files[file_c].string().c_str(), "r");
       hts_set_fai_filename(samfile[file_c], c.genome.string().c_str());
+      hts_set_opt(samfile[file_c], CRAM_OPT_REQUIRED_FIELDS, SAM_FLAG | SAM_RNAME | SAM_POS | SAM_MAPQ | SAM_CIGAR | SAM_RNEXT | SAM_PNEXT | SAM_TLEN | SAM_SEQ | SAM_QNAME);
       idx[file_c] = sam_index_load(samfile[file_c], c.files[file_c].string().c_str());
       hdr[file_c] = sam_hdr_read(samfile[file_c]);
       totalTarget += hdr[file_c]->n_targets;
