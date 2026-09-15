@@ -30,9 +30,9 @@ Delly needs a sorted, indexed and duplicate marked BAM or CRAM file for every in
 
 `delly sr -g ref.fa input.bam > delly.vcf`
 
-You can also redirect the output to a [BCF](http://samtools.github.io/bcftools/) file.
+You can also redirect the output to a [BCF](http://samtools.github.io/bcftools/) file and it is recommended to use an exclude map for short reads.
 
-`delly sr -o delly.bcf -g ref.fa input.bam`
+`delly sr -g hg38.fa -x human.hg38.excl.tsv -o delly.bcf input.bam`
 
 `bcftools view delly.bcf > delly.vcf`
 
@@ -99,6 +99,9 @@ Germline SV calling is available for short-reads (subcommand: sr) and long-reads
 
 `delly filter --hwe 0.000001 -f germline -o germline.bcf merged.bcf`
 
+For short-reads, it is recommended to use an exclude file, i.e.:
+
+`delly sr -g hg38.fa -x human.hg38.excl.tsv -o delly.bcf sample.bam`
 
 ## CNV calling
 
