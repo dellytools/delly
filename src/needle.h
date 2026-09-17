@@ -150,6 +150,12 @@ namespace torali
   }
 
 
+  inline bool
+  _isACGTN(char const c) {
+    return ((c == 'A') || (c == 'C') || (c == 'G') || (c == 'T') || (c == 'N'));
+  }
+
+
   template<typename TAlignConfig, typename TScoreObject, typename TTrace>
   inline bool
   _splitTraceback(SplitDPMatrix const& dp, int32_t rr, int32_t cc, int32_t const m, int32_t const n, TAlignConfig const& ac, TScoreObject const& sc, TTrace& trace) {
@@ -193,8 +199,12 @@ namespace torali
     int32_t gainMax = std::max(std::max(sc.match, sc.mismatch), std::max(sc.ge, 0));
     int32_t penMax = std::max(std::max(-sc.match, -sc.mismatch), std::max(-sc.ge, 0));
     bool canPrune = (sc.ge <= 0);
-    for(std::size_t i = 0; ((i < s1.size()) && (canPrune)); ++i) if (std::islower((unsigned char) s1[i])) canPrune = false;
-    for(std::size_t i = 0; ((i < s2.size()) && (canPrune)); ++i) if (std::islower((unsigned char) s2[i])) canPrune = false;
+    for(std::size_t i = 0; ((i < s1.size()) && (canPrune)); ++i) {
+      if (!_isACGTN(s1[i])) canPrune = false;
+    }
+    for(std::size_t i = 0; ((i < s2.size()) && (canPrune)); ++i) {
+      if (!_isACGTN(s2[i])) canPrune = false;
+    }
     int32_t fullSlack = m * gainMax + (m + n) * penMax;
 
     SplitDPMatrix fmat;
