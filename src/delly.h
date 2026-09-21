@@ -265,6 +265,13 @@ namespace torali
       return 0;
     }
 
+    // Show cmd
+    boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
+    std::cerr << '[' << boost::posix_time::to_simple_string(now) << "] ";
+    std::cerr << "delly ";
+    for(int i=0; i<argc; ++i) { std::cerr << argv[i] << ' '; }
+    std::cerr << std::endl;
+
     // SV types to compute?
     if (!_svTypesToCompute(c, svtype)) {
       std::cerr << "Please specify a valid SV type, i.e., -t INV or -t DEL,INV without spaces." << std::endl;
@@ -351,21 +358,7 @@ namespace torali
       sam_close(samfile);
     }
     checkSampleNames(c);
-    {
-      bool autoSex = false;
-      if (!_parseSex(c, c.sexArg, c.sexModel, autoSex)) return 1;
-      if (autoSex) c.sexModel.sex = inferredSex;
-      if (c.sexArg != "none") {
-        if (c.sexModel.xTid != -1) {
-          for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
-            std::cerr << "Sample " << c.sampleName[file_c] << ": sex=" << _sexName(c.sexModel.sex[file_c]);
-	    if (xRatio[file_c] >= 0) std::cerr << " (chrX/autosome read depth " << std::fixed << std::setprecision(2) << xRatio[file_c] << ", chrY/autosome " << ((yRatio[file_c] < 0) ? 0.0 : yRatio[file_c]) << ")";
-            std::cerr << std::endl;
-          }
-        }
-      }
-    }
-    
+
     // Check exclude file
     if (vm.count("exclude")) {
       if (!(boost::filesystem::exists(c.exclude) && boost::filesystem::is_regular_file(c.exclude) && boost::filesystem::file_size(c.exclude))) {
@@ -403,14 +396,21 @@ namespace torali
 	if (!_outfileValid(c.outfile)) return 1;
       }
     }
-    
-    // Show cmd
-    boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
-    std::cerr << '[' << boost::posix_time::to_simple_string(now) << "] ";
-    std::cerr << "delly ";
-    for(int i=0; i<argc; ++i) { std::cerr << argv[i] << ' '; }
-    std::cerr << std::endl;
-    
+
+    // Sex
+    bool autoSex = false;
+    if (!_parseSex(c, c.sexArg, c.sexModel, autoSex)) return 1;
+    if (autoSex) c.sexModel.sex = inferredSex;
+    if (c.sexArg != "none") {
+      if (c.sexModel.xTid != -1) {
+	for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
+	  std::cerr << "Sample " << c.sampleName[file_c] << ": sex=" << _sexName(c.sexModel.sex[file_c]);
+	  if (xRatio[file_c] >= 0) std::cerr << " (chrX/autosome read depth " << std::fixed << std::setprecision(2) << xRatio[file_c] << ", chrY/autosome " << ((yRatio[file_c] < 0) ? 0.0 : yRatio[file_c]) << ")";
+	  std::cerr << std::endl;
+	}
+      }
+    }
+
     // Always ignore reads of mapping quality <5 for genotyping, otherwise het. is more likely!
     if (c.minGenoQual<5) c.minGenoQual=5;
     
