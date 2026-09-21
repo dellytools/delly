@@ -11,6 +11,7 @@
 #include <boost/filesystem.hpp>
 #include <boost/tokenizer.hpp>
 #include <iostream>
+#include <iomanip>
 #include <vector>
 #include <htslib/vcf.h>
 #include <htslib/sam.h>
@@ -71,6 +72,8 @@ namespace torali {
     boost::filesystem::path genome;
     boost::filesystem::path exclude;
     std::vector<std::string> sampleName;
+    std::string sexArg;
+    SexModel sexModel;
   };
   
 
@@ -253,6 +256,7 @@ namespace torali {
    boost::program_options::options_description geno("Genotyping options");
    geno.add_options()
      ("vcffile,v", boost::program_options::value<boost::filesystem::path>(&c.vcffile), "input VCF/BCF file for genotyping")
+     ("sex", boost::program_options::value<std::string>(&c.sexArg)->default_value("auto"), "sample sex [auto, male, female, none, file]")
      ("geno-qual,u", boost::program_options::value<uint16_t>(&c.minGenoQual)->default_value(5), "min. mapping quality for genotyping")
      ("max-geno-count,b", boost::program_options::value<uint32_t>(&c.maxGenoReadCount)->default_value(250), "max. reads aligned for SR genotyping")
      ("dump,d", boost::program_options::value<boost::filesystem::path>(&c.dumpfile), "gzipped output file for SV-reads")
@@ -324,6 +328,9 @@ namespace torali {
    
    // Check input files
    c.sampleName.resize(c.files.size());
+   std::vector<uint8_t> inferredSex(c.files.size(), 0);
+   std::vector<double> xRatio(c.files.size(), -1);
+   std::vector<double> yRatio(c.files.size(), -1);
    c.nchr = 0;
    for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
      if (!(boost::filesystem::exists(c.files[file_c]) && boost::filesystem::is_regular_file(c.files[file_c]) && boost::filesystem::file_size(c.files[file_c]))) {
@@ -364,11 +371,28 @@ namespace torali {
      std::string sampleName = "unknown";
      getSMTag(std::string(hdr->text), c.files[file_c].stem().string(), sampleName);
      c.sampleName[file_c] = sampleName;
+     // Sex chromosomes and sample sex
+     if (file_c == 0) _sexChromosomes(hdr, c.sexModel);
+     if (c.sexArg == "auto") inferredSex[file_c] = _inferSexFromReads(samfile, idx, hdr, c.genome.string(), c.sexModel, xRatio[file_c], yRatio[file_c]);
      bam_hdr_destroy(hdr);
      hts_idx_destroy(idx);
      sam_close(samfile);
    }
    checkSampleNames(c);
+   {
+     bool autoSex = false;
+     if (!_parseSex(c, c.sexArg, c.sexModel, autoSex)) return 1;
+     if (autoSex) c.sexModel.sex = inferredSex;
+     if (c.sexArg != "none") {
+       if (c.sexModel.xTid != -1) {
+	 for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
+	   std::cerr << "Sample " << c.sampleName[file_c] << ": sex=" << _sexName(c.sexModel.sex[file_c]);
+	   if (xRatio[file_c] >= 0) std::cerr << " (chrX/autosome read depth " << std::fixed << std::setprecision(2) << xRatio[file_c] << ", chrY/autosome " << ((yRatio[file_c] < 0) ? 0.0 : yRatio[file_c]) << ")";
+	   std::cerr << std::endl;
+	 }
+       }
+     }
+   }
 
    // Check exclude file
    if (vm.count("exclude")) {

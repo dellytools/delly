@@ -38,14 +38,25 @@ namespace torali
 
     bool operator<(const BamAlignRecord& s2) const {
       if (tid==mtid) {
-	return ((std::min(pos, mpos) < std::min(s2.pos, s2.mpos)) || 
-		((std::min(pos, mpos) == std::min(s2.pos, s2.mpos)) && (std::max(pos, mpos) < std::max(s2.pos, s2.mpos))) ||
-		((std::min(pos, mpos) == std::min(s2.pos, s2.mpos)) && (std::max(pos, mpos) == std::max(s2.pos, s2.mpos)) && (maxNormalISize < s2.maxNormalISize)));
+	int32_t lo1 = std::min(pos, mpos);
+	int32_t lo2 = std::min(s2.pos, s2.mpos);
+	int32_t hi1 = std::max(pos, mpos);
+	int32_t hi2 = std::max(s2.pos, s2.mpos);
+	if (lo1 != lo2) return (lo1 < lo2);
+	if (hi1 != hi2) return (hi1 < hi2);
+	if (maxNormalISize != s2.maxNormalISize) return (maxNormalISize < s2.maxNormalISize);
       } else {
-	return ((pos < s2.pos) ||
-		((pos == s2.pos) && (mpos < s2.mpos)) ||
-		((pos == s2.pos) && (mpos == s2.mpos) && (maxNormalISize < s2.maxNormalISize)));
+	if (pos != s2.pos) return (pos < s2.pos);
+	if (mpos != s2.mpos) return (mpos < s2.mpos);
+	if (maxNormalISize != s2.maxNormalISize) return (maxNormalISize < s2.maxNormalISize);
       }
+      if (tid != s2.tid) return (tid < s2.tid);
+      if (mtid != s2.mtid) return (mtid < s2.mtid);
+      if (pos != s2.pos) return (pos < s2.pos);
+      if (flag != s2.flag) return (flag < s2.flag);
+      if (MapQuality != s2.MapQuality) return (MapQuality > s2.MapQuality);
+      if (alen != s2.alen) return (alen < s2.alen);
+      return (malen < s2.malen);
     }
   };
 

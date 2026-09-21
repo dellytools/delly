@@ -52,7 +52,13 @@ namespace torali {
     Junction(bool const fw, bool const cl, int32_t const idx, int32_t const rst, int32_t const r, int32_t const s, uint16_t const qval) : forward(fw), scleft(cl), refidx(idx), rstart(rst), refpos(r), seqpos(s), qual(qval) {}
 
     bool operator<(const Junction& j2) const {
-      return ((seqpos<j2.seqpos) || ((seqpos==j2.seqpos) && (refidx<j2.refidx)) || ((seqpos==j2.seqpos) && (refidx==j2.refidx) && (refpos<j2.refpos)) || ((seqpos==j2.seqpos) && (refidx==j2.refidx) && (refpos==j2.refpos) && (scleft < j2.scleft)));
+      if (seqpos != j2.seqpos) return (seqpos < j2.seqpos);
+      if (refidx != j2.refidx) return (refidx < j2.refidx);
+      if (refpos != j2.refpos) return (refpos < j2.refpos);
+      if (scleft != j2.scleft) return (scleft < j2.scleft);
+      if (rstart != j2.rstart) return (rstart < j2.rstart);
+      if (forward != j2.forward) return (forward < j2.forward);
+      return (qual < j2.qual);
     }
   };
   
@@ -75,7 +81,15 @@ namespace torali {
     SRBamRecord(int32_t const c, int32_t const p, int32_t const c2, int32_t const p2, int32_t const rst, int32_t const sst, int32_t const qval, int32_t const il, std::size_t const idval) : chr(c), pos(p), chr2(c2), pos2(p2), rstart(rst), sstart(sst), qual(qval), inslen(il), svid(-1), primaryChr(-1), id(idval) {}
 
     bool operator<(const SRBamRecord& sv2) const {
-      return ((chr<sv2.chr) || ((chr==sv2.chr) && (pos<sv2.pos)) || ((chr==sv2.chr) && (pos==sv2.pos) && (chr2<sv2.chr2)) || ((chr==sv2.chr) && (pos==sv2.pos) && (chr2==sv2.chr2) && (pos2 < sv2.pos2)));
+      if (chr != sv2.chr) return (chr < sv2.chr);
+      if (pos != sv2.pos) return (pos < sv2.pos);
+      if (chr2 != sv2.chr2) return (chr2 < sv2.chr2);
+      if (pos2 != sv2.pos2) return (pos2 < sv2.pos2);
+      if (rstart != sv2.rstart) return (rstart < sv2.rstart);
+      if (sstart != sv2.sstart) return (sstart < sv2.sstart);
+      if (inslen != sv2.inslen) return (inslen < sv2.inslen);
+      if (qual != sv2.qual) return (qual < sv2.qual);
+      return (id < sv2.id);
     }
   };
 
@@ -124,7 +138,17 @@ namespace torali {
     StructuralVariantRecord(int32_t const c1, int32_t const s, int32_t const c2, int32_t const e, int32_t const cipl, int32_t const ciph, int32_t const ciel, int32_t const cieh, int32_t const sup, int32_t const srmapq, int32_t const qval, int32_t const ilen, int32_t const svtype, int32_t const idval): chr(c1), svStart(s), chr2(c2), svEnd(e), ciposlow(cipl), ciposhigh(ciph), ciendlow(ciel), ciendhigh(cieh), srSupport(sup), srMapQuality(srmapq), mapq(qval), insLen(ilen), svt(svtype), id(idval), homLen(0), peSupport(0), peMapQuality(0), consBp(0), alleleid(-1), nallele(1), srAlignQuality(0), precise(true) {}
 
     bool operator<(const StructuralVariantRecord& sv2) const {
-      return ((chr<sv2.chr) || ((chr==sv2.chr) && (svStart<sv2.svStart)) || ((chr==sv2.chr) && (svStart==sv2.svStart) && (chr2<sv2.chr2)) || ((chr==sv2.chr) && (svStart==sv2.svStart) && (chr2==sv2.chr2) && (svEnd<sv2.svEnd)) || ((chr==sv2.chr) && (svStart==sv2.svStart) && (chr2==sv2.chr2) && (svEnd==sv2.svEnd) && (peSupport > sv2.peSupport)) || ((chr==sv2.chr) && (svStart==sv2.svStart) && (chr2==sv2.chr2) && (svEnd==sv2.svEnd) && (peSupport == sv2.peSupport) && (srSupport > sv2.srSupport)));
+      if (chr != sv2.chr) return (chr < sv2.chr);
+      if (svStart != sv2.svStart) return (svStart < sv2.svStart);
+      if (chr2 != sv2.chr2) return (chr2 < sv2.chr2);
+      if (svEnd != sv2.svEnd) return (svEnd < sv2.svEnd);
+      if (peSupport != sv2.peSupport) return (peSupport > sv2.peSupport);
+      if (srSupport != sv2.srSupport) return (srSupport > sv2.srSupport);
+      if (svt != sv2.svt) return (svt < sv2.svt);
+      if (insLen != sv2.insLen) return (insLen < sv2.insLen);
+      if (mapq != sv2.mapq) return (mapq > sv2.mapq);
+      if (srMapQuality != sv2.srMapQuality) return (srMapQuality > sv2.srMapQuality);
+      return (consensus < sv2.consensus);
     }
     
   };

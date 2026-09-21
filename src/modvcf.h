@@ -5,6 +5,7 @@
 #include <htslib/vcf.h>
 
 #include "bolog.h"
+#include "ploidy.h"
 #include "methyl.h"
 
 
@@ -399,8 +400,8 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
   bcf_hdr_append(hdr, "##INFO=<ID=TRPERIOD,Number=1,Type=Integer,Description=\"Tandem repeat period in bp\">");
   bcf_hdr_append(hdr, "##INFO=<ID=TRCOPIES,Number=1,Type=Float,Description=\"Tandem repeat copy number\">");
   bcf_hdr_append(hdr, "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">");
-  //bcf_hdr_append(hdr, "##FORMAT=<ID=GL,Number=G,Type=Float,Description=\"Log10-scaled genotype likelihoods for RR,RA,AA genotypes\">");
-  bcf_hdr_append(hdr, "##FORMAT=<ID=PL,Number=G,Type=Integer,Description=\"Phred-scaled genotype likelihoods for RR,RA,AA genotypes\">");
+  //bcf_hdr_append(hdr, "##FORMAT=<ID=GL,Number=G,Type=Float,Description=\"Log10-scaled genotype likelihoods\">");
+  bcf_hdr_append(hdr, "##FORMAT=<ID=PL,Number=G,Type=Integer,Description=\"Phred-scaled genotype likelihoods\">");
   bcf_hdr_append(hdr, "##FORMAT=<ID=GQ,Number=1,Type=Integer,Description=\"Genotype Quality\">");
   bcf_hdr_append(hdr, "##FORMAT=<ID=FT,Number=1,Type=String,Description=\"Per-sample genotype filter\">");
   bcf_hdr_append(hdr, "##FORMAT=<ID=RC,Number=1,Type=Integer,Description=\"Raw high-quality read counts or base counts for the SV\">");
@@ -664,9 +665,17 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
 	  }
 	}
 
+	// Sample ploidy
+	uint8_t ploidy = 2;
+	if (file_c < c.sexModel.sex.size()) {
+	  ploidy = _ploidy(c.sexModel, c.sexModel.sex[file_c], svIter->chr, svIter->svStart);
+	  uint8_t ploidy2 = _ploidy(c.sexModel, c.sexModel.sex[file_c], svIter->chr2, svIter->svEnd);
+	  if (ploidy2 < ploidy) ploidy = ploidy2;
+	}
+
 	// Compute GLs
-	if (svIter->precise) _computeGLs(bl, jctCountMap[file_c][svIter->id].ref, jctCountMap[file_c][svIter->id].alt, gls, gqval, gts, file_c);
-	else _computeGLs(bl, spanCountMap[file_c][svIter->id].ref, spanCountMap[file_c][svIter->id].alt, gls, gqval, gts, file_c);
+	if (svIter->precise) _computeGLs(bl, jctCountMap[file_c][svIter->id].ref, jctCountMap[file_c][svIter->id].alt, gls, gqval, gts, file_c, ploidy);
+	else _computeGLs(bl, spanCountMap[file_c][svIter->id].ref, spanCountMap[file_c][svIter->id].alt, gls, gqval, gts, file_c, ploidy);
 
 	// Compute PLs
 	if (gts[file_c * 2] == bcf_gt_missing) {
@@ -675,6 +684,11 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
 	    bcf_float_set_missing(*gl_ptr);
 	    plvals[file_c * 3 + k] = bcf_int32_missing;
 	  }
+	} else if (ploidy == 1) {
+	  // Haploid
+	  plvals[file_c * 3] = (int32_t) std::max(0.0f, std::round(-10.0f * gls[file_c * 3]));
+	  plvals[file_c * 3 + 1] = (int32_t) std::max(0.0f, std::round(-10.0f * gls[file_c * 3 + 2]));
+	  plvals[file_c * 3 + 2] = bcf_int32_vector_end;
 	} else {
 	  for (int32_t k = 0; k < 3; ++k) {
 	    float gl_val = gls[file_c * 3 + k];
@@ -683,7 +697,7 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
 	}
 
 	// Phase het genotypes
-	if (psarr[file_c] != -1) {
+	if ((ploidy == 2) && (psarr[file_c] != -1)) {
 	  int32_t hp1a = hpcount[file_c * 4 + 1];
 	  int32_t hp2a = hpcount[file_c * 4 + 3];
 	  bool isHet = (gts[file_c * 2] == bcf_gt_unphased(0) && gts[file_c * 2 + 1] == bcf_gt_unphased(1));
@@ -703,8 +717,8 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
 	rc[file_c] = readCountMap[file_c][svIter->id].rc;
 	rcr[file_c] = readCountMap[file_c][svIter->id].rightRC;
 	cnest[file_c] = -1;
-	if ((rcl[file_c] + rcr[file_c]) > 0) {
-	  double cn = 2.0 * (double) rc[file_c] / (double) (rcl[file_c] + rcr[file_c]);
+	if (((rcl[file_c] + rcr[file_c]) > 0) && (ploidy > 0)) {
+	  double cn = (double) ploidy * (double) rc[file_c] / (double) (rcl[file_c] + rcr[file_c]);
 	  if (cn < 0) cn = 0;
 	  if (cn > 100000) cn = 100000; // guard int32 overflow in iround
 	  cnest[file_c] = boost::math::iround(cn);
@@ -724,7 +738,7 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
 	int32_t acCount = 0;
 	int32_t anCount = 0;
 	for(int32_t k = 0; k < bcf_hdr_nsamples(hdr) * 2; ++k) {
-	  if (bcf_gt_is_missing(gts[k])) continue;
+	  if ((gts[k] == bcf_int32_vector_end) || (bcf_gt_is_missing(gts[k]))) continue;
 	  ++anCount;
 	  if (bcf_gt_allele(gts[k]) > 0) ++acCount;
 	}

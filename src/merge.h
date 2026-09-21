@@ -482,10 +482,22 @@ namespace torali
 	  int32_t carriers = 0;
 	  int32_t alleles = 0;
 	  int32_t maxVar = 0;
+	  int32_t gtStride = (ngt > 0) ? (ngt / nsamples) : 0;
 	  for(int32_t i = 0; i < nsamples; ++i) {
-	    if ((ngt > 0) && ((bcf_gt_allele(gt[i*2]) == -1) || (bcf_gt_allele(gt[i*2 + 1]) == -1))) continue;
-	    int32_t a0 = (ngt > 0) ? bcf_gt_allele(gt[i*2]) : 0;
-	    int32_t a1 = (ngt > 0) ? bcf_gt_allele(gt[i*2 + 1]) : 0;
+	    int32_t a0 = 0;
+	    int32_t a1 = 0;
+	    if (ngt > 0) {
+	      // Haploid samples carry a single allele
+	      int32_t g0 = gt[i * gtStride];
+	      int32_t g1 = (gtStride > 1) ? gt[i * gtStride + 1] : bcf_int32_vector_end;
+	      if (bcf_gt_is_missing(g0)) continue;
+	      a0 = bcf_gt_allele(g0);
+	      if (g1 == bcf_int32_vector_end) a1 = 0;
+	      else {
+		if (bcf_gt_is_missing(g1)) continue;
+		a1 = bcf_gt_allele(g1);
+	      }
+	    }
 	    int32_t altcn = (a0 > 0 ? 1 : 0) + (a1 > 0 ? 1 : 0);
 	    uint32_t supportsum = 0;
 	    int32_t varReads = 0;

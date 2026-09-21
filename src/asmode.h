@@ -60,6 +60,7 @@ namespace torali {
     std::vector<std::string> sampleName;
     std::vector<uint32_t> fileSample;
     std::vector<uint8_t> fileHap;
+    SexModel sexModel;
   };
 
   // Strip trailing haplotype

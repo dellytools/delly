@@ -372,7 +372,7 @@ namespace torali
     if ((int32_t)seqs.size() <= maxReads) return;
     std::vector<uint32_t> idx(seqs.size());
     std::iota(idx.begin(), idx.end(), 0);
-    std::sort(idx.begin(), idx.end(), [&](uint32_t a, uint32_t b) { return scores[a] > scores[b]; });
+    std::stable_sort(idx.begin(), idx.end(), [&](uint32_t a, uint32_t b) { return scores[a] > scores[b]; });
     TSequences sel;
     sel.reserve(maxReads);
     for (int32_t k = 0; k < maxReads; ++k) sel.push_back(std::move(seqs[idx[k]]));

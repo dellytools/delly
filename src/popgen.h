@@ -50,6 +50,54 @@ namespace torali
     }
   }
 
+  // EM estimate of the bi-allelic allele frequency under HWE with diploid and haploid samples
+  template<typename TConfig, typename TGlVector, typename TGlPairVector, typename TValue>
+  inline void
+  _estBiallelicAF(TConfig const& c, TGlVector const& glVector, TGlPairVector const& glPairs, TValue (&hweAF)[2]) {
+    if (glPairs.empty()) {
+      _estBiallelicAF(c, glVector, hweAF);
+      return;
+    }
+    TValue afprior[2];
+    afprior[0] = 0.5;
+    afprior[1] = 0.5;
+    TValue gtprior[3];
+    TValue gt[3];
+    TValue p;
+    TValue err = 1;
+    for(std::size_t count = 0; ((err > c.epsilon) && (count < c.maxiter)); ++count) {
+      gtprior[0] = afprior[0] * afprior[0];
+      gtprior[1] = 2 * afprior[0] * afprior[1];
+      gtprior[2] = afprior[1] * afprior[1];
+      TValue refAlleles = 0;
+      TValue altAlleles = 0;
+      for(typename TGlVector::const_iterator itG = glVector.begin(); itG != glVector.end(); ++itG) {
+	gt[0] = gtprior[0] * (*itG)[0];
+	gt[1] = gtprior[1] * (*itG)[1];
+	gt[2] = gtprior[2] * (*itG)[2];
+	p = gt[0] + gt[1] + gt[2];
+	if (p <= 0) continue;
+	refAlleles += (2 * gt[0] + gt[1]) / p;
+	altAlleles += (2 * gt[2] + gt[1]) / p;
+      }
+      for(typename TGlPairVector::const_iterator itH = glPairs.begin(); itH != glPairs.end(); ++itH) {
+	gt[0] = afprior[0] * (*itH)[0];
+	gt[1] = afprior[1] * (*itH)[1];
+	p = gt[0] + gt[1];
+	if (p <= 0) continue;
+	refAlleles += gt[0] / p;
+	altAlleles += gt[1] / p;
+      }
+      if (refAlleles + altAlleles > 0) {
+	hweAF[0] = refAlleles / (refAlleles + altAlleles);
+	hweAF[1] = altAlleles / (refAlleles + altAlleles);
+      }
+      err = (afprior[0]-hweAF[0])*(afprior[0]-hweAF[0]) + (afprior[1]-hweAF[1])*(afprior[1]-hweAF[1]);
+      afprior[0] = hweAF[0];
+      afprior[1] = hweAF[1];
+    }
+  }
+
   // EM estimate of the GT frequencies.
   template<typename TConfig, typename TGlVector, typename TValue>
   inline void

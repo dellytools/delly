@@ -52,6 +52,8 @@ namespace torali
     bool filterForPass;
     bool hasSampleFile;
     bool softFilter;
+    std::string sexArg;
+    SexModel sexModel;
     bool noRefine;
     bool noCollapse;
     int32_t minsize;
@@ -538,6 +540,41 @@ namespace torali
     // Load bcf file
     htsFile* ifile = hts_open(c.vcffile.string().c_str(), "r");
     bcf_hdr_t* hdr = bcf_hdr_read(ifile);
+
+    // Sample sex
+    SexModel sm;
+    if ((c.filter == "germline") && (c.sexArg != "none") && (sm.xTid != -1)) {
+      int32_t nsmplHdr = bcf_hdr_nsamples(hdr);
+      sm.sex.assign(nsmplHdr, 0);
+      if (c.sexArg == "auto") _inferSexFromCallset(c.vcffile.string(), hdr, sm);
+      else {
+	std::ifstream sexFile(c.sexArg.c_str());
+	if (!sexFile.is_open()) {
+	  std::cerr << "Sex file cannot be opened: " << c.sexArg << std::endl;
+	  return 1;
+	}
+	std::map<std::string, uint8_t> sexMap;
+	std::string line;
+	while (std::getline(sexFile, line)) {
+	  std::vector<std::string> tokens;
+	  boost::split(tokens, line, boost::is_any_of("\t ,"), boost::token_compress_on);
+	  if (tokens.size() < 2) continue;
+	  std::string sx = boost::to_lower_copy(tokens[1]);
+	  if ((sx == "male") || (sx == "m") || (sx == "1")) sexMap[tokens[0]] = 1;
+	  else if ((sx == "female") || (sx == "f") || (sx == "2")) sexMap[tokens[0]] = 2;
+	}
+	for(int32_t i = 0; i < nsmplHdr; ++i) {
+	  if (sexMap.find(hdr->samples[i]) != sexMap.end()) sm.sex[i] = sexMap[hdr->samples[i]];
+	}
+      }
+      int32_t nMale = 0;
+      int32_t nFemale = 0;
+      for(int32_t i = 0; i < nsmplHdr; ++i) {
+	if (sm.sex[i] == 1) ++nMale;
+	else if (sm.sex[i] == 2) ++nFemale;
+      }
+      std::cerr << '[' << boost::posix_time::to_simple_string(boost::posix_time::second_clock::local_time()) << "] Sample sex: " << nMale << " male, " << nFemale << " female, " << (nsmplHdr - nMale - nFemale) << " unknown" << std::endl;
+    }
     
     // Open output VCF file
     std::string fmtout = "wb";
@@ -574,7 +611,7 @@ namespace torali
       bcf_hdr_append(hdr_out, "##INFO=<ID=CNSD,Number=1,Type=Float,Description=\"CN standard deviation.\">");
       bcf_hdr_remove(hdr_out, BCF_HL_INFO, "SUBTYPE");
       bcf_hdr_append(hdr_out, "##INFO=<ID=SUBTYPE,Number=1,Type=String,Description=\"Structural variant subtype.\">");
-      if (bcf_hdr_id2int(hdr_out, BCF_DT_ID, "PL") < 0) bcf_hdr_append(hdr_out, "##FORMAT=<ID=PL,Number=G,Type=Integer,Description=\"Phred-scaled genotype likelihoods for RR,RA,AA genotypes.\">");
+      if (bcf_hdr_id2int(hdr_out, BCF_DT_ID, "PL") < 0) bcf_hdr_append(hdr_out, "##FORMAT=<ID=PL,Number=G,Type=Integer,Description=\"Phred-scaled genotype likelihoods.\">");
       if (bcf_hdr_id2int(hdr_out, BCF_DT_ID, "DEL") < 0) bcf_hdr_append(hdr_out, "##ALT=<ID=DEL,Description=\"Deletion\">");
       if (bcf_hdr_id2int(hdr_out, BCF_DT_ID, "DUP") < 0) bcf_hdr_append(hdr_out, "##ALT=<ID=DUP,Description=\"Duplication\">");
       if (c.softFilter) {
@@ -762,7 +799,21 @@ namespace torali
 	bcf_unpack(rec, BCF_UN_ALL);
 	bool precise = false;
 	if (bcf_get_info_flag(hdr, rec, "PRECISE", 0, 0) > 0) precise = true;
-	bcf_get_format_int32(hdr, rec, "GT", &gt, &ngt);
+	int32_t ngtVal = bcf_get_format_int32(hdr, rec, "GT", &gt, &ngt);
+	int32_t nsmpl = bcf_hdr_nsamples(hdr);
+	int32_t gtStride = (ngtVal > 0) ? (ngtVal / nsmpl) : 0;
+	// Sample ploidy
+	std::vector<uint8_t> ploidy(nsmpl, 2);
+	for (int i = 0; i < nsmpl; ++i) {
+	  if ((germline) && (!sm.sex.empty())) ploidy[i] = _ploidy(sm, sm.sex[i], rec->rid, rec->pos);
+	  if ((gtStride == 1) || ((gtStride > 1) && (gt[i*gtStride + 1] == bcf_int32_vector_end))) {
+	    if (ploidy[i] == 2) ploidy[i] = 1;
+	  }
+	  if ((ploidy[i] == 0) && (gtStride > 0)) {
+	    gt[i*gtStride] = bcf_gt_missing;
+	    if (gtStride > 1) gt[i*gtStride + 1] = bcf_gt_missing;
+	  }
+	}
 	if (_getFormatType(hdr, "GQ") == BCF_HT_INT) bcf_get_format_int32(hdr, rec, "GQ", &gq, &ngq);
 	else if (_getFormatType(hdr, "GQ") == BCF_HT_REAL) bcf_get_format_float(hdr, rec, "GQ", &gqf, &ngq);
 	bcf_get_format_int32(hdr, rec, "RC", &rc, &nrc);
@@ -777,72 +828,113 @@ namespace torali
 	bool refined = false;
 	double hwepvalStore = 1;
 	double ficStore = 0;
-	if ((germline) && (!c.noRefine) && (rec->n_allele == 2) && (bcf_get_format_int32(hdr, rec, "PL", &pl, &npl) > 0)) {
-	  int32_t nsmpl = bcf_hdr_nsamples(hdr);
-	  int32_t plStride = npl / nsmpl;
-	  if (plStride >= 3) {
+	int32_t nplVal = 0;
+	if ((germline) && (!c.noRefine) && (rec->n_allele == 2)) nplVal = bcf_get_format_int32(hdr, rec, "PL", &pl, &npl);
+	if (nplVal > 0) {
+	  int32_t plStride = nplVal / nsmpl;
+	  if (plStride >= 2) {
 	    typedef std::vector<double> TGLs;
-	    std::vector<TGLs> glVector;
+	    std::vector<TGLs> glVector;   // diploid samples
+	    std::vector<TGLs> glPairs;    // haploid samples
+	    std::vector<int32_t> glIndex(nsmpl, -1);
 	    glVector.reserve(nsmpl);
 	    for (int i = 0; i < nsmpl; ++i) {
-	      if ((bcf_gt_allele(gt[i*2]) == -1) || (bcf_gt_allele(gt[i*2 + 1]) == -1)) continue;
+	      if (ploidy[i] == 0) continue;
 	      int32_t* plp = pl + i * plStride;
 	      if ((plp[0] == bcf_int32_missing) || (plp[0] == bcf_int32_vector_end)) continue;
-	      TGLs glTriple(3);
-	      for(int k = 0; k < 3; ++k) glTriple[k] = std::pow((double) 10.0, (double) -plp[k] / 10.0);
-	      glVector.push_back(glTriple);
+	      bool hapEncoded = ((plStride == 2) || (plp[2] == bcf_int32_vector_end) || (plp[2] == bcf_int32_missing));
+	      if (ploidy[i] == 1) {
+		// Haploid
+		int32_t plRef = plp[0];
+		int32_t plAlt = (hapEncoded) ? plp[1] : plp[2];
+		if ((plAlt == bcf_int32_missing) || (plAlt == bcf_int32_vector_end)) continue;
+		if (!hapEncoded) {
+		  // Re-call the haploid GT
+		  gt[i*gtStride] = bcf_gt_unphased((plAlt < plRef) ? 1 : 0);
+		  gt[i*gtStride + 1] = bcf_int32_vector_end;
+		}
+		if (bcf_gt_is_missing(gt[i*gtStride])) continue;
+		TGLs glPair(2);
+		glPair[0] = std::pow((double) 10.0, (double) -plRef / 10.0);
+		glPair[1] = std::pow((double) 10.0, (double) -plAlt / 10.0);
+		glIndex[i] = -2 - (int32_t) glPairs.size();
+		glPairs.push_back(glPair);
+	      } else {
+		if ((hapEncoded) || (plStride < 3)) continue;
+		if ((bcf_gt_allele(gt[i*gtStride]) == -1) || (bcf_gt_allele(gt[i*gtStride + 1]) == -1)) continue;
+		TGLs glTriple(3);
+		for(int k = 0; k < 3; ++k) glTriple[k] = std::pow((double) 10.0, (double) -plp[k] / 10.0);
+		glIndex[i] = (int32_t) glVector.size();
+		glVector.push_back(glTriple);
+	      }
 	    }
-	    if (!glVector.empty()) {
+	    if ((!glVector.empty()) || (!glPairs.empty())) {
 	      refined = true;
 	      double hweAF[2];
 	      hweAF[0] = 0.5;
 	      hweAF[1] = 0.5;
-	      _estBiallelicAF(c, glVector, hweAF);
+	      _estBiallelicAF(c, glVector, glPairs, hweAF);
 	      double mleGTFreq[3];
 	      mleGTFreq[0] = 0;
 	      mleGTFreq[1] = 0;
 	      mleGTFreq[2] = 0;
-	      _estBiallelicGTFreq(c, glVector, mleGTFreq);
 	      double Fic = 0;
-	      _estBiallelicFIC(glVector, hweAF, Fic);
 	      double rsq = 0;
-	      _estBiallelicRSQ(glVector, hweAF, rsq);
 	      double pval = 1;
-	      _estBiallelicHWE_LRT(glVector, hweAF, mleGTFreq, pval);
+	      if (!glVector.empty()) {
+		// GT frequency statistics on the diploid samples
+		double dipAF[2];
+		dipAF[0] = hweAF[0];
+		dipAF[1] = hweAF[1];
+		if (!glPairs.empty()) _estBiallelicAF(c, glVector, dipAF);
+		_estBiallelicGTFreq(c, glVector, mleGTFreq);
+		_estBiallelicFIC(glVector, dipAF, Fic);
+		_estBiallelicRSQ(glVector, dipAF, rsq);
+		_estBiallelicHWE_LRT(glVector, dipAF, mleGTFreq, pval);
+	      }
 	      hwepvalStore = pval;
 	      ficStore = Fic;
 
 	      // Posterior GQ (only GQ and missingness change)
 	      bool gqIsInt = (_getFormatType(hdr, "GQ") == BCF_HT_INT);
 	      for (int i = 0; i < nsmpl; ++i) {
-		if ((bcf_gt_allele(gt[i*2]) == -1) || (bcf_gt_allele(gt[i*2 + 1]) == -1)) continue;
-		int32_t* plp = pl + i * plStride;
-		if ((plp[0] == bcf_int32_missing) || (plp[0] == bcf_int32_vector_end)) continue;
-		double pp[3];
-		int bestIdx = 0;
-		for(int k = 0; k < 3; ++k) {
-		  pp[k] = mleGTFreq[k] * std::pow((double) 10.0, (double) -plp[k] / 10.0);
-		  if (plp[k] < plp[bestIdx]) bestIdx = k;
-		}
-		double sumPP = pp[0] + pp[1] + pp[2];
+		if (glIndex[i] == -1) continue;
 		double sampleGq = 0;
-		if (sumPP > 0) sampleGq = (double) -10.0 * std::log10((double) 1.0 - pp[bestIdx] / sumPP);
+		if (glIndex[i] >= 0) {
+		  TGLs const& gl = glVector[glIndex[i]];
+		  double pp[3];
+		  int bestIdx = 0;
+		  for(int k = 0; k < 3; ++k) {
+		    pp[k] = mleGTFreq[k] * gl[k];
+		    if (gl[k] > gl[bestIdx]) bestIdx = k;
+		  }
+		  double sumPP = pp[0] + pp[1] + pp[2];
+		  if (sumPP > 0) sampleGq = (double) -10.0 * std::log10((double) 1.0 - pp[bestIdx] / sumPP);
+		} else {
+		  TGLs const& gl = glPairs[-2 - glIndex[i]];
+		  double pp[2];
+		  pp[0] = hweAF[0] * gl[0];
+		  pp[1] = hweAF[1] * gl[1];
+		  int bestIdx = (gl[1] > gl[0]) ? 1 : 0;
+		  double sumPP = pp[0] + pp[1];
+		  if (sumPP > 0) sampleGq = (double) -10.0 * std::log10((double) 1.0 - pp[bestIdx] / sumPP);
+		}
 		if (sampleGq > 99) sampleGq = 99;
 		if (sampleGq < 0) sampleGq = 0;
 		if (sampleGq < c.genogq) {
-		  gt[i*2] = bcf_gt_missing;
-		  gt[i*2 + 1] = bcf_gt_missing;
+		  gt[i*gtStride] = bcf_gt_missing;
+		  if ((gtStride > 1) && (gt[i*gtStride + 1] != bcf_int32_vector_end)) gt[i*gtStride + 1] = bcf_gt_missing;
 		}
 		if (gqIsInt) gq[i] = (int32_t) (sampleGq + 0.5);
 		else gqf[i] = (float) sampleGq;
 	      }
-	      bcf_update_genotypes(hdr_out, rec, gt, nsmpl * 2);
+	      bcf_update_genotypes(hdr_out, rec, gt, ngtVal);
 	      if (gqIsInt) bcf_update_format_int32(hdr_out, rec, "GQ", gq, nsmpl);
 	      else bcf_update_format_float(hdr_out, rec, "GQ", gqf, nsmpl);
 
 	      // Annotations
 	      float afmle = (float) hweAF[1];
-	      int32_t acmle = (int32_t) boost::math::iround(hweAF[1] * 2.0 * (double) glVector.size());
+	      int32_t acmle = (int32_t) boost::math::iround(hweAF[1] * (double) (2 * glVector.size() + glPairs.size()));
 	      float gfmle[3]; gfmle[0] = (float) mleGTFreq[0]; gfmle[1] = (float) mleGTFreq[1]; gfmle[2] = (float) mleGTFreq[2];
 	      float ficv = (float) Fic;
 	      float rsqv = (float) rsq;
@@ -861,6 +953,9 @@ namespace torali
 	      bcf_update_info_float(hdr_out, rec, "HWEpval", &hwev, 1);
 	    }
 	  }
+	} else if ((germline) && (!sm.sex.empty()) && (gtStride > 0)) {
+	  // No likelihoods
+	  bcf_update_genotypes(hdr_out, rec, gt, ngtVal);
 	}
 	std::vector<float> rcraw;
 	std::vector<float> rcControl;
@@ -876,11 +971,21 @@ namespace torali
 	ac[0] = 0;
 	ac[1] = 0;
 	int32_t ncar = 0;
-	for (int i = 0; i < bcf_hdr_nsamples(hdr); ++i) {
-	  if ((bcf_gt_allele(gt[i*2]) != -1) && (bcf_gt_allele(gt[i*2 + 1]) != -1)) {
-	    int gt_type = bcf_gt_allele(gt[i*2]) + bcf_gt_allele(gt[i*2 + 1]);
-	    ++ac[bcf_gt_allele(gt[i*2])];
-	    ++ac[bcf_gt_allele(gt[i*2 + 1])];
+	int32_t nEligible = 0;
+	for (int i = 0; i < nsmpl; ++i) {
+	  if (ploidy[i] > 0) ++nEligible;
+	  if (gtStride == 0) continue;
+	  int32_t g0 = gt[i*gtStride];
+	  int32_t g1 = (gtStride > 1) ? gt[i*gtStride + 1] : bcf_int32_vector_end;
+	  bool haploid = (g1 == bcf_int32_vector_end);
+	  if ((bcf_gt_is_missing(g0)) || ((!haploid) && (bcf_gt_is_missing(g1)))) continue;
+	  int32_t a0 = bcf_gt_allele(g0);
+	  int32_t a1 = (haploid) ? 0 : bcf_gt_allele(g1);
+	  if ((a0 < 0) || (a0 > 1) || (a1 < 0) || (a1 > 1)) continue;
+	  {
+	    int gt_type = a0 + a1;
+	    ++ac[a0];
+	    if (!haploid) ++ac[a1];
 	    if (gt_type >= 1) ++ncar;
 	    if ((germline) || (c.controlSet.find(hdr->samples[i]) != c.controlSet.end())) {
 	      // Control or population genomics
@@ -935,7 +1040,7 @@ namespace torali
 	    bcf_write1(ofile, hdr_out, rec);
 	  } 
 	} else if (c.filter == "germline") {
-	  float genotypeRatio = (float) (nCount + tCount) / (float) (bcf_hdr_nsamples(hdr));
+	  float genotypeRatio = (nEligible > 0) ? ((float) (nCount + tCount) / (float) nEligible) : 0;
 	  float rrefvarpercentile = 0;
 	  if (!rRefVar.empty()) getPercentile(rRefVar, 0.9, rrefvarpercentile);
 	  float raltvarmed = 0;
@@ -973,8 +1078,13 @@ namespace torali
 	      rr.dos.assign(nsmpl, (int8_t) -1);
 	      rr.ac = 0; rr.ncalled = 0;
 	      for (int i = 0; i < nsmpl; ++i) {
-		int a0 = bcf_gt_allele(gt[i*2]);
-		int a1 = bcf_gt_allele(gt[i*2 + 1]);
+		if (gtStride == 0) break;
+		int32_t g0 = gt[i*gtStride];
+		int32_t g1 = (gtStride > 1) ? gt[i*gtStride + 1] : bcf_int32_vector_end;
+		bool haploid = (g1 == bcf_int32_vector_end);
+		if ((bcf_gt_is_missing(g0)) || ((!haploid) && (bcf_gt_is_missing(g1)))) continue;
+		int a0 = bcf_gt_allele(g0);
+		int a1 = (haploid) ? 0 : bcf_gt_allele(g1);
 		if ((a0 >= 0) && (a1 >= 0)) {
 		  int8_t d = (int8_t) ((a0 > 0 ? 1 : 0) + (a1 > 0 ? 1 : 0));
 		  rr.dos[i] = d;
@@ -1114,7 +1224,7 @@ namespace torali
       ("hwe,w", boost::program_options::value<float>(&c.hwe)->default_value(0.000001), "min. HWE p-value for excess-het (0=off)")
       ("no-collapse", boost::program_options::bool_switch(&c.noCollapse), "disable redundant-site collapse")
       ("no-refine", boost::program_options::bool_switch(&c.noRefine), "disable population refinement (SV)")
-
+      ("sex", boost::program_options::value<std::string>(&c.sexArg)->default_value("auto"), "sample sex [auto, none, file]")
       ;
 
     // Define hidden options

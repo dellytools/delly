@@ -20,15 +20,17 @@ struct BoLog {
 };
 
 
+ // Genotype likelihoods
  template<typename TBoLog, typename TMapqVector>
  inline void
- _computeGLs(TBoLog const& bl, TMapqVector const& mapqRef, TMapqVector const& mapqAlt, float* gls, int32_t* gqval, int32_t* gts, int const file_c) {
+ _computeGLs(TBoLog const& bl, TMapqVector const& mapqRef, TMapqVector const& mapqAlt, float* gls, int32_t* gqval, int32_t* gts, int const file_c, uint8_t const ploidy) {
    typedef typename TBoLog::value_type FLP;
    FLP gl[3];
 
    // Compute genotype likelihoods
    for(unsigned int geno=0; geno<=2; ++geno) gl[geno]=0;
    unsigned int peDepth=mapqRef.size() + mapqAlt.size();
+   if (ploidy == 0) peDepth = 0;
    for(typename TMapqVector::const_iterator mapqRefIt = mapqRef.begin();mapqRefIt!=mapqRef.end();++mapqRefIt) {
      gl[0] += std::log10(bl.phred2prob[*mapqRefIt]);
      gl[1] += std::log10(bl.phred2prob[*mapqRefIt] + (FLP(1) - bl.phred2prob[*mapqRefIt]));
@@ -40,6 +42,7 @@ struct BoLog {
      gl[2] += std::log10(bl.phred2prob[*mapqAltIt]);
    }
    gl[1] += -FLP(peDepth) * std::log10(FLP(2));
+   if (ploidy == 1) gl[1] = SMALLEST_GL + gl[0] + gl[2]; // No hets
    unsigned int glBest=0;
    FLP glBestVal=gl[glBest];
    for(unsigned int geno=1; geno<=2; ++geno) {
@@ -61,10 +64,14 @@ struct BoLog {
    pl[1] = (uint32_t) boost::math::round(-10 * gl[1]);
    pl[2] = (uint32_t) boost::math::round(-10 * gl[2]);
    if ((peDepth) && (pl[0] + pl[1] + pl[2] > 0)) {
-     FLP likelihood = (FLP) std::log10((1-1/(bl.phred2prob[pl[0]]+bl.phred2prob[pl[1]]+bl.phred2prob[pl[2]])));
+     FLP probsum = (ploidy == 1) ? (bl.phred2prob[pl[0]] + bl.phred2prob[pl[2]]) : (bl.phred2prob[pl[0]]+bl.phred2prob[pl[1]]+bl.phred2prob[pl[2]]);
+     FLP likelihood = (FLP) std::log10((1-1/probsum));
      likelihood = (likelihood > SMALLEST_GL) ? likelihood : SMALLEST_GL;
      gqval[file_c] = (int32_t) boost::math::round(-10 * likelihood);
-     if (glBest==0) {
+     if (ploidy == 1) {
+       gts[file_c * 2] = (glBest==0) ? bcf_gt_unphased(1) : bcf_gt_unphased(0);
+       gts[file_c * 2 + 1] = bcf_int32_vector_end;
+     } else if (glBest==0) {
        gts[file_c * 2] = bcf_gt_unphased(1);
        gts[file_c * 2 + 1] = bcf_gt_unphased(1);
      } else if (glBest==1) {
@@ -82,6 +89,12 @@ struct BoLog {
    gls[file_c * 3 + 2] = (float) gl[0];
    gls[file_c * 3 + 1] = (float) gl[1];
    gls[file_c * 3] = (float) gl[2];
+ }
+
+ template<typename TBoLog, typename TMapqVector>
+ inline void
+ _computeGLs(TBoLog const& bl, TMapqVector const& mapqRef, TMapqVector const& mapqAlt, float* gls, int32_t* gqval, int32_t* gts, int const file_c) {
+   _computeGLs(bl, mapqRef, mapqAlt, gls, gqval, gts, file_c, (uint8_t) 2);
  }
 
 
