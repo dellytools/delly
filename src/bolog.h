@@ -83,7 +83,7 @@ struct BoLog {
      }
    } else {
      gts[file_c * 2] = bcf_gt_missing;
-     gts[file_c * 2 + 1] = bcf_gt_missing;
+     gts[file_c * 2 + 1] = (ploidy == 1) ? bcf_int32_vector_end : bcf_gt_missing;
      gqval[file_c] = 0;
    }
    gls[file_c * 3 + 2] = (float) gl[0];

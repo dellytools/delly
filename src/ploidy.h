@@ -47,6 +47,15 @@ namespace torali
     return 2;
   }
 
+  // Ploidy of an SV
+  inline uint8_t
+  _svPloidy(SexModel const& sm, uint8_t const sex, int32_t const tid, int32_t const pos, int32_t const tid2, int32_t const pos2) {
+    uint8_t p1 = _ploidy(sm, sex, tid, pos);
+    uint8_t p2 = _ploidy(sm, sex, tid2, pos2);
+    if ((p1 == 0) || (p2 == 0)) return 0;
+    return std::max(p1, p2);
+  }
+
   // PAR regions
   inline bool
   _parRegions(uint32_t const xlen, SexModel& sm) {
@@ -226,6 +235,7 @@ namespace torali
     }
     std::vector<uint32_t> xCalled(nsmpl, 0);
     std::vector<uint32_t> xHet(nsmpl, 0);
+    std::vector<uint32_t> xHap(nsmpl, 0);
     std::vector<uint32_t> ySites(nsmpl, 0);
     std::vector<uint32_t> yCalled(nsmpl, 0);
     int32_t ngt = 0;
@@ -249,6 +259,7 @@ namespace torali
 	if (onX) {
 	  ++xCalled[i];
 	  if (a0 != a1) ++xHet[i];
+	  if ((stride == 1) || (g[1] == bcf_int32_vector_end)) ++xHap[i];
 	} else {
 	  ++ySites[i];
 	  ++yCalled[i];
@@ -257,6 +268,19 @@ namespace torali
     }
     if (gt != NULL) free(gt);
     bcf_sr_destroy(sr);
+
+    // Ploidy already set
+    bool encoded = false;
+    for(int32_t i = 0; i < nsmpl; ++i) {
+      if ((xCalled[i] >= 100) && (2 * xHap[i] >= xCalled[i])) encoded = true;
+    }
+    if (encoded) {
+      for(int32_t i = 0; i < nsmpl; ++i) {
+	if (xCalled[i] < 100) continue;
+	sm.sex[i] = (2 * xHap[i] >= xCalled[i]) ? 1 : 2;
+      }
+      return;
+    }
 
     // chrY call rate
     std::vector<double> hetX(nsmpl, -1);

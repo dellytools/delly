@@ -668,9 +668,7 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
 	// Sample ploidy
 	uint8_t ploidy = 2;
 	if (file_c < c.sexModel.sex.size()) {
-	  ploidy = _ploidy(c.sexModel, c.sexModel.sex[file_c], svIter->chr, svIter->svStart);
-	  uint8_t ploidy2 = _ploidy(c.sexModel, c.sexModel.sex[file_c], svIter->chr2, svIter->svEnd);
-	  if (ploidy2 < ploidy) ploidy = ploidy2;
+	  ploidy = _svPloidy(c.sexModel, c.sexModel.sex[file_c], svIter->chr, svIter->svStart, svIter->chr2, svIter->svEnd);
 	}
 
 	// Compute GLs

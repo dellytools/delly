@@ -543,6 +543,7 @@ namespace torali
 
     // Sample sex
     SexModel sm;
+    if ((c.filter == "germline") && (c.sexArg != "none")) _sexChromosomes(hdr, sm);
     if ((c.filter == "germline") && (c.sexArg != "none") && (sm.xTid != -1)) {
       int32_t nsmplHdr = bcf_hdr_nsamples(hdr);
       sm.sex.assign(nsmplHdr, 0);
@@ -625,6 +626,10 @@ namespace torali
     // VCF fields
     int32_t nsvend = 0;
     int32_t* svend = NULL;
+    int32_t npos2 = 0;
+    int32_t* pos2 = NULL;
+    int32_t nchr2 = 0;
+    char* chr2 = NULL;
     int32_t nrsq = 0;
     float* rsqbuf = NULL;
     int32_t nsvt = 0;
@@ -803,9 +808,15 @@ namespace torali
 	int32_t nsmpl = bcf_hdr_nsamples(hdr);
 	int32_t gtStride = (ngtVal > 0) ? (ngtVal / nsmpl) : 0;
 	// Sample ploidy
+	int32_t rid2 = rec->rid;
+	int32_t pos2Val = (svend != NULL) ? (*svend) : rec->pos;
+	if (std::string(svt) == "BND") {
+	  if (bcf_get_info_string(hdr, rec, "CHR2", &chr2, &nchr2) > 0) rid2 = bcf_hdr_name2id(hdr, chr2);
+	  if (bcf_get_info_int32(hdr, rec, "POS2", &pos2, &npos2) > 0) pos2Val = *pos2;
+	}
 	std::vector<uint8_t> ploidy(nsmpl, 2);
 	for (int i = 0; i < nsmpl; ++i) {
-	  if ((germline) && (!sm.sex.empty())) ploidy[i] = _ploidy(sm, sm.sex[i], rec->rid, rec->pos);
+	  if ((germline) && (!sm.sex.empty())) ploidy[i] = _svPloidy(sm, sm.sex[i], rec->rid, rec->pos, rid2, pos2Val);
 	  if ((gtStride == 1) || ((gtStride > 1) && (gt[i*gtStride + 1] == bcf_int32_vector_end))) {
 	    if (ploidy[i] == 2) ploidy[i] = 1;
 	  }
@@ -889,9 +900,9 @@ namespace torali
 		if (!glPairs.empty()) _estBiallelicAF(c, glVector, dipAF);
 		_estBiallelicGTFreq(c, glVector, mleGTFreq);
 		_estBiallelicFIC(glVector, dipAF, Fic);
-		_estBiallelicRSQ(glVector, dipAF, rsq);
 		_estBiallelicHWE_LRT(glVector, dipAF, mleGTFreq, pval);
 	      }
+	      _estBiallelicRSQ(glVector, glPairs, hweAF, rsq);
 	      hwepvalStore = pval;
 	      ficStore = Fic;
 
@@ -1145,6 +1156,8 @@ namespace torali
 
     // Clean-up
     if (svend != NULL) free(svend);
+    if (pos2 != NULL) free(pos2);
+    if (chr2 != NULL) free(chr2);
     if (rsqbuf != NULL) free(rsqbuf);
     if (svt != NULL) free(svt);
     if (inslen != NULL) free(inslen);

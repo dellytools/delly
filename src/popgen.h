@@ -194,6 +194,58 @@ namespace torali
     }
   }
 
+  // Imputation-quality across diploid and haploid samples (pooled within-ploidy dosage variance)
+  template<typename TGlVector, typename TValue>
+  inline void
+  _estBiallelicRSQ(TGlVector const& glVector, TGlVector const& glPairs, TValue const (&hweAF)[2], TValue& rsq) {
+    if (glPairs.empty()) {
+      _estBiallelicRSQ(glVector, hweAF, rsq);
+      return;
+    }
+    TValue hweGT[3];
+    hweGT[0] = hweAF[0] * hweAF[0];
+    hweGT[1] = 2 * hweAF[0] * hweAF[1];
+    hweGT[2] = hweAF[1] * hweAF[1];
+    if (hweGT[1] <= 0) return;
+    TValue sumD[2] = {0, 0};
+    TValue sumD2[2] = {0, 0};
+    TValue used[2] = {0, 0};
+    for(typename TGlVector::const_iterator itG = glVector.begin(); itG != glVector.end(); ++itG) {
+      TValue post[3];
+      post[0] = (*itG)[0] * hweGT[0];
+      post[1] = (*itG)[1] * hweGT[1];
+      post[2] = (*itG)[2] * hweGT[2];
+      TValue p = post[0] + post[1] + post[2];
+      if (p <= 0) continue;
+      TValue d = (post[1] + 2 * post[0]) / p;
+      sumD[0] += d;
+      sumD2[0] += d * d;
+      used[0] += 1;
+    }
+    for(typename TGlVector::const_iterator itG = glPairs.begin(); itG != glPairs.end(); ++itG) {
+      TValue post[2];
+      post[0] = (*itG)[0] * hweAF[0];
+      post[1] = (*itG)[1] * hweAF[1];
+      TValue p = post[0] + post[1];
+      if (p <= 0) continue;
+      TValue d = post[0] / p;
+      sumD[1] += d;
+      sumD2[1] += d * d;
+      used[1] += 1;
+    }
+    TValue num = 0;
+    TValue den = 0;
+    for(int32_t k = 0; k < 2; ++k) {
+      if (used[k] < 2) continue;
+      TValue meanD = sumD[k] / used[k];
+      TValue ss = sumD2[k] - used[k] * meanD * meanD;
+      if (ss < 0) ss = 0;
+      num += ss;
+      den += (used[k] - 1) * ((k == 0) ? hweGT[1] : (hweAF[0] * hweAF[1]));
+    }
+    if (den > 0) rsq = num / den;
+  }
+
   template<typename TDosage>
   inline double
   _dosageR2(TDosage const& a, TDosage const& b, int32_t const minShared) {
