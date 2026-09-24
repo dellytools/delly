@@ -256,6 +256,11 @@ Bioinformatics. 2012 Sep 15;28(18):i333-i339.
 
 Delly is distributed under the BSD 3-Clause license. Consult the accompanying [LICENSE](https://github.com/dellytools/delly/blob/main/LICENSE) file for more details.
 
+# Feedback
+
+The development and maintanence of Delly is funded by [de.NBI](https://www.denbi.de). Please help us improve by taking our [short user survey](https://www.surveymonkey.de/r/denbi-service?sc=hd-hub&tool=delly).
+
+
 # Credits
 
 [HTSlib](https://github.com/samtools/htslib) is heavily used for all genomic alignment and variant processing. [Boost](https://www.boost.org/) for various data structures and algorithms. [Claude](https://claude.com/) for bug fixes, performance improvements and code suggestions. [arfer](https://github.com/ekg/arfer) for annotating SVs and [Edlib](https://github.com/Martinsos/edlib) for pairwise alignments.
