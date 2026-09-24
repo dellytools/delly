@@ -258,7 +258,7 @@ Delly is distributed under the BSD 3-Clause license. Consult the accompanying [L
 
 # Feedback
 
-The development and maintanence of Delly is funded by [de.NBI](https://www.denbi.de). Please help us improve by taking our [short user survey](https://www.surveymonkey.de/r/denbi-service?sc=hd-hub&tool=delly).
+The development of Delly is funded by [de.NBI](https://www.denbi.de). Please help us improve by taking our [short user survey](https://www.surveymonkey.de/r/denbi-service?sc=hd-hub&tool=delly).
 
 
 # Credits
