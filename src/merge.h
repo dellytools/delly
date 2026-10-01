@@ -35,6 +35,7 @@
 #include "util.h"
 #include "edlib.h"
 #include "modvcf.h"
+#include "svanno.h"
 
 
 namespace torali
@@ -46,6 +47,7 @@ namespace torali
     bool filterForPrecise;
     bool cnvMode;
     bool hasGenome;
+    bool longread;
     uint32_t chunksize;
     uint32_t svcounter;
     uint32_t alleleCounter;
@@ -69,6 +71,8 @@ namespace torali
     int32_t seqCutoff;
     int32_t recurrentSamples;
     float repMinAF;
+    int32_t trLenTol;
+    float trLenFrac;
     int32_t cnvLargeSize;
     float cnvMinUniq;
     float cnvGainUniq;
@@ -112,12 +116,14 @@ namespace torali
     int32_t altSupport;
     int8_t subtype;   // 0:none 1:ALU 2:LINE1 3:SVA 4:NUMT 5:LTR 6:HERVK 7:TR
     int8_t insStrand; // -1:NA 0:+ 1:-
-    int8_t hap;       // -1 read-based merging, 0/1 haplotype origin for asm
+    int8_t hap;
     bool precise;
     bool fromSiteList; // chunk re-merge
     float srq;
     float ce;
     int32_t comp;      
+    int32_t trStart;
+    int32_t trEnd;
     std::string id;
     std::string seq;
   };
@@ -132,6 +138,8 @@ namespace torali
     int32_t ciendHi;
     uint32_t alleleId;
     int32_t nAllele;
+    int32_t trStart;
+    int32_t trEnd;
   };
 
   // One merged allele
@@ -597,7 +605,7 @@ namespace torali
 	n.size = realSize;
 	n.svt = recsvt;
 	n.homlen = homlenVal;
-	n.trperiod = trPeriod;
+	n.trperiod = ((trPeriod < 0) || (trPeriod > 10000)) ? 0 : trPeriod;
 	n.score = (int32_t) rec->qual;
 	n.fileIdx = file_c;
 	n.supp = suppVal;
@@ -612,6 +620,8 @@ namespace torali
 	n.srq = srqVal;
 	n.ce = ceVal;
 	n.comp = -1;
+	n.trStart = -1;
+	n.trEnd = -1;
 	n.id = std::string(rec->d.id);
 	n.seq = seq;
 	nodes.push_back(n);
@@ -670,9 +680,60 @@ namespace torali
     return (maxS > 0.0) ? (minS / maxS) : 1.0;
   }
 
-  // Pass 1b: cluster and filter SVs
+  // Cluster and filter SVs
+  inline int32_t
+  _trPeriod(MergeSV const& n, std::string const& chrSeq) {
+    if ((n.trperiod > 0) && (n.trperiod <= 100)) return n.trperiod;
+    if ((!n.seq.empty()) && (n.seq.size() <= 2000)) {
+      int32_t p = detectTandemRepeat(n.seq, 100, 0.85f).first;
+      if (p > 0) return p;
+    }
+    int32_t a = n.svStart + 1;
+    if ((a < 0) || (a > (int32_t) chrSeq.size())) return 0;
+    int32_t lb = std::max(0, a - 200);
+    std::string flank = chrSeq.substr(lb, a - lb);
+    int32_t p = 0;
+    if (flank.find('N') == std::string::npos) p = detectTandemRepeat(flank, 100, 0.85f).first;
+    if (p > 0) return p;
+    int32_t rb = std::min((int32_t) chrSeq.size(), a + 200);
+    flank = chrSeq.substr(a, rb - a);
+    if (flank.find('N') != std::string::npos) return 0;
+    return detectTandemRepeat(flank, 100, 0.85f).first;
+  }
+
+  // Reference repeat
+  inline bool
+  _trTract(std::string const& chrSeq, int32_t const a, int32_t const p, int32_t& ts, int32_t& te) {
+    int32_t const N = (int32_t) chrSeq.size();
+    if ((p <= 0) || (p > 100) || (a < 0) || (a + p > N)) return false;
+    double const minFrac = 0.7;
+    int32_t const maxTract = 10000;
+    te = a;
+    while ((te + 2 * p <= N) && (te - a <= maxTract)) {
+      int32_t m = 0;
+      for(int32_t i = te; i < te + p; ++i) {
+	if ((chrSeq[i] == chrSeq[i + p]) && (chrSeq[i] != 'N')) ++m;
+      }
+      if (m < minFrac * p) break;
+      te += p;
+    }
+    if (te + p <= N) te += p;
+    ts = a;
+    while ((ts - p >= 0) && (a - ts <= maxTract)) {
+      int32_t m = 0;
+      for(int32_t i = ts - p; i < ts; ++i) {
+	if ((chrSeq[i] == chrSeq[i + p]) && (chrSeq[i] != 'N')) ++m;
+      }
+      if (m < minFrac * p) break;
+      ts -= p;
+    }
+    if (te > N) te = N;
+    if (te - ts > maxTract) return false;
+    return ((te - ts) >= std::max(10, 2 * p));
+  }
+
   inline void
-  _clusterAndSelect(MergeConfig& c, std::vector<MergeSV>& nodes, boost::unordered_map<std::string, MergeAgg>& selected, std::vector<AlleleGroup>* outGroups = nullptr) {
+  _clusterAndSelect(MergeConfig& c, std::vector<MergeSV>& nodes, boost::unordered_map<std::string, MergeAgg>& selected, std::vector<AlleleGroup>* outGroups = nullptr, std::map<std::string, uint32_t> const* cMap = nullptr) {
     boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
     std::cerr << '[' << boost::posix_time::to_simple_string(now) << "] " << "Clustering and merging SVs" << std::endl;
     if (nodes.empty()) return;
@@ -706,12 +767,172 @@ namespace torali
     // Gather components
     boost::unordered_map<int32_t, std::vector<int32_t> > comps;
     for(size_t i = 0; i < nodes.size(); ++i) comps[uf.find((int32_t) i)].push_back((int32_t) i);
-    for(boost::unordered_map<int32_t, std::vector<int32_t> >::iterator it = comps.begin(); it != comps.end(); ++it) {
-      std::vector<int32_t>& members = it->second;
+    typedef std::vector<std::vector<int32_t> > TCompVec;
+    TCompVec compVec;
+    std::vector<int32_t> compTs;
+    std::vector<int32_t> compTe;
+    for(boost::unordered_map<int32_t, std::vector<int32_t> >::iterator it = comps.begin(); it != comps.end(); ++it) compVec.push_back(it->second);
+    comps.clear();
+
+    // Tandem repeat?
+    bool useTract = ((c.longread) && (c.hasGenome) && (cMap != nullptr) && (!nodes.empty()) && ((nodes[0].svt == 2) || (nodes[0].svt == 4)));
+    faidx_t* fai = NULL;
+    if (useTract) {
+      fai = fai_load(c.genome.string().c_str());
+      if (fai == NULL) {
+	useTract = false;
+      }
+    }
+    if (useTract) {
+      std::sort(compVec.begin(), compVec.end(), [&](std::vector<int32_t> const& a, std::vector<int32_t> const& b) { return (nodes[a[0]].tid < nodes[b[0]].tid) || ((nodes[a[0]].tid == nodes[b[0]].tid) && (nodes[a[0]].svStart < nodes[b[0]].svStart)); });
+      compTs.assign(compVec.size(), -1);
+      compTe.assign(compVec.size(), -1);
+      std::map<uint32_t, std::string> rMap;
+      for(std::map<std::string, uint32_t>::const_iterator cIt = cMap->begin(); cIt != cMap->end(); ++cIt) rMap[cIt->second] = cIt->first;
+      int32_t curTid = -1;
+      std::string chrSeq;
+      for(size_t ci = 0; ci < compVec.size(); ++ci) {
+	int32_t rep = compVec[ci][0];
+	bool allPrecise = nodes[rep].precise;
+	for(size_t k = 1; k < compVec[ci].size(); ++k) {
+	  if (!nodes[compVec[ci][k]].precise) allPrecise = false;
+	  if ((nodes[compVec[ci][k]].score > nodes[rep].score) || ((nodes[compVec[ci][k]].score == nodes[rep].score) && (nodes[compVec[ci][k]].srq > nodes[rep].srq))) rep = compVec[ci][k];
+	}
+	if (nodes[rep].tid != curTid) {
+	  curTid = nodes[rep].tid;
+	  chrSeq.clear();
+	  if ((rMap.find(curTid) != rMap.end()) && (faidx_has_seq(fai, rMap[curTid].c_str()))) {
+	    int32_t seqlen = -1;
+	    char* seq = faidx_fetch_seq(fai, rMap[curTid].c_str(), 0, faidx_seq_len(fai, rMap[curTid].c_str()), &seqlen);
+	    if (seq != NULL) {
+	      chrSeq.assign(seq, seqlen);
+	      free(seq);
+	      boost::to_upper(chrSeq);
+	    }
+	  }
+	}
+	// Repeat lengths
+	if ((chrSeq.empty()) || (!allPrecise)) continue;
+	int32_t p = _trPeriod(nodes[rep], chrSeq);
+	int32_t ts = -1, te = -1;
+	if ((_trTract(chrSeq, nodes[rep].svStart + 1, p, ts, te)) || (_trTract(chrSeq, nodes[rep].svStart + 1 - p, p, ts, te))) {
+	  compTs[ci] = ts;
+	  compTe[ci] = te;
+	}
+      }
+      fai_destroy(fai);
+      fai = NULL;
+      UnionFind cuf((int32_t) compVec.size());
+      std::vector<int32_t> tractOrder;
+      for(size_t ci = 0; ci < compVec.size(); ++ci) {
+	if (compTs[ci] >= 0) tractOrder.push_back((int32_t) ci);
+      }
+      std::sort(tractOrder.begin(), tractOrder.end(), [&](int32_t a, int32_t b) { return (nodes[compVec[a][0]].tid < nodes[compVec[b][0]].tid) || ((nodes[compVec[a][0]].tid == nodes[compVec[b][0]].tid) && (compTs[a] < compTs[b])); });
+      for(size_t oi = 1; oi < tractOrder.size(); ++oi) {
+	int32_t ci = tractOrder[oi];
+	for(size_t oj = oi; oj > 0; ) {
+	  --oj;
+	  int32_t cj = tractOrder[oj];
+	  if (nodes[compVec[cj][0]].tid != nodes[compVec[ci][0]].tid) break;
+	  if (compTs[ci] - compTs[cj] > 20000) break;
+	  int32_t ovl = std::min(compTe[ci], compTe[cj]) - compTs[ci];
+	  int32_t shorter = std::min(compTe[ci] - compTs[ci], compTe[cj] - compTs[cj]);
+	  if (2 * ovl < shorter) continue;
+	  cuf.unite(ci, cj);
+	}
+      }
+      TCompVec mergedVec;
+      std::vector<int32_t> mTs, mTe;
+      boost::unordered_map<int32_t, int32_t> rootIdx;
+      for(size_t ci = 0; ci < compVec.size(); ++ci) {
+	int32_t r = cuf.find((int32_t) ci);
+	if (rootIdx.find(r) == rootIdx.end()) {
+	  rootIdx[r] = (int32_t) mergedVec.size();
+	  mergedVec.push_back(std::vector<int32_t>());
+	  mTs.push_back(compTs[ci]);
+	  mTe.push_back(compTe[ci]);
+	}
+	int32_t mi = rootIdx[r];
+	mergedVec[mi].insert(mergedVec[mi].end(), compVec[ci].begin(), compVec[ci].end());
+	if (compTs[ci] >= 0) {
+	  if ((mTs[mi] < 0) || (compTs[ci] < mTs[mi])) mTs[mi] = compTs[ci];
+	  if (compTe[ci] > mTe[mi]) mTe[mi] = compTe[ci];
+	}
+      }
+      compVec.swap(mergedVec);
+      compTs.swap(mTs);
+      compTe.swap(mTe);
+
+      // Alleles inside/outside repeat
+      int32_t const trFlank = 200;
+      size_t ncomp = compVec.size();
+      for(size_t ci = 0; ci < ncomp; ++ci) {
+	if (compTs[ci] < 0) continue;
+	std::vector<int32_t> inside;
+	std::vector<int32_t> outside;
+	for(size_t k = 0; k < compVec[ci].size(); ++k) {
+	  MergeSV const& n = nodes[compVec[ci][k]];
+	  int32_t svE = (n.svt == 4) ? n.svStart : n.svEnd;
+	  if ((n.svStart < compTs[ci] - trFlank) || (svE > compTe[ci] + trFlank)) outside.push_back(compVec[ci][k]);
+	  else inside.push_back(compVec[ci][k]);
+	}
+	if (outside.empty()) continue;
+	if (inside.empty()) {
+	  compTs[ci] = -1;
+	  compTe[ci] = -1;
+	} else {
+	  compVec[ci].swap(inside);
+	  compVec.push_back(outside);
+	  compTs.push_back(-1);
+	  compTe.push_back(-1);
+	}
+      }
+    }
+
+    for(size_t ci = 0; ci < compVec.size(); ++ci) {
+      std::vector<int32_t>& members = compVec[ci];
+      int32_t trS = (useTract) ? compTs[ci] : -1;
+      int32_t trE = (useTract) ? compTe[ci] : -1;
       std::sort(members.begin(), members.end(), [&](int32_t a, int32_t b) { return nodes[a].size < nodes[b].size; });
       std::vector<std::vector<int32_t> > groups;
-      if ((!members.empty()) && (nodes[members[0]].svt == 2) && (members.size() <= 20000)) {
-	// keep distinct DEL alleles
+      if (trS >= 0) {
+	// Tandem repeat locus
+	typedef std::pair<int32_t, int32_t> TSizeSupport;
+	std::vector<TSizeSupport> sizes;
+	for(size_t k = 0; k < members.size(); ++k) {
+	  int32_t supp = std::max(1, nodes[members[k]].supp);
+	  if ((sizes.empty()) || (sizes.back().first != nodes[members[k]].size)) sizes.push_back(std::make_pair(nodes[members[k]].size, supp));
+	  else sizes.back().second += supp;
+	}
+	std::vector<int32_t> order(sizes.size());
+	for(size_t k = 0; k < sizes.size(); ++k) order[k] = (int32_t) k;
+	std::sort(order.begin(), order.end(), [&](int32_t x, int32_t y) { return (sizes[x].second > sizes[y].second) || ((sizes[x].second == sizes[y].second) && (sizes[x].first < sizes[y].first)); });
+	std::vector<int32_t> lead;
+	std::map<int32_t, int32_t> leadOf;
+	for(size_t oi = 0; oi < order.size(); ++oi) {
+	  int32_t s = sizes[order[oi]].first;
+	  int32_t best = -1;
+	  int32_t bestDist = std::numeric_limits<int32_t>::max();
+	  for(size_t L = 0; L < lead.size(); ++L) {
+	    int32_t tolLen = std::max(c.trLenTol, (int32_t) std::lround(c.trLenFrac * (double) lead[L]));
+	    int32_t d = std::abs(s - lead[L]);
+	    if ((d <= tolLen) && (d < bestDist)) {
+	      best = lead[L];
+	      bestDist = d;
+	    }
+	  }
+	  if (best < 0) {
+	    lead.push_back(s);
+	    best = s;
+	  }
+	  leadOf[s] = best;
+	}
+	std::sort(lead.begin(), lead.end());
+	std::map<int32_t, int32_t> groupIdx;
+	for(size_t L = 0; L < lead.size(); ++L) groupIdx[lead[L]] = (int32_t) L;
+	groups.resize(lead.size());
+	for(size_t k = 0; k < members.size(); ++k) groups[groupIdx[leadOf[nodes[members[k]].size]]].push_back(members[k]);
+      } else if ((!members.empty()) && (nodes[members[0]].svt == 2) && (members.size() <= 20000)) {
 	double alleleId = 0.90;
 	std::vector<int32_t> order(members.begin(), members.end());
 	std::sort(order.begin(), order.end(), [&](int32_t x, int32_t y) { return nodes[x].score > nodes[y].score; });
@@ -732,7 +953,7 @@ namespace torali
 	  }
 	  groups[g].push_back(mi);
 	}
-	// Merge-in rare alleles that are similar
+	// Merge-in rare alleles
 	int32_t carrierFloor = (int32_t) std::ceil(c.repMinAF * (double) c.totalSamples);
 	if (carrierFloor < 1) carrierFloor = 1;
 	if ((carrierFloor > 1) && (groups.size() > 1)) {
@@ -743,7 +964,7 @@ namespace torali
 	    gcarr[g] = (int32_t) f.size();
 	  }
 	  std::vector<std::vector<int32_t> > merged;
-	  std::vector<int32_t> keptG; // group indices with enough carriers
+	  std::vector<int32_t> keptG;
 	  for(size_t g = 0; g < groups.size(); ++g) {
 	    if (gcarr[g] >= carrierFloor) keptG.push_back((int32_t) g);
 	  }
@@ -809,7 +1030,7 @@ namespace torali
 	  supp += pf->second.first;
 	  ac += pf->second.second;
 	}
-	if (supp < 1) continue; // No support
+	if (supp < 1) continue;
 	if (!_retainAllele(c, nodes[rep], supp)) continue;
 	keptGroups.push_back(grp);
 	repIdx.push_back(rep);
@@ -852,11 +1073,13 @@ namespace torali
 	agg.ciendHi = ciendHi;
 	agg.alleleId = locusId;
 	agg.nAllele = nAllele;
+	agg.trStart = trS;
+	agg.trEnd = trE;
 
 	std::string key = boost::lexical_cast<std::string>(nodes[rep].fileIdx) + "\t" + nodes[rep].id;
 	selected[key] = agg;
 
-	// Store group membership (for asm)
+	// Store group membership
 	if (outGroups != nullptr) {
 	  AlleleGroup ag;
 	  ag.rep = rep;
@@ -869,7 +1092,7 @@ namespace torali
   }
 
 
-  // Synthesize consensus (INS and DEL)
+  // Create consensus
   inline bool
   _synthConsensus(faidx_t* fai, std::string const& chrom, int32_t const svt, int32_t const svStart0, int32_t const rsvEnd, std::string const& insSeq, std::string& consensus, int32_t& consBp, int32_t& insLen) {
     int32_t flank = 600;
@@ -901,7 +1124,7 @@ namespace torali
   }
 
 
-  // Pass 2: output selected SVs
+  // Output selected SVs
   template<typename TContigMap>
   void _emitSelected(MergeConfig& c, int32_t const svtin, TContigMap& cMap, boost::unordered_map<std::string, MergeAgg>& selected) {
     boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
@@ -951,7 +1174,8 @@ namespace torali
     bcf_hdr_append(hdr_out, "##INFO=<ID=INSSTRAND,Number=1,Type=String,Description=\"Insertion strand for MEIs\">");
     bcf_hdr_append(hdr_out, "##INFO=<ID=TRPERIOD,Number=1,Type=Integer,Description=\"Tandem repeat period in bp\">");
     bcf_hdr_append(hdr_out, "##INFO=<ID=TRCOPIES,Number=1,Type=Float,Description=\"Tandem repeat copy number\">");
-    // Population allele-frequency priors from merge
+    bcf_hdr_append(hdr_out, "##INFO=<ID=TRSTART,Number=1,Type=Integer,Description=\"Start of the reference tandem repeat\">");
+    bcf_hdr_append(hdr_out, "##INFO=<ID=TREND,Number=1,Type=Integer,Description=\"End of the reference tandem repeat\">");
     bcf_hdr_append(hdr_out, "##INFO=<ID=AC,Number=A,Type=Integer,Description=\"Allele count across merged samples\">");
     bcf_hdr_append(hdr_out, "##INFO=<ID=AN,Number=1,Type=Integer,Description=\"Total allele number across merged samples\">");
     bcf_hdr_append(hdr_out, "##INFO=<ID=AF,Number=A,Type=Float,Description=\"Allele frequency (AC/AN)\">");
@@ -1179,6 +1403,12 @@ namespace torali
 	  if (!insStr.empty()) bcf_update_info_string(hdr_out, rout, "INSSTRAND", insStr.c_str());
 	  if (hasTrp) bcf_update_info_int32(hdr_out, rout, "TRPERIOD", &trPeriodVal, 1);
 	  if (hasTrc) bcf_update_info_float(hdr_out, rout, "TRCOPIES", &trCopiesVal, 1);
+	  if (agg.trStart >= 0) {
+	    int32_t trs = agg.trStart + 1;
+	    int32_t tre = agg.trEnd;
+	    bcf_update_info_int32(hdr_out, rout, "TRSTART", &trs, 1);
+	    bcf_update_info_int32(hdr_out, rout, "TREND", &tre, 1);
+	  }
 
 	  // Population AF priors
 	  int32_t acOut = agg.ac;
@@ -1627,7 +1857,7 @@ namespace torali
 
   // Group loci that req. multi-allelic genotyping
   inline void
-  _regroupLoci(MergeConfig& c, std::vector<boost::filesystem::path> const& cts, std::vector<std::vector<int32_t> >& newAid, std::vector<std::vector<int32_t> >& newNal) {
+  _regroupLoci(MergeConfig& c, std::vector<boost::filesystem::path> const& cts, std::vector<std::vector<int32_t> >& newAid, std::vector<std::vector<int32_t> >& newNal, std::vector<std::vector<int32_t> >& newTrs, std::vector<std::vector<int32_t> >& newTre) {
     struct PostAllele {
       int32_t rid;
       int32_t pos;
@@ -1636,6 +1866,8 @@ namespace torali
       int32_t ac;
       int32_t trperiod;
       bool tr;
+      int32_t trs;
+      int32_t tre;
       int32_t f;
       int32_t k;
     };
@@ -1643,6 +1875,8 @@ namespace torali
     std::vector<PostAllele> als;
     newAid.assign(cts.size(), std::vector<int32_t>());
     newNal.assign(cts.size(), std::vector<int32_t>());
+    newTrs.assign(cts.size(), std::vector<int32_t>());
+    newTre.assign(cts.size(), std::vector<int32_t>());
     for(size_t f = 0; f < cts.size(); ++f) {
       htsFile* ifile = bcf_open(cts[f].string().c_str(), "r");
       bcf_hdr_t* hdr = bcf_hdr_read(ifile);
@@ -1652,6 +1886,10 @@ namespace torali
       int32_t nac = 0;
       int32_t nsvt = 0;
       int32_t nsub = 0;
+      int32_t ntrs = 0;
+      int32_t ntre = 0;
+      int32_t *trsp = NULL;
+      int32_t *trep = NULL;
       int32_t *endp = NULL;
       int32_t *trpp = NULL;
       int32_t *acp = NULL;
@@ -1672,7 +1910,19 @@ namespace torali
 	}
 	bool tr = false;
 	if (bcf_get_info_string(hdr, rec, "SUBTYPE", &subc, &nsub) > 0) {
-	  if (std::string(subc).find("TR") != std::string::npos) tr = true;
+	  std::string subs(subc);
+	  if ((c.longread) && (c.hasGenome)) {
+	    if ((subs == "INS:TR") || (subs == "DEL:TR")) tr = true;
+	  } else if (subs.find("TR") != std::string::npos) tr = true;
+	}
+	int32_t trs = -1;
+	int32_t tre = -1;
+	if (bcf_get_info_int32(hdr, rec, "TRSTART", &trsp, &ntrs) > 0) trs = *trsp - 1;
+	if (bcf_get_info_int32(hdr, rec, "TREND", &trep, &ntre) > 0) tre = *trep;
+	if ((trs >= 0) && (tre > trs)) tr = true;
+	else {
+	  trs = -1;
+	  tre = -1;
 	}
 	int32_t trperiod = 0;
 	if (bcf_get_info_int32(hdr, rec, "TRPERIOD", &trpp, &ntrp) > 0) {
@@ -1687,16 +1937,22 @@ namespace torali
 	pa.end = end;
 	pa.svt = svt;
 	pa.ac = ac;
-	pa.trperiod = trperiod;
+	pa.trperiod = ((trperiod < 0) || (trperiod > 10000)) ? 0 : trperiod;
 	pa.tr = tr;
+	pa.trs = trs;
+	pa.tre = tre;
 	pa.f = (int32_t) f;
 	pa.k = kk;
 	als.push_back(pa);
 	newAid[f].push_back(-1);
 	newNal[f].push_back(1);
+	newTrs[f].push_back(-1);
+	newTre[f].push_back(-1);
 	++kk;
       }
       if (endp) free(endp);
+      if (trsp) free(trsp);
+      if (trep) free(trep);
       if (trpp) free(trpp);
       if (acp) free(acp);
       if (svtc) free(svtc);
@@ -1743,12 +1999,22 @@ namespace torali
 	if (als[i].pos - als[j].pos > sweepCap) break;
 	bool overlap = (als[i].pos <= als[j].end) && (als[j].pos <= als[i].end);
 	if ((als[i].tr) && (als[j].tr)) {
-	  int32_t W = std::max((int32_t) c.bpoffset, 2 * std::max(als[i].trperiod, als[j].trperiod));
-	  if (((als[i].pos - als[j].pos) <= W) || (overlap)) tryUnite(i, j);
+	  if ((als[i].trs >= 0) && (als[j].trs >= 0)) {
+	    // Both in the same repeat
+	    int32_t ovl = std::min(als[i].tre, als[j].tre) - std::max(als[i].trs, als[j].trs);
+	    int32_t shorter = std::min(als[i].tre - als[i].trs, als[j].tre - als[j].trs);
+	    if (2 * ovl >= shorter) tryUnite(i, j);
+	  } else {
+	    int32_t W = std::max((int32_t) c.bpoffset, 2 * std::max(als[i].trperiod, als[j].trperiod));
+	    if (((als[i].pos - als[j].pos) <= W) || (overlap)) tryUnite(i, j);
+	  }
 	} else if ((als[i].tr) || (als[j].tr)) {
-	  // One side is TR, other side might have failed TR annotation
+	  // One side is TR
 	  int32_t nonSpan = (als[i].tr) ? (als[j].end - als[j].pos) : (als[i].end - als[i].pos);
-	  if ((overlap) && (nonSpan <= maxSpan)) tryUnite(i, j);
+	  int32_t trs = (als[i].tr) ? als[i].trs : als[j].trs;
+	  int32_t tre = (als[i].tr) ? als[i].tre : als[j].tre;
+	  int32_t cap = (trs >= 0) ? ((tre - trs) + 1000) : maxSpan;
+	  if ((overlap) && (nonSpan <= cap)) tryUnite(i, j);
 	} else if (als[i].svt == als[j].svt) {
 	  // Non-TR
 	  if (overlap) {
@@ -1762,6 +2028,39 @@ namespace torali
 
     boost::unordered_map<int32_t, int32_t> rootCount;
     for(int32_t i = 0; i < N; ++i) rootCount[uf.find(i)] += 1;
+
+    // Alleles without TR inside a repeat
+    if ((c.longread) && (c.hasGenome)) {
+      typedef std::pair<int32_t, int32_t> TTract;
+      boost::unordered_map<int32_t, std::vector<TTract> > rootTracts;
+      for(int32_t i = 0; i < N; ++i) {
+	if (als[i].trs >= 0) rootTracts[uf.find(i)].push_back(std::make_pair(als[i].trs, als[i].tre));
+      }
+      for(boost::unordered_map<int32_t, std::vector<TTract> >::iterator it = rootTracts.begin(); it != rootTracts.end(); ++it) {
+	std::vector<TTract>& tr = it->second;
+	std::sort(tr.begin(), tr.end());
+	std::vector<TTract> merged;
+	for(size_t k = 0; k < tr.size(); ++k) {
+	  if ((!merged.empty()) && (tr[k].first < merged.back().second)) merged.back().second = std::max(merged.back().second, tr[k].second);
+	  else merged.push_back(tr[k]);
+	}
+	tr.swap(merged);
+      }
+      int32_t const trFlank = 200;
+      for(int32_t i = 0; i < N; ++i) {
+	if (als[i].trs >= 0) continue;
+	boost::unordered_map<int32_t, std::vector<TTract> >::const_iterator it = rootTracts.find(uf.find(i));
+	if (it == rootTracts.end()) continue;
+	int32_t svE = (als[i].svt == 4) ? als[i].pos : als[i].end;
+	for(size_t k = 0; k < it->second.size(); ++k) {
+	  if ((als[i].pos >= it->second[k].first - trFlank) && (svE <= it->second[k].second + trFlank)) {
+	    newTrs[als[i].f][als[i].k] = it->second[k].first;
+	    newTre[als[i].f][als[i].k] = it->second[k].second;
+	    break;
+	  }
+	}
+      }
+    }
     boost::unordered_map<int32_t, int32_t> rootId;
     int32_t counter = 1;
     for(int32_t i = 0; i < N; ++i) {
@@ -1780,7 +2079,9 @@ namespace torali
     // Group INS:TR and DEL:TR at the same VNTR site
     std::vector<std::vector<int32_t> > newAid;
     std::vector<std::vector<int32_t> > newNal;
-    _regroupLoci(c, cts, newAid, newNal);
+    std::vector<std::vector<int32_t> > newTrs;
+    std::vector<std::vector<int32_t> > newTre;
+    _regroupLoci(c, cts, newAid, newNal, newTrs, newTre);
     
     // Parse temporary input VCF files
     typedef std::vector<htsFile*> THtsFile;
@@ -1813,6 +2114,12 @@ namespace torali
     if (bcf_hdr_write(fp, hdr_out) != 0) std::cerr << "Error: Failed to write BCF header!" << std::endl;
 
     // Merge files
+    int32_t ntrsOut = 0;
+    int32_t* trsOutp = NULL;
+    int32_t nsvtOut = 0;
+    char* svtOutp = NULL;
+    int32_t nsubOut = 0;
+    char* subOutp = NULL;
     std::vector<int32_t> kcount(cts.size(), 0);   // per-file
     while (allEOF < cts.size()) {
       // Find next sorted record
@@ -1830,6 +2137,25 @@ namespace torali
 	int32_t nalOut = newNal[idx][rk];
 	bcf_update_info_int32(hdr_out, rec[idx], "ALLELEID", &aidOut, 1);
 	bcf_update_info_int32(hdr_out, rec[idx], "NALLELE", &nalOut, 1);
+	if (newTrs[idx][rk] >= 0) {
+	  int32_t trsOut = newTrs[idx][rk] + 1;
+	  int32_t treOut = newTre[idx][rk];
+	  bcf_update_info_int32(hdr_out, rec[idx], "TRSTART", &trsOut, 1);
+	  bcf_update_info_int32(hdr_out, rec[idx], "TREND", &treOut, 1);
+	}
+	// TR locus
+	if ((c.longread) && (c.hasGenome) && (nalOut > 1) && ((newTrs[idx][rk] >= 0) || (bcf_get_info_int32(hdr_out, rec[idx], "TRSTART", &trsOutp, &ntrsOut) > 0))) {
+	  if (bcf_get_info_string(hdr_out, rec[idx], "SVTYPE", &svtOutp, &nsvtOut) > 0) {
+	    std::string svtOut(svtOutp);
+	    if ((svtOut == "DEL") || (svtOut == "INS")) {
+	      bool labelled = (bcf_get_info_string(hdr_out, rec[idx], "SUBTYPE", &subOutp, &nsubOut) > 0);
+	      if (!labelled) {
+		std::string subOut = svtOut + ":TR";
+		bcf_update_info_string(hdr_out, rec[idx], "SUBTYPE", subOut.c_str());
+	      }
+	    }
+	  }
+	}
       }
 
       // Write record
@@ -1844,6 +2170,9 @@ namespace torali
     }
     
   // Clean-up
+    if (trsOutp != NULL) free(trsOutp);
+    if (svtOutp != NULL) free(svtOutp);
+    if (subOutp != NULL) free(subOutp);
     for(unsigned int file_c = 0; file_c < cts.size(); ++file_c) {
       bcf_hdr_destroy(hdr[file_c]);
       bcf_close(ifile[file_c]);
@@ -1902,7 +2231,7 @@ namespace torali
       std::vector<MergeSV> nodes;
       _collectSVtype(c, svt, contigMap, nodes);
       boost::unordered_map<std::string, MergeAgg> selected;
-      _clusterAndSelect(c, nodes, selected);
+      _clusterAndSelect(c, nodes, selected, nullptr, &contigMap);
       nodes.clear();
       _emitSelected(c, svt, contigMap, selected);
     }
@@ -1932,6 +2261,7 @@ namespace torali
       ("coverage,v", boost::program_options::value<uint32_t>(&c.coverage)->default_value(5), "min. coverage")
       ("minsize,m", boost::program_options::value<uint32_t>(&c.minsize)->default_value(0), "min. SV size")
       ("maxsize,n", boost::program_options::value<uint32_t>(&c.maxsize)->default_value(1000000), "max. SV size")
+      ("long-reads,l", boost::program_options::bool_switch(&c.longread), "long-read merge mode")
       ("cnvmode,e", "Merge delly CNV files")
       ("precise,c", "Filter sites for PRECISE")
       ("pass,p", "Filter sites for PASS")
@@ -1949,6 +2279,8 @@ namespace torali
       ("tr-offset", boost::program_options::value<int32_t>(&c.trOffset)->default_value(200), "min. breakpoint offset for tandem repeats")
       ("tr-frac", boost::program_options::value<float>(&c.trFrac)->default_value(0.25), "breakpoint offset as fraction of TR size")
       ("tr-seqid", boost::program_options::value<float>(&c.trSeqId)->default_value(0.7), "min. seq. identity for TRs")
+      ("tr-len-tol", boost::program_options::value<int32_t>(&c.trLenTol)->default_value(10), "min. length difference of distinct TR alleles")
+      ("tr-len-frac", boost::program_options::value<float>(&c.trLenFrac)->default_value(0.03, "0.03"), "min. fractional length difference of distinct TR alleles")
       ("norm-frac", boost::program_options::value<float>(&c.normFrac)->default_value(0.5), "SV size normalized breakpoint offset fraction")
       ("junc-seqid", boost::program_options::value<float>(&c.juncSeqId)->default_value(0.7), "min. consensus identity")
       ("seq-cutoff", boost::program_options::value<int32_t>(&c.seqCutoff)->default_value(10000), "max. seq. length for identity checks")
@@ -2010,6 +2342,18 @@ namespace torali
       }
       c.hasGenome = true;
     } else c.hasGenome = false;
+
+    // Long-reads
+    if (c.longread) {
+      if (!c.hasGenome) {
+	std::cerr << "Long-read mode requires the reference genome (-g)." << std::endl;
+	return 1;
+      }
+      if ((c.trLenTol < 0) || (c.trLenFrac < 0)) {
+	std::cerr << "Please specify a valid length tolerance for tandem repeats!" << std::endl;
+	return 1;
+      }
+    }
 
     // Check output files
     if (!vm.count("outfile")) c.outfile = "-";

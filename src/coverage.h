@@ -81,8 +81,16 @@ namespace torali {
     std::vector<uint8_t> hp2ref;
     std::vector<uint8_t> hp2alt;
     int32_t ps;  // -1 unphased
+    float gl[3];
+    int32_t locusGq;
+    int8_t locusGt;
+    bool joint;
 
-    JunctionCount() : ps(-1) {}
+    JunctionCount() : ps(-1), locusGq(0), locusGt(-1), joint(false) {
+      gl[0] = 0;
+      gl[1] = 0;
+      gl[2] = 0;
+    }
   };
 
   struct AlignJob {

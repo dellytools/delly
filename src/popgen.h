@@ -2,12 +2,21 @@
 #define POPGEN_H
 
 #include <vector>
+#include <algorithm>
 #include <cmath>
 #include <boost/math/distributions/chi_squared.hpp>
 
 namespace torali
 {
 
+  // Multi-allelic locus
+  struct LocusAllele {
+    std::vector<int32_t> pl;
+    std::vector<int8_t> dos;
+    std::vector<uint8_t> ploidy;
+    std::vector<float> gq;
+  };
+  
   // EM estimate of the bi-allelic allele frequency under HWE
   template<typename TConfig, typename TGlVector, typename TValue>
   inline void
@@ -298,6 +307,138 @@ namespace torali
     if (lrts < 0) lrts = 0;
     boost::math::chi_squared chisqDist(1);
     pvalue = boost::math::cdf(complement(chisqDist, lrts));
+  }
+
+  // Multi-allelic
+  template<typename TAlleles>
+  inline void
+  _estLocusPosterior(TAlleles& al) {
+    int32_t const maxCand = 8;
+    int32_t const maxPl = 60;
+    uint32_t const maxiter = 100;
+    double const epsilon = 1e-12;
+    int32_t nal = al.size();
+    if (!nal) return;
+    int32_t nsmpl = al[0].dos.size();
+    for(int32_t k = 0; k < nal; ++k) al[k].gq.assign(nsmpl, -1);
+
+    // Genotypes of each sample
+    typedef std::pair<int32_t, int32_t> TGenotype;
+    std::vector<std::vector<int32_t> > cand(nsmpl);
+    std::vector<std::vector<TGenotype> > gts(nsmpl);
+    std::vector<std::vector<double> > lik(nsmpl);
+    std::vector<uint8_t> ploidy(nsmpl, 0);
+    std::vector<double> af(nal + 1, 0.5);
+    for(int32_t s = 0; s < nsmpl; ++s) {
+      typedef std::pair<int32_t, int32_t> TPlAllele;
+      std::vector<TPlAllele> uncalled;
+      int32_t calledCopies = 0;
+      for(int32_t k = 0; k < nal; ++k) {
+	if ((al[k].dos[s] < 0) || (al[k].ploidy[s] == 0)) continue;
+	if (ploidy[s] == 0) ploidy[s] = al[k].ploidy[s];
+	if (al[k].ploidy[s] != ploidy[s]) continue;
+	if (al[k].dos[s] > 0) {
+	  cand[s].push_back(k);
+	  calledCopies += al[k].dos[s];
+	  af[k + 1] += al[k].dos[s];
+	} else {
+	  int32_t plAlt = al[k].pl[3 * s + 2];
+	  if ((ploidy[s] == 2) && (al[k].pl[3 * s + 1] < plAlt)) plAlt = al[k].pl[3 * s + 1];
+	  uncalled.push_back(std::make_pair(plAlt, k));
+	}
+      }
+      if (ploidy[s] == 0) continue;
+      if (calledCopies < ploidy[s]) af[0] += (ploidy[s] - calledCopies);
+      std::sort(uncalled.begin(), uncalled.end());
+      for(uint32_t i = 0; i < uncalled.size(); ++i) {
+	if (((int32_t) cand[s].size() >= maxCand) || (uncalled[i].first > maxPl)) break;
+	cand[s].push_back(uncalled[i].second);
+      }
+      int32_t nc = cand[s].size();
+      for(int32_t x = 0; x <= nc; ++x) {
+	for(int32_t y = x; y <= nc; ++y) {
+	  if ((ploidy[s] == 1) && (y != x)) break;
+	  int32_t maxpen = 0;
+	  for(int32_t i = 0; i < nc; ++i) {
+	    int32_t copies = ((x == i + 1) ? 1 : 0) + ((y == i + 1) ? 1 : 0);
+	    if ((ploidy[s] == 1) && (copies)) copies = 2;
+	    int32_t pen = al[cand[s][i]].pl[3 * s + copies];
+	    if (pen > maxpen) maxpen = pen;
+	  }
+	  gts[s].push_back(std::make_pair((x) ? (cand[s][x - 1] + 1) : 0, (y) ? (cand[s][y - 1] + 1) : 0));
+	  lik[s].push_back(std::pow((double) 10.0, (double) -maxpen / 10.0));
+	}
+      }
+    }
+
+    // EM
+    double total = 0;
+    for(int32_t k = 0; k <= nal; ++k) total += af[k];
+    for(int32_t k = 0; k <= nal; ++k) af[k] /= total;
+    std::vector<std::vector<double> > post(nsmpl);
+    std::vector<double> afnew(nal + 1);
+    double err = 1;
+    for(uint32_t count = 0; ((err > epsilon) && (count < maxiter)); ++count) {
+      std::fill(afnew.begin(), afnew.end(), 0);
+      total = 0;
+      for(int32_t s = 0; s < nsmpl; ++s) {
+	if (gts[s].empty()) continue;
+	post[s].resize(gts[s].size());
+	double p = 0;
+	for(uint32_t g = 0; g < gts[s].size(); ++g) {
+	  if (ploidy[s] == 1) post[s][g] = af[gts[s][g].first] * lik[s][g];
+	  else post[s][g] = ((gts[s][g].first != gts[s][g].second) ? 2.0 : 1.0) * af[gts[s][g].first] * af[gts[s][g].second] * lik[s][g];
+	  p += post[s][g];
+	}
+	if (p <= 0) {
+	  post[s].clear();
+	  continue;
+	}
+	for(uint32_t g = 0; g < gts[s].size(); ++g) {
+	  post[s][g] /= p;
+	  afnew[gts[s][g].first] += post[s][g];
+	  if (ploidy[s] == 2) afnew[gts[s][g].second] += post[s][g];
+	}
+	total += ploidy[s];
+      }
+      if (total <= 0) return;
+      err = 0;
+      for(int32_t k = 0; k <= nal; ++k) {
+	afnew[k] /= total;
+	err += (afnew[k] - af[k]) * (afnew[k] - af[k]);
+	af[k] = afnew[k];
+      }
+    }
+
+    // Posterior of the called copies
+    for(int32_t s = 0; s < nsmpl; ++s) {
+      if (post[s].empty()) continue;
+      for(int32_t k = 0; k < nal; ++k) {
+	if ((al[k].dos[s] < 0) || (al[k].ploidy[s] != ploidy[s])) continue;
+	double pp = 0;
+	bool isCand = false;
+	for(uint32_t i = 0; i < cand[s].size(); ++i) {
+	  if (cand[s][i] == k) isCand = true;
+	}
+	if (isCand) {
+	  for(uint32_t g = 0; g < gts[s].size(); ++g) {
+	    int32_t copies = ((gts[s][g].first == k + 1) ? 1 : 0) + ((gts[s][g].second == k + 1) ? 1 : 0);
+	    if ((ploidy[s] == 1) && (copies)) copies = 1;
+	    if (copies == al[k].dos[s]) pp += post[s][g];
+	  }
+	} else {
+	  int32_t plAlt = al[k].pl[3 * s + 2];
+	  if ((ploidy[s] == 2) && (al[k].pl[3 * s + 1] < plAlt)) plAlt = al[k].pl[3 * s + 1];
+	  if (plAlt <= maxPl) continue;
+	  pp = 1;
+	}
+	double gq = 99;
+	if (pp < 1) gq = (double) -10.0 * std::log10((double) 1.0 - pp);
+	if (gq > 99) gq = 99;
+	if (gq < 0) gq = 0;
+	al[k].gq[s] = (float) gq;
+      }
+    }
   }
 
 }

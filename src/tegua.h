@@ -256,10 +256,10 @@ namespace torali {
    boost::program_options::options_description geno("Genotyping options");
    geno.add_options()
      ("vcffile,v", boost::program_options::value<boost::filesystem::path>(&c.vcffile), "input VCF/BCF file for genotyping")
-     ("sex", boost::program_options::value<std::string>(&c.sexArg)->default_value("auto"), "sample sex [auto, male, female, none, file]")
      ("geno-qual,u", boost::program_options::value<uint16_t>(&c.minGenoQual)->default_value(5), "min. mapping quality for genotyping")
      ("max-geno-count,b", boost::program_options::value<uint32_t>(&c.maxGenoReadCount)->default_value(250), "max. reads aligned for SR genotyping")
      ("dump,d", boost::program_options::value<boost::filesystem::path>(&c.dumpfile), "gzipped output file for SV-reads")
+     ("sex", boost::program_options::value<std::string>(&c.sexArg)->default_value("auto"), "sample sex [auto, male, female, none, file]")
      ;
 
    boost::program_options::options_description hidden("Hidden options");

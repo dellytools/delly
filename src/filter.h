@@ -6,6 +6,8 @@
 #include <vector>
 #include <string>
 #include <algorithm>
+#include <deque>
+#include <map>
 #include <cmath>
 #include <cstdlib>
 #include <boost/unordered_map.hpp>
@@ -56,11 +58,13 @@ namespace torali
     SexModel sexModel;
     bool noRefine;
     bool noCollapse;
+    bool longread;
     int32_t minsize;
     int32_t maxsize;
     int32_t coverage;
     int32_t qualthres;
     int32_t rdist;
+    int32_t rdMinSize;
     int32_t rminshared;
     uint32_t maxiter;
     double epsilon;
@@ -68,6 +72,7 @@ namespace torali
     float altaf;
     float controlcont;
     float genogq;
+    float genogqMulti;
     float hwe;
     float rsize;
     float rcorr;
@@ -102,6 +107,7 @@ namespace torali
     int32_t ncalled;
     float qual;
     float rsq = -1;
+    int32_t alleleid = -1;
     bool precise;
     bool eligible;
     bool redundant;
@@ -121,6 +127,7 @@ namespace torali
   inline bool
   _redProximal(RedRec const& a, RedRec const& b, int32_t const rdist, float const rsize) {
     if (a.svtype != b.svtype) return false;
+    if ((a.alleleid >= 0) && (a.alleleid == b.alleleid)) return false;
     if (a.svtype == "BND") return false; // ignore BND
     if (std::abs(a.spos - b.spos) > rdist) return false;
     if (a.svtype != "INS") {
@@ -164,6 +171,91 @@ namespace torali
       bcf_destroy(it->rec);
     }
     win.swap(keep);
+  }
+
+  // Multi-allelic locus
+  struct LocusRecord {
+    bcf1_t* rec;
+    int32_t alleleid;
+    int32_t midx;
+  };
+
+  struct LocusGroup {
+    int32_t nallele;
+    int32_t seen;
+    int32_t served;
+    int32_t firstPos;
+    bool computed;
+    std::vector<LocusAllele> member;
+
+    LocusGroup() : nallele(0), seen(0), served(0), firstPos(-1), computed(false) {}
+  };
+
+  // GLs of an allele
+  template<typename TConfig>
+  inline bool
+  _locusAllele(TConfig const& c, bcf_hdr_t* hdr, bcf1_t* rec, SexModel const& sm, LocusAllele& la) {
+    if ((rec->qual < c.qualthres) || (rec->n_allele != 2)) return false;
+    if ((c.filterForPass) && (bcf_has_filter(hdr, rec, const_cast<char*>("PASS")) != 1)) return false;
+    int32_t nsvt = 0;
+    char* svt = NULL;
+    bcf_get_info_string(hdr, rec, "SVTYPE", &svt, &nsvt);
+    bool indel = ((svt != NULL) && ((std::string(svt) == "DEL") || (std::string(svt) == "INS")));
+    if (svt != NULL) free(svt);
+    if (!indel) return false;
+    int32_t nsvend = 0;
+    int32_t* svend = NULL;
+    bcf_get_info_int32(hdr, rec, "END", &svend, &nsvend);
+    int32_t pos2Val = (svend != NULL) ? (*svend) : rec->pos;
+    if (svend != NULL) free(svend);
+    bcf_unpack(rec, BCF_UN_ALL);
+    int32_t nsmpl = bcf_hdr_nsamples(hdr);
+    int ngt = 0;
+    int32_t* gt = NULL;
+    int npl = 0;
+    int32_t* pl = NULL;
+    int32_t ngtVal = bcf_get_format_int32(hdr, rec, "GT", &gt, &ngt);
+    int32_t nplVal = bcf_get_format_int32(hdr, rec, "PL", &pl, &npl);
+    int32_t gtStride = (ngtVal > 0) ? (ngtVal / nsmpl) : 0;
+    int32_t plStride = (nplVal > 0) ? (nplVal / nsmpl) : 0;
+    bool valid = ((gtStride > 0) && (plStride >= 2));
+    if (valid) {
+      la.pl.assign(3 * nsmpl, -1);
+      la.dos.assign(nsmpl, -1);
+      la.ploidy.assign(nsmpl, 2);
+      for (int i = 0; i < nsmpl; ++i) {
+	if (!sm.sex.empty()) la.ploidy[i] = _svPloidy(sm, sm.sex[i], rec->rid, rec->pos, rec->rid, pos2Val);
+	if ((gtStride == 1) || (gt[i*gtStride + 1] == bcf_int32_vector_end)) {
+	  if (la.ploidy[i] == 2) la.ploidy[i] = 1;
+	}
+	if (la.ploidy[i] == 0) continue;
+	int32_t* plp = pl + i * plStride;
+	if ((plp[0] == bcf_int32_missing) || (plp[0] == bcf_int32_vector_end)) continue;
+	bool hapEncoded = ((plStride == 2) || (plp[2] == bcf_int32_vector_end) || (plp[2] == bcf_int32_missing));
+	if (la.ploidy[i] == 1) {
+	  int32_t plRef = plp[0];
+	  int32_t plAlt = (hapEncoded) ? plp[1] : plp[2];
+	  if ((plAlt == bcf_int32_missing) || (plAlt == bcf_int32_vector_end)) continue;
+	  int32_t g0 = gt[i*gtStride];
+	  if (!hapEncoded) g0 = bcf_gt_unphased((plAlt < plRef) ? 1 : 0);
+	  if (bcf_gt_is_missing(g0)) continue;
+	  la.pl[3 * i] = plRef;
+	  la.pl[3 * i + 2] = plAlt;
+	  la.dos[i] = (bcf_gt_allele(g0) > 0) ? 1 : 0;
+	} else {
+	  if ((hapEncoded) || (plStride < 3)) continue;
+	  if ((plp[1] == bcf_int32_missing) || (plp[1] == bcf_int32_vector_end)) continue;
+	  int32_t a0 = bcf_gt_allele(gt[i*gtStride]);
+	  int32_t a1 = bcf_gt_allele(gt[i*gtStride + 1]);
+	  if ((a0 < 0) || (a0 > 1) || (a1 < 0) || (a1 > 1)) continue;
+	  for(int k = 0; k < 3; ++k) la.pl[3 * i + k] = plp[k];
+	  la.dos[i] = a0 + a1;
+	}
+      }
+    }
+    if (gt != NULL) free(gt);
+    if (pl != NULL) free(pl);
+    return valid;
   }
 
   // Somatic CNV filter
@@ -628,6 +720,10 @@ namespace torali
     int32_t* svend = NULL;
     int32_t npos2 = 0;
     int32_t* pos2 = NULL;
+    int32_t naid = 0;
+    int32_t* aidp = NULL;
+    int32_t nnal = 0;
+    int32_t* nalp = NULL;
     int32_t nchr2 = 0;
     char* chr2 = NULL;
     int32_t nrsq = 0;
@@ -669,9 +765,88 @@ namespace torali
     // Parse BCF
     boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
     std::cerr << '[' << boost::posix_time::to_simple_string(now) << "] " << "Filtering VCF/BCF file" << std::endl;
-    bcf1_t* rec = bcf_init1();
-    while (bcf_read(ifile, hdr, rec) == 0) {
-      bcf_unpack(rec, BCF_UN_INFO);
+    int32_t const locusWindow = 50000;
+    bool locusModel = ((germline) && (c.longread) && (!c.noRefine));
+    std::deque<LocusRecord> pend;
+    typedef std::pair<int32_t, int32_t> TLocusKey;   // chromosome, ALLELEID
+    typedef std::map<TLocusKey, LocusGroup> TLocusMap;
+    TLocusMap locusMap;
+    bool eof = false;
+    int32_t lastRid = -1;
+    int32_t lastPos = -1;
+    TLocusKey doneLocus = std::make_pair(-1, -1);
+    LocusAllele* lall = NULL;
+    bcf1_t* rec = NULL;
+    while (true) {
+      if (rec != NULL) bcf_destroy(rec);
+      rec = NULL;
+      lall = NULL;
+      if (doneLocus.second >= 0) locusMap.erase(doneLocus);
+      doneLocus = std::make_pair(-1, -1);
+      while (true) {
+	if (!pend.empty()) {
+	  if (pend.front().alleleid < 0) break;
+	  LocusGroup& grp = locusMap[std::make_pair(pend.front().rec->rid, pend.front().alleleid)];
+	  if ((grp.computed) || (grp.seen >= grp.nallele) || (eof) || (lastRid != pend.front().rec->rid) || (lastPos > grp.firstPos + locusWindow)) break;
+	} else if (eof) break;
+	LocusRecord lr;
+	lr.rec = bcf_init1();
+	lr.alleleid = -1;
+	lr.midx = -1;
+	if (bcf_read(ifile, hdr, lr.rec) != 0) {
+	  bcf_destroy(lr.rec);
+	  eof = true;
+	  continue;
+	}
+	bcf_unpack(lr.rec, BCF_UN_INFO);
+	lastRid = lr.rec->rid;
+	lastPos = lr.rec->pos;
+	if (locusModel) {
+	  int32_t aid = -1;
+	  int32_t nal = 1;
+	  if (bcf_get_info_int32(hdr, lr.rec, "ALLELEID", &aidp, &naid) > 0) aid = *aidp;
+	  if (bcf_get_info_int32(hdr, lr.rec, "NALLELE", &nalp, &nnal) > 0) nal = *nalp;
+	  if ((aid >= 0) && (nal > 1)) {
+	    // Allele records
+	    TLocusKey key = std::make_pair(lr.rec->rid, aid);
+	    TLocusMap::iterator itL = locusMap.find(key);
+	    if ((itL == locusMap.end()) || ((!itL->second.computed) && (lr.rec->pos <= itL->second.firstPos + locusWindow))) {
+	      LocusGroup& grp = locusMap[key];
+	      if (!grp.nallele) {
+		grp.nallele = nal;
+		grp.firstPos = lr.rec->pos;
+	      }
+	      ++grp.seen;
+	      lr.alleleid = aid;
+	      LocusAllele la;
+	      if (_locusAllele(c, hdr, lr.rec, sm, la)) {
+		lr.midx = grp.member.size();
+		grp.member.push_back(la);
+	      }
+	    }
+	  }
+	}
+	pend.push_back(lr);
+      }
+      if (pend.empty()) break;
+      rec = pend.front().rec;
+      if (pend.front().alleleid >= 0) {
+	TLocusKey key = std::make_pair(rec->rid, pend.front().alleleid);
+	LocusGroup& grp = locusMap[key];
+	if (!grp.computed) {
+	  _estLocusPosterior(grp.member);
+	  for(uint32_t k = 0; k < grp.member.size(); ++k) {
+	    std::vector<int32_t>().swap(grp.member[k].pl);
+	    std::vector<int8_t>().swap(grp.member[k].dos);
+	    std::vector<uint8_t>().swap(grp.member[k].ploidy);
+	  }
+	  grp.computed = true;
+	}
+	if (pend.front().midx >= 0) lall = &grp.member[pend.front().midx];
+	++grp.served;
+	if (grp.served >= grp.seen) doneLocus = key;
+      }
+      pend.pop_front();
 
       // Redundant SVs
       bcf_get_info_string(hdr, rec, "SVTYPE", &svt, &nsvt);
@@ -807,6 +982,14 @@ namespace torali
 	int32_t ngtVal = bcf_get_format_int32(hdr, rec, "GT", &gt, &ngt);
 	int32_t nsmpl = bcf_hdr_nsamples(hdr);
 	int32_t gtStride = (ngtVal > 0) ? (ngtVal / nsmpl) : 0;
+	// Multi-allelic locus
+	int32_t alleleIdVal = -1;
+	int32_t nAlleleVal = 1;
+	if (bcf_get_info_int32(hdr, rec, "ALLELEID", &aidp, &naid) > 0) alleleIdVal = *aidp;
+	if (bcf_get_info_int32(hdr, rec, "NALLELE", &nalp, &nnal) > 0) nAlleleVal = *nalp;
+	bool multiAllelic = ((c.longread) && (nAlleleVal > 1) && (std::string(svt) != "INV") && (std::string(svt) != "BND"));
+	if (!multiAllelic) alleleIdVal = -1;
+
 	// Sample ploidy
 	int32_t rid2 = rec->rid;
 	int32_t pos2Val = (svend != NULL) ? (*svend) : rec->pos;
@@ -835,6 +1018,12 @@ namespace torali
 	bcf_get_format_int32(hdr, rec, "RV", &rv, &nrv);
 	bcf_get_format_int32(hdr, rec, "RR", &rr, &nrr);
 	
+	// Genotyped samples
+	int32_t nCalledRaw = 0;
+	for (int i = 0; i < nsmpl; ++i) {
+	  if ((gtStride > 0) && (ploidy[i] > 0) && (!bcf_gt_is_missing(gt[i*gtStride]))) ++nCalledRaw;
+	}
+
 	// Population refinement from GLs
 	bool refined = false;
 	double hwepvalStore = 1;
@@ -906,7 +1095,7 @@ namespace torali
 	      hwepvalStore = pval;
 	      ficStore = Fic;
 
-	      // Posterior GQ (only GQ and missingness change)
+	      // Posterior GQ
 	      bool gqIsInt = (_getFormatType(hdr, "GQ") == BCF_HT_INT);
 	      for (int i = 0; i < nsmpl; ++i) {
 		if (glIndex[i] == -1) continue;
@@ -930,9 +1119,10 @@ namespace torali
 		  double sumPP = pp[0] + pp[1];
 		  if (sumPP > 0) sampleGq = (double) -10.0 * std::log10((double) 1.0 - pp[bestIdx] / sumPP);
 		}
+		if ((lall != NULL) && (lall->gq[i] >= 0)) sampleGq = lall->gq[i];
 		if (sampleGq > 99) sampleGq = 99;
 		if (sampleGq < 0) sampleGq = 0;
-		if (sampleGq < c.genogq) {
+		if (sampleGq < ((multiAllelic) ? c.genogqMulti : c.genogq)) {
 		  gt[i*gtStride] = bcf_gt_missing;
 		  if ((gtStride > 1) && (gt[i*gtStride + 1] != bcf_int32_vector_end)) gt[i*gtStride + 1] = bcf_gt_missing;
 		}
@@ -1052,6 +1242,7 @@ namespace torali
 	  } 
 	} else if (c.filter == "germline") {
 	  float genotypeRatio = (nEligible > 0) ? ((float) (nCount + tCount) / (float) nEligible) : 0;
+	  if ((multiAllelic) && (nEligible > 0)) genotypeRatio = (float) nCalledRaw / (float) nEligible;
 	  float rrefvarpercentile = 0;
 	  if (!rRefVar.empty()) getPercentile(rRefVar, 0.9, rrefvarpercentile);
 	  float raltvarmed = 0;
@@ -1066,18 +1257,19 @@ namespace torali
 
 	  bool failgerm = false;
 	  if (!((af>0) && (raltvarmed >= c.altaf) && (genotypeRatio >= c.ratiogeno))) failgerm = true;
-	  if ((std::string(svt)=="DEL") && (rdRatio > c.rddel)) failgerm = true;
-	  if ((std::string(svt)=="DUP") && (rdRatio < c.rddup)) failgerm = true;
-	  if ((std::string(svt)!="DEL") && (std::string(svt)!="DUP") && (rrefvarpercentile > 0)) failgerm = true;
-	  if ((refined) && (ncar >= 10) && (c.hwe > 0) && (ficStore < 0) && (hwepvalStore < c.hwe)) failgerm = true;
+	  if ((std::string(svt)=="DEL") && (svlen >= c.rdMinSize) && (rdRatio > c.rddel)) failgerm = true;
+	  if ((std::string(svt)=="DUP") && (svlen >= c.rdMinSize) && (rdRatio < c.rddup)) failgerm = true;
+	  if ((!multiAllelic) && (std::string(svt)!="DEL") && (std::string(svt)!="DUP") && (rrefvarpercentile > 0)) failgerm = true;
+	  if ((!multiAllelic) && (refined) && (ncar >= 10) && (c.hwe > 0) && (ficStore < 0) && (hwepvalStore < c.hwe)) failgerm = true;
 	  if (!failgerm) {
 	    _remove_info_tag(hdr_out, rec, "RDRATIO");
 	    bcf_update_info_float(hdr_out, rec, "RDRATIO", &rdRatio, 1);
 	    if (collapse) {
-	      // Enqueue as a collapse-eligible record
+	      // Enqueue as a collapsable record
 	      RedRec rr;
 	      rr.rec = bcf_dup(rec);
 	      rr.svtype = std::string(svt);
+	      rr.alleleid = alleleIdVal;
 	      rr.spos = rec->pos;
 	      rr.epos = (svend != NULL) ? (*svend) : rec->pos;
 	      rr.len = (rr.svtype == "INS") ? inslenVal : std::abs(svlen);
@@ -1126,6 +1318,7 @@ namespace torali
 	      RedRec rr;
 	      rr.rec = bcf_dup(rec);
 	      rr.svtype = std::string(svt);
+	      rr.alleleid = alleleIdVal;
 	      rr.spos = rec->pos;
 	      rr.epos = (svend != NULL) ? (*svend) : rec->pos;
 	      rr.len = 0; rr.qual = rec->qual; rr.precise = precise;
@@ -1152,12 +1345,14 @@ namespace torali
     
     // Remaining records?
     if (collapse) _flushRedundancy(redWin, 0, true, ofile, hdr_out, c.softFilter, redId);
-    bcf_destroy(rec);
+    if (rec != NULL) bcf_destroy(rec);
 
     // Clean-up
     if (svend != NULL) free(svend);
     if (pos2 != NULL) free(pos2);
     if (chr2 != NULL) free(chr2);
+    if (aidp != NULL) free(aidp);
+    if (nalp != NULL) free(nalp);
     if (rsqbuf != NULL) free(rsqbuf);
     if (svt != NULL) free(svt);
     if (inslen != NULL) free(inslen);
@@ -1223,9 +1418,11 @@ namespace torali
     // Define germline options
     boost::program_options::options_description germline("Germline options");
     germline.add_options()
+      ("long-reads,l", boost::program_options::bool_switch(&c.longread), "long-read filter mode")
       ("rddel,e", boost::program_options::value<float>(&c.rddel)->default_value(0.8), "max. RD ratio for DEL (SV)")
       ("rddup,u", boost::program_options::value<float>(&c.rddup)->default_value(1.2), "min. RD ratio for DUP (SV)")
       ("genogq,j", boost::program_options::value<float>(&c.genogq)->default_value(10), "min. GQ for non-missing (SV)")
+      ("hwe,w", boost::program_options::value<float>(&c.hwe)->default_value(0.000001), "min. HWE p-value for excess-het (0=off)")
       ("rdist", boost::program_options::value<int32_t>(&c.rdist)->default_value(250), "max. BP distance for redundant sites (SV)")
       ("rsize", boost::program_options::value<float>(&c.rsize)->default_value(0.8), "min. size ratio for redundant sites (SV)")
       ("maxsd", boost::program_options::value<float>(&c.maxsd)->default_value(0.5), "max. population copy-number SD (CNV)")
@@ -1234,7 +1431,6 @@ namespace torali
       ("cnv-max-af", boost::program_options::value<float>(&c.cnvmaxaf)->default_value(0.7), "max. AF for DEL (CNV)")
       ("cnv-ploidy", boost::program_options::value<uint16_t>(&c.ploidy)->default_value(2), "baseline ploidy for CNV genotyping (CNV)")
       ("cnv-reciprocal", boost::program_options::value<float>(&c.recCnv)->default_value(0.8), "min. reciprocal overlap (CNV)")
-      ("hwe,w", boost::program_options::value<float>(&c.hwe)->default_value(0.000001), "min. HWE p-value for excess-het (0=off)")
       ("no-collapse", boost::program_options::bool_switch(&c.noCollapse), "disable redundant-site collapse")
       ("no-refine", boost::program_options::bool_switch(&c.noRefine), "disable population refinement (SV)")
       ("sex", boost::program_options::value<std::string>(&c.sexArg)->default_value("auto"), "sample sex [auto, none, file]")
@@ -1246,6 +1442,7 @@ namespace torali
       ("input-file", boost::program_options::value<boost::filesystem::path>(&c.vcffile), "input file")
       ("rcorr", boost::program_options::value<float>(&c.rcorr)->default_value(0.8), "min. genotype R^2 for redundant sites")
       ("rminshared", boost::program_options::value<int32_t>(&c.rminshared)->default_value(20), "min. samples to assess GT concordance")
+      ("genogq-multi", boost::program_options::value<float>(&c.genogqMulti)->default_value(3), "min. GQ for non-missing at multi-allelic loci")
       ;
     boost::program_options::positional_options_description pos_args;
     pos_args.add("input-file", -1);
@@ -1278,6 +1475,10 @@ namespace torali
     
     // Population Genomics
     if (c.filter == "germline") c.controlcont = 1.0;
+
+    // For long reads split-reads genotype small DELs and DUPs
+    if (c.longread) c.rdMinSize = 500;
+    else c.rdMinSize = 0;
     
     // EM parameters for population refinement
     c.epsilon = 1e-20;

@@ -11,7 +11,7 @@ chrNamesShort = c("1","2","3","4","5","6","7","8","9","10","11","12","13","14","
 
 # Params
 minCN = 0
-sdUNDO = 1.5
+sdUNDO = 2
 
 # Parse coverage table
 args = commandArgs(trailingOnly=TRUE)
@@ -47,11 +47,11 @@ if (length(args)>1) {
 }
 
 # Whole genome
-maxCN = 8
+maxCN = 12
 maxCN = min(c(as.integer(max(x[,6])+1), maxCN))
 #maxCN = max(c(as.integer(max(x[,6])+1), maxCN))
 p = ggplot(data=x, aes(x=start, y=x[,6]))
-p = p + geom_point(pch=21, color="black", fill="black", size=0.5)
+p = p + geom_point(pch=21, color="black", fill="black", size=0.5, alpha=0.2)
 p = p + xlab("Chromosome")
 p = p + ylab("Copy-number")
 p = p + scale_x_continuous(labels=comma)
@@ -68,11 +68,11 @@ for(chrname in unique(x$chr)) {
  print(chrname)
  sub = x[x$chr == chrname,]
  sl = seg[seg$chr == chrname,]
- maxCN = 8
+ maxCN = 12
 maxCN = min(c(as.integer(max(sub[,6])+1), maxCN))
 #maxCN = max(c(as.integer(max(x[,6])+1), maxCN))
  p = ggplot(data=sub, aes(x=start, y=sub[,6]))
- p = p + geom_point(pch=21, color="black", fill="black", size=0.5)
+ p = p + geom_point(pch=21, color="black", fill="black", size=0.5, alpha=0.2)
  p = p + ylab("Copy-number") + xlab(chrname)
  p = p + scale_x_continuous(labels=comma, breaks = scales::pretty_breaks(n=20))
  p = p + scale_y_continuous(labels=comma, breaks = c(minCN:maxCN), limits=c(minCN, maxCN))

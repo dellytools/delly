@@ -13,146 +13,167 @@ namespace torali
 {
 
 
-void _remove_info_tag(bcf_hdr_t const* hdr, bcf1_t* rec, std::string const& tag) {
-  bcf_update_info(hdr, rec, tag.c_str(), NULL, 0, BCF_HT_INT);  // Type does not matter for n = 0
-}
-
-void _remove_format_tag(bcf_hdr_t const* hdr, bcf1_t* rec, std::string const& tag) {
-  bcf_update_format(hdr, rec, tag.c_str(), NULL, 0, BCF_HT_INT);  // Type does not matter for n = 0
-}
-
-void _remove_info(bcf_hdr_t* hdr, bcf1_t* rec) {
-  std::string tmp[] = {"CT", "PRECISE", "IMPRECISE", "SVTYPE", "SVMETHOD", "CIEND", "CIPOS", "CHR2", "POS2", "END", "PE", "MAPQ", "SRMAPQ", "SR", "SRQ", "CONSENSUS"};
-  std::set<std::string> keepInfo(tmp, tmp + sizeof(tmp)/sizeof(tmp[0]));
-
-  if (!(rec->unpacked & BCF_UN_INFO)) bcf_unpack(rec, BCF_UN_INFO);
+  void _remove_info_tag(bcf_hdr_t const* hdr, bcf1_t* rec, std::string const& tag) {
+    bcf_update_info(hdr, rec, tag.c_str(), NULL, 0, BCF_HT_INT);  // Type does not matter for n = 0
+  }
   
-  for (uint32_t i = 0; i < rec->n_info; ++i){
-    bcf_info_t* inf = &rec->d.info[i];
-    const char* key = bcf_hdr_int2id(hdr, BCF_DT_ID, inf->key);
-    if (keepInfo.find(std::string(key)) != keepInfo.end()) continue;
+  void _remove_format_tag(bcf_hdr_t const* hdr, bcf1_t* rec, std::string const& tag) {
+    bcf_update_format(hdr, rec, tag.c_str(), NULL, 0, BCF_HT_INT);  // Type does not matter for n = 0
+  }
+  
+  void _remove_info(bcf_hdr_t* hdr, bcf1_t* rec) {
+    std::string tmp[] = {"CT", "PRECISE", "IMPRECISE", "SVTYPE", "SVMETHOD", "CIEND", "CIPOS", "CHR2", "POS2", "END", "PE", "MAPQ", "SRMAPQ", "SR", "SRQ", "CONSENSUS"};
+    std::set<std::string> keepInfo(tmp, tmp + sizeof(tmp)/sizeof(tmp[0]));
     
-    if (inf->vptr_free) {
-      free(inf->vptr - inf->vptr_off);
-      inf->vptr_free = 0;
-    }
-    rec->d.shared_dirty |= BCF1_DIRTY_INF;
-    inf->vptr = NULL;
-  }
-}
-
-void _remove_format(bcf_hdr_t* hdr, bcf1_t* rec) {
-  if (!(rec->unpacked & BCF_UN_FMT)) bcf_unpack(rec, BCF_UN_FMT);
+    if (!(rec->unpacked & BCF_UN_INFO)) bcf_unpack(rec, BCF_UN_INFO);
   
-  for(uint32_t i = 0; i<rec->n_fmt; ++i) {
-    bcf_fmt_t* fmt = &rec->d.fmt[i];
-    const char* key = bcf_hdr_int2id(hdr, BCF_DT_ID, fmt->id);
-    bcf_update_format(hdr, rec, key, NULL, 0, BCF_HT_INT); // the type is irrelevant for n = 0
-    // Keep GT
-    //if ((key[0]=='G') && key[1]=='T' && (!key[2])) continue;
-
-    if (fmt->p_free) {
-      free(fmt->p - fmt->p_off);
-      fmt->p_free = 0;
-    }
-    rec->d.indiv_dirty = 1;
-    fmt->p = NULL;
-  }
-}
-
-inline int
-_getInfoType(bcf_hdr_t const* hdr, std::string const& key) {
-  return bcf_hdr_id2type(hdr, BCF_HL_INFO, bcf_hdr_id2int(hdr, BCF_DT_ID, key.c_str()));
-}
-
-inline int
-_getFormatType(bcf_hdr_t const* hdr, std::string const& key) {
-  return bcf_hdr_id2type(hdr, BCF_HL_FMT, bcf_hdr_id2int(hdr, BCF_DT_ID, key.c_str()));
-}
-
-inline bool _missing(bool const value) {
-  return !value;
-}
-
-inline bool _missing(float const value) {
-  return bcf_float_is_missing(value);
-}
-
-inline bool _missing(int8_t const value) {
-  return (value == bcf_int8_missing);
-}
-
-inline bool _missing(int16_t const value) {
-  return (value == bcf_int16_missing);
-}
-
-inline bool _missing(int32_t const value) {
-  return (value == bcf_int32_missing);
-}
-
-inline bool _missing(std::string const& value) {
-  return ((value.empty()) || (value == "."));
-}
-
-inline bool
-_isKeyPresent(bcf_hdr_t const* hdr, std::string const& key) {
-  return (bcf_hdr_id2int(hdr, BCF_DT_ID, key.c_str())>=0);
-}
-
-inline std::string
-_replaceIUPAC(std::string const& alleles) {
-  std::vector<char> out(alleles.size());
-  int32_t inTag = 0;
-  bool inRef = true;  // REF allele
-  for(uint32_t i = 0; i<alleles.size(); ++i) {
-    if (alleles[i] == ',') { inRef = false; }
-    if ((inRef) || (inTag) || (alleles[i] == 'A') || (alleles[i] == 'C') || (alleles[i] == 'G') || (alleles[i] == 'T') || (alleles[i] == 'N') || (alleles[i] == 'a') || (alleles[i] == 'c') || (alleles[i] == 'g') || (alleles[i] == 't') || (alleles[i] == 'n') || (alleles[i] == '<') || (alleles[i] == '>') || (alleles[i] == ']') || (alleles[i] == '[') || (alleles[i] == ',')) {
-      out[i] = alleles[i];
-      if (alleles[i] == '<') inTag = 1;
-      else if (alleles[i] == ']') inTag = 2;
-      else if (alleles[i] == '[') inTag = 3;
-      else if ((alleles[i] == '>') && (inTag == 1)) inTag = 0;
-      else if ((alleles[i] == ']') && (inTag == 2)) inTag = 0;
-      else if ((alleles[i] == '[') && (inTag == 3)) inTag = 0;
-    } else {
-      // Replace IUPAC in ALT only
-      if ((alleles[i] == 'U') || (alleles[i] == 'u')) out[i] = 'T';
-      else if ((alleles[i] == 'R') || (alleles[i] == 'r')) out[i] = 'A';
-      else if ((alleles[i] == 'Y') || (alleles[i] == 'y')) out[i] = 'C';
-      else if ((alleles[i] == 'S') || (alleles[i] == 's')) out[i] = 'C';
-      else if ((alleles[i] == 'W') || (alleles[i] == 'w')) out[i] = 'A';
-      else if ((alleles[i] == 'K') || (alleles[i] == 'k')) out[i] = 'G';
-      else if ((alleles[i] == 'M') || (alleles[i] == 'm')) out[i] = 'A';
-      else if ((alleles[i] == 'B') || (alleles[i] == 'b')) out[i] = 'C';
-      else if ((alleles[i] == 'D') || (alleles[i] == 'd')) out[i] = 'A';
-      else if ((alleles[i] == 'H') || (alleles[i] == 'h')) out[i] = 'A';
-      else if ((alleles[i] == 'V') || (alleles[i] == 'v')) out[i] = 'A';
-      else out[i] = 'N';
+    for (uint32_t i = 0; i < rec->n_info; ++i){
+      bcf_info_t* inf = &rec->d.info[i];
+      const char* key = bcf_hdr_int2id(hdr, BCF_DT_ID, inf->key);
+      if (keepInfo.find(std::string(key)) != keepInfo.end()) continue;
+      
+      if (inf->vptr_free) {
+	free(inf->vptr - inf->vptr_off);
+	inf->vptr_free = 0;
+      }
+      rec->d.shared_dirty |= BCF1_DIRTY_INF;
+      inf->vptr = NULL;
     }
   }
-  return std::string(out.begin(), out.end());
-}     
+  
+  void _remove_format(bcf_hdr_t* hdr, bcf1_t* rec) {
+    if (!(rec->unpacked & BCF_UN_FMT)) bcf_unpack(rec, BCF_UN_FMT);
+    
+    for(uint32_t i = 0; i<rec->n_fmt; ++i) {
+      bcf_fmt_t* fmt = &rec->d.fmt[i];
+      const char* key = bcf_hdr_int2id(hdr, BCF_DT_ID, fmt->id);
+      bcf_update_format(hdr, rec, key, NULL, 0, BCF_HT_INT); // the type is irrelevant for n = 0
+      // Keep GT
+      //if ((key[0]=='G') && key[1]=='T' && (!key[2])) continue;
+      
+      if (fmt->p_free) {
+	free(fmt->p - fmt->p_off);
+	fmt->p_free = 0;
+      }
+      rec->d.indiv_dirty = 1;
+      fmt->p = NULL;
+    }
+  }
+  
+  inline int
+  _getInfoType(bcf_hdr_t const* hdr, std::string const& key) {
+    return bcf_hdr_id2type(hdr, BCF_HL_INFO, bcf_hdr_id2int(hdr, BCF_DT_ID, key.c_str()));
+  }
+  
+  inline int
+  _getFormatType(bcf_hdr_t const* hdr, std::string const& key) {
+    return bcf_hdr_id2type(hdr, BCF_HL_FMT, bcf_hdr_id2int(hdr, BCF_DT_ID, key.c_str()));
+  }
+  
+  inline bool _missing(bool const value) {
+    return !value;
+  }
+  
+  inline bool _missing(float const value) {
+    return bcf_float_is_missing(value);
+  }
+  
+  inline bool _missing(int8_t const value) {
+    return (value == bcf_int8_missing);
+  }
+  
+  inline bool _missing(int16_t const value) {
+    return (value == bcf_int16_missing);
+  }
+
+  inline bool _missing(int32_t const value) {
+    return (value == bcf_int32_missing);
+  }
+
+  inline bool _missing(std::string const& value) {
+    return ((value.empty()) || (value == "."));
+  }
+  
+  inline bool
+  _isKeyPresent(bcf_hdr_t const* hdr, std::string const& key) {
+    return (bcf_hdr_id2int(hdr, BCF_DT_ID, key.c_str())>=0);
+  }
+
+  inline std::string
+  _replaceIUPAC(std::string const& alleles) {
+    std::vector<char> out(alleles.size());
+    int32_t inTag = 0;
+    bool inRef = true;  // REF allele
+    for(uint32_t i = 0; i<alleles.size(); ++i) {
+      if (alleles[i] == ',') { inRef = false; }
+      if ((inRef) || (inTag) || (alleles[i] == 'A') || (alleles[i] == 'C') || (alleles[i] == 'G') || (alleles[i] == 'T') || (alleles[i] == 'N') || (alleles[i] == 'a') || (alleles[i] == 'c') || (alleles[i] == 'g') || (alleles[i] == 't') || (alleles[i] == 'n') || (alleles[i] == '<') || (alleles[i] == '>') || (alleles[i] == ']') || (alleles[i] == '[') || (alleles[i] == ',')) {
+	out[i] = alleles[i];
+	if (alleles[i] == '<') inTag = 1;
+	else if (alleles[i] == ']') inTag = 2;
+	else if (alleles[i] == '[') inTag = 3;
+	else if ((alleles[i] == '>') && (inTag == 1)) inTag = 0;
+	else if ((alleles[i] == ']') && (inTag == 2)) inTag = 0;
+	else if ((alleles[i] == '[') && (inTag == 3)) inTag = 0;
+      } else {
+	// Replace IUPAC in ALT only
+	if ((alleles[i] == 'U') || (alleles[i] == 'u')) out[i] = 'T';
+	else if ((alleles[i] == 'R') || (alleles[i] == 'r')) out[i] = 'A';
+	else if ((alleles[i] == 'Y') || (alleles[i] == 'y')) out[i] = 'C';
+	else if ((alleles[i] == 'S') || (alleles[i] == 's')) out[i] = 'C';
+	else if ((alleles[i] == 'W') || (alleles[i] == 'w')) out[i] = 'A';
+	else if ((alleles[i] == 'K') || (alleles[i] == 'k')) out[i] = 'G';
+	else if ((alleles[i] == 'M') || (alleles[i] == 'm')) out[i] = 'A';
+	else if ((alleles[i] == 'B') || (alleles[i] == 'b')) out[i] = 'C';
+	else if ((alleles[i] == 'D') || (alleles[i] == 'd')) out[i] = 'A';
+	else if ((alleles[i] == 'H') || (alleles[i] == 'h')) out[i] = 'A';
+	else if ((alleles[i] == 'V') || (alleles[i] == 'v')) out[i] = 'A';
+	else out[i] = 'N';
+      }
+    }
+    return std::string(out.begin(), out.end());
+  }     
   
  
- // Convert string to char*
-struct cstyle_str {
-  const char* operator ()(const std::string& s) {
-    return s.c_str();
-  }
-};
+  // Convert string to char*
+  struct cstyle_str {
+    const char* operator ()(const std::string& s) {
+      return s.c_str();
+    }
+  };
 
   // Type-trait helper: returns c.minCpgDepth if the config has it, else 0
   template<typename T, typename = void>
   struct _HasMinCpgDepth : std::false_type {};
   template<typename T>
   struct _HasMinCpgDepth<T, std::void_t<decltype(std::declval<T>().minCpgDepth)>> : std::true_type {};
-
+  
   template<typename T>
   inline uint32_t _getMinCpgDepth(const T& c) {
     if constexpr (_HasMinCpgDepth<T>::value) return c.minCpgDepth;
     else return 0;
   }
 
+  // GLs for TR loci
+  template<typename TJunctionCount>
+  inline void
+  _locusGLs(TJunctionCount const& jc, float* gls, int32_t* gqval, int32_t* gts, int const file_c, uint8_t const ploidy) {
+    gls[file_c * 3] = jc.gl[0];
+    gls[file_c * 3 + 1] = jc.gl[1];
+    gls[file_c * 3 + 2] = jc.gl[2];
+    gqval[file_c] = jc.locusGq;
+    if (ploidy == 0) {
+      gts[file_c * 2] = bcf_gt_missing;
+      gts[file_c * 2 + 1] = bcf_gt_missing;
+      gqval[file_c] = 0;
+    } else if (ploidy == 1) {
+      gts[file_c * 2] = (jc.locusGt > 0) ? bcf_gt_unphased(1) : bcf_gt_unphased(0);
+      gts[file_c * 2 + 1] = bcf_int32_vector_end;
+    } else {
+      gts[file_c * 2] = (jc.locusGt == 2) ? bcf_gt_unphased(1) : bcf_gt_unphased(0);
+      gts[file_c * 2 + 1] = (jc.locusGt >= 1) ? bcf_gt_unphased(1) : bcf_gt_unphased(0);
+    }
+  }
+  
 // Parse Delly vcf file
 template<typename TConfig, typename TStructuralVariantRecord>
 inline void
@@ -199,6 +220,10 @@ vcfParse(TConfig const& c, bam_hdr_t* hd, std::vector<TStructuralVariantRecord>&
   int32_t* alleleidp = NULL;
   int32_t nnallele = 0;
   int32_t* nallelep = NULL;
+  int32_t ntrstart = 0;
+  int32_t* trstartp = NULL;
+  int32_t ntrend = 0;
+  int32_t* trendp = NULL;
   bool dellyVCF = false;
   while (bcf_read(ifile, hdr, rec) == 0) {
     bcf_unpack(rec, BCF_UN_INFO);
@@ -306,6 +331,10 @@ vcfParse(TConfig const& c, bam_hdr_t* hd, std::vector<TStructuralVariantRecord>&
       if (bcf_get_info_int32(hdr, rec, "ALLELEID", &alleleidp, &nalleleid) > 0) {
 	svRec.alleleid = *alleleidp;
 	if (bcf_get_info_int32(hdr, rec, "NALLELE", &nallelep, &nnallele) > 0) svRec.nallele = *nallelep;
+	if ((bcf_get_info_int32(hdr, rec, "TRSTART", &trstartp, &ntrstart) > 0) && (bcf_get_info_int32(hdr, rec, "TREND", &trendp, &ntrend) > 0)) {
+	  svRec.trStart = *trstartp - 1;
+	  svRec.trEnd = *trendp;
+	}
       }
       svs.push_back(svRec);
     } else {
@@ -322,6 +351,8 @@ vcfParse(TConfig const& c, bam_hdr_t* hd, std::vector<TStructuralVariantRecord>&
   free(method);
   free(alleleidp);
   free(nallelep);
+  free(trstartp);
+  free(trendp);
   free(pe);
   free(inslen);
   free(homlen);
@@ -398,6 +429,8 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
   bcf_hdr_append(hdr, "##INFO=<ID=AN,Number=1,Type=Integer,Description=\"Total number of alleles\">");
   bcf_hdr_append(hdr, "##INFO=<ID=INSSTRAND,Number=1,Type=String,Description=\"Insertion strand for MEIs\">");
   bcf_hdr_append(hdr, "##INFO=<ID=TRPERIOD,Number=1,Type=Integer,Description=\"Tandem repeat period in bp\">");
+  bcf_hdr_append(hdr, "##INFO=<ID=TRSTART,Number=1,Type=Integer,Description=\"Start of the reference tandem repeat\">");
+  bcf_hdr_append(hdr, "##INFO=<ID=TREND,Number=1,Type=Integer,Description=\"End of the reference tandem repeat\">");
   bcf_hdr_append(hdr, "##INFO=<ID=TRCOPIES,Number=1,Type=Float,Description=\"Tandem repeat copy number\">");
   bcf_hdr_append(hdr, "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">");
   //bcf_hdr_append(hdr, "##FORMAT=<ID=GL,Number=G,Type=Float,Description=\"Log10-scaled genotype likelihoods\">");
@@ -460,6 +493,36 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
     typedef std::vector<TStructuralVariantRecord> TSVs;
     now = boost::posix_time::second_clock::local_time();
     std::cerr << '[' << boost::posix_time::to_simple_string(now) << "] " << "Genotyping" << std::endl;
+
+    // Multi-allelic loci
+    typedef std::map<int32_t, std::vector<int32_t> > TLocusMembers;
+    TLocusMembers locusMembers;
+    std::map<int32_t, std::vector<uint8_t> > gtClass;
+    for(typename TSVs::const_iterator svIter = svs.begin(); svIter!=svs.end(); ++svIter) {
+      if ((svIter->alleleid < 0) || (svIter->nallele < 2)) continue;
+      if ((svIter->srSupport == 0) && (svIter->peSupport == 0)) continue;
+      bool joint = false;
+      for(unsigned int file_c = 0; file_c < jctCountMap.size(); ++file_c) {
+	if (jctCountMap[file_c][svIter->id].joint) joint = true;
+      }
+      if (!joint) continue;
+      locusMembers[svIter->alleleid].push_back(svIter->id);
+      std::vector<uint8_t>& cls = gtClass[svIter->id];
+      cls.assign(jctCountMap.size(), 3);
+      for(unsigned int file_c = 0; file_c < jctCountMap.size(); ++file_c) {
+	uint8_t ploidy = 2;
+	if (file_c < c.sexModel.sex.size()) ploidy = _svPloidy(c.sexModel, c.sexModel.sex[file_c], svIter->chr, svIter->svStart, svIter->chr2, svIter->svEnd);
+	if ((ploidy != 2) || (!jctCountMap[file_c][svIter->id].joint)) continue;
+	if ((svIter->precise) && (jctCountMap[file_c][svIter->id].locusGt >= 0)) _locusGLs(jctCountMap[file_c][svIter->id], gls, gqval, gts, file_c, ploidy);
+	else if (svIter->precise) _computeGLs(bl, jctCountMap[file_c][svIter->id].ref, jctCountMap[file_c][svIter->id].alt, gls, gqval, gts, file_c, ploidy);
+	else _computeGLs(bl, spanCountMap[file_c][svIter->id].ref, spanCountMap[file_c][svIter->id].alt, gls, gqval, gts, file_c, ploidy);
+	if (gts[file_c * 2] == bcf_gt_missing) continue;
+	int32_t a0 = bcf_gt_allele(gts[file_c * 2]);
+	int32_t a1 = bcf_gt_allele(gts[file_c * 2 + 1]);
+	cls[file_c] = (uint8_t) (a0 + a1);
+      }
+    }
+
     bcf1_t *rec = bcf_init();
     for(typename TSVs::const_iterator svIter = svs.begin(); svIter!=svs.end(); ++svIter) {
       if ((svIter->srSupport == 0) && (svIter->peSupport == 0)) continue;
@@ -553,6 +616,12 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
 	bcf_update_info_int32(hdr, rec, "ALLELEID", &tmpi, 1);
 	tmpi = svIter->nallele;
 	bcf_update_info_int32(hdr, rec, "NALLELE", &tmpi, 1);
+      }
+      if (svIter->trStart >= 0) {
+	tmpi = svIter->trStart + 1;
+	bcf_update_info_int32(hdr, rec, "TRSTART", &tmpi, 1);
+	tmpi = svIter->trEnd;
+	bcf_update_info_int32(hdr, rec, "TREND", &tmpi, 1);
       }
 
       if (svIter->precise)  {
@@ -672,7 +741,8 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
 	}
 
 	// Compute GLs
-	if (svIter->precise) _computeGLs(bl, jctCountMap[file_c][svIter->id].ref, jctCountMap[file_c][svIter->id].alt, gls, gqval, gts, file_c, ploidy);
+	if ((svIter->precise) && (jctCountMap[file_c][svIter->id].locusGt >= 0)) _locusGLs(jctCountMap[file_c][svIter->id], gls, gqval, gts, file_c, ploidy);
+	else if (svIter->precise) _computeGLs(bl, jctCountMap[file_c][svIter->id].ref, jctCountMap[file_c][svIter->id].alt, gls, gqval, gts, file_c, ploidy);
 	else _computeGLs(bl, spanCountMap[file_c][svIter->id].ref, spanCountMap[file_c][svIter->id].alt, gls, gqval, gts, file_c, ploidy);
 
 	// Compute PLs
@@ -706,6 +776,32 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
 	    } else {
 	      gts[file_c * 2] = bcf_gt_phased(0);
 	      gts[file_c * 2 + 1] = bcf_gt_phased(1);
+	    }
+	  }
+	}
+
+	// Compound het
+	if ((ploidy == 2) && (psarr[file_c] == -1) && (gtClass.find(svIter->id) != gtClass.end())) {
+	  bool isHet = (gts[file_c * 2] == bcf_gt_unphased(0) && gts[file_c * 2 + 1] == bcf_gt_unphased(1));
+	  if (isHet) {
+	    std::vector<int32_t> const& mem = locusMembers[svIter->alleleid];
+	    int32_t nHet = 0;
+	    int32_t nOtherAlt = 0;
+	    int32_t firstHet = -1;
+	    for(uint32_t k = 0; k < mem.size(); ++k) {
+	      uint8_t cl = gtClass[mem[k]][file_c];
+	      if (cl == 1) { ++nHet; if (firstHet < 0) firstHet = mem[k]; }
+	      else if (cl == 2) ++nOtherAlt;
+	    }
+	    if ((nHet == 2) && (nOtherAlt == 0)) {
+	      if (svIter->id == firstHet) {
+		gts[file_c * 2] = bcf_gt_phased(1);
+		gts[file_c * 2 + 1] = bcf_gt_phased(0);
+	      } else {
+		gts[file_c * 2] = bcf_gt_phased(0);
+		gts[file_c * 2 + 1] = bcf_gt_phased(1);
+	      }
+	      psarr[file_c] = svIter->alleleid;
 	    }
 	  }
 	}
