@@ -664,6 +664,10 @@ vcfOutput(TConfig const& c, std::vector<TStructuralVariantRecord> const& svs, TJ
 	  bcf_update_info_int32(hdr, rec, "TRPERIOD", &tmpi, 1);
 	  float tmpf = svIter->anno.trCopies;
 	  bcf_update_info_float(hdr, rec, "TRCOPIES", &tmpf, 1);
+	} else if ((svIter->trStart >= 0) && (svIter->nallele > 1) && ((svIter->svt == 2) || (svIter->svt == 4))) {
+	  // Multi-allelic TR
+	  std::string subtypeStr = (svIter->svt == 4) ? "INS:TR" : "DEL:TR";
+	  bcf_update_info_string(hdr, rec, "SUBTYPE", subtypeStr.c_str());
 	}
       }
 
