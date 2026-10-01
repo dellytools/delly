@@ -81,9 +81,9 @@ Germline SV calling is available for short-reads (subcommand: sr) and long-reads
 
 `delly [sr|lr] -g hg38.fa -o s1.bcf sample1.bam`
 
-* Merge SV sites into an SV site list 
+* Merge SV sites into an SV site list (drop `-l` for short-reads)
 
-`delly merge -o sites.bcf s1.bcf s2.bcf ... sN.bcf`
+`delly merge -l -g hg38.fa -o sites.bcf s1.bcf s2.bcf ... sN.bcf`
 
 * Genotype this merged SV site list across all samples in parallel
 
@@ -95,9 +95,9 @@ Germline SV calling is available for short-reads (subcommand: sr) and long-reads
 
 `bcftools merge -m id -O b -o merged.bcf s1.geno.bcf s2.geno.bcf ... sN.geno.bcf`
 
-* Apply the germline SV filter
+* Apply the germline SV filter (drop `-l` for short-reads)
 
-`delly filter --hwe 0.000001 -f germline -o germline.bcf merged.bcf`
+`delly filter -l --hwe 0.000001 -f germline -o germline.bcf merged.bcf`
 
 For short-reads, it is recommended to use an exclude file, i.e.:
 
