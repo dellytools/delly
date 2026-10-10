@@ -78,3 +78,12 @@ distclean: clean
 	rm -f ${BUILT_PROGRAMS}
 
 .PHONY: clean distclean install all
+
+# Collection regression; consensus/alignment are test doubles.
+tests/assembly_read_cap.out: tests/assembly_read_cap.cpp $(SOURCES)
+	$(CXX) $(CXXFLAGS) -O0 $< src/edlib.cpp -o $@ $(LDFLAGS)
+
+test: tests/assembly_read_cap.out
+	@tmp=$$(mktemp -d); trap 'rm -rf "$$tmp"' EXIT; ./tests/assembly_read_cap.out "$$tmp"
+
+.PHONY: test
