@@ -2464,10 +2464,12 @@ namespace torali
 	  c.files.clear();
 	  for(uint32_t k = ic * c.chunksize; ((k < ((ic+1) * c.chunksize)) && (k < fileRestore.size())); ++k) c.files.push_back(fileRestore[k]);
 	  c.outfile = chunkCollect[ic];
+	  c.totalSamples = c.files.size();
 	  mergeRun(c, svt);
 	}
 	// Merge chunks
 	c.files = chunkCollect;
+	c.totalSamples = fileRestore.size();
 	c.outfile = svtCollect[svt];
 	// Reset VAF and coverage because these are site lists (AC/AN/SUPP are carried in INFO)
 	float vafStore = c.vaf;
