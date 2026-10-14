@@ -36,7 +36,6 @@ You can also redirect the output to a [BCF](http://samtools.github.io/bcftools/)
 
 `bcftools view delly.bcf > delly.vcf`
 
-
 ## Long-read SV discovery
 
 For Oxford Nanopore sequencing data:
@@ -46,16 +45,6 @@ For Oxford Nanopore sequencing data:
 For PacBio sequencing data:
 
 `delly lr -y pb -o delly.bcf -g hg38.fa input.bam`
-
-## Assembly-based SV discovery
-
-For a haplotype-resolved assembly:
-
-`delly asm -y diploid -g hg38.fa s1.h1.bam s1.h2.bam s2.h1.bam s2.h2.bam ...`
-
-For a so-called squashed assembly:
-
-`delly asm -y squashed -g hg38.fa s1.bam s2.bam ...`
 
 ## Somatic SV calling
 
@@ -102,6 +91,20 @@ Germline SV calling is available for short-reads (subcommand: sr) and long-reads
 For short-reads, it is recommended to use an exclude file, i.e.:
 
 `delly sr -g hg38.fa -x human.hg38.excl.tsv -o delly.bcf sample.bam`
+
+## Assembly-based SV discovery
+
+For a haplotype-resolved assembly:
+
+`delly asm -y diploid -g hg38.fa s1.h1.bam s1.h2.bam s2.h1.bam s2.h2.bam ...`
+
+For a so-called squashed assembly:
+
+`delly asm -y squashed -g hg38.fa s1.bam s2.bam ...`
+
+An assembly-derived SV panel can be constructed using `delly merge` but requires `-v 0` as assemblies have no read coverage:
+
+`delly merge -l -v 0 -g hg38.fa -o panel.bcf s1.asm.bcf s2.asm.bcf ... sN.asm.bcf`
 
 ## CNV calling
 
