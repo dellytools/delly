@@ -755,6 +755,11 @@ namespace torali
       std::vector<std::string> ftarr;
       ftarr.resize(bcf_hdr_nsamples(hdr));
     
+      // Reference sequence for REF alleles (CNVs are sorted by chromosome)
+      faidx_t* faiRef = fai_load(c.genome.string().c_str());
+      char* seq = NULL;
+      int32_t seqChr = -1;
+    
       // Iterate all structural variants
       now = boost::posix_time::second_clock::local_time();
       std::cerr << '[' << boost::posix_time::to_simple_string(now) << "] " << "Genotyping" << std::endl;
@@ -788,7 +793,15 @@ namespace torali
 	}
 	bcf_update_id(hdr, rec, id.c_str());
 	std::string svtype = "CNV";
-	std::string alleles = "N,<" + svtype + ">";
+	if ((faiRef != NULL) && (cnvs[i].chr != seqChr)) {
+	  if (seq != NULL) free(seq);
+	  int32_t seqlen = -1;
+	  seq = faidx_fetch_seq(faiRef, bamhd->target_name[cnvs[i].chr], 0, bamhd->target_len[cnvs[i].chr] - 1, &seqlen);
+	  seqChr = cnvs[i].chr;
+	}
+	std::string refAllele = "N";
+	if (seq != NULL) refAllele = _refAnchor(seq, svStartPos + 1, bamhd->target_len[cnvs[i].chr]);
+	std::string alleles = refAllele + ",<" + svtype + ">";
 	bcf_update_alleles_str(hdr, rec, alleles.c_str());
       
 	// Add INFO fields
@@ -873,6 +886,8 @@ namespace torali
       bcf_destroy1(rec);
     
       // Clean-up
+      if (seq != NULL) free(seq);
+      if (faiRef != NULL) fai_destroy(faiRef);
       free(gts);
       free(gqval);
       free(cnval);
