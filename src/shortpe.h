@@ -137,7 +137,7 @@ namespace torali
 		_adjustOrientation(sequence, bpPoint, svs[svid].svt);
 		
 		// At most n split-reads
-		if (seqStore[svid].size() < c.maxReadPerSV) {
+		if ((_translocation(svs[svid].svt) ? traStore[svid].size() : seqStore[svid].size()) < c.maxReadPerSV) {
 		  bool insertSuccess = false;
 		  if (_translocation(svs[svid].svt)) {
 		    insertSuccess = traStore[svid].insert(std::move(sequence)).second;
