@@ -24,6 +24,7 @@ jobs:
         update: true
         install: >-
           mingw-w64-x86_64-toolchain
+          mingw-w64-x86_64-tools-git
           mingw-w64-x86_64-boost
           mingw-w64-x86_64-xz
           mingw-w64-x86_64-curl
@@ -38,7 +39,6 @@ jobs:
           mingw-w64-x86_64-libtre
           mingw-w64-x86_64-libsystre
           mingw-w64-x86_64-gettext
-          mingw-w64-x86_64-tools
           make
           git
 
