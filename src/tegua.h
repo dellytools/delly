@@ -42,6 +42,8 @@ namespace torali {
     bool hasExcludeFile;
     bool hasVcfFile;
     bool hasAltFile;
+    bool trDiscovery;
+    bool hasTrDump;
     uint16_t methylProb;
     uint16_t minMapQual;
     uint16_t minGenoQual;
@@ -59,6 +61,8 @@ namespace torali {
     int32_t minimumFlankSize;
     int32_t indelsize;
     int32_t methylWindow;
+    int32_t trFlank;
+    float trAlleleFrac;
     float indelExtension;
     float flankQuality;
     float meiMinFrac;
@@ -69,6 +73,7 @@ namespace torali {
     boost::filesystem::path vcffile;
     std::vector<boost::filesystem::path> files;
     boost::filesystem::path altfile;
+    boost::filesystem::path trDump;
     boost::filesystem::path genome;
     boost::filesystem::path exclude;
     std::vector<std::string> sampleName;
@@ -136,7 +141,7 @@ namespace torali {
 	  typename std::map<int32_t, StructuralVariantRecord>::const_iterator ltIt = lastSVperType.find(svIter->svt);
 	  if (ltIt != lastSVperType.end()) {
 	    StructuralVariantRecord const& lastSV = ltIt->second;
-	    if ((lastSV.chr == svIter->chr) && (lastSV.chr2 == svIter->chr2) && (std::abs(svIter->svStart - lastSV.svStart) < c.minRefSep) && (std::abs(svIter->svEnd - lastSV.svEnd) < c.minRefSep)) {
+	    if ((lastSV.chr == svIter->chr) && (lastSV.chr2 == svIter->chr2) && (std::abs(svIter->svStart - lastSV.svStart) < c.minRefSep) && (std::abs(svIter->svEnd - lastSV.svEnd) < c.minRefSep) && ((lastSV.trStart < 0) || (svIter->trStart < 0))) {
 	      // Check length
 	      int32_t len1 = (svIter->svt == 4) ? svIter->insLen : (svIter->svEnd - svIter->svStart);
 	      int32_t len2 = (lastSV.svt == 4) ? lastSV.insLen : (lastSV.svEnd - lastSV.svStart);
@@ -268,6 +273,10 @@ namespace torali {
      ("pruning", boost::program_options::value<uint32_t>(&c.graphPruning)->default_value(1000), "graph pruning cutoff")
      ("extension", boost::program_options::value<float>(&c.indelExtension)->default_value(0.5), "enforce indel extension")
      ("read-cap", boost::program_options::value<int32_t>(&c.genoCap)->default_value(25), "max. per-read genotype quality")
+     ("no-tr-discovery", "no tandem repeat tract discovery")
+     ("tr-flank", boost::program_options::value<int32_t>(&c.trFlank)->default_value(200), "tandem repeat window flank")
+     ("tr-allele-frac", boost::program_options::value<float>(&c.trAlleleFrac)->default_value(0.1), "min. fraction of spanning reads per tandem repeat allele")
+     ("tr-dump", boost::program_options::value<boost::filesystem::path>(&c.trDump), "tandem repeat locus dump file")
      ;
    
    boost::program_options::positional_options_description pos_args;
@@ -305,6 +314,10 @@ namespace torali {
    // Dump reads
    if (vm.count("dump")) c.hasDumpFile = true;
    else c.hasDumpFile = false;
+
+   // Tandem repeat discovery
+   c.trDiscovery = (vm.count("no-tr-discovery") == 0);
+   c.hasTrDump = (vm.count("tr-dump") > 0);
 
    // Clique size
    if (c.minCliqueSize < 2) c.minCliqueSize = 2;

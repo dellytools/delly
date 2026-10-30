@@ -198,6 +198,16 @@ vcfParse(TConfig const& c, bam_hdr_t* hd, std::vector<TStructuralVariantRecord>&
   int32_t* inslen = NULL;
   int32_t nhomlen = 0;
   int32_t* homlen = NULL;
+  int32_t ntrperiod = 0;
+  int32_t* trperiod = NULL;
+  int32_t ntrcopies = 0;
+  float* trcopies = NULL;
+  int32_t nsubtype = 0;
+  char* subtype = NULL;
+  int32_t ninsstrand = 0;
+  char* insstrand = NULL;
+  int32_t const subtypeId = bcf_hdr_id2int(hdr, BCF_DT_ID, "SUBTYPE");
+  bool const sitesAnnotated = ((subtypeId >= 0) && (bcf_hdr_idinfo_exists(hdr, BCF_HL_INFO, subtypeId)));
   int32_t nsr = 0;
   int32_t* sr = NULL;
   int32_t ncipos = 0;
@@ -278,6 +288,29 @@ vcfParse(TConfig const& c, bam_hdr_t* hd, std::vector<TStructuralVariantRecord>&
       }
       if (bcf_get_info_int32(hdr, rec, "HOMLEN", &homlen, &nhomlen) > 0) svRec.homLen = *homlen;
       else svRec.homLen = 0;
+      // SV annotation
+      if (sitesAnnotated) {
+	svRec.anno.fromSites = true;
+	svRec.anno.homLen = svRec.homLen;
+	if (bcf_get_info_string(hdr, rec, "SUBTYPE", &subtype, &nsubtype) > 0) {
+	  std::string sub(subtype);
+	  if (sub == "INS:ME:ALU") svRec.anno.seqType = 1;
+	  else if (sub == "INS:ME:LINE1") svRec.anno.seqType = 2;
+	  else if (sub == "INS:ME:SVA") svRec.anno.seqType = 3;
+	  else if (sub == "INS:NUMT") svRec.anno.seqType = 4;
+	  else if (sub == "INS:LTR") svRec.anno.seqType = 5;
+	  else if (sub == "INS:HERVK") svRec.anno.seqType = 6;
+	  else if ((sub == "INS:TR") || (sub == "DEL:TR")) {
+	    // Tandem repeats
+	    if (bcf_get_info_int32(hdr, rec, "TRPERIOD", &trperiod, &ntrperiod) > 0) {
+	      svRec.anno.seqType = 7;
+	      svRec.anno.trPeriod = *trperiod;
+	      if (bcf_get_info_float(hdr, rec, "TRCOPIES", &trcopies, &ntrcopies) > 0) svRec.anno.trCopies = *trcopies;
+	    }
+	  }
+	  if ((svRec.anno.seqType >= 1) && (svRec.anno.seqType <= 6) && (bcf_get_info_string(hdr, rec, "INSSTRAND", &insstrand, &ninsstrand) > 0)) svRec.anno.isRC = (insstrand[0] == '-');
+	}
+      }
       if (bcf_get_info_int32(hdr, rec, "SR", &sr, &nsr) > 0) svRec.srSupport = *sr;
       else svRec.srSupport = 0;
 
@@ -356,6 +389,10 @@ vcfParse(TConfig const& c, bam_hdr_t* hd, std::vector<TStructuralVariantRecord>&
   free(pe);
   free(inslen);
   free(homlen);
+  if (trperiod != NULL) free(trperiod);
+  if (trcopies != NULL) free(trcopies);
+  if (subtype != NULL) free(subtype);
+  if (insstrand != NULL) free(insstrand);
   free(sr);
   free(cons);
   free(cipos);

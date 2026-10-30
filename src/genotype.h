@@ -526,7 +526,7 @@ namespace torali
 
 	// Annotate SVs
 	if ((itSV->chr == refIndex) && (!_translocation(itSV->svt))) {
-	  annotateSV(c, hdr[0], seq, *itSV);
+	  if (!itSV->anno.fromSites) annotateSV(c, hdr[0], seq, *itSV);
 	}
       }
       
@@ -775,7 +775,7 @@ namespace torali
 	// Tandem repeat loci
 	{
 	  uint8_t sex = (file_c < c.sexModel.sex.size()) ? c.sexModel.sex[file_c] : 0;
-	  _trCalibrate(svs, trUnit, trReads[file_c], unitWs, unitWe, refIndex, trNoise[file_c]);
+	  if (c.hasVcfFile) _trCalibrate(svs, trUnit, trReads[file_c], unitWs, unitWe, refIndex, trNoise[file_c]);
 	  for(uint32_t u = 0; u < trUnit.size(); ++u) {
 	    StructuralVariantRecord const& first = svs[trUnit[u][0]];
 	    if (first.chr != refIndex) continue;

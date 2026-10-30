@@ -511,6 +511,9 @@ namespace torali {
     mc.cnvMode = false;
     mc.hasGenome = true;
     mc.longread = true;
+    mc.trLocusLegacy = false;
+    mc.chunkMerge = false;
+    mc.annotated = true;
     mc.chunksize = 500;
     mc.svcounter = 1;
     mc.alleleCounter = 1;
@@ -589,8 +592,8 @@ namespace torali {
 	n.srq = svs[i].srAlignQuality;
 	n.ce = 2.0f;
 	n.comp = -1;
-	n.trStart = -1;
-	n.trEnd = -1;
+	n.trStart = svs[i].trStart;
+	n.trEnd = svs[i].trEnd;
 	n.id = boost::lexical_cast<std::string>(i);
 	// Sequence used for allele-similarity clustering
 	std::size_t comma = svs[i].alleles.find(',');

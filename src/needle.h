@@ -13,31 +13,30 @@ namespace torali
 
   inline int32_t
   longestHomology(std::string const& s1, std::string const& s2, int32_t scoreThreshold)  {
-    // DP Matrix
-    typedef boost::multi_array<int32_t, 2> TMatrix;
-    int32_t m = s1.size();
-    int32_t n = s2.size();
-    TMatrix mat(boost::extents[m+1][n+1]);
-
-    // Initialization
-    int32_t k = std::abs(scoreThreshold);
-    mat[0][0] = 0;
-    for(int32_t col = 1; col <= k; ++col) mat[0][col] = mat[0][col-1] - 1;
-    for(int32_t row = 1; row <= k; ++row) mat[row][0] = mat[row-1][0] - 1;
+    // Banded edit distance
+    int32_t const m = s1.size();
+    int32_t const n = s2.size();
+    int32_t const k = std::abs(scoreThreshold);
+    std::vector<int32_t> prev(2 * k + 1, 0);
+    std::vector<int32_t> cur(2 * k + 1, 0);
+    for(int32_t h = 0; h <= k; ++h) prev[h + k] = -h;
 
     // Edit distance
     for(int32_t row = 1; row <= m; ++row) {
       int32_t bestCol = scoreThreshold - 1;
       for(int32_t h = -k; h <= k; ++h) {
 	int32_t col = row + h;
-	if ((col >= 1) && (col <= n)) {
-	  mat[row][col] = mat[row-1][col-1] + (s1[row-1] == s2[col-1] ? 0 : -1);
-	  if ((row - 1 - col >= -k) && (row - 1 - col <= k)) mat[row][col] = std::max(mat[row][col], mat[row-1][col] - 1);
-	  if ((row - col + 1 >= -k) && (row - col + 1 <= k)) mat[row][col] = std::max(mat[row][col], mat[row][col-1] - 1);
-	  if (mat[row][col] > bestCol) bestCol = mat[row][col];
+	if (col == 0) cur[h + k] = -row;
+	else if ((col >= 1) && (col <= n)) {
+	  int32_t val = prev[h + k] + (s1[row-1] == s2[col-1] ? 0 : -1);
+	  if (h + 1 <= k) val = std::max(val, prev[h + 1 + k] - 1);
+	  if (h - 1 >= -k) val = std::max(val, cur[h - 1 + k] - 1);
+	  cur[h + k] = val;
+	  if (val > bestCol) bestCol = val;
 	}
       }
       if (bestCol < scoreThreshold) return row - 1;
+      std::swap(prev, cur);
     }
     return 0;
   }

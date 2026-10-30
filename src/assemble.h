@@ -731,6 +731,13 @@ namespace torali
     return msaWfa(c, sps, cs, "", "");
   }
   
+}
+
+#include "trdiscover.h"
+
+namespace torali
+{
+
   template<typename TConfig, typename TValidRegion, typename TSRStore>
   inline void
     assemble(TConfig const& c, TValidRegion const& validRegions, std::vector<StructuralVariantRecord>& svs, TSRStore& srStore) {
@@ -747,6 +754,15 @@ namespace torali
 
     // SV consensus done
     std::vector<bool> svcons(svs.size(), false);
+
+    // Tandem repeat loci
+    std::ofstream trDump;
+    if (c.hasTrDump) trDump.open(c.trDump.string().c_str());
+    std::vector<StructuralVariantRecord> trRecords;
+    int32_t trAlleleCounter = 1;
+    uint32_t trCalled = 0;
+    uint32_t trEmitted = 0;
+    uint32_t trReplaced = 0;
 
     // Open file handles
     typedef std::vector<samFile*> TSamFile;
@@ -778,15 +794,21 @@ namespace torali
       typedef boost::dynamic_bitset<> TBitSet;
       TBitSet hits(hdr->target_len[refIndex]);
       for(typename TPosReadSV::const_iterator it = srStore[refIndex].begin(); it != srStore[refIndex].end(); ++it) hits[it->first.first] = 1;
+
+      // Tandem repeat loci
+      std::vector<TrLocus> trLoci;
+      if (c.trDiscovery) _trBuildLoci(c, seq, seqlen, refIndex, svs, trLoci);
       
       // Collect reads from all samples
       for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
 	// Read alignments (full chromosome because primary alignments might be somewhere else)
 	hts_itr_t* iter = sam_itr_queryi(idx[file_c], refIndex, 0, hdr->target_len[refIndex]);
 	bam1_t* rec = bam_init1();
+	uint32_t trIdx = 0;
 	while (sam_itr_next(samfile[file_c], iter, rec) >= 0) {
 	  // Only primary alignments with the full sequence information
 	  if (rec->core.flag & (BAM_FQCFAIL | BAM_FDUP | BAM_FUNMAP | BAM_FSECONDARY | BAM_FSUPPLEMENTARY)) continue;
+	  if (!trLoci.empty()) _trScanRead(c, rec, file_c, trLoci, trIdx);
 	  if (!hits[rec->core.pos]) continue;
 
 	  std::size_t seed = hash_lr(rec);
@@ -879,6 +901,20 @@ namespace torali
 	bam_destroy1(rec);
 	hts_itr_destroy(iter);
       }
+
+      // Tandem repeat loci
+      if (!trLoci.empty()) {
+	_trCallLoci(c, trLoci);
+	std::vector<int32_t> chrSv;
+	for(uint32_t i = 0; i < svs.size(); ++i) {
+	  if ((svs[i].chr == refIndex) && ((svs[i].svt == 2) || (svs[i].svt == 4))) chrSv.push_back((int32_t) i);
+	}
+	std::sort(chrSv.begin(), chrSv.end(), [&](int32_t x, int32_t y) { return svs[x].svStart < svs[y].svStart; });
+	for(uint32_t k = 0; k < trLoci.size(); ++k) _trEmitLocus(c, seq, seqlen, refIndex, trLoci[k], srStore[refIndex], svs, chrSv, trRecords, trAlleleCounter, trCalled, trEmitted, trReplaced);
+	if (c.hasTrDump) _trDumpLoci(trDump, hdr, refIndex, svs, trLoci);
+	std::vector<TrLocus>().swap(trLoci);
+      }
+
       // Handle left-overs and translocations
       for(int32_t refIndex2 = 0; refIndex2 <= refIndex; ++refIndex2) {
 	char* sndSeq = NULL;
@@ -960,6 +996,11 @@ namespace torali
 	svs[svid].srSupport = 0;
 	svs[svid].srAlignQuality = 0;
       }
+    }
+
+    // Tandem repeat alleles
+    if (c.trDiscovery) {
+      for(uint32_t i = 0; i < trRecords.size(); ++i) svs.push_back(trRecords[i]);
     }
   }
 

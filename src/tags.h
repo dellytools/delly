@@ -99,8 +99,9 @@ namespace torali {
     int32_t homLen;  // Breakpoint homology / TSD length
     int32_t trPeriod; // Tandem repeat period in bp
     float trCopies;   // Tandem repeat copy number
+    bool fromSites;   // annotation present
     
-    SVAnno() : isRC(false), seqType(0), homLen(0), trPeriod(0), trCopies(0.0f) {}
+    SVAnno() : isRC(false), seqType(0), homLen(0), trPeriod(0), trCopies(0.0f), fromSites(false) {}
   };
   
   // Structural variant record

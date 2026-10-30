@@ -219,6 +219,7 @@ extern "C" EdlibAlignResult edlibAlign(const char* const queryOriginal, const in
 
         // Find starting locations.
         if (config.task == EDLIB_TASK_LOC || config.task == EDLIB_TASK_PATH) {
+	    result.numLocations = 1; // report only first optimal end location for delly
             result.startLocations = static_cast<int *>(malloc(result.numLocations * sizeof(int)));
             if (config.mode == EDLIB_MODE_HW) {  // If HW, I need to calculate start locations.
                 const unsigned char* rTarget = createReverseCopy(target, targetLength);
