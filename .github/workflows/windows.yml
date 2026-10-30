@@ -23,8 +23,17 @@ jobs:
         msystem: MINGW64
         update: true
         install: >-
-          mingw-w64-x86_64-toolchain
-          mingw-w64-x86_64-tools-git
+          mingw-w64-x86_64-binutils
+          mingw-w64-x86_64-crt
+          mingw-w64-x86_64-gcc
+          mingw-w64-x86_64-headers
+          mingw-w64-x86_64-libgomp
+          mingw-w64-x86_64-libstdc++
+          mingw-w64-x86_64-libwinpthread
+          mingw-w64-x86_64-make
+          mingw-w64-x86_64-pkgconf
+          mingw-w64-x86_64-winpthreads
+          mingw-w64-x86_64-tools
           mingw-w64-x86_64-boost
           mingw-w64-x86_64-xz
           mingw-w64-x86_64-curl
