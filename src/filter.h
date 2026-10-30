@@ -73,6 +73,8 @@ namespace torali
     float controlcont;
     float genogq;
     float genogqMulti;
+    int32_t multiAltReads;
+    float multiAltFrac;
     float hwe;
     float rsize;
     float rcorr;
@@ -766,6 +768,7 @@ namespace torali
     boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
     std::cerr << '[' << boost::posix_time::to_simple_string(now) << "] " << "Filtering VCF/BCF file" << std::endl;
     int32_t const locusWindow = 50000;
+    int32_t const multiMinAlleles = 6;
     bool locusModel = ((germline) && (c.longread) && (!c.noRefine));
     std::deque<LocusRecord> pend;
     typedef std::pair<int32_t, int32_t> TLocusKey;   // chromosome, ALLELEID
@@ -1122,7 +1125,14 @@ namespace torali
 		if ((lall != NULL) && (lall->gq[i] >= 0)) sampleGq = lall->gq[i];
 		if (sampleGq > 99) sampleGq = 99;
 		if (sampleGq < 0) sampleGq = 0;
-		if (sampleGq < ((multiAllelic) ? c.genogqMulti : c.genogq)) {
+		// Read support for multi-allelic TR
+		bool supported = false;
+		if ((lall != NULL) && (nAlleleVal >= multiMinAlleles) && (rv != NULL) && (rr != NULL) && (nrv >= nsmpl) && (nrr >= nsmpl) && (!bcf_gt_is_missing(gt[i*gtStride]))) {
+		  bool nonref = (bcf_gt_allele(gt[i*gtStride]) > 0);
+		  if ((gtStride > 1) && (gt[i*gtStride + 1] != bcf_int32_vector_end) && (!bcf_gt_is_missing(gt[i*gtStride + 1])) && (bcf_gt_allele(gt[i*gtStride + 1]) > 0)) nonref = true;
+		  if ((nonref) && (rv[i] >= c.multiAltReads) && ((double) rv[i] >= (double) c.multiAltFrac * (double) (rv[i] + rr[i]))) supported = true;
+		}
+		if ((!supported) && (sampleGq < ((multiAllelic) ? c.genogqMulti : c.genogq))) {
 		  gt[i*gtStride] = bcf_gt_missing;
 		  if ((gtStride > 1) && (gt[i*gtStride + 1] != bcf_int32_vector_end)) gt[i*gtStride + 1] = bcf_gt_missing;
 		}
@@ -1443,6 +1453,8 @@ namespace torali
       ("rcorr", boost::program_options::value<float>(&c.rcorr)->default_value(0.8), "min. genotype R^2 for redundant sites")
       ("rminshared", boost::program_options::value<int32_t>(&c.rminshared)->default_value(20), "min. samples to assess GT concordance")
       ("genogq-multi", boost::program_options::value<float>(&c.genogqMulti)->default_value(3), "min. GQ for non-missing at multi-allelic loci")
+      ("multi-alt-reads", boost::program_options::value<int32_t>(&c.multiAltReads)->default_value(8), "min. ALT reads for multi-allelic loci")
+      ("multi-alt-frac", boost::program_options::value<float>(&c.multiAltFrac)->default_value(0.35, "0.35"), "min. ALT read fraction for multi-allelic loci")
       ;
     boost::program_options::positional_options_description pos_args;
     pos_args.add("input-file", -1);
