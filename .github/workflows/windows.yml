@@ -33,7 +33,7 @@ jobs:
           mingw-w64-x86_64-make
           mingw-w64-x86_64-pkgconf
           mingw-w64-x86_64-winpthreads
-          mingw-w64-x86_64-tools
+          mingw-w64-x86_64-tools-git
           mingw-w64-x86_64-boost
           mingw-w64-x86_64-xz
           mingw-w64-x86_64-curl
