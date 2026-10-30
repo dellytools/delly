@@ -38,7 +38,7 @@ jobs:
           mingw-w64-x86_64-libtre
           mingw-w64-x86_64-libsystre
           mingw-w64-x86_64-gettext
-          mingw-w64-x86_64-tools
+          mingw-w64-x86_64-tools-git
           make
           git
 
