@@ -42,8 +42,6 @@ namespace torali {
     bool hasExcludeFile;
     bool hasVcfFile;
     bool hasAltFile;
-    bool trDiscovery;
-    bool hasTrDump;
     uint16_t methylProb;
     uint16_t minMapQual;
     uint16_t minGenoQual;
@@ -73,7 +71,6 @@ namespace torali {
     boost::filesystem::path vcffile;
     std::vector<boost::filesystem::path> files;
     boost::filesystem::path altfile;
-    boost::filesystem::path trDump;
     boost::filesystem::path genome;
     boost::filesystem::path exclude;
     std::vector<std::string> sampleName;
@@ -273,10 +270,8 @@ namespace torali {
      ("pruning", boost::program_options::value<uint32_t>(&c.graphPruning)->default_value(1000), "graph pruning cutoff")
      ("extension", boost::program_options::value<float>(&c.indelExtension)->default_value(0.5), "enforce indel extension")
      ("read-cap", boost::program_options::value<int32_t>(&c.genoCap)->default_value(25), "max. per-read genotype quality")
-     ("no-tr-discovery", "no tandem repeat tract discovery")
      ("tr-flank", boost::program_options::value<int32_t>(&c.trFlank)->default_value(200), "tandem repeat window flank")
      ("tr-allele-frac", boost::program_options::value<float>(&c.trAlleleFrac)->default_value(0.1), "min. fraction of spanning reads per tandem repeat allele")
-     ("tr-dump", boost::program_options::value<boost::filesystem::path>(&c.trDump), "tandem repeat locus dump file")
      ;
    
    boost::program_options::positional_options_description pos_args;
@@ -314,10 +309,6 @@ namespace torali {
    // Dump reads
    if (vm.count("dump")) c.hasDumpFile = true;
    else c.hasDumpFile = false;
-
-   // Tandem repeat discovery
-   c.trDiscovery = (vm.count("no-tr-discovery") == 0);
-   c.hasTrDump = (vm.count("tr-dump") > 0);
 
    // Clique size
    if (c.minCliqueSize < 2) c.minCliqueSize = 2;

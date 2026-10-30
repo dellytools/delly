@@ -511,7 +511,6 @@ namespace torali {
     mc.cnvMode = false;
     mc.hasGenome = true;
     mc.longread = true;
-    mc.trLocusLegacy = false;
     mc.chunkMerge = false;
     mc.annotated = true;
     mc.chunksize = 500;

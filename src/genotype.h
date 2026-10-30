@@ -172,9 +172,9 @@ namespace torali
 
   // GT for tandem repeats
   template<typename TMembers, typename TReads, typename TJctVector>
-  inline void
-  _trLocusGenotype(std::vector<StructuralVariantRecord> const& svs, TMembers const& members, TReads const& reads, TrNoise const& nm, int32_t const ws, int32_t const we, int32_t const flank, uint8_t const ploidy, TJctVector& jct) {
-    if ((ploidy == 0) || (reads.size() < 3)) return;
+  inline bool
+  _trLocusGenotype(std::vector<StructuralVariantRecord> const& svs, TMembers const& members, TReads const& reads, TrNoise const& nm, int32_t const ws, int32_t const we, int32_t const flank, uint8_t const ploidy, TJctVector& jct, std::vector<int32_t>* readAllele = nullptr) {
+    if ((ploidy == 0) || (reads.size() < 3)) return false;
     int32_t const tractLen = we - ws;
     int32_t bin = _trBin(tractLen);
     double const mu = nm.mu[bin];
@@ -195,7 +195,7 @@ namespace torali
       alen.push_back(d);
       amember.push_back(members[k]);
     }
-    if (alen.size() < 2) return;
+    if (alen.size() < 2) return false;
 
     // Candidate alleles
     std::vector<int32_t> cand(1, 0);
@@ -269,6 +269,15 @@ namespace torali
     };
     bestX = classRep(bestX);
     bestY = classRep(bestY);
+
+    // SV dump
+    if (readAllele != nullptr) {
+      readAllele->assign(reads.size(), -1);
+      for(uint32_t r = 0; r < reads.size(); ++r) {
+	int32_t k = cand[(lp[r][bestX] >= lp[r][bestY]) ? bestX : bestY];
+	if ((k > 0) && (k < other)) (*readAllele)[r] = amember[k];
+      }
+    }
 
     // Allele records
     double const small = -std::numeric_limits<double>::max();
@@ -388,6 +397,7 @@ namespace torali
 	}
       }
     }
+    return true;
   }
 
   template<typename TConfig, typename TJunctionMap, typename TReadCountMap, typename TMethylMap>
@@ -431,6 +441,11 @@ namespace torali
       dumpOut.push(boost::iostreams::file_sink(c.dumpfile.string(), std::ios_base::out | std::ios_base::binary));
       dumpOut << "#svid\tbam\tqname\tchr\tpos\tmapq\ttype" << std::endl;
     }
+    auto dumpId = [&](int32_t svid) {
+      std::string padNumber = boost::lexical_cast<std::string>(svid);
+      padNumber.insert(padNumber.begin(), 8 - padNumber.length(), '0');
+      return std::string(_addID(svs[svid].svt)) + padNumber;
+    };
 
     // Genotype SVs
     boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
@@ -502,6 +517,18 @@ namespace torali
     // Tandem repeats
     typedef std::vector<TrRead> TTrReads;
     std::vector<std::vector<TTrReads> > trReads(c.files.size(), std::vector<TTrReads>(trUnit.size()));
+    // SV dump
+    struct TrDumpRead {
+      std::string qname;
+      int32_t tid;
+      int32_t pos;
+      int32_t mapq;
+    };
+    
+    typedef std::vector<TrDumpRead> TTrDumpReads;
+    typedef std::vector<std::pair<int32_t, std::string> > TTrDumpPending;
+    std::vector<std::vector<TTrDumpReads> > trDumpReads(c.hasDumpFile ? c.files.size() : 0, std::vector<TTrDumpReads>(trUnit.size()));
+    std::vector<std::vector<TTrDumpPending> > trDumpPending(c.hasDumpFile ? c.files.size() : 0, std::vector<TTrDumpPending>(trUnit.size()));
     std::vector<TrNoise> trNoise(c.files.size());
 
     faidx_t* fai = fai_load(c.genome.string().c_str());
@@ -681,11 +708,9 @@ namespace torali
 	    } else {
 	      // ALT-supporting read
 	      if (c.hasDumpFile) {
-		std::string svidStr(_addID(svs[svid].svt));
-		std::string padNumber = boost::lexical_cast<std::string>(svid);
-		padNumber.insert(padNumber.begin(), 8 - padNumber.length(), '0');
-		svidStr += padNumber;
-		dumpOut << svidStr << "\t" << c.files[file_c].string() << "\t" << bam_get_qname(rec) << "\t" << hdr[file_c]->target_name[rec->core.tid] << "\t" << rec->core.pos << "\t" << (int32_t) rec->core.qual << "\tSR" << std::endl;
+		std::string line = dumpId(svid) + "\t" + c.files[file_c].string() + "\t" + bam_get_qname(rec) + "\t" + hdr[file_c]->target_name[rec->core.tid] + "\t" + boost::lexical_cast<std::string>(rec->core.pos) + "\t" + boost::lexical_cast<std::string>((int32_t) rec->core.qual) + "\tSR";
+		if (unitOf[svid] >= 0) trDumpPending[file_c][unitOf[svid]].push_back(std::make_pair(svid, line));
+		else dumpOut << line << std::endl;
 	      }
 	      jctMap[file_c][svid].alt.push_back(qual);
 	      if (hp == 1) jctMap[file_c][svid].hp1alt.push_back(qual);
@@ -713,6 +738,7 @@ namespace torali
 		  tr.ps = ps;
 		  tr.hp = hp;
 		  trReads[file_c][u].push_back(tr);
+		  if (c.hasDumpFile) trDumpReads[file_c][u].push_back({std::string(bam_get_qname(rec)), rec->core.tid, (int32_t) rec->core.pos, (int32_t) rec->core.qual});
 		}
 	      }
 	    }
@@ -780,8 +806,24 @@ namespace torali
 	    StructuralVariantRecord const& first = svs[trUnit[u][0]];
 	    if (first.chr != refIndex) continue;
 	    uint8_t ploidy = _svPloidy(c.sexModel, sex, first.chr, unitWs[u], first.chr, unitWe[u]);
-	    _trLocusGenotype(svs, trUnit[u], trReads[file_c][u], trNoise[file_c], unitWs[u], unitWe[u], trFlank, ploidy, jctMap[file_c]);
+	    std::vector<int32_t> readAllele;
+	    bool locusGenotyped = _trLocusGenotype(svs, trUnit[u], trReads[file_c][u], trNoise[file_c], unitWs[u], unitWe[u], trFlank, ploidy, jctMap[file_c], (c.hasDumpFile ? &readAllele : nullptr));
 	    TTrReads().swap(trReads[file_c][u]);
+	    if (c.hasDumpFile) {
+	      // Tandem repeat reads
+	      if (locusGenotyped) {
+		for(uint32_t r = 0; r < readAllele.size(); ++r) {
+		  if (readAllele[r] < 0) continue;
+		  TrDumpRead const& dr = trDumpReads[file_c][u][r];
+		  dumpOut << dumpId(readAllele[r]) << "\t" << c.files[file_c].string() << "\t" << dr.qname << "\t" << hdr[file_c]->target_name[dr.tid] << "\t" << dr.pos << "\t" << dr.mapq << "\tTR" << std::endl;
+		}
+	      }
+	      for(uint32_t k = 0; k < trDumpPending[file_c][u].size(); ++k) {
+		if (jctMap[file_c][trDumpPending[file_c][u][k].first].locusGt < 0) dumpOut << trDumpPending[file_c][u][k].second << std::endl;
+	      }
+	      TTrDumpReads().swap(trDumpReads[file_c][u]);
+	      TTrDumpPending().swap(trDumpPending[file_c][u]);
+	    }
 	  }
 	}
 

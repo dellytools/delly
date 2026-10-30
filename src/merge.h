@@ -50,7 +50,6 @@ namespace torali
     bool cnvMode;
     bool hasGenome;
     bool longread;
-    bool trLocusLegacy;
     bool chunkMerge;
     bool annotated;
     uint32_t chunksize;
@@ -797,9 +796,7 @@ namespace torali
       std::map<TTractKey, std::pair<int32_t, int32_t> > tractMemo;
       for(size_t ci = 0; ci < compVec.size(); ++ci) {
 	int32_t rep = compVec[ci][0];
-	bool allPrecise = nodes[rep].precise;
 	for(size_t k = 1; k < compVec[ci].size(); ++k) {
-	  if (!nodes[compVec[ci][k]].precise) allPrecise = false;
 	  if ((nodes[compVec[ci][k]].score > nodes[rep].score) || ((nodes[compVec[ci][k]].score == nodes[rep].score) && (nodes[compVec[ci][k]].srq > nodes[rep].srq))) rep = compVec[ci][k];
 	}
 	if (nodes[rep].tid != curTid) {
@@ -818,16 +815,6 @@ namespace torali
 	}
 	// Repeat lengths
 	if (chrSeq.empty()) continue;
-	if (c.trLocusLegacy) {
-	  if (!allPrecise) continue;
-	  int32_t p = _trPeriod(nodes[rep], chrSeq);
-	  int32_t ts = -1, te = -1;
-	  if ((_trTract(chrSeq, nodes[rep].svStart + 1, p, ts, te)) || (_trTract(chrSeq, nodes[rep].svStart + 1 - p, p, ts, te))) {
-	    compTs[ci] = ts;
-	    compTe[ci] = te;
-	  }
-	  continue;
-	}
 	// Repeat tract
 	int32_t uts = -1, ute = -1;
 	for(size_t k = 0; k < compVec[ci].size(); ++k) {
@@ -920,17 +907,14 @@ namespace torali
 	  int32_t ovl = std::min(compTe[ci], compTe[cj]) - compTs[ci];
 	  int32_t shorter = std::min(compTe[ci] - compTs[ci], compTe[cj] - compTs[cj]);
 	  if (2 * ovl < shorter) continue;
-	  if (c.trLocusLegacy) cuf.unite(ci, cj);
-	  else {
-	    int32_t ri = cuf.find(ci);
-	    int32_t rj = cuf.find(cj);
-	    if (ri == rj) continue;
-	    if (std::max(rootTe[ri], rootTe[rj]) - std::min(rootTs[ri], rootTs[rj]) > maxTract) continue;
-	    cuf.unite(ri, rj);
-	    int32_t r = cuf.find(ri);
-	    rootTs[r] = std::min(rootTs[ri], rootTs[rj]);
-	    rootTe[r] = std::max(rootTe[ri], rootTe[rj]);
-	  }
+	  int32_t ri = cuf.find(ci);
+	  int32_t rj = cuf.find(cj);
+	  if (ri == rj) continue;
+	  if (std::max(rootTe[ri], rootTe[rj]) - std::min(rootTs[ri], rootTs[rj]) > maxTract) continue;
+	  cuf.unite(ri, rj);
+	  int32_t r = cuf.find(ri);
+	  rootTs[r] = std::min(rootTs[ri], rootTs[rj]);
+	  rootTe[r] = std::max(rootTe[ri], rootTe[rj]);
 	}
       }
       TCompVec mergedVec;
@@ -956,51 +940,49 @@ namespace torali
       compTe.swap(mTe);
 
       // Components inside a repeat tract
-      if (!c.trLocusLegacy) {
-	int32_t const joinFlank = 200;
-	std::vector<int32_t> tracted;
-	for(size_t ci = 0; ci < compVec.size(); ++ci) {
-	  if (compTs[ci] >= 0) tracted.push_back((int32_t) ci);
-	}
-	std::sort(tracted.begin(), tracted.end(), [&](int32_t a, int32_t b) { return (nodes[compVec[a][0]].tid < nodes[compVec[b][0]].tid) || ((nodes[compVec[a][0]].tid == nodes[compVec[b][0]].tid) && ((compTs[a] < compTs[b]) || ((compTs[a] == compTs[b]) && ((compTe[a] < compTe[b]) || ((compTe[a] == compTe[b]) && (a < b)))))); });
-	for(size_t ci = 0; ci < compVec.size(); ++ci) {
-	  if ((compTs[ci] >= 0) || (compVec[ci].empty())) continue;
-	  int32_t tid = nodes[compVec[ci][0]].tid;
-	  int32_t minS = std::numeric_limits<int32_t>::max();
-	  int32_t maxE = 0;
-	  bool eligible = true;
-	  for(size_t k = 0; k < compVec[ci].size(); ++k) {
-	    MergeSV const& mn = nodes[compVec[ci][k]];
-	    if ((!mn.precise) || ((mn.subtype >= 1) && (mn.subtype <= 6))) {
-	      eligible = false;
-	      break;
-	    }
-	    int32_t svE = (mn.svt == 4) ? mn.svStart : mn.svEnd;
-	    minS = std::min(minS, mn.svStart);
-	    maxE = std::max(maxE, svE);
+      int32_t const joinFlank = 200;
+      std::vector<int32_t> tracted;
+      for(size_t ci = 0; ci < compVec.size(); ++ci) {
+	if (compTs[ci] >= 0) tracted.push_back((int32_t) ci);
+      }
+      std::sort(tracted.begin(), tracted.end(), [&](int32_t a, int32_t b) { return (nodes[compVec[a][0]].tid < nodes[compVec[b][0]].tid) || ((nodes[compVec[a][0]].tid == nodes[compVec[b][0]].tid) && ((compTs[a] < compTs[b]) || ((compTs[a] == compTs[b]) && ((compTe[a] < compTe[b]) || ((compTe[a] == compTe[b]) && (a < b)))))); });
+      for(size_t ci = 0; ci < compVec.size(); ++ci) {
+	if ((compTs[ci] >= 0) || (compVec[ci].empty())) continue;
+	int32_t tid = nodes[compVec[ci][0]].tid;
+	int32_t minS = std::numeric_limits<int32_t>::max();
+	int32_t maxE = 0;
+	bool eligible = true;
+	for(size_t k = 0; k < compVec[ci].size(); ++k) {
+	  MergeSV const& mn = nodes[compVec[ci][k]];
+	  if ((!mn.precise) || ((mn.subtype >= 1) && (mn.subtype <= 6))) {
+	    eligible = false;
+	    break;
 	  }
-	  if (!eligible) continue;
-	  int32_t best = -1;
-	  int32_t bestOvl = std::numeric_limits<int32_t>::min();
-	  std::pair<int32_t, int32_t> key = std::make_pair(tid, minS + joinFlank);
-	  size_t hi = std::upper_bound(tracted.begin(), tracted.end(), key, [&](std::pair<int32_t, int32_t> const& kv, int32_t b) { return (kv.first < nodes[compVec[b][0]].tid) || ((kv.first == nodes[compVec[b][0]].tid) && (kv.second < compTs[b])); }) - tracted.begin();
-	  for(size_t ti = hi; ti > 0; ) {
-	    --ti;
-	    int32_t cj = tracted[ti];
-	    if (nodes[compVec[cj][0]].tid != tid) break;
-	    if (compTs[cj] < minS - maxTract - joinFlank) break;
-	    if ((minS >= compTs[cj] - joinFlank) && (maxE <= compTe[cj] + joinFlank)) {
-	      int32_t ovl = std::min(maxE, compTe[cj]) - std::max(minS, compTs[cj]);
-	      if ((ovl > bestOvl) || ((ovl == bestOvl) && (compTs[cj] < compTs[best]))) {
-		best = cj;
-		bestOvl = ovl;
-	      }
+	  int32_t svE = (mn.svt == 4) ? mn.svStart : mn.svEnd;
+	  minS = std::min(minS, mn.svStart);
+	  maxE = std::max(maxE, svE);
+	}
+	if (!eligible) continue;
+	int32_t best = -1;
+	int32_t bestOvl = std::numeric_limits<int32_t>::min();
+	std::pair<int32_t, int32_t> key = std::make_pair(tid, minS + joinFlank);
+	size_t hi = std::upper_bound(tracted.begin(), tracted.end(), key, [&](std::pair<int32_t, int32_t> const& kv, int32_t b) { return (kv.first < nodes[compVec[b][0]].tid) || ((kv.first == nodes[compVec[b][0]].tid) && (kv.second < compTs[b])); }) - tracted.begin();
+	for(size_t ti = hi; ti > 0; ) {
+	  --ti;
+	  int32_t cj = tracted[ti];
+	  if (nodes[compVec[cj][0]].tid != tid) break;
+	  if (compTs[cj] < minS - maxTract - joinFlank) break;
+	  if ((minS >= compTs[cj] - joinFlank) && (maxE <= compTe[cj] + joinFlank)) {
+	    int32_t ovl = std::min(maxE, compTe[cj]) - std::max(minS, compTs[cj]);
+	    if ((ovl > bestOvl) || ((ovl == bestOvl) && (compTs[cj] < compTs[best]))) {
+	      best = cj;
+	      bestOvl = ovl;
 	    }
 	  }
-	  if (best < 0) continue;
-	  compVec[best].insert(compVec[best].end(), compVec[ci].begin(), compVec[ci].end());
-	  compVec[ci].clear();
 	}
+	if (best < 0) continue;
+	compVec[best].insert(compVec[best].end(), compVec[ci].begin(), compVec[ci].end());
+	compVec[ci].clear();
       }
 
       // Alleles inside/outside repeat
@@ -1061,7 +1043,7 @@ namespace torali
 	    int32_t tolLen = std::max(c.trLenTol, (int32_t) std::lround(c.trLenFrac * (double) lead[L]));
 	    int32_t d = std::abs(s - lead[L]);
 	    if ((d <= tolLen) && (d < bestDist)) {
-	      if ((!c.trLocusLegacy) && (d > 0) && (nodes[members[0]].svt == 4)) {
+	      if ((d > 0) && (nodes[members[0]].svt == 4)) {
 		// Join based on seq. similarity
 		MergeSV const& a = nodes[sizeRep[s]];
 		MergeSV const& b = nodes[sizeRep[lead[L]]];
@@ -1168,7 +1150,7 @@ namespace torali
 	std::vector<int32_t>& grp = groups[g];
 	int32_t rep = grp[0];
 	for(size_t k = 1; k < grp.size(); ++k) {
-	  if ((!c.trLocusLegacy) && (trS >= 0)) {
+	  if (trS >= 0) {
 	    // Tandem repeat order
 	    MergeSV const& a = nodes[grp[k]];
 	    MergeSV const& b = nodes[rep];
@@ -1180,7 +1162,7 @@ namespace torali
 	for(size_t k = 0; k < grp.size(); ++k) {
 	  int32_t f = nodes[grp[k]].fileIdx;
 	  std::pair<int32_t, int32_t> cur = std::make_pair(nodes[grp[k]].supp, nodes[grp[k]].ac);
-	  if ((!c.trLocusLegacy) && (nodes[grp[k]].fromSiteList)) {
+	  if (nodes[grp[k]].fromSiteList) {
 	    if (perFile.find(f) == perFile.end()) perFile[f] = cur;
 	    else {
 	      perFile[f].first += cur.first;
@@ -1219,7 +1201,7 @@ namespace torali
 	for(size_t k = 0; k < grp.size(); ++k) {
 	  int32_t f = nodes[grp[k]].fileIdx;
 	  std::pair<int32_t, int32_t> cur = std::make_pair(nodes[grp[k]].supp, nodes[grp[k]].ac);
-	  if ((!c.trLocusLegacy) && (nodes[grp[k]].fromSiteList)) {
+	  if (nodes[grp[k]].fromSiteList) {
 	    if (perFile.find(f) == perFile.end()) perFile[f] = cur;
 	    else {
 	      perFile[f].first += cur.first;
@@ -2234,7 +2216,6 @@ namespace torali
 	boost::unordered_map<int32_t, std::vector<TTract> >::const_iterator it = rootTracts.find(uf.find(i));
 	if (it == rootTracts.end()) continue;
 	if (als[i].trs >= 0) {
-	  if (c.trLocusLegacy) continue;
 	  for(size_t k = 0; k < it->second.size(); ++k) {
 	    if ((als[i].trs >= it->second[k].first) && (als[i].tre <= it->second[k].second)) {
 	      if (((als[i].trs != it->second[k].first) || (als[i].tre != it->second[k].second)) && (it->second[k].second - it->second[k].first <= maxTract)) {
@@ -2498,7 +2479,6 @@ namespace torali
     boost::program_options::options_description hidden("Hidden options");
     hidden.add_options()
       ("input-file", boost::program_options::value< std::vector<boost::filesystem::path> >(&c.files), "input file")
-      ("tr-locus-legacy", boost::program_options::bool_switch(&c.trLocusLegacy), "legacy tandem repeat locus handling")
       ;
     boost::program_options::positional_options_description pos_args;
     pos_args.add("input-file", -1);

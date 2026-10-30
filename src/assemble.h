@@ -756,8 +756,6 @@ namespace torali
     std::vector<bool> svcons(svs.size(), false);
 
     // Tandem repeat loci
-    std::ofstream trDump;
-    if (c.hasTrDump) trDump.open(c.trDump.string().c_str());
     std::vector<StructuralVariantRecord> trRecords;
     int32_t trAlleleCounter = 1;
     uint32_t trCalled = 0;
@@ -797,7 +795,7 @@ namespace torali
 
       // Tandem repeat loci
       std::vector<TrLocus> trLoci;
-      if (c.trDiscovery) _trBuildLoci(c, seq, seqlen, refIndex, svs, trLoci);
+      _trBuildLoci(c, seq, seqlen, refIndex, svs, trLoci);
       
       // Collect reads from all samples
       for(unsigned int file_c = 0; file_c < c.files.size(); ++file_c) {
@@ -911,7 +909,6 @@ namespace torali
 	}
 	std::sort(chrSv.begin(), chrSv.end(), [&](int32_t x, int32_t y) { return svs[x].svStart < svs[y].svStart; });
 	for(uint32_t k = 0; k < trLoci.size(); ++k) _trEmitLocus(c, seq, seqlen, refIndex, trLoci[k], srStore[refIndex], svs, chrSv, trRecords, trAlleleCounter, trCalled, trEmitted, trReplaced);
-	if (c.hasTrDump) _trDumpLoci(trDump, hdr, refIndex, svs, trLoci);
 	std::vector<TrLocus>().swap(trLoci);
       }
 
@@ -999,9 +996,7 @@ namespace torali
     }
 
     // Tandem repeat alleles
-    if (c.trDiscovery) {
-      for(uint32_t i = 0; i < trRecords.size(); ++i) svs.push_back(trRecords[i]);
-    }
+    for(uint32_t i = 0; i < trRecords.size(); ++i) svs.push_back(trRecords[i]);
   }
 
 

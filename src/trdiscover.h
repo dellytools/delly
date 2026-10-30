@@ -3,8 +3,6 @@
 
 #include <vector>
 #include <string>
-#include <fstream>
-#include <iomanip>
 #include <algorithm>
 #include <cmath>
 #include <map>
@@ -634,32 +632,6 @@ namespace torali
 	svs[mr->first].consensus.clear();
 	++nReplaced;
       }
-    }
-  }
-
-  // Debug of TR loci
-  inline void
-  _trDumpLoci(std::ofstream& ofs, bam_hdr_t const* hdr, int32_t const refIndex, std::vector<StructuralVariantRecord> const& svs, std::vector<TrLocus> const& loci) {
-    for(uint32_t k = 0; k < loci.size(); ++k) {
-      TrLocus const& l = loci[k];
-      ofs << hdr->target_name[refIndex] << '\t' << l.ts << '\t' << l.te << '\t' << l.ws << '\t' << l.we << '\t' << l.members.size() << '\t';
-      for(uint32_t m = 0; m < l.members.size(); ++m) {
-	StructuralVariantRecord const& sv = svs[l.members[m]];
-	int32_t len = (sv.svt == 4) ? sv.insLen : -(sv.svEnd - sv.svStart);
-	if (m) ofs << ';';
-	ofs << sv.svStart << ':' << ((sv.svt == 4) ? "INS" : "DEL") << ':' << len << ':' << sv.srSupport;
-      }
-      ofs << '\t' << l.nspan << '\t' << (l.capped ? 1 : 0) << '\t';
-      for(uint32_t r = 0; r < l.nets.size(); ++r) {
-	if (r) ofs << ',';
-	ofs << l.nets[r];
-      }
-      ofs << '\t';
-      for(uint32_t a = 0; a < l.alleles.size(); ++a) {
-	if (a) ofs << ';';
-	ofs << l.alleles[a].net << ':' << l.alleles[a].support << ':' << l.alleles[a].obs.size() << ':' << l.alleles[a].status << ':' << l.alleles[a].gap << ':' << l.alleles[a].consNet << ':' << l.alleles[a].consLen << ':' << std::fixed << std::setprecision(3) << l.alleles[a].ident;
-      }
-      ofs << std::endl;
     }
   }
 
