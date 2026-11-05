@@ -73,6 +73,10 @@ def delly2bnd(args):
                 ct = record.INFO.get("CT")
                 chrom2 = record.INFO.get("CHR2")
                 pos2 = record.INFO.get("END")
+            elif record.INFO.get("SVTYPE") == "INV":
+                ct = record.INFO.get("CT")
+                chrom2 = record.CHROM
+                pos2 = record.INFO.get("END")
             else:
                 continue
             chrom = record.CHROM
@@ -112,6 +116,14 @@ def delly2bnd(args):
             ct = record.INFO.get("CT")
             chrom2 = record.INFO.get("CHR2")
             pos2 = record.INFO.get("END")
+        elif record.INFO.get("SVTYPE") == "INV":
+            ct = record.INFO.get("CT")
+            chrom2 = record.CHROM
+            pos2 = record.INFO.get("END")
+            record.INFO['SVTYPE'] = 'BND'
+            record.INFO['CHR2'] = chrom2
+            record.INFO['POS2'] = pos2
+            record.INFO['END'] = record.POS
         else:
             continue
         chrom = record.CHROM

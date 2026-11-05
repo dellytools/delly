@@ -71,6 +71,8 @@ namespace torali
     float ratiogeno;
     float altaf;
     float controlcont;
+    float pmiss;
+    int32_t alleleDiff;
     float genogq;
     float genogqMulti;
     int32_t multiAltReads;
@@ -188,10 +190,35 @@ namespace torali
     int32_t served;
     int32_t firstPos;
     bool computed;
+    std::vector<int32_t> controlLen;
     std::vector<LocusAllele> member;
 
     LocusGroup() : nallele(0), seen(0), served(0), firstPos(-1), computed(false) {}
   };
+
+  // Control carriers?
+  template<typename TConfig>
+  inline bool
+  _controlCarrier(TConfig const& c, bcf_hdr_t* hdr, bcf1_t* rec) {
+    bcf_unpack(rec, BCF_UN_ALL);
+    int32_t* gt = NULL;
+    int ngt = 0;
+    int32_t nsmpl = bcf_hdr_nsamples(hdr);
+    bool carrier = false;
+    if (bcf_get_genotypes(hdr, rec, &gt, &ngt) > 0) {
+      int32_t stride = ngt / nsmpl;
+      for(int32_t i = 0; ((i < nsmpl) && (!carrier)); ++i) {
+	if (c.controlSet.find(hdr->samples[i]) == c.controlSet.end()) continue;
+	for(int32_t k = 0; k < stride; ++k) {
+	  int32_t g = gt[i * stride + k];
+	  if ((g == bcf_int32_vector_end) || (bcf_gt_is_missing(g))) continue;
+	  if (bcf_gt_allele(g) > 0) carrier = true;
+	}
+      }
+    }
+    if (gt != NULL) free(gt);
+    return carrier;
+  }
 
   // GLs of an allele
   template<typename TConfig>
@@ -770,6 +797,7 @@ namespace torali
     int32_t const locusWindow = 50000;
     int32_t const multiMinAlleles = 6;
     bool locusModel = ((germline) && (c.longread) && (!c.noRefine));
+    bool somaticLocus = (!germline);
     std::deque<LocusRecord> pend;
     typedef std::pair<int32_t, int32_t> TLocusKey;   // chromosome, ALLELEID
     typedef std::map<TLocusKey, LocusGroup> TLocusMap;
@@ -804,7 +832,7 @@ namespace torali
 	bcf_unpack(lr.rec, BCF_UN_INFO);
 	lastRid = lr.rec->rid;
 	lastPos = lr.rec->pos;
-	if (locusModel) {
+	if ((locusModel) || (somaticLocus)) {
 	  int32_t aid = -1;
 	  int32_t nal = 1;
 	  if (bcf_get_info_int32(hdr, lr.rec, "ALLELEID", &aidp, &naid) > 0) aid = *aidp;
@@ -821,10 +849,18 @@ namespace torali
 	      }
 	      ++grp.seen;
 	      lr.alleleid = aid;
-	      LocusAllele la;
-	      if (_locusAllele(c, hdr, lr.rec, sm, la)) {
-		lr.midx = grp.member.size();
-		grp.member.push_back(la);
+	      if (locusModel) {
+		LocusAllele la;
+		if (_locusAllele(c, hdr, lr.rec, sm, la)) {
+		  lr.midx = grp.member.size();
+		  grp.member.push_back(la);
+		}
+	      }
+	      if ((somaticLocus) && (_controlCarrier(c, hdr, lr.rec))) {
+		int32_t* lenp = NULL;
+		int nlen = 0;
+		if (bcf_get_info_int32(hdr, lr.rec, "SVLEN", &lenp, &nlen) > 0) grp.controlLen.push_back(*lenp);
+		if (lenp != NULL) free(lenp);
 	      }
 	    }
 	  }
@@ -833,10 +869,20 @@ namespace torali
       }
       if (pend.empty()) break;
       rec = pend.front().rec;
+      bool locusGermline = false;
       if (pend.front().alleleid >= 0) {
 	TLocusKey key = std::make_pair(rec->rid, pend.front().alleleid);
 	LocusGroup& grp = locusMap[key];
-	if (!grp.computed) {
+	// Any match in the control?
+	int32_t* lenp = NULL;
+	int nlen = 0;
+	int32_t recLen = 0;
+	if (bcf_get_info_int32(hdr, rec, "SVLEN", &lenp, &nlen) > 0) recLen = *lenp;
+	if (lenp != NULL) free(lenp);
+	for(uint32_t k = 0; k < grp.controlLen.size(); ++k) {
+	  if (std::abs(recLen - grp.controlLen[k]) < c.alleleDiff) locusGermline = true;
+	}
+	if ((locusModel) && (!grp.computed)) {
 	  _estLocusPosterior(grp.member);
 	  for(uint32_t k = 0; k < grp.member.size(); ++k) {
 	    std::vector<int32_t>().swap(grp.member[k].pl);
@@ -1178,6 +1224,8 @@ namespace torali
 	uint32_t tCount = 0;
 	uint32_t controlpass = 0;
 	uint32_t tumorpass = 0;
+	std::vector<int32_t> controlCov;
+	float tumorVaf = 0;
 	int32_t ac[2];
 	ac[0] = 0;
 	ac[1] = 0;
@@ -1210,6 +1258,8 @@ namespace torali
 		else rVar = (float) rv[i] / (float) (rr[i] + rv[i]);
 		rRefVar.push_back(rVar);
 		if (rVar <= c.controlcont) ++controlpass;
+		if (!precise) controlCov.push_back(dr[i] + dv[i]);
+		else controlCov.push_back(rr[i] + rv[i]);
 	      } else if ((germline) && (gt_type >= 1)) {
 		if ((rcl != NULL) && (rcr != NULL) && (rcl[i] + rcr[i] != 0)) rcAlt.push_back((float) rc[i] / ((float) (rcl[i] + rcr[i])));
 		else rcAlt.push_back(rc[i]);
@@ -1223,17 +1273,25 @@ namespace torali
 	      ++tCount;
 	      if ((rcl != NULL) && (rcr != NULL) && (rcl[i] + rcr[i] != 0)) rcTumor.push_back((float) rc[i] / ((float) (rcl[i] + rcr[i])));
 	      else rcTumor.push_back(rc[i]);
+	      float vaf = 0;
 	      if (!precise) {
-		if ((((float) dv[i] / (float) (dr[i] + dv[i])) >= c.altaf) && (dr[i] + dv[i] >= c.coverage)) ++tumorpass;
+		if (dr[i] + dv[i] > 0) vaf = (float) dv[i] / (float) (dr[i] + dv[i]);
+		if ((vaf >= c.altaf) && (dr[i] + dv[i] >= c.coverage)) ++tumorpass;
 	      } else {
-		if ((((float) rv[i] / (float) (rr[i] + rv[i])) >= c.altaf) && (rr[i] + rv[i] >= c.coverage)) ++tumorpass;
+		if (rr[i] + rv[i] > 0) vaf = (float) rv[i] / (float) (rr[i] + rv[i]);
+		if ((vaf >= c.altaf) && (rr[i] + rv[i] >= c.coverage)) ++tumorpass;
 	      }
+	      if (vaf > tumorVaf) tumorVaf = vaf;
 	    }
 	  }
 	}
 	if (c.filter == "somatic") {
 	  float genotypeRatio = (float) (nCount + tCount) / (float) (c.controlSet.size() + c.tumorSet.size());
-	  if ((controlpass) && (tumorpass) && (controlpass == nCount) && (genotypeRatio >= c.ratiogeno)) {
+	  bool controlpower = true;
+	  for(uint32_t k = 0; k < controlCov.size(); ++k) {
+	    if (std::pow(1.0 - tumorVaf, (double) controlCov[k]) > c.pmiss) controlpower = false;
+	  }
+	  if ((controlpass) && (tumorpass) && (controlpass == nCount) && (controlpower) && (!locusGermline) && (genotypeRatio >= c.ratiogeno)) {
 	    float rccontrolmed = 0;
 	    getMedian(rcControl.begin(), rcControl.end(), rccontrolmed);
 	    float rctumormed = 0;
@@ -1421,6 +1479,8 @@ namespace torali
       ("samples,s", boost::program_options::value<boost::filesystem::path>(&c.samplefile), "sample file")
       ("coverage,v", boost::program_options::value<int32_t>(&c.coverage)->default_value(10), "min. coverage in tumor (SV)")
       ("controlcont,c", boost::program_options::value<float>(&c.controlcont)->default_value(0.0), "max. frac. ALT support in control (SV)")
+      ("pmiss", boost::program_options::value<float>(&c.pmiss)->default_value(0.05), "max. probability ALT missed in control (SV)")
+      ("allele-diff", boost::program_options::value<int32_t>(&c.alleleDiff)->default_value(50), "min. TR length difference to any control allele (SV)")
       ("pgerm", boost::program_options::value<float>(&c.pgerm)->default_value(0.001), "probability germline (CNV)")
       ("cn-offset", boost::program_options::value<float>(&c.cn_offset)->default_value(0.2), "min. tumor-control CN offset (CNV)")
       ;
