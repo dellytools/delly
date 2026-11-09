@@ -52,6 +52,7 @@ namespace torali
     uint16_t minQual;
     uint16_t mapqUniq;
     uint16_t mad;
+    bool ploidyAuto;
     float ploidy;
     float ctrlPloidy;
     float expectedCN;
@@ -514,10 +515,93 @@ namespace torali
   }
 
   
+  // Ploidy fit
+  template<typename TConfig>
+  inline float
+  fitPloidy(TConfig const& c, bam_hdr_t const* hdr, std::vector<RegionRatio> const& regRatio, uint32_t const regWin) {
+    uint32_t const binSize = std::max((uint32_t) 1000000, 5 * regWin);   // median coverage ratio in bins of >= 1Mbp and >= 5 regional windows
+    uint32_t const minBins = 100;
+    double const tol = 0.02;
+    double const margin = 0.05;
+    double const minState = 0.05;
+    double const defPloidy = c.ploidy;
+
+    // Autosomal bins
+    std::vector<double> bins;
+    std::vector<double> cur;
+    int32_t curRef = -1;
+    int64_t curBin = -1;
+    for(uint32_t i = 0; i <= regRatio.size(); ++i) {
+      bool flush = (i == regRatio.size());
+      if (!flush) {
+	std::string tname(hdr->target_name[regRatio[i].refIndex]);
+	if ((hdr->target_len[regRatio[i].refIndex] < c.minChrLen) || (c.refIdx.find(regRatio[i].refIndex) != c.refIdx.end())) continue;
+	if ((tname == "chrX") || (tname == "chrY") || (tname == "X") || (tname == "Y") || (tname == "chrM") || (tname == "MT")) continue;
+	flush = ((regRatio[i].refIndex != curRef) || ((int64_t) (regRatio[i].start / binSize) != curBin));
+      }
+      if (flush) {
+	if (cur.size() >= 3) {
+	  std::sort(cur.begin(), cur.end());
+	  bins.push_back(cur[cur.size() / 2]);
+	}
+	cur.clear();
+	if (i == regRatio.size()) break;
+	curRef = regRatio[i].refIndex;
+	curBin = (int64_t) (regRatio[i].start / binSize);
+      }
+      cur.push_back(regRatio[i].ratio);
+    }
+    if (bins.size() < minBins) return defPloidy;
+
+    // Copy-number should be integers
+    std::vector<double> score(501, 0);
+    for(uint32_t k = 0; k < score.size(); ++k) {
+      double pl = 1.0 + 0.01 * (double) k;
+      double expCN = c.purity * pl + (1.0 - c.purity) * c.ctrlPloidy;
+      double sum = 0;
+      for(uint32_t i = 0; i < bins.size(); ++i) {
+	double cn = (expCN * bins[i] - c.ctrlPloidy * (1.0 - c.purity)) / c.purity;
+	if (cn < 0) cn = 0;
+	sum += std::abs(cn - std::round(cn));
+      }
+      score[k] = sum / (double) bins.size();
+    }
+    double best = *std::min_element(score.begin(), score.end());
+
+    // Prefer smaller ploidy
+    int32_t pick = -1;
+    for(uint32_t k = 0; ((k < score.size()) && (pick < 0)); ++k) {
+      bool leftOk = ((k == 0) || (score[k] <= score[k-1]));
+      bool rightOk = ((k + 1 == score.size()) || (score[k] < score[k+1]));
+      if ((leftOk) && (rightOk) && (score[k] <= best + tol)) pick = k;
+    }
+    int32_t defIdx = (int32_t) std::round((defPloidy - 1.0) * 100.0);
+    double defScore = ((defIdx >= 0) && (defIdx < (int32_t) score.size())) ? score[defIdx] : 0.5;
+
+    // Single CN
+    uint32_t states = 0;
+    if (pick >= 0) {
+      double pl = 1.0 + 0.01 * (double) pick;
+      double expCN = c.purity * pl + (1.0 - c.purity) * c.ctrlPloidy;
+      std::map<int32_t, uint32_t> occ;
+      for(uint32_t i = 0; i < bins.size(); ++i) {
+	double cn = (expCN * bins[i] - c.ctrlPloidy * (1.0 - c.purity)) / c.purity;
+	if (std::abs(cn - std::round(cn)) < 0.25) ++occ[(int32_t) std::round(cn)];
+      }
+      for(std::map<int32_t, uint32_t>::const_iterator it = occ.begin(); it != occ.end(); ++it) {
+	if ((double) it->second >= minState * (double) bins.size()) ++states;
+      }
+    }
+    float ploidy = defPloidy;
+    if ((pick >= 0) && (states >= 2) && (defScore - score[pick] > margin)) ploidy = 1.0 + 0.01 * (float) pick;
+    return ploidy;
+  }
+
   int coral(int argc, char **argv) {
     CountDNAConfig c;
     std::string haploidChr;
     std::string mode;
+    std::string ploidyStr;
 
     // Parameter
     boost::program_options::options_description generic("Generic options");
@@ -546,7 +630,7 @@ namespace torali
     boost::program_options::options_description cancer("Ploidy/purity correction");
     cancer.add_options()
       ("mode,m", boost::program_options::value<std::string>(&mode)->default_value("germline"), "CNV calling mode [germline|somatic]")
-      ("ploidy,y", boost::program_options::value<float>(&c.ploidy)->default_value(2), "sample ploidy")
+      ("ploidy,y", boost::program_options::value<std::string>(&ploidyStr)->default_value("2"), "sample ploidy (number or auto)")
       ("purity,p", boost::program_options::value<float>(&c.purity)->default_value(1), "sample purity [0.1, 1]")
       ("ctrl-ploidy", boost::program_options::value<float>(&c.ctrlPloidy)->default_value(2), "control ploidy")
       ("haploid-chr", boost::program_options::value<std::string>(&haploidChr), "haploid chromosomes, e.g. chrX,chrY")
@@ -638,6 +722,18 @@ namespace torali
       // More sensitive segmentation
       if (vm["penalty"].defaulted()) c.penalty = 1.25;
       if (vm["cnv-merge"].defaulted()) c.cnMergeTol = 0;
+    }
+
+    // Ploidy
+    c.ploidyAuto = (ploidyStr == "auto");
+    if (c.ploidyAuto) c.ploidy = 2;
+    else {
+      try {
+	c.ploidy = boost::lexical_cast<float>(ploidyStr);
+      } catch (boost::bad_lexical_cast const&) {
+	std::cerr << "Sample ploidy needs to be a number or auto: " << ploidyStr << std::endl;
+	return 1;
+      }
     }
 
     // Purity
@@ -912,7 +1008,21 @@ namespace torali
     // Regional GC correction
     std::vector<double> regcorr;
     uint32_t regWin = std::max((uint32_t) 50000, effWin);
-    if (c.regionalGc) estimateRegionalGc(c, gcbound, gcbias, scanCounts, regWin, regcorr);
+    if ((c.regionalGc) || (c.ploidyAuto)) {
+      std::vector<RegionRatio> regRatio;
+      estimateRegionalGc(c, gcbound, gcbias, scanCounts, regWin, regcorr, regRatio);
+      if (!c.regionalGc) regcorr.clear();
+
+      // Sample ploidy
+      if (c.ploidyAuto) {
+	samFile* samfile = sam_open(c.bamFile.string().c_str(), "r");
+	bam_hdr_t* hdr = sam_hdr_read(samfile);
+	c.ploidy = fitPloidy(c, hdr, regRatio, regWin);
+	c.expectedCN = c.purity * c.ploidy + (1.0 - c.purity) * c.ctrlPloidy;
+	bam_hdr_destroy(hdr);
+	sam_close(samfile);
+      }
+    }
 
     // Count reads
     if (bamCount(c, li, gcbias, gcbound, regcorr, regWin)) {

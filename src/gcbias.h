@@ -90,12 +90,23 @@ namespace torali
     curve = sm;
   }
 
+  // Obs. to exp. ratio of a regional window
+  struct RegionRatio {
+    int32_t refIndex;
+    int32_t start;
+    int32_t gcbin;
+    double ratio;
+
+    RegionRatio(int32_t const r, int32_t const s, int32_t const b, double const v) : refIndex(r), start(s), gcbin(b), ratio(v) {}
+  };
+
   // Regional GC correction
   template<typename TConfig, typename TGCBound>
   inline void
-  estimateRegionalGc(TConfig const& c, TGCBound const& gcbound, std::vector<GcBias> const& gcbias, std::vector<std::vector<ScanWindow> > const& scanCounts, uint32_t const regWin, std::vector<double>& regcorr) {
+  estimateRegionalGc(TConfig const& c, TGCBound const& gcbound, std::vector<GcBias> const& gcbias, std::vector<std::vector<ScanWindow> > const& scanCounts, uint32_t const regWin, std::vector<double>& regcorr, std::vector<RegionRatio>& regRatio) {
     uint32_t const nbin = 101;
     regcorr.assign(nbin, 1.0);
+    regRatio.clear();
     std::vector<std::vector<double> > ratios(nbin);
 
     // Reference GC
@@ -160,7 +171,10 @@ namespace torali
 	  double obsValid = observed * ((double) winlen / (double) totalBases);
 	  double gcfrac = (gcnum / (double) winlen) / (double) c.meanisize;
 	  int32_t b = (int32_t) (gcfrac * (double) (nbin - 1) + 0.5);
-	  if ((b >= 0) && (b < (int32_t) nbin)) ratios[b].push_back(obsValid / fineExp);
+	  if ((b >= 0) && (b < (int32_t) nbin)) {
+	    ratios[b].push_back(obsValid / fineExp);
+	    regRatio.push_back(RegionRatio(refIndex, rstart, b, obsValid / fineExp));
+	  }
 	}
       }
     }
@@ -193,6 +207,7 @@ namespace torali
     for(uint32_t b = 0; b < nbin; ++b) {
       if (regcorr[b] <= 0) regcorr[b] = 1.0;
     }
+    for(uint32_t i = 0; i < regRatio.size(); ++i) regRatio[i].ratio /= regcorr[regRatio[i].gcbin];
   }
 
   template<typename TConfig, typename TGCBound>
