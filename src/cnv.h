@@ -834,7 +834,8 @@ namespace torali
 	cnsdval[0] = cnvs[i].sd;
 	gts[0] = bcf_gt_missing;
 	gts[1] = bcf_gt_missing;
-	int32_t qval = _computeCNLs(c, cnvs[i].cn, cnvs[i].sd, cnl, gqval);
+	// Somatic mode uses control ploidy
+	int32_t qval = _computeCNLs(c, cnvs[i].cn, cnvs[i].sd, cnl, gqval, 0, boost::math::iround((c.somatic) ? c.ctrlPloidy : c.ploidy));
 	// Mappability-aware quality
 	if (!c.somatic) {
 	  double alpha = 0;

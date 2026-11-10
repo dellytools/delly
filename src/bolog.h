@@ -98,9 +98,10 @@ struct BoLog {
  }
 
 
+  // refcn: copy-number the variant quality is measured against
   template<typename TConfig>
   inline int32_t
-  _computeCNLs(TConfig const& c, double const mean, double const sd, float* gl, int32_t* gqval, int32_t const file_c) {
+  _computeCNLs(TConfig const&, double const mean, double const sd, float* gl, int32_t* gqval, int32_t const file_c, int32_t const refcn) {
     // Compute copy-number likelihoods
     boost::math::normal s(mean, sd);
     for(uint32_t geno=0; geno< MAX_CN; ++geno) {
@@ -129,7 +130,7 @@ struct BoLog {
     double glObs = std::log10(boost::math::pdf(s, mean));
     glObs = (glObs > SMALLEST_GL) ? glObs : SMALLEST_GL;
     uint32_t plVariant = (uint32_t) boost::math::round(-10 * glObs);
-    uint32_t plPloidy = (uint32_t) boost::math::round(-10 * gl[file_c * MAX_CN + boost::math::iround(c.ploidy)]);
+    uint32_t plPloidy = (uint32_t) boost::math::round(-10 * gl[file_c * MAX_CN + refcn]);
     int32_t varqual = plPloidy - plVariant;
     
     // GQ
@@ -143,6 +144,12 @@ struct BoLog {
     
     // Variant quality
     return varqual;
+  }
+
+  template<typename TConfig>
+  inline int32_t
+  _computeCNLs(TConfig const& c, double const mean, double const sd, float* gl, int32_t* gqval, int32_t const file_c) {
+    return _computeCNLs(c, mean, sd, gl, gqval, file_c, boost::math::iround(c.ploidy));
   }
 
   template<typename TConfig>
