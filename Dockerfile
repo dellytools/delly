@@ -4,29 +4,38 @@ FROM ubuntu:22.04
 MAINTAINER Tobias Rausch rausch@embl.de
 
 # install required packages using apt
-RUN apt-get update && apt-get install -y \
-    autoconf \
-    build-essential \
-    cmake \
-    g++ \
-    gfortran \
-    git \
-    libcurl4-gnutls-dev \
-    hdf5-tools \
-    libboost-date-time-dev \
-    libboost-program-options-dev \
-    libboost-system-dev \
-    libboost-filesystem-dev \
-    libboost-iostreams-dev \
-    libbz2-dev \
-    libdeflate-dev \
-    libhdf5-dev \
-    libncurses-dev \
-    liblzma-dev \
-    pkg-config \
-    zlib1g-dev \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+RUN set -eu; \
+    for attempt in 1 2 3; do \
+        if apt-get update && apt-get install -y \
+            autoconf \
+            build-essential \
+            cmake \
+            g++ \
+            gfortran \
+            git \
+            libcurl4-gnutls-dev \
+            hdf5-tools \
+            libboost-date-time-dev \
+            libboost-program-options-dev \
+            libboost-system-dev \
+            libboost-filesystem-dev \
+            libboost-iostreams-dev \
+            libbz2-dev \
+            libdeflate-dev \
+            libhdf5-dev \
+            libncurses-dev \
+            liblzma-dev \
+            pkg-config \
+            zlib1g-dev; then \
+            break; \
+        fi; \
+        if [ "$attempt" -eq 3 ]; then \
+            exit 1; \
+        fi; \
+        sleep 5; \
+    done; \
+    apt-get clean; \
+    rm -rf /var/lib/apt/lists/*
 
 # set environment
 ENV BOOST_ROOT /usr
