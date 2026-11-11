@@ -982,8 +982,14 @@ namespace torali
       bool ok = sf.open(c.snvSites.string());
       sf.close();
       if (!ok) {
-	std::cerr << "Fail to open indexed BCF file with SNV sites: " << c.snvSites.string() << std::endl;
-	return 1;
+	bcf_index_build(c.snvSites.string().c_str(), 14);
+	SnvSitesFile sf2;
+	bool ok2 = sf2.open(c.snvSites.string());
+	sf2.close();
+	if (!ok2) {
+	  std::cerr << "Fail to open indexed BCF file with SNV sites: " << c.snvSites.string() << std::endl;
+	  return 1;
+	}
       }
     }
 
