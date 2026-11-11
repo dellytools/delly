@@ -3,6 +3,7 @@
 
 #include <limits>
 #include <iomanip>
+#include <cmath>
 
 #include <boost/icl/split_interval_map.hpp>
 #include <boost/dynamic_bitset.hpp>
@@ -592,8 +593,9 @@ namespace torali
     double outlier2;
 
     FitNorm(double const sigR, double const sigB, double const maxRatio, double const bafRange) {
-      gauss1 = std::log(std::sqrt(2.0 * M_PI) * sigR);
-      gauss2 = std::log(2.0 * M_PI * sigR * sigB);
+      double const pi = std::acos(-1.0);
+      gauss1 = std::log(std::sqrt(2.0 * pi) * sigR);
+      gauss2 = std::log(2.0 * pi * sigR * sigB);
       outlier1 = std::log(maxRatio);
       outlier2 = std::log(maxRatio * bafRange);
     }
