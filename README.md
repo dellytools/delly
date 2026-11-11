@@ -166,7 +166,7 @@ Germline CNV calling can be done using short- or long-reads using this workflow.
 
 `delly cnv -m somatic -o tumor.bcf -c tumor.cov.gz -g hg38.fa tumor.bam`
 
-* Purity and ploidy can be fitted automatically (`-y auto`) but this requires an indexed BCF file with common, biallelic SNVs.
+* Alternatively, purity and ploidy can be fitted automatically (`-y auto`) but this requires an indexed BCF file with common, biallelic SNVs (here are site lists for [GRCh38](https://gear-genomics.embl.de/data/delly/snv.hg38.bcf) and [T2T-CHM13](https://gear-genomics.embl.de/data/delly/snv.chm13.bcf). For a matched tumor-control setup, the confident heterozygous SNVs of the control should be used for `-b`.
 
 `delly cnv -m somatic -y auto -b snv.hg38.bcf -o tumor.bcf -c tumor.cov.gz -g hg38.fa tumor.bam`
 

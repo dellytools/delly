@@ -551,7 +551,7 @@ namespace torali
   inline double
   _binChi2(FitBin const& bin, double const purity, double const expCN, double const ctrl, double const bal, double const sigR, double const sigB, double const minFrac, int32_t& n, int32_t& nB) {
     double const cnEst = (expCN * bin.ratio - ctrl * (1.0 - purity)) / purity;
-    int32_t const n0 = std::max(0, (int32_t) std::floor(cnEst));
+    int32_t const n0 = std::max(1, (int32_t) std::floor(cnEst));
     double best = std::numeric_limits<double>::max();
     n = n0;
     nB = -1;
@@ -642,6 +642,7 @@ namespace torali
     double const minBal = 0.4;
     double const balStep = 0.02;
     double const lohFrac = 0.25;
+    double const knownHet = 0.5;
     double const minNoise = 0.01;
     double const minSep = 4.0;
     double const minRange = 1.5;
@@ -702,8 +703,10 @@ namespace torali
       if (!hf.empty()) {
 	std::sort(hf.begin(), hf.end());
 	double const typical = hf[(uint32_t) (0.9 * (double) (hf.size() - 1))];
-	for(uint32_t i = 0; i < bins.size(); ++i) {
-	  if ((bins[i].hetFrac >= 0) && (bins[i].hetFrac < lohFrac * typical)) bins[i].baf = 0;
+	if (typical >= knownHet) {
+	  for(uint32_t i = 0; i < bins.size(); ++i) {
+	    if ((bins[i].hetFrac >= 0) && (bins[i].hetFrac < lohFrac * typical)) bins[i].baf = 0;
+	  }
 	}
       }
     }
