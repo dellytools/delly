@@ -162,13 +162,17 @@ Germline CNV calling can be done using short- or long-reads using this workflow.
 
 ## Somatic copy-number alterations (SCNAs)
 
-* CNVs are first called on the tumor genome. Depending on the coverage and tumor purity you can adapt the minimum CNV size (`-z`) and the sample purity (`-p`) which affect the sensitivity of SCNA detection.
+* CNVs are first called on the tumor genome in somatic mode. Depending on the coverage and tumor purity you can adapt the minimum CNV size (`-z`), the sample purity (`-p`) and the sample ploidy (`-y`) which affect the sensitivity of SCNA detection.
 
-`delly cnv -o tumor.bcf -c tumor.cov.gz -g hg38.fa tumor.bam`
+`delly cnv -m somatic -o tumor.bcf -c tumor.cov.gz -g hg38.fa tumor.bam`
 
-* Then these CNVs are genotyped in the control sample.
+* Purity and ploidy can be fitted automatically (`-y auto`) but this requires an indexed BCF file with common, biallelic SNVs.
 
-`delly cnv -v tumor.bcf -o control.bcf -g hg38.fa control.bam`
+`delly cnv -m somatic -y auto -b snv.hg38.bcf -o tumor.bcf -c tumor.cov.gz -g hg38.fa tumor.bam`
+
+* The candidate CNVs are then genotyped in the control sample in somatic mode.
+
+`delly cnv -m somatic -v tumor.bcf -o control.bcf -g hg38.fa control.bam`
 
 * You can then merge both files using [bcftools](https://github.com/samtools/bcftools).
 

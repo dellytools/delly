@@ -34,7 +34,10 @@ namespace torali
     bool hasSegFile;
     bool hasGenoFile;
     bool hasExcludeFile;
+    bool hasSnvSites;
     uint32_t nchr;
+    uint32_t minSnvDepth;
+    uint8_t minBaseQual;
     uint32_t minClip;
     uint32_t minRefSep;
     uint32_t minBpSupport;
@@ -74,6 +77,7 @@ namespace torali
     boost::filesystem::path bamFile;
     boost::filesystem::path scanFile;
     boost::filesystem::path exclude;
+    boost::filesystem::path snvSites;
     std::set<int32_t> refIdx;
   };
 
@@ -515,19 +519,141 @@ namespace torali
   }
 
   
-  // Ploidy fit
+  // Purity/ploidy fit
+  struct FitBin {
+    int32_t refIndex;
+    double ratio;
+    double baf;
+    double hetFrac;
+
+    FitBin(int32_t const ri, double const r) : refIndex(ri), ratio(r), baf(-1), hetFrac(-1) {}
+  };
+
+  // Noise estimation
+  inline double
+  _binNoise(std::vector<double> const& diffs, double const minNoise) {
+    if (diffs.size() < 10) return minNoise;
+    std::vector<double> d(diffs);
+    for(uint32_t i = 0; i < d.size(); ++i) d[i] = std::abs(d[i]);
+    std::sort(d.begin(), d.end());
+    double const mad = d[d.size() / 2] * 1.4826 / std::sqrt(2.0);
+    return std::max(minNoise, mad);
+  }
+
+  // BAF
+  inline double
+  _bafObserved(double const b, double const bal) {
+    return 0.5 - std::sqrt((0.5 - b) * (0.5 - b) + (0.5 - bal) * (0.5 - bal));
+  }
+
+  // Nearest integer CN
+  inline double
+  _binChi2(FitBin const& bin, double const purity, double const expCN, double const ctrl, double const bal, double const sigR, double const sigB, double const minFrac, int32_t& n, int32_t& nB) {
+    double const cnEst = (expCN * bin.ratio - ctrl * (1.0 - purity)) / purity;
+    int32_t const n0 = std::max(0, (int32_t) std::floor(cnEst));
+    double best = std::numeric_limits<double>::max();
+    n = n0;
+    nB = -1;
+    for(int32_t cn = n0; cn <= n0 + 1; ++cn) {
+      double const total = purity * cn + (1.0 - purity) * ctrl;
+      double const rExp = total / expCN;
+      double const chiR = (bin.ratio - rExp) / sigR;
+      if (bin.baf < 0) {
+	if (chiR * chiR < best) { best = chiR * chiR; n = cn; nB = -1; }
+	continue;
+      }
+      // CN
+      int32_t b0 = 0;
+      int32_t b1 = 0;
+      if (bin.baf > 0) {
+	double const dev2 = (0.5 - bin.baf) * (0.5 - bin.baf) - (0.5 - bal) * (0.5 - bal);
+	double const bafTrue = (dev2 > 0) ? (0.5 - std::sqrt(dev2)) : 0.5;
+	double const bEst = (bafTrue * expCN * bin.ratio - 0.5 * ctrl * (1.0 - purity)) / purity;
+	b0 = std::max(0, std::min(cn / 2, (int32_t) std::floor(bEst)));
+	b1 = std::max(0, std::min(cn / 2, b0 + 1));
+      }
+      for(int32_t b = b0; b <= b1; ++b) {
+	double const bExp = _bafObserved((total > 0) ? ((purity * b + 0.5 * ctrl * (1.0 - purity)) / total) : 0.5, bal);
+	double chiB = 0;
+	if (bin.baf > 0) chiB = (bin.baf - bExp) / sigB;
+	else if (bExp > minFrac) chiB = (bExp - minFrac) / sigB;
+	double const chi2 = chiR * chiR + chiB * chiB;
+	if (chi2 < best) { best = chi2; n = cn; nB = b; }
+      }
+    }
+    return best;
+  }
+
+  // Fit
+  struct FitNorm {
+    double gauss1;
+    double gauss2;
+    double outlier1;
+    double outlier2;
+
+    FitNorm(double const sigR, double const sigB, double const maxRatio, double const bafRange) {
+      gauss1 = std::log(std::sqrt(2.0 * M_PI) * sigR);
+      gauss2 = std::log(2.0 * M_PI * sigR * sigB);
+      outlier1 = std::log(maxRatio);
+      outlier2 = std::log(maxRatio * bafRange);
+    }
+  };
+
+  // Negative log-likelihood of a CN state
+  inline double
+  _binNLL(FitBin const& bin, double const purity, double const expCN, double const ctrl, double const bal, double const sigR, double const sigB, double const minFrac, FitNorm const& norm, int32_t& n, int32_t& nB) {
+    double const chi2 = _binChi2(bin, purity, expCN, ctrl, bal, sigR, sigB, minFrac, n, nB);
+    double const nll = 0.5 * chi2 + ((bin.baf < 0) ? norm.gauss1 : norm.gauss2);
+    double const out = (bin.baf < 0) ? norm.outlier1 : norm.outlier2;
+    if (nll <= out) return nll;
+    n = -1;
+    nB = -1;
+    return out;
+  }
+
+  // Score fit
+  inline double
+  _fitScore(std::vector<FitBin> const& bins, double const purity, double const ploidy, double const ctrl, double const bal, double const sigR, double const sigB, double const minFrac, FitNorm const& norm) {
+    double const expCN = purity * ploidy + (1.0 - purity) * ctrl;
+    typedef std::pair<int32_t, int32_t> TState;
+    std::vector<TState> st(bins.size());
+    std::vector<double> nll(bins.size());
+    std::map<TState, uint32_t> occ;
+    for(uint32_t i = 0; i < bins.size(); ++i) {
+      nll[i] = _binNLL(bins[i], purity, expCN, ctrl, bal, sigR, sigB, minFrac, norm, st[i].first, st[i].second);
+      ++occ[st[i]];
+    }
+    double sum = 0;
+    for(uint32_t i = 0; i < bins.size(); ++i) sum += nll[i] - std::log((double) occ[st[i]] / (double) bins.size());
+    return sum / (double) bins.size();
+  }
+
+  // Joint purity and ploidy estimation
   template<typename TConfig>
-  inline float
-  fitPloidy(TConfig const& c, bam_hdr_t const* hdr, std::vector<RegionRatio> const& regRatio, uint32_t const regWin) {
-    uint32_t const binSize = std::max((uint32_t) 1000000, 5 * regWin);   // median coverage ratio in bins of >= 1Mbp and >= 5 regional windows
+  inline void
+  fitPurityPloidy(TConfig const& c, bam_hdr_t const* hdr, std::vector<RegionRatio> const& regRatio, uint32_t const regWin, std::vector< std::vector<AlleleCount> > const& snv, bool const fixedPurity, float& purity, float& ploidy) {
+    uint32_t const binSize = std::max((uint32_t) 1000000, 5 * regWin);
     uint32_t const minBins = 100;
-    double const tol = 0.02;
-    double const margin = 0.05;
+    uint32_t const minSites = 100;
+    uint32_t const minHet = 20;
+    double const minFrac = 0.1;
+    double const minBal = 0.4;
+    double const balStep = 0.02;
+    double const lohFrac = 0.25;
+    double const minNoise = 0.01;
+    double const minSep = 4.0;
+    double const minRange = 1.5;
+    double const tolFrac = 0.03;
+    double const family = 0.5;
+    double const gainFrac = 0.07;
     double const minState = 0.05;
-    double const defPloidy = c.ploidy;
+    double const ctrl = c.ctrlPloidy;
+    double const defPurity = purity;
+    double const defPloidy = ploidy;
 
     // Autosomal bins
-    std::vector<double> bins;
+    std::vector<FitBin> bins;
+    std::vector<int32_t> binStart;
     std::vector<double> cur;
     int32_t curRef = -1;
     int64_t curBin = -1;
@@ -542,7 +668,8 @@ namespace torali
       if (flush) {
 	if (cur.size() >= 3) {
 	  std::sort(cur.begin(), cur.end());
-	  bins.push_back(cur[cur.size() / 2]);
+	  bins.push_back(FitBin(curRef, cur[cur.size() / 2]));
+	  binStart.push_back(curBin * binSize);
 	}
 	cur.clear();
 	if (i == regRatio.size()) break;
@@ -551,50 +678,148 @@ namespace torali
       }
       cur.push_back(regRatio[i].ratio);
     }
-    if (bins.size() < minBins) return defPloidy;
+    if (bins.size() < minBins) {
+      std::cerr << "Not enough bins to estimate purity and ploidy!" << std::endl;
+      return;
+    }
 
-    // Copy-number should be integers
-    std::vector<double> score(501, 0);
-    for(uint32_t k = 0; k < score.size(); ++k) {
-      double pl = 1.0 + 0.01 * (double) k;
-      double expCN = c.purity * pl + (1.0 - c.purity) * c.ctrlPloidy;
-      double sum = 0;
+    // BAF and heterozygosity per bin
+    HetBand const hb(minFrac);
+    for(uint32_t i = 0; i < bins.size(); ++i) {
+      BinBaf bb = binBaf(snv[bins[i].refIndex], binStart[i], binStart[i] + binSize, minHet, hb);
+      if (bb.nsites >= minSites) bins[i].hetFrac = (double) bb.nhet / (double) bb.nsites;
+      bins[i].baf = bb.baf;
+    }
+
+    // LOH
+    {
+      std::vector<double> hf;
       for(uint32_t i = 0; i < bins.size(); ++i) {
-	double cn = (expCN * bins[i] - c.ctrlPloidy * (1.0 - c.purity)) / c.purity;
-	if (cn < 0) cn = 0;
-	sum += std::abs(cn - std::round(cn));
+	if (bins[i].hetFrac >= 0) hf.push_back(bins[i].hetFrac);
       }
-      score[k] = sum / (double) bins.size();
+      if (!hf.empty()) {
+	std::sort(hf.begin(), hf.end());
+	double const typical = hf[(uint32_t) (0.9 * (double) (hf.size() - 1))];
+	for(uint32_t i = 0; i < bins.size(); ++i) {
+	  if ((bins[i].hetFrac >= 0) && (bins[i].hetFrac < lohFrac * typical)) bins[i].baf = 0;
+	}
+      }
     }
-    double best = *std::min_element(score.begin(), score.end());
 
-    // Prefer smaller ploidy
-    int32_t pick = -1;
-    for(uint32_t k = 0; ((k < score.size()) && (pick < 0)); ++k) {
-      bool leftOk = ((k == 0) || (score[k] <= score[k-1]));
-      bool rightOk = ((k + 1 == score.size()) || (score[k] < score[k+1]));
-      if ((leftOk) && (rightOk) && (score[k] <= best + tol)) pick = k;
+    // Noise estimation
+    double sigR = minNoise;
+    double sigB = minNoise;
+    {
+      std::vector<double> dr;
+      std::vector<double> db;
+      for(uint32_t i = 1; i < bins.size(); ++i) {
+	if (bins[i].refIndex != bins[i-1].refIndex) continue;
+	dr.push_back(bins[i].ratio - bins[i-1].ratio);
+	if ((bins[i].baf > 0) && (bins[i-1].baf > 0)) db.push_back(bins[i].baf - bins[i-1].baf);
+      }
+      sigR = _binNoise(dr, minNoise);
+      sigB = _binNoise(db, minNoise);
     }
-    int32_t defIdx = (int32_t) std::round((defPloidy - 1.0) * 100.0);
-    double defScore = ((defIdx >= 0) && (defIdx < (int32_t) score.size())) ? score[defIdx] : 0.5;
 
-    // Single CN
+    // Outliers
+    double maxRatio = minRange;
+    {
+      std::vector<double> r;
+      for(uint32_t i = 0; i < bins.size(); ++i) r.push_back(bins[i].ratio);
+      std::sort(r.begin(), r.end());
+      maxRatio = std::max(maxRatio, r[(uint32_t) (0.99 * (double) (r.size() - 1))]);
+    }
+    FitNorm const norm(sigR, sigB, maxRatio, 0.5 - minFrac);
+    double const gap = norm.outlier2 - norm.gauss2;   // log-likelihood difference of an outlier bin and a bin at its state
+    double const tol = tolFrac * gap;
+    double const gain = gainFrac * gap;
+
+    // Grid search over purity and ploidy
+    struct GridPoint {
+      double score;
+      double purity;
+      double ploidy;
+      double bal;
+
+      GridPoint(double const s, double const pu, double const pl, double const b) : score(s), purity(pu), ploidy(pl), bal(b) {}
+    };
+    double const pMin = (fixedPurity) ? defPurity : 0.1;
+    double const pMax = (fixedPurity) ? defPurity : 1.0;
+    double best = std::numeric_limits<double>::max();
+    std::vector<GridPoint> grid;
+    for(double pl = 1.0; pl <= 6.0 + 1e-9; pl += 0.01) {
+      for(double pu = pMin; pu <= pMax + 1e-9; pu += 0.01) {
+	double const expCN = pu * pl + (1.0 - pu) * ctrl;
+	if (pu / expCN < minSep * sigR) continue;
+	for(double bal = minBal; bal <= 0.5 + 1e-9; bal += balStep) {
+	  double const sc = _fitScore(bins, pu, pl, ctrl, bal, sigR, sigB, minFrac, norm);
+	  grid.push_back(GridPoint(sc, pu, pl, bal));
+	  if (sc < best) best = sc;
+	}
+      }
+    }
+
+    // Pick smallest ploidy
+    double fitPurity = defPurity;
+    double fitPloidy = defPloidy;
+    double fitBal = 0.5;
+    double fitScore = std::numeric_limits<double>::max();
+    bool found = (!grid.empty());
+    double const maxScore = best + tol;
+    double minPloidy = 0;
+    for(uint32_t k = 0; k < grid.size(); ++k) {
+      if (grid[k].score <= maxScore) {
+	minPloidy = grid[k].ploidy;
+	break;
+      }
+    }
+    for(uint32_t k = 0; k < grid.size(); ++k) {
+      if ((grid[k].ploidy <= minPloidy + family) && (grid[k].score <= fitScore)) { 
+	fitScore = grid[k].score;
+	fitPurity = grid[k].purity;
+	fitPloidy = grid[k].ploidy;
+	fitBal = grid[k].bal;
+      }
+    }
+    double defScore = std::numeric_limits<double>::max();
+    double defBal = 0.5;
+    for(double bal = minBal; bal <= 0.5 + 1e-9; bal += balStep) {
+      double const sc = _fitScore(bins, defPurity, defPloidy, ctrl, bal, sigR, sigB, minFrac, norm);
+      if (sc < defScore) {
+	defScore = sc;
+	defBal = bal;
+      }
+    }
+    if (!found) {
+      fitScore = defScore;
+      fitBal = defBal;
+    }
+
+    // At least 2 CN
     uint32_t states = 0;
-    if (pick >= 0) {
-      double pl = 1.0 + 0.01 * (double) pick;
-      double expCN = c.purity * pl + (1.0 - c.purity) * c.ctrlPloidy;
-      std::map<int32_t, uint32_t> occ;
+    {
+      double const expCN = fitPurity * fitPloidy + (1.0 - fitPurity) * ctrl;
+      std::map<std::pair<int32_t, int32_t>, uint32_t> occ;
       for(uint32_t i = 0; i < bins.size(); ++i) {
-	double cn = (expCN * bins[i] - c.ctrlPloidy * (1.0 - c.purity)) / c.purity;
-	if (std::abs(cn - std::round(cn)) < 0.25) ++occ[(int32_t) std::round(cn)];
+	int32_t n = 0;
+	int32_t nB = 0;
+	_binNLL(bins[i], fitPurity, expCN, ctrl, fitBal, sigR, sigB, minFrac, norm, n, nB);
+	if (n >= 0) ++occ[std::make_pair(n, nB)];
       }
-      for(std::map<int32_t, uint32_t>::const_iterator it = occ.begin(); it != occ.end(); ++it) {
+      for(std::map<std::pair<int32_t, int32_t>, uint32_t>::const_iterator it = occ.begin(); it != occ.end(); ++it) {
 	if ((double) it->second >= minState * (double) bins.size()) ++states;
       }
     }
-    float ploidy = defPloidy;
-    if ((pick >= 0) && (states >= 2) && (defScore - score[pick] > margin)) ploidy = 1.0 + 0.01 * (float) pick;
-    return ploidy;
+    if ((found) && (states >= 2) && (defScore - fitScore >= gain)) {
+      purity = fitPurity;
+      ploidy = fitPloidy;
+    } else fitBal = defBal;
+    uint32_t nbaf = 0;
+    for(uint32_t i = 0; i < bins.size(); ++i) {
+      if (bins[i].baf >= 0) ++nbaf;
+    }
+    boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
+    std::cerr << '[' << boost::posix_time::to_simple_string(now) << "] " << "Purity/ploidy fit: purity " << std::fixed << std::setprecision(2) << purity << ", ploidy " << ploidy << std::endl;
   }
 
   int coral(int argc, char **argv) {
@@ -602,6 +827,7 @@ namespace torali
     std::string haploidChr;
     std::string mode;
     std::string ploidyStr;
+    uint16_t minBaseQual;
 
     // Parameter
     boost::program_options::options_description generic("Generic options");
@@ -632,6 +858,7 @@ namespace torali
       ("mode,m", boost::program_options::value<std::string>(&mode)->default_value("germline"), "CNV calling mode [germline|somatic]")
       ("ploidy,y", boost::program_options::value<std::string>(&ploidyStr)->default_value("2"), "sample ploidy (number or auto)")
       ("purity,p", boost::program_options::value<float>(&c.purity)->default_value(1), "sample purity [0.1, 1]")
+      ("snv-sites,b", boost::program_options::value<boost::filesystem::path>(&c.snvSites), "common SNV sites in VCF/BCF format (req. for -y auto)")
       ("ctrl-ploidy", boost::program_options::value<float>(&c.ctrlPloidy)->default_value(2), "control ploidy")
       ("haploid-chr", boost::program_options::value<std::string>(&haploidChr), "haploid chromosomes, e.g. chrX,chrY")
       ;
@@ -660,6 +887,8 @@ namespace torali
       ("scan-window", boost::program_options::value<uint32_t>(&c.scanWindow)->default_value(10000), "GC scanning window size")
       ("scan-regions", boost::program_options::value<boost::filesystem::path>(&c.scanFile), "GC scanning regions in BED format")
       ("mad-cutoff", boost::program_options::value<uint16_t>(&c.mad)->default_value(3), "median + 3 * mad count cutoff")
+      ("snv-depth", boost::program_options::value<uint32_t>(&c.minSnvDepth)->default_value(10), "min. depth at SNV sites")
+      ("snv-baseq", boost::program_options::value<uint16_t>(&minBaseQual)->default_value(20), "min. base quality at SNV sites")
       ("percentile", boost::program_options::value<float>(&c.exclgc)->default_value(0.0005), "excl. extreme GC fraction")
       ("no-window-selection", "no scan window selection")
       ;
@@ -732,6 +961,23 @@ namespace torali
 	c.ploidy = boost::lexical_cast<float>(ploidyStr);
       } catch (boost::bad_lexical_cast const&) {
 	std::cerr << "Sample ploidy needs to be a number or auto: " << ploidyStr << std::endl;
+	return 1;
+      }
+    }
+
+    // SNV sites
+    c.hasSnvSites = vm.count("snv-sites");
+    c.minBaseQual = (uint8_t) std::min((uint16_t) 255, minBaseQual);
+    if (c.ploidyAuto != c.hasSnvSites) {
+      std::cerr << "Please provide common SNV sites (-b) for an automatic purity and ploidy fit." << std::endl;
+      return 1;
+    }
+    if (c.hasSnvSites) {
+      SnvSitesFile sf;
+      bool ok = sf.open(c.snvSites.string());
+      sf.close();
+      if (!ok) {
+	std::cerr << "Fail to open indexed BCF file with SNV sites: " << c.snvSites.string() << std::endl;
 	return 1;
       }
     }
@@ -910,6 +1156,7 @@ namespace torali
     typedef std::vector<ScanWindow> TWindowCounts;
     typedef std::vector<TWindowCounts> TGenomicWindowCounts;
     TGenomicWindowCounts scanCounts(c.nchr, TWindowCounts());
+    std::vector< std::vector<AlleleCount> > snv(c.nchr, std::vector<AlleleCount>());
     {
       // Scan genomic windows
       scan(c, li, scanCounts);
@@ -937,8 +1184,8 @@ namespace torali
       // Select stable windows
       selectWindows(c, scanCounts);
 
-      // Estimate GC bias
-      gcBias(c, scanCounts, li, gcbias, gcbound);
+      // Estimate GC bias and collect allele counts
+      gcBias(c, scanCounts, li, gcbias, gcbound, snv);
 
       // Statistics output
       if (c.hasStatsFile) {
@@ -1013,11 +1260,11 @@ namespace torali
       estimateRegionalGc(c, gcbound, gcbias, scanCounts, regWin, regcorr, regRatio);
       if (!c.regionalGc) regcorr.clear();
 
-      // Sample ploidy
+      // Sample purity and ploidy
       if (c.ploidyAuto) {
 	samFile* samfile = sam_open(c.bamFile.string().c_str(), "r");
 	bam_hdr_t* hdr = sam_hdr_read(samfile);
-	c.ploidy = fitPloidy(c, hdr, regRatio, regWin);
+	fitPurityPloidy(c, hdr, regRatio, regWin, snv, !vm["purity"].defaulted(), c.purity, c.ploidy);
 	c.expectedCN = c.purity * c.ploidy + (1.0 - c.purity) * c.ctrlPloidy;
 	bam_hdr_destroy(hdr);
 	sam_close(samfile);

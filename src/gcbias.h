@@ -18,6 +18,7 @@
 
 #include "scan.h"
 #include "util.h"
+#include "baf.h"
 
 namespace torali
 {
@@ -212,12 +213,16 @@ namespace torali
 
   template<typename TConfig, typename TGCBound>
   inline void
-  gcBias(TConfig const& c, std::vector< std::vector<ScanWindow> > const& scanCounts, LibraryInfo const& li, std::vector<GcBias>& gcbias, TGCBound& gcbound) {
+  gcBias(TConfig const& c, std::vector< std::vector<ScanWindow> > const& scanCounts, LibraryInfo const& li, std::vector<GcBias>& gcbias, TGCBound& gcbound, std::vector< std::vector<AlleleCount> >& snv) {
     // Load bam file
     samFile* samfile = sam_open(c.bamFile.string().c_str(), "r");
     hts_set_fai_filename(samfile, c.genome.string().c_str());
     hts_idx_t* idx = sam_index_load(samfile, c.bamFile.string().c_str());
     bam_hdr_t* hdr = sam_hdr_read(samfile);
+
+    // Common SNV sites (allele counts for the purity/ploidy fit)
+    SnvSitesFile sf;
+    bool const hasSites = ((c.hasSnvSites) && (sf.open(c.snvSites.string())));
 
     // Parse bam (contig by contig)
     boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
@@ -244,6 +249,10 @@ namespace torali
       else seqlen = -1;
       char* ref = faidx_fetch_seq(faiRef, tname.c_str(), 0, faidx_seq_len(faiRef, tname.c_str()), &seqlen);
       if (ref == NULL) continue;
+
+      // SNV sites
+      std::vector<SnvSite> sites;
+      if (hasSites) loadSnvSites(sf, tname, sites);
 
       // Get GC content
       std::vector<uint16_t> uniqContent(hdr->target_len[refIndex], 0);
@@ -295,6 +304,7 @@ namespace torali
 	if ((rec->core.flag & BAM_FPAIRED) && ((rec->core.flag & BAM_FMUNMAP) || (rec->core.tid != rec->core.mtid))) continue;
 	addBaseCoverage3(rec, covAll, covMap, covUniq, c.minQual, c.mapqUniq, hdr->target_len[refIndex], maxCoverage);
 	if (rec->core.qual < c.minQual) continue;
+	if ((hasSites) && (rec->core.qual >= c.mapqUniq)) addAlleleCounts(rec, sites, c.minBaseQual);
 	if (c.basecov) continue;
 
 	int32_t midPoint = rec->core.pos + halfAlignmentLength(rec);
@@ -334,6 +344,9 @@ namespace torali
       }
       bam_destroy1(rec);
       hts_itr_destroy(iter);
+
+      // Covered SNV sites
+      if (hasSites) coveredSites(sites, c.minSnvDepth, snv[refIndex]);
 
       // Callable positions
       for(uint32_t pos = 0; pos < hdr->target_len[refIndex]; ++pos) {
@@ -449,6 +462,7 @@ namespace torali
       if (gcbias[i].fractionReference > 0) gcbias[i].obsexp = gcbias[i].fractionSample / gcbias[i].fractionReference;
     }
     
+    if (c.hasSnvSites) sf.close();
     fai_destroy(faiRef);
     hts_idx_destroy(idx);
     sam_close(samfile);
