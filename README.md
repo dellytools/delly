@@ -112,10 +112,6 @@ An assembly-derived SV panel can be constructed using `delly merge` but requires
 
 `delly cnv -g hg38.fa -c out.cov.gz -o out.bcf -u out.seg.bed input.bam`
 
-For somatic copy-number alterations (SCNA) please use the more sensitive somatic mode.
-
-`delly cnv -m somatic -g hg38.fa -c out.cov.gz -o out.bcf -u out.seg.bed input.bam`
-
 Optionally an [exclude map](https://gear-genomics.embl.de/data/delly/) can be used (recommended for short-reads)
 
 `delly cnv -g hg38.fa -x human.GRCh38.map.excl.tsv.gz -c out.cov.gz -o out.bcf -u out.seg.bed input.bam`
