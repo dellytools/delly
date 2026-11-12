@@ -366,9 +366,9 @@ namespace torali
       std::vector<bool> naFlag(nw, false);
       std::vector<bool> suspect(nw, false);
       std::vector<bool> strong(nw, false);
-      double lowFrac = 0.1;            // close to CN0
-      double flankFrac = 0.5;          // clear no CN0
-      uint32_t maxHomDelWin = 1000000; // max size for hom. DEL
+      double lowFrac = 0.1;
+      double flankFrac = 0.5;
+      uint32_t maxHomDelWin = 1000000;
       for(uint32_t i = 0; i < nw; ++i) {
 	if ((!wins[i].valid) || (wins[i].expcov <= 0)) {
 	  naFlag[i] = true;
@@ -615,18 +615,21 @@ namespace torali
 
   // Score fit
   inline double
-  _fitScore(std::vector<FitBin> const& bins, double const purity, double const ploidy, double const ctrl, double const bal, double const sigR, double const sigB, double const minFrac, FitNorm const& norm) {
+  _fitScore(std::vector<FitBin> const& bins, double const purity, double const ploidy, double const ctrl, double const bal, double const sigR, double const sigB, double const minFrac, FitNorm const& norm, double& cn0) {
     double const expCN = purity * ploidy + (1.0 - purity) * ctrl;
     typedef std::pair<int32_t, int32_t> TState;
     std::vector<TState> st(bins.size());
     std::vector<double> nll(bins.size());
     std::map<TState, uint32_t> occ;
+    uint32_t ncn0 = 0;
     for(uint32_t i = 0; i < bins.size(); ++i) {
       nll[i] = _binNLL(bins[i], purity, expCN, ctrl, bal, sigR, sigB, minFrac, norm, st[i].first, st[i].second);
       ++occ[st[i]];
+      if (expCN * bins[i].ratio - ctrl * (1.0 - purity) < 0.5 * purity) ++ncn0;
     }
     double sum = 0;
     for(uint32_t i = 0; i < bins.size(); ++i) sum += nll[i] - std::log((double) occ[st[i]] / (double) bins.size());
+    cn0 = (double) ncn0 / (double) bins.size();
     return sum / (double) bins.size();
   }
 
@@ -650,6 +653,7 @@ namespace torali
     double const family = 0.5;
     double const gainFrac = 0.07;
     double const minState = 0.05;
+    double const cn0Frac = 0.05;
     double const ctrl = c.ctrlPloidy;
     double const defPurity = purity;
     double const defPloidy = ploidy;
@@ -745,23 +749,32 @@ namespace torali
       double purity;
       double ploidy;
       double bal;
+      double cn0;
 
-      GridPoint(double const s, double const pu, double const pl, double const b) : score(s), purity(pu), ploidy(pl), bal(b) {}
+      GridPoint(double const s, double const pu, double const pl, double const b, double const c) : score(s), purity(pu), ploidy(pl), bal(b), cn0(c) {}
     };
     double const pMin = (fixedPurity) ? defPurity : 0.1;
     double const pMax = (fixedPurity) ? defPurity : 1.0;
-    double best = std::numeric_limits<double>::max();
+    double minCn0 = 1.0;
     std::vector<GridPoint> grid;
     for(double pl = 1.0; pl <= 6.0 + 1e-9; pl += 0.01) {
       for(double pu = pMin; pu <= pMax + 1e-9; pu += 0.01) {
 	double const expCN = pu * pl + (1.0 - pu) * ctrl;
 	if (pu / expCN < minSep * sigR) continue;
 	for(double bal = minBal; bal <= 0.5 + 1e-9; bal += balStep) {
-	  double const sc = _fitScore(bins, pu, pl, ctrl, bal, sigR, sigB, minFrac, norm);
-	  grid.push_back(GridPoint(sc, pu, pl, bal));
-	  if (sc < best) best = sc;
+	  double cn0 = 0;
+	  double const sc = _fitScore(bins, pu, pl, ctrl, bal, sigR, sigB, minFrac, norm, cn0);
+	  grid.push_back(GridPoint(sc, pu, pl, bal, cn0));
+	  if (cn0 < minCn0) minCn0 = cn0;
 	}
       }
+    }
+
+    // Avoid fits with large regions being CN0
+    double const maxCn0 = minCn0 + cn0Frac;
+    double best = std::numeric_limits<double>::max();
+    for(uint32_t k = 0; k < grid.size(); ++k) {
+      if ((grid[k].cn0 <= maxCn0) && (grid[k].score < best)) best = grid[k].score;
     }
 
     // Pick smallest ploidy
@@ -773,13 +786,13 @@ namespace torali
     double const maxScore = best + tol;
     double minPloidy = 0;
     for(uint32_t k = 0; k < grid.size(); ++k) {
-      if (grid[k].score <= maxScore) {
+      if ((grid[k].score <= maxScore) && (grid[k].cn0 <= maxCn0)) {
 	minPloidy = grid[k].ploidy;
 	break;
       }
     }
     for(uint32_t k = 0; k < grid.size(); ++k) {
-      if ((grid[k].ploidy <= minPloidy + family) && (grid[k].score <= fitScore)) { 
+      if ((grid[k].ploidy <= minPloidy + family) && (grid[k].cn0 <= maxCn0) && (grid[k].score <= fitScore)) {
 	fitScore = grid[k].score;
 	fitPurity = grid[k].purity;
 	fitPloidy = grid[k].ploidy;
@@ -789,7 +802,8 @@ namespace torali
     double defScore = std::numeric_limits<double>::max();
     double defBal = 0.5;
     for(double bal = minBal; bal <= 0.5 + 1e-9; bal += balStep) {
-      double const sc = _fitScore(bins, defPurity, defPloidy, ctrl, bal, sigR, sigB, minFrac, norm);
+      double cn0 = 0;
+      double const sc = _fitScore(bins, defPurity, defPloidy, ctrl, bal, sigR, sigB, minFrac, norm, cn0);
       if (sc < defScore) {
 	defScore = sc;
 	defBal = bal;
