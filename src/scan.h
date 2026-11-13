@@ -162,8 +162,6 @@ namespace torali
 	  addBaseCoverage(rec, cov, covUniq, c.mapqUniq, hdr->target_len[refIndex], maxCoverage);
 	  continue;
 	}
-	if ((rec->core.flag & BAM_FPAIRED) && (getSVType(rec) != 2)) continue;
-
 	int32_t midPoint = rec->core.pos + halfAlignmentLength(rec);
 	if (rec->core.flag & BAM_FPAIRED) {
 	  // Clean-up the read store for identical alignment positions
@@ -187,8 +185,12 @@ namespace torali
 
 	  // Insert size filter
 	  int32_t isize = (rec->core.pos + alignmentLength(rec)) - rec->core.mpos;
-	  if ((li.minNormalISize < isize) && (isize < li.maxNormalISize)) midPoint = rec->core.mpos + (int32_t) (isize/2);
-	  else continue;
+	  if ((li.minNormalISize < isize) && (isize < li.maxNormalISize)) {
+	    midPoint = rec->core.mpos + (int32_t) (isize/2);
+	  } else {
+	    if (rec->core.flag & BAM_FREVERSE) midPoint = rec->core.pos + alignmentLength(rec) - (c.meanisize / 2);
+	    else midPoint = rec->core.pos + (c.meanisize / 2);
+	  }
 	}
 
 	// Count fragment

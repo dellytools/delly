@@ -155,79 +155,196 @@ namespace torali
     }
   }
 
-  // Het. sites
-  inline bool
-  _hetSite(uint32_t const ref, uint32_t const alt, double const minFrac) {
-    double const d = (double) ref + (double) alt;
-    double const f = (double) alt / d;
-    return ((f >= minFrac) && (f <= 1.0 - minFrac) && (ref >= 2) && (alt >= 2));
-  }
-
-  // Het. site filter
-  struct HetBand {
+  // Allele-count model
+  struct BafModel {
     uint32_t maxDepth;
     double minFrac;
+    double outlier;
+    double floorBaf;
+    double err;
+    double hetPrior;
+    double rhoHet;
+    double rhoHom;
     std::vector<double> grid;
-    std::vector<std::vector<double> > lp;
+    std::vector<double> lgFac;
+    std::vector< std::vector<double> > lgHetA;
+    std::vector< std::vector<double> > lgHetB;
+    std::vector<double> lgHetS;
+    std::vector<double> lgHetC;
+    std::vector<double> lgHomA;
+    std::vector<double> lgHomB;
+    std::vector<double> lgHomS;
+    double lgHomC;
 
-    HetBand(double const mf) : maxDepth(500), minFrac(mf) {
+    BafModel(double const mf) : maxDepth(500), minFrac(mf), outlier(0.05), floorBaf(0.02), err(0.001), hetPrior(0.1), rhoHet(0.02), rhoHom(0.02), lgHomC(0) {
       for(double b = mf; b <= 0.5 + 1e-9; b += 0.005) grid.push_back(b);
-      lp.resize(maxDepth + 1, std::vector<double>(grid.size(), 0));
-      std::vector<double> lchoose(maxDepth + 1);
-      for(uint32_t d = 1; d <= maxDepth; ++d) {
-	lchoose[0] = 0;
-	for(uint32_t a = 1; a <= d; ++a) lchoose[a] = lchoose[a - 1] + std::log((double) (d - a + 1)) - std::log((double) a);
-	for(uint32_t k = 0; k < grid.size(); ++k) {
-	  double const lb = std::log(grid[k]);
-	  double const l1b = std::log(1.0 - grid[k]);
-	  double sum = 0;
-	  for(uint32_t a = 0; a <= d; ++a) {
-	    if (!_hetSite(d - a, a, minFrac)) continue;
-	    sum += std::exp(lchoose[a] + a * lb + (d - a) * l1b);
-	  }
-	  lp[d][k] = (sum > 0) ? std::log(sum) : -1000.0;
-	}
+      lgFac.resize(maxDepth + 1);
+      for(uint32_t i = 0; i <= maxDepth; ++i) lgFac[i] = std::lgamma((double) i + 1.0);
+      setHet(rhoHet);
+      setHom(rhoHom);
+    }
+
+    // Beta-binomial tables
+    void _tables(double const p, double const rho, std::vector<double>& lgA, std::vector<double>& lgB, std::vector<double>& lgS, double& lgC) const {
+      double const s = (1.0 - rho) / rho;
+      double const al = p * s;
+      double const be = (1.0 - p) * s;
+      lgA.resize(maxDepth + 1);
+      lgB.resize(maxDepth + 1);
+      lgS.resize(maxDepth + 1);
+      for(uint32_t i = 0; i <= maxDepth; ++i) {
+	lgA[i] = std::lgamma((double) i + al);
+	lgB[i] = std::lgamma((double) i + be);
+	lgS[i] = std::lgamma((double) i + s);
+      }
+      lgC = std::lgamma(al) + std::lgamma(be) - std::lgamma(s);
+    }
+
+    void setHet(double const rho) {
+      rhoHet = rho;
+      lgHetA.resize(grid.size());
+      lgHetB.resize(grid.size());
+      lgHetC.resize(grid.size());
+      for(uint32_t k = 0; k < grid.size(); ++k) _tables(grid[k], rho, lgHetA[k], lgHetB[k], lgHetS, lgHetC[k]);
+    }
+
+    void setHom(double const rho) {
+      rhoHom = rho;
+      _tables(err, rho, lgHomA, lgHomB, lgHomS, lgHomC);
+    }
+
+    // Scale counts to the table size
+    inline void counts(uint32_t const ref, uint32_t const alt, uint32_t& a, uint32_t& d) const {
+      d = ref + alt;
+      a = alt;
+      if (d > maxDepth) {
+	a = (uint32_t) ((double) alt * (double) maxDepth / (double) d + 0.5);
+	d = maxDepth;
       }
     }
 
-    double logProb(uint32_t const depth, uint32_t const k) const {
-      return lp[std::min(depth, maxDepth)][k];
-    }
+    inline double lchoose(uint32_t const a, uint32_t const d) const { return lgFac[d] - lgFac[a] - lgFac[d - a]; }
+    inline double lhet(uint32_t const a, uint32_t const d, uint32_t const k) const { return lgHetA[k][a] + lgHetB[k][d - a] - lgHetS[d] - lgHetC[k]; }
+    inline double lhom(uint32_t const a, uint32_t const d) const { return lgHomA[a] + lgHomB[d - a] - lgHomS[d] - lgHomC; }
   };
+
+  inline double
+  _logSumExp(double const x, double const y) {
+    double const m = std::max(x, y);
+    return m + std::log1p(std::exp(std::min(x, y) - m));
+  }
 
   // BAF
   inline BinBaf
-  binBaf(std::vector<AlleleCount> const& cov, int32_t const start, int32_t const end, uint32_t const minHet, HetBand const& hb) {
+  binBaf(std::vector<AlleleCount> const& cov, int32_t const start, int32_t const end, uint32_t const minHet, BafModel const& bm, double& loglik) {
     BinBaf bb;
+    loglik = 0;
     std::vector<AlleleCount>::const_iterator itS = std::lower_bound(cov.begin(), cov.end(), start, [](AlleleCount const& s, int32_t const p) { return s.pos < p; });
     std::vector<AlleleCount>::const_iterator itE = std::lower_bound(cov.begin(), cov.end(), end, [](AlleleCount const& s, int32_t const p) { return s.pos < p; });
-    std::vector<AlleleCount const*> het;
-    for(std::vector<AlleleCount>::const_iterator it = itS; it != itE; ++it) {
-      ++bb.nsites;
-      if (_hetSite(it->ref, it->alt, hb.minFrac)) het.push_back(&(*it));
-    }
-    bb.nhet = het.size();
-    if (bb.nhet < minHet) return bb;
+    bb.nsites = itE - itS;
+    if (bb.nsites == 0) return bb;
 
-    // Grid
+    // Site likelihoods
+    std::vector<uint32_t> a(bb.nsites);
+    std::vector<uint32_t> d(bb.nsites);
+    std::vector<double> lhom(bb.nsites);
+    std::vector<double> lout(bb.nsites);
+    std::vector<double> lhet(bb.nsites);
+    std::vector<double> post(bb.nsites);
+    double const log2 = std::log(2.0);
+    uint32_t i = 0;
+    for(std::vector<AlleleCount>::const_iterator it = itS; it != itE; ++it, ++i) {
+      bm.counts(it->ref, it->alt, a[i], d[i]);
+      lhom[i] = _logSumExp(bm.lhom(a[i], d[i]), bm.lhom(d[i] - a[i], d[i])) - log2;
+      lout[i] = -std::log((double) d[i] + 1.0) - bm.lchoose(a[i], d[i]);
+    }
+
+    // Grid search
+    double const lOut = std::log(bm.outlier);
     double bestLL = -std::numeric_limits<double>::max();
-    for(uint32_t k = 0; k < hb.grid.size(); ++k) {
-      double const lb = std::log(hb.grid[k]);
-      double const l1b = std::log(1.0 - hb.grid[k]);
+    double bestHet = 0;
+    for(uint32_t k = 0; k < bm.grid.size(); ++k) {
+      for(i = 0; i < bb.nsites; ++i) lhet[i] = _logSumExp(bm.lhet(a[i], d[i], k), bm.lhet(d[i] - a[i], d[i], k)) - log2;
+      double pi = bm.hetPrior;
       double ll = 0;
-      for(uint32_t i = 0; i < het.size(); ++i) {
-	double const a = het[i]->alt;
-	double const r = het[i]->ref;
-	double const x = a * lb + r * l1b;
-	double const y = a * l1b + r * lb;
-	ll += std::max(x, y) + std::log1p(std::exp(std::min(x, y) - std::max(x, y))) - hb.logProb(het[i]->ref + het[i]->alt, k);
+      for(uint32_t iter = 0; iter < 3; ++iter) {
+	double const lHet = std::log(pi);
+	double const lHom = std::log(std::max(1.0 - pi - bm.outlier, 1e-3));
+	ll = 0;
+	double sum = 0;
+	for(i = 0; i < bb.nsites; ++i) {
+	  double const lp = _logSumExp(_logSumExp(lHet + lhet[i], lHom + lhom[i]), lOut + lout[i]);
+	  post[i] = std::exp(lHet + lhet[i] - lp);
+	  sum += post[i];
+	  ll += lp;
+	}
+	pi = std::min(std::max(sum / (double) bb.nsites, 1e-3), 1.0 - bm.outlier - 1e-3);
       }
       if (ll > bestLL) {
 	bestLL = ll;
-	bb.baf = hb.grid[k];
+	bb.baf = bm.grid[k];
+	bestHet = pi * (double) bb.nsites;
       }
     }
+    loglik = bestLL;
+    bb.nhet = (uint32_t) (bestHet + 0.5);
+    if ((bb.nhet < minHet) || (bb.baf < bm.minFrac + bm.floorBaf)) bb.baf = -1;   // too few het. sites or unreliable BAF
     return bb;
+  }
+
+  // Calibrate
+  struct BafRegion {
+    int32_t refIndex;
+    int32_t start;
+    int32_t end;
+
+    BafRegion(int32_t const ri, int32_t const s, int32_t const e) : refIndex(ri), start(s), end(e) {}
+  };
+
+  inline void
+  calibrateBafModel(std::vector< std::vector<AlleleCount> > const& snv, std::vector<BafRegion> const& regions, uint32_t const minHet, BafModel& bm) {
+    // Error rate and het. fraction from clean hom and het sites
+    double minor = 0;
+    double depth = 0;
+    uint64_t nhet = 0;
+    uint64_t nsites = 0;
+    for(uint32_t ri = 0; ri < snv.size(); ++ri) {
+      for(uint32_t i = 0; i < snv[ri].size(); ++i) {
+	double const d = (double) snv[ri][i].ref + (double) snv[ri][i].alt;
+	double const f = (double) snv[ri][i].alt / d;
+	++nsites;
+	if ((f < bm.minFrac) || (f > 1.0 - bm.minFrac)) {
+	  minor += std::min(snv[ri][i].ref, snv[ri][i].alt);
+	  depth += d;
+	} else ++nhet;
+      }
+    }
+    if (depth > 0) bm.err = std::max(0.001, minor / depth);
+    if (nsites > 0) bm.hetPrior = std::min(std::max((double) nhet / (double) nsites, 0.01), 0.9);
+
+    // Over-dispersion
+    double const rhos[] = {0.002, 0.005, 0.01, 0.02, 0.04, 0.08, 0.15};
+    uint32_t const nrho = sizeof(rhos) / sizeof(rhos[0]);
+    for(uint32_t comp = 0; comp < 2; ++comp) {
+      double best = -std::numeric_limits<double>::max();
+      double bestRho = (comp == 0) ? bm.rhoHom : bm.rhoHet;
+      for(uint32_t r = 0; r < nrho; ++r) {
+	if (comp == 0) bm.setHom(rhos[r]);
+	else bm.setHet(rhos[r]);
+	double sum = 0;
+	for(uint32_t i = 0; i < regions.size(); ++i) {
+	  double ll = 0;
+	  binBaf(snv[regions[i].refIndex], regions[i].start, regions[i].end, minHet, bm, ll);
+	  sum += ll;
+	}
+	if (sum > best) {
+	  best = sum;
+	  bestRho = rhos[r];
+	}
+      }
+      if (comp == 0) bm.setHom(bestRho);
+      else bm.setHet(bestRho);
+    }
   }
 
 }

@@ -615,7 +615,7 @@ namespace torali
 
   // Score fit
   inline double
-  _fitScore(std::vector<FitBin> const& bins, double const purity, double const ploidy, double const ctrl, double const bal, double const sigR, double const sigB, double const minFrac, FitNorm const& norm, double& cn0) {
+  _fitScore(std::vector<FitBin> const& bins, double const purity, double const ploidy, double const ctrl, double const bal, double const sigR, double const sigB, double const minFrac, FitNorm const& norm, double const minState, double& cn0, uint32_t& states) {
     double const expCN = purity * ploidy + (1.0 - purity) * ctrl;
     typedef std::pair<int32_t, int32_t> TState;
     std::vector<TState> st(bins.size());
@@ -630,6 +630,10 @@ namespace torali
     double sum = 0;
     for(uint32_t i = 0; i < bins.size(); ++i) sum += nll[i] - std::log((double) occ[st[i]] / (double) bins.size());
     cn0 = (double) ncn0 / (double) bins.size();
+    states = 0;
+    for(std::map<TState, uint32_t>::const_iterator it = occ.begin(); it != occ.end(); ++it) {
+      if ((it->first.first >= 1) && ((double) it->second >= minState * (double) bins.size())) ++states;
+    }
     return sum / (double) bins.size();
   }
 
@@ -651,7 +655,6 @@ namespace torali
     double const minRange = 1.5;
     double const tolFrac = 0.03;
     double const family = 0.5;
-    double const gainFrac = 0.07;
     double const minState = 0.05;
     double const cn0Frac = 0.05;
     double const ctrl = c.ctrlPloidy;
@@ -690,10 +693,18 @@ namespace torali
       return;
     }
 
+    // Allele-count model
+    BafModel bm(minFrac);
+    {
+      std::vector<BafRegion> reg;
+      for(uint32_t i = 0; i < bins.size(); i += 5) reg.push_back(BafRegion(bins[i].refIndex, binStart[i], binStart[i] + binSize));
+      calibrateBafModel(snv, reg, minHet, bm);
+    }
+
     // BAF and heterozygosity per bin
-    HetBand const hb(minFrac);
     for(uint32_t i = 0; i < bins.size(); ++i) {
-      BinBaf bb = binBaf(snv[bins[i].refIndex], binStart[i], binStart[i] + binSize, minHet, hb);
+      double ll = 0;
+      BinBaf bb = binBaf(snv[bins[i].refIndex], binStart[i], binStart[i] + binSize, minHet, bm, ll);
       if (bb.nsites >= minSites) bins[i].hetFrac = (double) bb.nhet / (double) bb.nsites;
       bins[i].baf = bb.baf;
     }
@@ -707,10 +718,9 @@ namespace torali
       if (!hf.empty()) {
 	std::sort(hf.begin(), hf.end());
 	double const typical = hf[(uint32_t) (0.9 * (double) (hf.size() - 1))];
-	if (typical >= knownHet) {
-	  for(uint32_t i = 0; i < bins.size(); ++i) {
-	    if ((bins[i].hetFrac >= 0) && (bins[i].hetFrac < lohFrac * typical)) bins[i].baf = 0;
-	  }
+	double const lohBaf = (typical >= knownHet) ? 0 : -1;   // known het. sites: LOH, common sites: no BAF information
+	for(uint32_t i = 0; i < bins.size(); ++i) {
+	  if ((bins[i].hetFrac >= 0) && (bins[i].hetFrac < lohFrac * typical)) bins[i].baf = lohBaf;
 	}
       }
     }
@@ -739,9 +749,9 @@ namespace torali
       maxRatio = std::max(maxRatio, r[(uint32_t) (0.99 * (double) (r.size() - 1))]);
     }
     FitNorm const norm(sigR, sigB, maxRatio, 0.5 - minFrac);
-    double const gap = norm.outlier2 - norm.gauss2;   // log-likelihood difference of an outlier bin and a bin at its state
+    double const gap = norm.outlier2 - norm.gauss2;
     double const tol = tolFrac * gap;
-    double const gain = gainFrac * gap;
+    double const gain = tol;
 
     // Grid search over purity and ploidy
     struct GridPoint {
@@ -750,8 +760,10 @@ namespace torali
       double ploidy;
       double bal;
       double cn0;
+      uint32_t states;
+      bool viable;
 
-      GridPoint(double const s, double const pu, double const pl, double const b, double const c) : score(s), purity(pu), ploidy(pl), bal(b), cn0(c) {}
+      GridPoint(double const s, double const pu, double const pl, double const b, double const c, uint32_t const st) : score(s), purity(pu), ploidy(pl), bal(b), cn0(c), states(st), viable(false) {}
     };
     double const pMin = (fixedPurity) ? defPurity : 0.1;
     double const pMax = (fixedPurity) ? defPurity : 1.0;
@@ -763,76 +775,56 @@ namespace torali
 	if (pu / expCN < minSep * sigR) continue;
 	for(double bal = minBal; bal <= 0.5 + 1e-9; bal += balStep) {
 	  double cn0 = 0;
-	  double const sc = _fitScore(bins, pu, pl, ctrl, bal, sigR, sigB, minFrac, norm, cn0);
-	  grid.push_back(GridPoint(sc, pu, pl, bal, cn0));
+	  uint32_t states = 0;
+	  double const sc = _fitScore(bins, pu, pl, ctrl, bal, sigR, sigB, minFrac, norm, minState, cn0, states);
+	  grid.push_back(GridPoint(sc, pu, pl, bal, cn0, states));
 	  if (cn0 < minCn0) minCn0 = cn0;
 	}
       }
     }
 
-    // Avoid fits with large regions being CN0
+    // Viable fits: at least 2 CN states and no large regions at CN0
     double const maxCn0 = minCn0 + cn0Frac;
     double best = std::numeric_limits<double>::max();
+    bool found = false;
     for(uint32_t k = 0; k < grid.size(); ++k) {
-      if ((grid[k].cn0 <= maxCn0) && (grid[k].score < best)) best = grid[k].score;
+      grid[k].viable = ((grid[k].states >= 2) && (grid[k].cn0 <= maxCn0));
+      if (grid[k].viable) {
+	found = true;
+	if (grid[k].score < best) best = grid[k].score;
+      }
     }
 
     // Pick smallest ploidy
     double fitPurity = defPurity;
     double fitPloidy = defPloidy;
-    double fitBal = 0.5;
     double fitScore = std::numeric_limits<double>::max();
-    bool found = (!grid.empty());
     double const maxScore = best + tol;
     double minPloidy = 0;
     for(uint32_t k = 0; k < grid.size(); ++k) {
-      if ((grid[k].score <= maxScore) && (grid[k].cn0 <= maxCn0)) {
+      if ((grid[k].viable) && (grid[k].score <= maxScore)) {
 	minPloidy = grid[k].ploidy;
 	break;
       }
     }
     for(uint32_t k = 0; k < grid.size(); ++k) {
-      if ((grid[k].ploidy <= minPloidy + family) && (grid[k].cn0 <= maxCn0) && (grid[k].score <= fitScore)) {
+      if ((grid[k].viable) && (grid[k].ploidy <= minPloidy + family) && (grid[k].score <= fitScore)) {
 	fitScore = grid[k].score;
 	fitPurity = grid[k].purity;
 	fitPloidy = grid[k].ploidy;
-	fitBal = grid[k].bal;
       }
     }
     double defScore = std::numeric_limits<double>::max();
-    double defBal = 0.5;
     for(double bal = minBal; bal <= 0.5 + 1e-9; bal += balStep) {
       double cn0 = 0;
-      double const sc = _fitScore(bins, defPurity, defPloidy, ctrl, bal, sigR, sigB, minFrac, norm, cn0);
-      if (sc < defScore) {
-	defScore = sc;
-	defBal = bal;
-      }
+      uint32_t states = 0;
+      double const sc = _fitScore(bins, defPurity, defPloidy, ctrl, bal, sigR, sigB, minFrac, norm, minState, cn0, states);
+      if (sc < defScore) defScore = sc;
     }
-    if (!found) {
-      fitScore = defScore;
-      fitBal = defBal;
-    }
-
-    // At least 2 CN
-    uint32_t states = 0;
-    {
-      double const expCN = fitPurity * fitPloidy + (1.0 - fitPurity) * ctrl;
-      std::map<std::pair<int32_t, int32_t>, uint32_t> occ;
-      for(uint32_t i = 0; i < bins.size(); ++i) {
-	int32_t n = 0;
-	int32_t nB = 0;
-	_binNLL(bins[i], fitPurity, expCN, ctrl, fitBal, sigR, sigB, minFrac, norm, n, nB);
-	if (n >= 0) ++occ[std::make_pair(n, nB)];
-      }
-      for(std::map<std::pair<int32_t, int32_t>, uint32_t>::const_iterator it = occ.begin(); it != occ.end(); ++it) {
-	if ((double) it->second >= minState * (double) bins.size()) ++states;
-      }
-    }
-    if ((found) && (states >= 2) && (defScore - fitScore >= gain)) {
+    if ((found) && (defScore - fitScore >= gain)) {
       purity = fitPurity;
       ploidy = fitPloidy;
-    } else fitBal = defBal;
+    }
     uint32_t nbaf = 0;
     for(uint32_t i = 0; i < bins.size(); ++i) {
       if (bins[i].baf >= 0) ++nbaf;
