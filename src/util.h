@@ -10,6 +10,7 @@
 #include <htslib/sam.h>
 #include <sstream>
 #include <math.h>
+#include <cctype>
 
 #include "edlib.h"
 #include "tags.h"
@@ -261,7 +262,10 @@ namespace torali
     int32_t p = svStart - 1;
     if (p < 0) p = 0;
     if (p >= chrLen) p = chrLen - 1;
-    return boost::to_upper_copy(std::string(seq + p, seq + p + 1));
+    char base = std::toupper(static_cast<unsigned char>(seq[p]));
+    // VCF REF must be A, C, G, T or N; IUPAC codes become N
+    if ((base != 'A') && (base != 'C') && (base != 'G') && (base != 'T')) base = 'N';
+    return std::string(1, base);
   }
       
   inline std::string
